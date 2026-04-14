@@ -1,0 +1,24 @@
+[Unit]
+Description=Easy Home WAF API (control plane + UI; architecture C)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=easy-waf
+Group=easy-waf
+EnvironmentFile=-/etc/easy-waf/easy-waf.env
+# Management UI: HTTP/HTTPS from EASY_WAF_LISTEN_* in easy-waf.env; state dir from EASY_WAF_STATE_DIR (default /var/lib/easy-waf in binary).
+# Do not use ${VAR:-default} in ExecStart — some systemd builds pass it literally and ListenAndServe fails immediately (exit 1).
+ExecStart=/usr/sbin/easy-waf-api
+Restart=on-failure
+AmbientCapabilities=
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/easy-waf /run
+StateDirectory=easy-waf
+
+[Install]
+WantedBy=multi-user.target

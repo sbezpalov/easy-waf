@@ -1,0 +1,17 @@
+---
+description: After easy-waf code changes — run verify, clean Windows artifacts, fix CRLF
+alwaysApply: true
+---
+
+# После правок в этом репозитории (easy-waf)
+
+1. **Обязательно выполни** из корня репозитория `easy-waf` (Git Bash, WSL или Linux):
+   - `make ci` (или по шагам: `make verify`, `make lint`, `make test`)  
+   Если `make` нет:  
+   `bash scripts/check-linux-artifacts.sh && go vet ./... && golangci-lint run ./... && go test ./...`
+
+2. **Исправь** всё, что упало: CRLF в `scripts/**/*.sh`, отслеживаемые `.exe`/`.dll`, замечания `gofmt -l`, `go vet`, golangci-lint, тесты.
+
+3. **Не коммить** Windows-бинарники; скрипт проверки удаляет `dist/*.exe` и `dist/*.dll` локально перед проверками индекса git.
+
+4. Если в среде **нет** `bash` или `go`, явно напиши пользователю об этом; всё равно не добавляй в коммит артефакты из `.gitignore`.

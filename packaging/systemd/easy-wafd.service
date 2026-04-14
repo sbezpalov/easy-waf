@@ -1,0 +1,23 @@
+[Unit]
+Description=Easy Home WAF API (control plane + UI; architecture C)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=easy-waf
+Group=easy-waf
+EnvironmentFile=-/etc/easy-waf/easy-waf.env
+# See easy-waf-api.service: avoid ${VAR:-default} in ExecStart; config via EnvironmentFile.
+ExecStart=/usr/sbin/easy-waf-api
+Restart=on-failure
+AmbientCapabilities=
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/easy-waf /run
+StateDirectory=easy-waf
+
+[Install]
+WantedBy=multi-user.target

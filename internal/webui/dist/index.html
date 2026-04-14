@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Easy Home WAF</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
+    a { color: #58a6ff; }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    code { background: #161b22; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid #30363d; padding: 0.5rem; text-align: left; }
+    button { background: #238636; color: #fff; border: 0; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; }
+    button.secondary { background: #21262d; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+    input, select { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; padding: 0.35rem 0.5rem; border-radius: 4px; }
+    .panel { border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; max-width: 420px; }
+    .warn { color: #d29922; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Easy Home WAF</h1>
+
+  <div id="view-login" class="panel">
+    <h2>Sign in</h2>
+    <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel). Default <code>admin</code> / <code>admin</code> — change password after first login.</p>
+    <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
+    <div class="row"><label>Password <input id="login-pass" type="password" autocomplete="current-password" /></label></div>
+    <div class="row"><button type="button" id="btn-login">Sign in</button></div>
+    <p id="login-err" class="warn"></p>
+  </div>
+
+  <div id="view-pass" class="panel hidden">
+    <h2>Change password</h2>
+    <p>You must set a new password (min 8 characters) before using the control plane.</p>
+    <p><small>Until this step is done, the Applications / Apply buttons stay hidden — not disabled.</small></p>
+    <div class="row"><label>Current <input id="old-pass" type="password" autocomplete="current-password" /></label></div>
+    <div class="row"><label>New <input id="new-pass" type="password" minlength="8" autocomplete="new-password" /></label></div>
+    <div class="row"><label>Confirm new <input id="new-pass2" type="password" minlength="8" autocomplete="new-password" /></label></div>
+    <div class="row"><button type="button" id="btn-pass">Save</button></div>
+    <p id="pass-err" class="warn"></p>
+  </div>
+
+  <div id="view-app" class="hidden">
+    <p>Signed in. Optional: legacy automation <code>EASY_WAF_ADMIN_TOKEN</code> still works as Bearer.</p>
+    <p><small>Dark gray buttons (Sign out, Load certificates, …) are still clickable — that is the secondary style, not disabled.</small></p>
+    <div class="row">
+      <button type="button" class="secondary" id="btn-logout">Sign out</button>
+      <button id="load">Refresh</button>
+      <button id="apply">Apply HAProxy</button>
+    </div>
+    <h2>Applications</h2>
+    <div id="apps"></div>
+    <h3>Add / update</h3>
+    <p><small>Each <strong>Save app</strong> adds a new published host → backend mapping (new row). Pick a <strong>profile</strong> preset below; then <strong>Apply HAProxy</strong>.</small></p>
+    <div class="row">
+      <input id="name" placeholder="name" value="Home Assistant" />
+      <input id="host" placeholder="public host" value="ha.home.local" />
+      <input id="backend" placeholder="backend IP" value="192.168.1.10" />
+      <input id="port" placeholder="port" value="8123" type="number" />
+      <select id="profile">
+        <option value="home-assistant">home-assistant</option>
+        <option value="balanced">balanced</option>
+        <option value="strict">strict</option>
+      </select>
+      <label><input id="ws" type="checkbox" checked /> WebSocket</label>
+      <button id="save">Save app</button>
+    </div>
+    <p><small>After saving, click <strong>Apply HAProxy</strong>. Requires <code>haproxy</code> for validation unless <code>EASY_WAF_SKIP_RELOAD</code> is set.</small></p>
+
+    <h2>Certificates</h2>
+    <p><small>Status / dates from database; issue flows via API or ACME worker.</small></p>
+    <div class="row"><button type="button" class="secondary" id="btn-certs">Load certificates</button></div>
+    <div id="certs"></div>
+
+    <h2>CrowdSec (LAPI)</h2>
+    <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in settings (see <code>install-interactive.sh</code> / docs).</small></p>
+    <div class="row">
+      <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
+      <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
+    </div>
+    <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;"></pre>
+
+    <h2>Global settings (ACME)</h2>
+    <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set.</small></p>
+    <div class="row">
+      <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
+      <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
+      <button type="button" id="btn-settings-load">Load</button>
+      <button type="button" id="btn-settings-save">Save</button>
+    </div>
+    <p id="settings-msg" class="warn"></p>
+
+    <h2>Management TLS (port 8443)</h2>
+    <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied; no restart).</small></p>
+    <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+    <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+    <div class="row"><button type="button" id="btn-tls-save">Install TLS certificate</button></div>
+    <p id="tls-msg" class="warn"></p>
+  </div>
+</main>
+<script>
+  const TOK = 'easy_waf_token';
+  const getTok = () => sessionStorage.getItem(TOK) || '';
+  const setTok = (t) => { if (t) sessionStorage.setItem(TOK, t); else sessionStorage.removeItem(TOK); };
+
+  const hdr = () => {
+    const t = getTok();
+    const h = { 'Content-Type': 'application/json' };
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  };
+
+  function show(el, on) { document.getElementById(el).classList.toggle('hidden', !on); }
+
+  async function refreshSession() {
+    const t = getTok();
+    if (!t) { show('view-login', true); show('view-pass', false); show('view-app', false); return; }
+    const r = await fetch('/api/v1/auth/me', { headers: hdr() });
+    if (r.status === 401) { setTok(''); refreshSession(); return; }
+    const me = await r.json();
+    if (!r.ok) { show('view-login', true); return; }
+    if (me.must_change_password) {
+      show('view-login', false); show('view-pass', true); show('view-app', false);
+    } else {
+      show('view-login', false); show('view-pass', false); show('view-app', true);
+      loadProfileSelect();
+      loadApps();
+      loadSettingsPanel();
+    }
+  }
+
+  document.getElementById('btn-login').onclick = async () => {
+    document.getElementById('login-err').textContent = '';
+    const body = {
+      username: document.getElementById('login-user').value.trim(),
+      password: document.getElementById('login-pass').value
+    };
+    const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('login-err').textContent = j.error || r.statusText; return; }
+    setTok(j.token);
+    if (j.must_change_password) {
+      show('view-login', false); show('view-pass', true); show('view-app', false);
+    } else {
+      show('view-login', false); show('view-pass', false); show('view-app', true);
+      loadProfileSelect();
+      loadApps();
+      loadSettingsPanel();
+    }
+  };
+
+  document.getElementById('btn-pass').onclick = async () => {
+    document.getElementById('pass-err').textContent = '';
+    const cur = document.getElementById('old-pass').value;
+    const nw = document.getElementById('new-pass').value;
+    const nw2 = document.getElementById('new-pass2').value;
+    if (nw.length < 8) {
+      document.getElementById('pass-err').textContent = 'New password must be at least 8 characters.';
+      return;
+    }
+    if (nw !== nw2) {
+      document.getElementById('pass-err').textContent = 'New password and confirmation do not match.';
+      return;
+    }
+    const body = { current_password: cur, new_password: nw };
+    const r = await fetch('/api/v1/auth/change-password', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('pass-err').textContent = j.error || await r.text(); return; }
+    setTok(j.token);
+    document.getElementById('old-pass').value = '';
+    document.getElementById('new-pass').value = '';
+    document.getElementById('new-pass2').value = '';
+    show('view-pass', false); show('view-app', true);
+    loadProfileSelect();
+    loadApps();
+    loadSettingsPanel();
+  };
+
+  document.getElementById('btn-logout').onclick = () => { setTok(''); refreshSession(); };
+
+  async function loadProfileSelect() {
+    const sel = document.getElementById('profile');
+    const prev = sel.value;
+    const r = await fetch('/api/v1/profiles', { headers: hdr() });
+    if (r.status === 403) { refreshSession(); return; }
+    if (!r.ok) return;
+    const j = await r.json();
+    const keys = Object.keys(j).sort();
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    sel.innerHTML = keys.map((k) => {
+      const d = (j[k] && (j[k].Description || j[k].description)) || '';
+      return `<option value="${esc(k)}" title="${esc(d)}">${esc(k)}</option>`;
+    }).join('');
+    if (keys.includes(prev)) sel.value = prev;
+  }
+
+  async function loadApps() {
+    const r = await fetch('/api/v1/applications', { headers: hdr() });
+    const j = await r.json();
+    if (r.status === 403 && j.must_change_password) { refreshSession(); return; }
+    if (!r.ok) { document.getElementById('apps').textContent = JSON.stringify(j); return; }
+    const rows = j.map(a => `<tr><td>${a.name}</td><td>${a.public_host}</td><td>${a.backend_host}:${a.backend_port}</td><td>${a.profile}</td></tr>`).join('');
+    document.getElementById('apps').innerHTML = `<table><thead><tr><th>Name</th><th>Host</th><th>Backend</th><th>Profile</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  document.getElementById('load').onclick = loadApps;
+  document.getElementById('apply').onclick = async () => {
+    const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
+    alert(await r.text());
+  };
+  let cachedSettings = null;
+
+  async function loadSettingsPanel() {
+    document.getElementById('settings-msg').textContent = '';
+    const r = await fetch('/api/v1/settings', { headers: hdr() });
+    if (!r.ok) return;
+    cachedSettings = await r.json();
+    document.getElementById('acme-email').value = cachedSettings.acme_email || '';
+    document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
+  }
+  document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
+  document.getElementById('btn-settings-save').onclick = async () => {
+    document.getElementById('settings-msg').textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
+    cachedSettings.acme_email = document.getElementById('acme-email').value.trim();
+    cachedSettings.acme_staging = document.getElementById('acme-staging').checked;
+    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: hdr(), body: JSON.stringify(cachedSettings) });
+    const t = await r.text();
+    document.getElementById('settings-msg').textContent = r.ok ? 'Saved.' : t;
+  };
+
+  document.getElementById('btn-certs').onclick = async () => {
+    const r = await fetch('/api/v1/certificates', { headers: hdr() });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('certs').textContent = JSON.stringify(j); return; }
+    const rows = (j || []).map(c => `<tr><td>${c.primary_domain || ''}</td><td>${c.acme_status || ''}</td><td>${c.not_after || ''}</td><td>${c.last_error || ''}</td></tr>`).join('');
+    document.getElementById('certs').innerHTML = `<table><thead><tr><th>Domain</th><th>ACME</th><th>Not after</th><th>Last error</th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
+  };
+
+  function csOut(obj) {
+    document.getElementById('crowdsec-out').textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+  }
+  document.getElementById('btn-cs-ping').onclick = async () => {
+    const r = await fetch('/api/v1/integrations/crowdsec', { headers: hdr() });
+    csOut(await r.json().catch(() => ({})));
+  };
+  document.getElementById('btn-cs-dec').onclick = async () => {
+    const r = await fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() });
+    const txt = await r.text();
+    try { csOut(JSON.parse(txt)); } catch { csOut(txt); }
+  };
+
+  document.getElementById('btn-tls-save').onclick = async () => {
+    document.getElementById('tls-msg').textContent = '';
+    const body = {
+      certificate_pem: document.getElementById('tls-cert').value,
+      private_key_pem: document.getElementById('tls-key').value
+    };
+    const r = await fetch('/api/v1/settings/management-tls', { method: 'PUT', headers: hdr(), body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('tls-msg').textContent = j.error || await r.text(); return; }
+    document.getElementById('tls-msg').textContent = 'TLS updated. Reload https:// on :8443.';
+    document.getElementById('tls-cert').value = '';
+    document.getElementById('tls-key').value = '';
+  };
+
+  document.getElementById('save').onclick = async () => {
+    const body = {
+      name: document.getElementById('name').value,
+      public_host: document.getElementById('host').value,
+      backend_host: document.getElementById('backend').value,
+      backend_port: parseInt(document.getElementById('port').value, 10),
+      backend_https: false,
+      websocket: document.getElementById('ws').checked,
+      profile: document.getElementById('profile').value,
+      enabled: true
+    };
+    const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    alert(await r.text());
+    loadApps();
+  };
+
+  refreshSession();
+</script>
+</body>
+</html>

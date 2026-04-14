@@ -1,0 +1,68 @@
+# Deployment: AlmaLinux, OVF/OVA, distribution
+
+## What the installer does
+
+[`scripts/install.sh`](../scripts/install.sh) (run as **root**):
+
+1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).
+2. Installs **`easy-waf-api`**, **`easy-waf-acmed`**, optionally **`easy-wafd`** from `dist/` (or `EASY_WAF_DIST_DIR`).
+3. Copies [`configs/defaults/easy-waf.env.example`](../configs/defaults/easy-waf.env.example) to `/etc/easy-waf/easy-waf.env` if missing.
+4. Copies **systemd** units from `packaging/systemd/` to `/etc/systemd/system/` and runs `daemon-reload` (unless `EASY_WAF_SKIP_SYSTEMD=1`).
+5. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs via **dnf**: HAProxy, firewalld, fail2ban, nginx, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
+6. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (avoids Alma/RHEL defaults that often use **ident** and break `DATABASE_URL` password auth), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
+7. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
+8. Runs **restorecon** on state/config paths when SELinux tools are present.
+
+It does **not** automatically configure CrowdSec repositories or HAProxy SPOE packages — use **`scripts/install-interactive.sh`** for that (see [CROWDSEC.md](CROWDSEC.md)).
+
+## AlmaLinux (bare metal / VM)
+
+1. Clone the repo on the target host (or unpack a source tree). Run **`sudo bash scripts/install.sh`** — by default it **installs OS packages** (`EASY_WAF_INSTALL_OS_PACKAGES` defaults to **1**), **acquires binaries** by trying a **GitHub release** matching [`VERSION`](../VERSION) / `EASY_WAF_RELEASE_VERSION`, otherwise **`dnf install golang make git`** and **`make build`**. Minimal footprint: `EASY_WAF_INSTALL_OS_PACKAGES=0`. Pre-built only: `EASY_WAF_SKIP_BINARY_FETCH=1 EASY_WAF_DIST_DIR=/path/to/dist`. Published releases: [`scripts/download-release.sh`](../scripts/download-release.sh).
+2. **Recommended (interactive, LAN-only API + optional CrowdSec):** `sudo bash scripts/install-interactive.sh`  
+   **Or minimal:** `sudo bash scripts/install.sh` (same as [QUICKSTART.md](QUICKSTART.md): local PostgreSQL + DB provisioning + start services by default).
+3. **External database only:** `sudo EASY_WAF_INSTALL_POSTGRES=0 bash scripts/install.sh`, edit `/etc/easy-waf/easy-waf.env` (`DATABASE_URL`), then `sudo systemctl enable --now easy-waf-api easy-waf-acmed` (or use `EASY_WAF_ENABLE_SYSTEMD_UNITS=0` on install and start after editing).
+4. If you did not use `install-interactive.sh`: install **CrowdSec** + HAProxy **SPOE bouncer** per [CROWDSEC.md](CROWDSEC.md).
+
+## PostgreSQL password on first install
+
+If **local PostgreSQL** is installed and `DATABASE_URL` still uses the example passwords **`easywaf:secret`** or **`easywaf:easywaf`**, **`scripts/lib/db-password.sh`** runs **`ALTER USER easywaf`** and rewrites **`DATABASE_URL`** with a random hex password (unless `EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0`). Always use a strong password for external databases.
+
+If you see **`Ident authentication failed for user "easywaf"`**, run **`sudo bash scripts/lib/pg-hba-easywaf.sh`** (or re-run **`install.sh`**) — see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+## OVF / OVA (appliance image)
+
+**Recommended bake into the template:**
+
+| Layer | Suggestion |
+|-------|------------|
+| OS | AlmaLinux 10 minimal + updates |
+| Packages | `haproxy`, `nginx`, `firewalld`, `fail2ban`, `postgresql-server` *or* leave DB external |
+| Binaries | Pre-place `easy-waf-api`, `easy-waf-acmed` in `/usr/sbin/` from CI build |
+| systemd | Pre-enable `firewalld`, `fail2ban`; **do not** auto-enable `easy-waf-*` until first-boot config |
+| First boot | cloud-init or `rc.local` replacement: write `/etc/easy-waf/easy-waf.env` from metadata, `systemctl enable --now easy-waf-api easy-waf-acmed` |
+| Secrets | **Never** bake real `DATABASE_URL` or `EASY_WAF_ADMIN_TOKEN` into the image — inject at deploy time |
+| Disk | Separate `/var/lib/easy-waf` for certs and generated configs (snapshot-friendly) |
+
+**VM sizing (ESXi / QEMU–KVM):** see **[VM-REQUIREMENTS.md](VM-REQUIREMENTS.md)** — vCPU, RAM, disk, and NIC/controller choices.
+
+See [packaging/ovf/README.md](../packaging/ovf/README.md) for a minimal checklist.
+
+## Release artifacts (for `download-release.sh`)
+
+Publish a tarball layout:
+
+```
+easy-waf_<version>_linux_amd64.tar.gz
+  easy-waf-api
+  easy-waf-acmed
+  easy-wafd
+  easy-waf-admin
+  packaging/systemd/*.service
+  configs/defaults/easy-waf.env.example
+```
+
+CI should run `make build` and pack the above so `scripts/install.sh` can run from extracted tree.
+
+## Upgrades
+
+Use [`scripts/upgrade.sh`](../scripts/upgrade.sh) with a directory or `.tar.gz` containing new binaries; it reuses `install.sh` and restarts units.

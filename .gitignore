@@ -1,0 +1,14 @@
+/dist/
+/data/
+*.db
+*.exe
+*.EXE
+*.dll
+*.DLL
+*.syso
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.env
+.idea/
+.vscode/

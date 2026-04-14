@@ -1,0 +1,4 @@
+# Shell must use LF only (bash fails on CRLF from Windows checkouts).
+scripts/**/*.sh text eol=lf
+scripts/lib/*.sh text eol=lf
+.cursor/rules/*.mdc text eol=lf

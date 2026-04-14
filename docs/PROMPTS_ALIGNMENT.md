@@ -1,0 +1,109 @@
+# Соответствие `prompts.md` (Easy Home WAF)
+
+Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
+
+## §2 Goals — Core
+
+| Требование | Статус | Где |
+|------------|--------|-----|
+| Публикация сервисов по доменам → backend | Partial | `internal/config/types.go`, `internal/haproxy/render.go`, API `applications` |
+| TLS на HAProxy | Partial | crt-list, сертификаты из ACME / DB |
+| ACME выдача/продление | Partial | `cmd/easy-waf-acmed`, `internal/acme/*`, `docs/ACME.md` |
+| WebSocket | Partial | Поля приложения + шаблон HAProxy |
+| Единая точка входа HAProxy | Partial | Рендер `haproxy.cfg` под edge |
+
+## §2 Security
+
+| Требование | Статус | Где |
+|------------|--------|-----|
+| Rate limit (stick-tables) | Partial | `internal/profiles/profiles.go` → шаблон |
+| Базовый WACL (ACL) | Partial | Профили, `internal/haproxy/render.go` |
+| CrowdSec + решения | Partial | `internal/crowdsec/client.go`, API `integrations/crowdsec*`, `docs/CROWDSEC.md` |
+| SPOE bouncer | Partial | Настройки SPOE path / engine; полная автосборка в `install.sh` — нет (см. interactive) |
+| Fail2Ban | Partial | Установка в `install.sh`, не оркестрируется API |
+| GeoIP + кэш | Partial | `internal/geoip/cache.go`; API lookup / интеграция в UI — минимальна |
+
+## §2 UX / Observability
+
+| Требование | Статус | Где |
+|------------|--------|-----|
+| Web UI (LAN) | Partial | `internal/webui/dist/index.html` (минимальный SPA) |
+| Сертификаты, логи, статы, health | Partial / Missing | API частично есть; метрики — `internal/metrics/stub.go` |
+| Backup/restore | Partial | `scripts/backup.sh`, `restore.sh`, `docs/BACKUP_RESTORE.md` |
+
+## §3 Constraints
+
+| Требование | Статус | Где |
+|------------|--------|-----|
+| Alma 10, systemd, firewalld, SELinux | Done | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md` |
+| `haproxy -c` до reload | Done | `internal/apply/apply.go`, `internal/engine/engine.go` |
+| SPOE, WebSocket, SNI, redirect | Partial | Шаблон HAProxy; проверять под конкретный релиз |
+| CrowdSec LAPI не Lua | Partial | Доки + SPOA пакет через interactive |
+| Генератор, валидация, атомарный apply, rollback | Partial | apply + revisions в engine |
+| GeoIP API + кэш + смена на MMDB | Partial | кэш есть; провайдер API — дорисовать |
+
+## §6 Repository structure (целевая схема в prompts)
+
+| Путь в prompts | Факт в репо | Примечание |
+|----------------|-------------|------------|
+| `/internal/config` | `internal/config` | OK |
+| `/internal/haproxy` | `internal/haproxy` | Шаблон встроен в `render.go` |
+| `/internal/acme` | `internal/acme` | OK |
+| `/internal/security` | нет отдельного пакета | см. `profiles`, `api/mgmtacl`, `auth` |
+| `/internal/geoip` | `internal/geoip` | OK |
+| `/internal/crowdsec` | `internal/crowdsec` | OK |
+| `/internal/stats` | нет | см. `internal/metrics/stub.go` |
+| `/web/frontend` | `internal/webui/dist` | Встраивается через `embed` |
+| `/templates/*.tmpl` | внутри `render.go` | При желании вынести в файлы |
+| `/tests` | точечные `*_test.go` | Нет отдельного дерева e2e |
+
+## §7 Features
+
+### 7.1 App publishing — **Partial** (модель + API + рендер; health/path префиксы — по месту)
+
+### 7.2 ACME — **Partial** (HTTP-01, DNS-01 задел, renew worker, apply hook)
+
+### 7.3 HAProxy engine — **Partial** (шаблон, checksum, validate, revisions/rollback в engine)
+
+### 7.4 Security profiles — **Done** (имена из prompts: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
+
+### 7.5 CrowdSec — **Partial** (ping LAPI, `GET /api/v1/integrations/crowdsec/decisions`; whitelist/unblock в UI — не реализовано, использовать `cscli` / LAPI)
+
+### 7.6 GeoIP — **Partial** (кэш; HAProxy ACL по странам — в шаблоне/настройках по мере развития)
+
+### 7.7 UI страницы — **Partial** (`internal/webui/dist/index.html`: вход, смена пароля, приложения, apply, сертификаты, CrowdSec ping/decisions, ACME email в settings)
+
+### 7.8 Statistics — **Missing** (заглушка `internal/metrics/stub.go`)
+
+## §8 Lessons learned
+
+Зафиксировано в `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render.go` (SNI, ws, валидация).
+
+## §9 Acceptance criteria (MVP)
+
+| Критерий | Статус |
+|----------|--------|
+| install.sh | Done |
+| Приложение через UI | Partial (минимальный UI) |
+| HTTPS cert автоматически | Partial (нужны DNS/HTTP-01 и настройки) |
+| Доступ снаружи к приложению | Зависит от HAProxy + NAT |
+| CrowdSec блокирует, 403 | После установки SPOA + сценариев |
+| Apply без даунтайма / rollback | Partial |
+| UI: apps, certs, blocked | Partial (API богаче веба) |
+| Reboot, SELinux | Целевой сценарий — Done при соблюдении доков |
+
+## Roadmap (следующие итерации)
+
+1. **Метрики**: stats socket HAProxy + агрегация в API (`internal/metrics`).
+2. **UI**: отдельные маршруты/страницы или фреймворк; логи/аудит из `audit_log`.
+3. **CrowdSec**: кнопка «обновить decisions», опционально delete decision через LAPI.
+4. **GeoIP**: драйвер ipinfo/аналог + поля в settings.
+5. **Тесты**: интеграционные `tests/` против podman-compose PostgreSQL.
+
+Обновляй этот файл при закрытии пунктов MVP.
+
+## CI (GitHub Actions)
+
+| Требование | Статус | Где |
+|------------|--------|-----|
+| `go vet`, golangci-lint, `go test -race`, проверка артефактов Linux / LF в `scripts/**/*.sh`, `haproxy -c` на сгенерированном конфиге | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/haproxy_validate_test.go` |

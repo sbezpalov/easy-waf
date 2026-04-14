@@ -1,0 +1,16 @@
+[Unit]
+Description=Easy Home WAF ACME worker (Lego issuance / renewal)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=easy-waf
+Group=easy-waf
+EnvironmentFile=-/etc/easy-waf/easy-waf.env
+Environment=EASY_WAF_STATE_DIR=/var/lib/easy-waf
+ExecStart=/usr/sbin/easy-waf-acmed
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
