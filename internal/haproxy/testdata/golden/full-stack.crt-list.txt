@@ -1,0 +1,3 @@
+testdata/golden/certs/bundle-a.pem alpn h2,http/1.1
+testdata/golden/certs/bundle-b.pem alpn h2,http/1.1
+testdata/golden/certs/bundle-c.pem alpn h2,http/1.1

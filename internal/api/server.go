@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -63,6 +64,7 @@ func (s *Server) Router() chi.Router {
 			r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
 			r.Get("/settings", s.getSettings)
 			r.Put("/settings", s.putSettings)
+			r.Patch("/settings", s.patchSettings)
 			r.Put("/settings/management-tls", s.putManagementTLS)
 
 			r.Get("/ipbl/local", s.listIPBLLocal)
@@ -211,9 +213,25 @@ func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
+	s.mergeAndPersistSettings(w, r, "settings.patch")
+}
+
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
-	var gs config.GlobalSettings
-	if err := json.NewDecoder(r.Body).Decode(&gs); err != nil {
+	s.mergeAndPersistSettings(w, r, "settings.put")
+}
+
+// mergeAndPersistSettings reads the body as a JSON object and merges it over current settings.
+// Omitted keys keep existing values (PATCH semantics). PUT uses the same merge so partial bodies
+// do not zero paths or durations; send only the fields you want to change, or use GET → edit → PUT.
+func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request, auditAction string) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	gs, err := config.ApplySettingsJSONPatch(s.Eng.Settings, body)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -235,7 +253,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "settings.put", map[string]string{})
+	_ = s.Eng.Store.AppendAudit(r.Context(), auditAction, map[string]string{})
 	writeJSON(w, http.StatusOK, s.Eng.Settings)
 }
 

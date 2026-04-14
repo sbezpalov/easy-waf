@@ -29,8 +29,11 @@ jobs:
           version: v1.62.2
           args: --timeout=5m
 
+      - name: HAProxy render golden fixtures
+        run: go test ./internal/haproxy/... -run Golden -count=1
+
       - name: go test (race)
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -skip '^TestGoldenRender$' ./...
 
   verify:
     runs-on: ubuntu-latest
@@ -69,3 +72,6 @@ jobs:
 
       - name: go test internal/haproxy (includes haproxy -c validation)
         run: go test ./internal/haproxy/... -v -count=1
+
+      - name: go test internal/haproxy integration (golden haproxy -c)
+        run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1

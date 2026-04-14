@@ -54,8 +54,8 @@ type GlobalSettings struct {
 	HAProxyConfigPath   string `json:"haproxy_config_path"`
 	HAProxyBinary       string `json:"haproxy_binary"`
 	CrowdSecEngineName  string `json:"crowdsec_engine_name"`
-	GeoIPCacheTTL       time.Duration `json:"geoip_cache_ttl"`
-	ACMERenewalInterval time.Duration `json:"acme_renewal_interval"`
+	GeoIPCacheTTL       Duration `json:"geoip_cache_ttl"`
+	ACMERenewalInterval Duration `json:"acme_renewal_interval"`
 	// ACMEWebrootPath is the filesystem root for HTTP-01 challenges (HAProxy must expose /.well-known/ → this path).
 	ACMEWebrootPath string `json:"acme_webroot_path,omitempty"`
 	// IPBlacklistMapPath is the generated HAProxy src map file (IPv4/IPv6 lines, one per line).
@@ -86,8 +86,8 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		HAProxyConfigPath:      stateDir + "/haproxy/haproxy.cfg",
 		HAProxyBinary:          "/usr/sbin/haproxy",
 		CrowdSecEngineName:     "crowdsec",
-		GeoIPCacheTTL:          24 * time.Hour,
-		ACMERenewalInterval:    12 * time.Hour,
+		GeoIPCacheTTL:          Duration(24 * time.Hour),
+		ACMERenewalInterval:    Duration(12 * time.Hour),
 		ACMEWebrootPath:        stateDir + "/acme/webroot",
 		IPBlacklistMapPath:     stateDir + "/haproxy/ip_blacklist.map",
 		IPBLExternalEnabled:    true,

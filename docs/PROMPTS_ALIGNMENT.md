@@ -55,13 +55,15 @@
 | `/internal/stats` | нет | см. `internal/metrics/stub.go` |
 | `/web/frontend` | `internal/webui/dist` | Встраивается через `embed` |
 | `/templates/*.tmpl` | внутри `render.go` | При желании вынести в файлы |
-| `/tests` | точечные `*_test.go` | Нет отдельного дерева e2e |
+| `/tests` | точечные `*_test.go` + **golden** HAProxy в `internal/haproxy/testdata/golden/` | Нет отдельного дерева e2e |
 
 ## §7 Features
 
 ### 7.1 App publishing — **Partial** (модель + API + рендер; health/path префиксы — по месту)
 
 ### 7.2 ACME — **Partial** (HTTP-01, DNS-01 задел, renew worker, apply hook)
+
+### 7.2a Global settings API — **Done** (`GET /api/v1/settings`; **`PATCH /api/v1/settings`** — частичный JSON, merge поверх текущих значений в памяти/DB; **`PUT /api/v1/settings`** — тот же merge, чтобы частичное тело не обнуляло пути/таймауты; поля `geoip_cache_ttl` и `acme_renewal_interval` в JSON как строки `time.ParseDuration`, например `"24h"`, `"30m"`, плюс приём числа наносекунд для старых снимков; UI сохраняет ACME через PATCH) — `internal/api/server.go`, `internal/config/settings_merge.go`, `internal/config/duration.go`, `internal/webui/dist/index.html`
 
 ### 7.3 HAProxy engine — **Partial** (шаблон, checksum, validate, revisions/rollback в engine)
 
@@ -102,8 +104,12 @@
 
 Обновляй этот файл при закрытии пунктов MVP.
 
+## Golden tests: **Done**
+
+Фикстуры `Render()` → снимки `internal/haproxy/testdata/golden/<scenario>.cfg` + `<scenario>.crt-list.txt`; обновление: `make golden-update` (`UPDATE_GOLDEN=1`). Юнит-тест: `go test ./internal/haproxy/... -run Golden`. Интеграция `haproxy -c` по golden-файлам: `go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck` (см. `render_golden_integration_test.go`).
+
 ## CI (GitHub Actions)
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| `go vet`, golangci-lint, `go test -race`, проверка артефактов Linux / LF в `scripts/**/*.sh`, `haproxy -c` на сгенерированном конфиге | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/haproxy_validate_test.go` |
+| `go vet`, golangci-lint, `go test -run Golden` (HAProxy golden), `go test -race` (с `-skip TestGoldenRender`, чтобы не дублировать golden), проверка артефактов Linux / LF в `scripts/**/*.sh`, `haproxy -c` на сгенерированном конфиге + golden (`-tags=integration`) | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/render_golden_test.go`, `internal/haproxy/haproxy_validate_test.go` |

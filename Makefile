@@ -1,4 +1,4 @@
-.PHONY: build test lint check-linux verify ci install-help clean-artifacts
+.PHONY: build test lint check-linux verify ci install-help clean-artifacts golden-update
 
 DIST=dist
 
@@ -26,6 +26,10 @@ verify: check-linux
 
 test:
 	go test ./...
+
+# Regenerate internal/haproxy/testdata/golden/*.cfg and companion .crt-list.txt from Render().
+golden-update:
+	UPDATE_GOLDEN=1 go test ./internal/haproxy/... -run Golden -count=1
 
 lint:
 	go vet ./...

@@ -85,7 +85,7 @@
     <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;"></pre>
 
     <h2>Global settings (ACME)</h2>
-    <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set.</small></p>
+    <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set. <strong>Save</strong> uses <code>PATCH /api/v1/settings</code> (only changed fields; other settings are left intact).</small></p>
     <div class="row">
       <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
       <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
@@ -226,11 +226,21 @@
     document.getElementById('settings-msg').textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
-    cachedSettings.acme_email = document.getElementById('acme-email').value.trim();
-    cachedSettings.acme_staging = document.getElementById('acme-staging').checked;
-    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: hdr(), body: JSON.stringify(cachedSettings) });
-    const t = await r.text();
-    document.getElementById('settings-msg').textContent = r.ok ? 'Saved.' : t;
+    const patch = {
+      acme_email: document.getElementById('acme-email').value.trim(),
+      acme_staging: document.getElementById('acme-staging').checked
+    };
+    const r = await fetch('/api/v1/settings', {
+      method: 'PATCH',
+      headers: hdr(),
+      body: JSON.stringify(patch)
+    });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      document.getElementById('settings-msg').textContent = 'Saved.';
+    } else {
+      document.getElementById('settings-msg').textContent = await r.text();
+    }
   };
 
   document.getElementById('btn-certs').onclick = async () => {
