@@ -146,6 +146,7 @@ func logPostBootstrapHints(credPath string) {
 	log.Printf("credentials written to %s (mode 0600) — copy to your vault, then delete the file", credPath)
 	log.Print("next: systemctl restart easy-waf-api easy-waf-acmed")
 	log.Print("hint: first API start recreates GUI user admin / password admin — change password in the UI")
+	log.Print("hint: bootstrap did not change EASY_WAF_LISTEN_* — if GUI unreachable from LAN, set EASY_WAF_LISTEN_HTTP=0.0.0.0:8000 and EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 in easy-waf.env, then restart easy-waf-api")
 }
 
 func resetControlPanelAccess() {
@@ -180,6 +181,7 @@ func resetControlPanelAccess() {
 	_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 	log.Printf("set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000 EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443 in %s", *envFile)
 	log.Print("next: systemctl restart easy-waf-api.service")
+	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTP/HTTPS to 0.0.0.0:8000 / 0.0.0.0:8443 (LAN) then restart easy-waf-api; align firewalld")
 	log.Print("optional: review firewalld — remove broad 8000/8443/tcp on public zone if present")
 }
 
