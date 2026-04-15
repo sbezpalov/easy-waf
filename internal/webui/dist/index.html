@@ -69,6 +69,10 @@
       <label><input id="ws" type="checkbox" checked /> WebSocket</label>
       <button id="save">Save app</button>
     </div>
+    <h4>Restricted paths</h4>
+    <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
+    <div id="restricted-rows"></div>
+    <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
     <p><small>After saving, click <strong>Apply HAProxy</strong>. Requires <code>haproxy</code> for validation unless <code>EASY_WAF_SKIP_RELOAD</code> is set.</small></p>
 
     <h2>Certificates</h2>
@@ -161,7 +165,15 @@
       loadApps();
       loadSettingsPanel();
       loadIpwlToggleFromSettings();
+      initRestrictedPathRows();
     }
+  }
+
+  function initRestrictedPathRows() {
+    const box = document.getElementById('restricted-rows');
+    if (!box) return;
+    box.innerHTML = '';
+    addRestrictedPathRow('/api', '192.168.0.0/16\n10.0.0.0/8');
   }
 
   document.getElementById('btn-login').onclick = async () => {
@@ -182,6 +194,7 @@
       loadApps();
       loadSettingsPanel();
       loadIpwlToggleFromSettings();
+      initRestrictedPathRows();
     }
   };
 
@@ -211,9 +224,38 @@
     loadApps();
     loadSettingsPanel();
     loadIpwlToggleFromSettings();
+    initRestrictedPathRows();
   };
 
   document.getElementById('btn-logout').onclick = () => { setTok(''); refreshSession(); };
+
+  function addRestrictedPathRow(prefix, cidrsText) {
+    const wrap = document.createElement('div');
+    wrap.className = 'rp-row panel';
+    wrap.style.marginTop = '0.5rem';
+    wrap.style.maxWidth = '100%';
+    wrap.innerHTML = `
+      <div class="row" style="align-items:flex-start">
+        <label>Path prefix<br /><input class="rp-prefix" type="text" placeholder="/api" value="${prefix || ''}" style="min-width:8rem" /></label>
+        <label style="flex:1">Allowed CIDRs (one per line)<br /><textarea class="rp-cidrs" rows="4" style="width:100%;min-width:14rem;font-family:monospace;font-size:12px" placeholder="192.168.0.0/16">${cidrsText || ''}</textarea></label>
+        <button type="button" class="secondary btn-rp-remove">Remove</button>
+      </div>`;
+    wrap.querySelector('.btn-rp-remove').onclick = () => wrap.remove();
+    document.getElementById('restricted-rows').appendChild(wrap);
+  }
+
+  function collectRestrictedPaths() {
+    const out = [];
+    document.querySelectorAll('#restricted-rows .rp-row').forEach((row) => {
+      const prefix = row.querySelector('.rp-prefix').value.trim();
+      const raw = row.querySelector('.rp-cidrs').value;
+      const cidrs = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      if (prefix && cidrs.length) out.push({ path_prefix: prefix, allowed_cidrs: cidrs });
+    });
+    return out;
+  }
+
+  document.getElementById('btn-rp-add').onclick = () => addRestrictedPathRow('', '');
 
   async function loadProfileSelect() {
     const sel = document.getElementById('profile');
@@ -407,7 +449,8 @@
       backend_https: false,
       websocket: document.getElementById('ws').checked,
       profile: document.getElementById('profile').value,
-      enabled: true
+      enabled: true,
+      restricted_paths: collectRestrictedPaths()
     };
     const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
     alert(await r.text());

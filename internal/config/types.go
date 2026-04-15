@@ -2,22 +2,29 @@ package config
 
 import "time"
 
+// RestrictedPath limits a path prefix on an app to requests from AllowedCIDRs only (LAN-style).
+type RestrictedPath struct {
+	PathPrefix   string   `json:"path_prefix"`
+	AllowedCIDRs []string `json:"allowed_cidrs"`
+}
+
 // Application is a published hostname → backend mapping (source of truth fragment).
 type Application struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	PublicHost    string    `json:"public_host"`
-	BackendHost   string    `json:"backend_host"`
-	BackendPort   int       `json:"backend_port"`
-	BackendHTTPS  bool      `json:"backend_https"`
-	WebSocket     bool      `json:"websocket"`
-	HealthPath    string    `json:"health_path,omitempty"`
-	PathPrefix    string    `json:"path_prefix,omitempty"`
-	Profile       string    `json:"profile"`
-	CertificateID string    `json:"certificate_id,omitempty"`
-	Enabled       bool      `json:"enabled"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID              string           `json:"id"`
+	Name            string           `json:"name"`
+	PublicHost      string           `json:"public_host"`
+	BackendHost     string           `json:"backend_host"`
+	BackendPort     int              `json:"backend_port"`
+	BackendHTTPS    bool             `json:"backend_https"`
+	WebSocket       bool             `json:"websocket"`
+	HealthPath      string           `json:"health_path,omitempty"`
+	PathPrefix      string           `json:"path_prefix,omitempty"`
+	RestrictedPaths []RestrictedPath `json:"restricted_paths,omitempty"`
+	Profile         string           `json:"profile"`
+	CertificateID   string           `json:"certificate_id,omitempty"`
+	Enabled         bool             `json:"enabled"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
 }
 
 // Certificate stores metadata for HAProxy PEM material.

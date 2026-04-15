@@ -27,6 +27,9 @@ var migration003SQL string
 //go:embed migrations/004_ipwl.sql
 var migration004SQL string
 
+//go:embed migrations/005_restricted_paths.sql
+var migration005SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -52,7 +55,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {
@@ -89,7 +92,7 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) ListApplications(ctx context.Context) ([]config.Application, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, public_host, backend_host, backend_port, backend_https, websocket,
-		       health_path, path_prefix, profile, certificate_id, enabled, created_at, updated_at
+		       health_path, path_prefix, restricted_paths, profile, certificate_id, enabled, created_at, updated_at
 		FROM applications ORDER BY public_host`)
 	if err != nil {
 		return nil, err
@@ -100,8 +103,9 @@ func (s *Store) ListApplications(ctx context.Context) ([]config.Application, err
 		var a config.Application
 		var certID sql.NullString
 		var hp, pp sql.NullString
+		var rpJSON []byte
 		if err := rows.Scan(&a.ID, &a.Name, &a.PublicHost, &a.BackendHost, &a.BackendPort,
-			&a.BackendHTTPS, &a.WebSocket, &hp, &pp, &a.Profile, &certID, &a.Enabled, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			&a.BackendHTTPS, &a.WebSocket, &hp, &pp, &rpJSON, &a.Profile, &certID, &a.Enabled, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if certID.Valid {
@@ -112,6 +116,9 @@ func (s *Store) ListApplications(ctx context.Context) ([]config.Application, err
 		}
 		if pp.Valid {
 			a.PathPrefix = pp.String
+		}
+		if len(rpJSON) > 0 && string(rpJSON) != "null" {
+			_ = json.Unmarshal(rpJSON, &a.RestrictedPaths)
 		}
 		out = append(out, a)
 	}
@@ -129,11 +136,19 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = now
 	}
-	_, err := s.db.ExecContext(ctx, `
+	rp := a.RestrictedPaths
+	if rp == nil {
+		rp = []config.RestrictedPath{}
+	}
+	rpJSON, err := json.Marshal(rp)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO applications (
 			id, name, public_host, backend_host, backend_port, backend_https, websocket,
-			health_path, path_prefix, profile, certificate_id, enabled, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+			health_path, path_prefix, restricted_paths, profile, certificate_id, enabled, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			public_host = EXCLUDED.public_host,
@@ -143,12 +158,13 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 			websocket = EXCLUDED.websocket,
 			health_path = EXCLUDED.health_path,
 			path_prefix = EXCLUDED.path_prefix,
+			restricted_paths = EXCLUDED.restricted_paths,
 			profile = EXCLUDED.profile,
 			certificate_id = EXCLUDED.certificate_id,
 			enabled = EXCLUDED.enabled,
 			updated_at = EXCLUDED.updated_at
 	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS, a.WebSocket,
-		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), a.Profile, nullStrPtr(a.CertificateID), a.Enabled, a.CreatedAt, a.UpdatedAt)
+		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, a.Profile, nullStrPtr(a.CertificateID), a.Enabled, a.CreatedAt, a.UpdatedAt)
 	return err
 }
 

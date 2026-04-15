@@ -63,6 +63,7 @@ func Render(in RenderInput) (Rendered, error) {
 	tmpl, err := template.New("haproxy").Funcs(template.FuncMap{
 		"backendName": sanitizeBackendName,
 		"join":        strings.Join,
+		"joinCIDRs":   joinCIDRs,
 		"haDur":       formatHAProxyDuration,
 		"methodSlug":  methodSlug,
 	}).Parse(haproxyTemplate)
@@ -149,6 +150,22 @@ func methodSlug(m string) string {
 	return strings.ToLower(m)
 }
 
+// joinCIDRs joins non-empty trimmed CIDRs with spaces for HAProxy "acl name src a b c".
+func joinCIDRs(cidrs []string) string {
+	var b strings.Builder
+	for _, c := range cidrs {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(c)
+	}
+	return b.String()
+}
+
 // haproxyTemplate follows HAProxy 3.x syntax; validate with `haproxy -c`.
 const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand */}}
 global
@@ -223,6 +240,15 @@ frontend fe_https
 {{range $k, $m := $a.Profile.ExtraBlockedMethods}}
 	acl bm_{{$i}}_{{$k}}_{{methodSlug $m}} method {{$m}}
 	http-request deny deny_status 405 if host_{{backendName $a.Application.PublicHost}} bm_{{$i}}_{{$k}}_{{methodSlug $m}}
+{{end}}
+{{range $ri, $rp := $a.Application.RestrictedPaths}}
+{{- $rpCidr := joinCIDRs $rp.AllowedCIDRs}}
+{{- if and $rp.PathPrefix $rpCidr}}
+	# Per-app restricted path: {{$a.Application.Name}} {{$rp.PathPrefix}}
+	acl rp_{{$i}}_{{$ri}}_rpath path_beg {{$rp.PathPrefix}}
+	acl rp_{{$i}}_{{$ri}}_rnet src {{$rpCidr}}
+	http-request deny deny_status 403 if host_{{backendName $a.Application.PublicHost}} rp_{{$i}}_{{$ri}}_rpath !rp_{{$i}}_{{$ri}}_rnet
+{{- end}}
 {{end}}
 {{end}}
 {{range $a := .Apps}}

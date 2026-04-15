@@ -19,6 +19,7 @@ var goldenScenarioNames = []string{
 	"trusted-lan",
 	"waf-rules-enabled",
 	"waf-rules-disabled",
+	"app-with-restricted-path",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -234,6 +235,34 @@ func goldenFixture(name string) RenderInput {
 			},
 			CRTListPath: "testdata/golden/waf-rules-disabled.crt-list.txt",
 		}
+	case "app-with-restricted-path":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "ha1",
+					Name:          "Home Assistant",
+					PublicHost:    "ha.example.com",
+					BackendHost:   "192.168.1.10",
+					BackendPort:   8123,
+					Profile:       "home-assistant",
+					CertificateID: "c1",
+					Enabled:       true,
+					WebSocket:     true,
+					RestrictedPaths: []config.RestrictedPath{
+						{
+							PathPrefix:   "/api",
+							AllowedCIDRs: []string{"192.168.0.0/16", "10.0.0.0/8"},
+						},
+					},
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"c1": {ID: "c1", BundlePath: certA},
+			},
+			CRTListPath: "testdata/golden/app-with-restricted-path.crt-list.txt",
+		}
 	default:
 		return RenderInput{}
 	}
@@ -348,4 +377,29 @@ func TestGoldenWAFRuleScenarios(t *testing.T) {
 			t.Fatal("WAF ACLs must be absent when waf_basic_rules_enabled is false")
 		}
 	})
+}
+
+func TestGoldenRestrictedPathACLs(t *testing.T) {
+	in := goldenFixture("app-with-restricted-path")
+	if in.Settings.SPOEConfigPath == "" {
+		t.Fatal("fixture app-with-restricted-path missing")
+	}
+	if len(in.Applications) != 1 || len(in.Applications[0].RestrictedPaths) != 1 {
+		t.Fatal("expected one app with one restricted path")
+	}
+	gotR, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := gotR.HAProxyConfig
+	for _, needle := range []string{
+		"# Per-app restricted path: Home Assistant /api",
+		"acl rp_0_0_rpath path_beg /api",
+		"acl rp_0_0_rnet src 192.168.0.0/16 10.0.0.0/8",
+		"http-request deny deny_status 403 if host_bk_ha_example_com rp_0_0_rpath !rp_0_0_rnet",
+	} {
+		if !strings.Contains(cfg, needle) {
+			t.Fatalf("missing %q in rendered config", needle)
+		}
+	}
 }
