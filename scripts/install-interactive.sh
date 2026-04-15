@@ -160,7 +160,7 @@ main() {
   fi
 
   if [[ -t 0 ]]; then
-    local db url tok
+    local url tok
     url="$(prompt "DATABASE_URL (PostgreSQL)" "postgres://easywaf:secret@127.0.0.1:5432/easywaf?sslmode=disable")"
     upsert_env_kv "DATABASE_URL" "$url"
     tok="$(prompt_secret "EASY_WAF_ADMIN_TOKEN (empty to set later)")"

@@ -424,7 +424,9 @@ install_os_packages() {
 
       systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
       systemctl enable haproxy 2>/dev/null || true
-      easy_waf_pkg_installed fail2ban && systemctl enable fail2ban 2>/dev/null || true
+      if easy_waf_pkg_installed fail2ban; then
+        systemctl enable fail2ban 2>/dev/null || true
+      fi
       log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
       ;;
     apt)
@@ -465,7 +467,9 @@ install_os_packages() {
 
       systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
       systemctl enable haproxy 2>/dev/null || true
-      easy_waf_pkg_installed fail2ban && systemctl enable fail2ban 2>/dev/null || true
+      if easy_waf_pkg_installed fail2ban; then
+        systemctl enable fail2ban 2>/dev/null || true
+      fi
       log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
       ;;
     *)

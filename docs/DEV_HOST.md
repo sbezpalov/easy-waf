@@ -4,11 +4,11 @@
 
 ## 1. SSH: `~/.ssh/config`
 
-На **Windows** (OpenSSH) и **Linux** добавьте блок (подставьте свой `HostName` и пользователя):
+На **Windows** (OpenSSH) и **Linux** добавьте блок (подставьте свой **`HostName`**: пилот часто **`192.0.2.11`**, иначе LAN IP) и пользователя:
 
 ```ssh-config
 Host waf-dev
-    HostName 192.168.0.10
+    HostName 192.0.2.11
     User youruser
     IdentityFile ~/.ssh/id_ed25519
     ServerAliveInterval 30
@@ -30,7 +30,7 @@ ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 
 ## 3. Git на пилоте
 
-После подключения по SSH работайте с клоном на Linux как обычно (`git pull`, `make ci`). Конфликт локальных `go.mod` / неотслеживаемого `go.sum` с `git pull` — см. подсказки в ответе ассистента или `docs/DEPLOYMENT.md`.
+После подключения по SSH работайте с клоном на Linux как обычно (`git pull`, `make ci`, **`make verify`** — в т.ч. **ShellCheck** на `scripts/install.sh`). Конфликт локальных `go.mod` / неотслеживаемого `go.sum` с `git pull` — см. подсказки в ответе ассистента или `docs/DEPLOYMENT.md`.
 
 ## 4. Согласованность с CI
 
