@@ -363,6 +363,13 @@ func TestGoldenWAFRuleScenarios(t *testing.T) {
 				t.Fatalf("expected rendered config to contain %q", needle)
 			}
 		}
+		// HAProxy strips one config backslash level; `|\.\.[\\]` in source became `|\.\.[\]` in PCRE → invalid class.
+		if strings.Contains(cfg, `|\.\.[\]`) {
+			t.Fatal("waf_traversal regex must not use a [\\]-style Windows branch (breaks haproxy -c)")
+		}
+		if !strings.Contains(cfg, `(\.{2}/|\.{2}\x{5c})`) {
+			t.Fatal(`expected traversal ACL to use (\.{2}/|\.{2}\x{5c})`)
+		}
 	})
 	t.Run("waf-rules-disabled", func(t *testing.T) {
 		in := goldenFixture("waf-rules-disabled")

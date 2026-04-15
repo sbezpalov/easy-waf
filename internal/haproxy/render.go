@@ -240,7 +240,7 @@ frontend fe_https
 	acl waf_sqli_path path -m reg -i (union\s+select|insert\s+into|drop\s+table|\.\./\.\.)
 	acl waf_xss query -m reg -i (<script|javascript:|on(error|load|click|mouse)\s*=)
 	acl waf_xss_path path -m reg -i (<script|javascript:)
-	acl waf_traversal path -m reg -i (\.\./|\.\.\x5c)
+	acl waf_traversal path -m reg -i (\.{2}/|\.{2}\x{5c})
 	http-request deny deny_status 403 if waf_sqli or waf_sqli_path or waf_xss or waf_xss_path or waf_traversal
 {{end}}
 {{range $i, $a := .Apps}}
