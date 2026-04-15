@@ -172,8 +172,8 @@ sequenceDiagram
 
 ## Update / backup / restore
 
-- `backup.sh`: `pg_dump` + `/var/lib/easy-waf` + `/etc/easy-waf`.
-- `restore.sh`: validate bundle → import → render dry-run → apply.
+- `backup.sh`: one **`.tar.gz`** (format v1) — `pg_dump -Fc` → `easywaf.dump`, plus `state/` (`/var/lib/easy-waf`) and `etc/` (`/etc/easy-waf`). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+- `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → `restorecon` → start services → optional **`POST /api/v1/apply`**.
 - `upgrade.sh`: replace binary + run migrations + reload daemon only.
 
 ## GeoIP architecture

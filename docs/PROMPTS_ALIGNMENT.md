@@ -29,7 +29,7 @@
 |------------|--------|-----|
 | Web UI (LAN) | Partial | `internal/webui/dist/index.html` (минимальный SPA) |
 | Сертификаты, логи, статы, health | Partial / Missing | API частично есть; метрики — `internal/metrics/stub.go` |
-| Backup/restore | Partial | `scripts/backup.sh`, `restore.sh`, `docs/BACKUP_RESTORE.md` |
+| Backup/restore | Done | `scripts/backup.sh`, `restore.sh`, `scripts/test-backup-restore.sh`, `docs/BACKUP_RESTORE.md` |
 
 ## §3 Constraints
 

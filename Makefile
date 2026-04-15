@@ -1,4 +1,4 @@
-.PHONY: build test lint check-linux verify shellcheck-sh ci install-help clean-artifacts golden-update
+.PHONY: build test lint check-linux verify shellcheck-sh test-backup-restore-e2e ci install-help clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml (install.sh … vX.Y.Z).
@@ -26,12 +26,16 @@ check-linux:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		cd scripts && shellcheck -x install.sh install-interactive.sh; \
+		cd scripts && shellcheck -x install.sh install-interactive.sh test-backup-restore.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. dnf install epel-release 'ShellCheck' || apt install shellcheck)"; \
 	fi
 
 verify: check-linux shellcheck-sh
+
+# Exits 0 with SKIP unless RUN_BACKUP_RESTORE_E2E=1 and root (destructive on real appliance).
+test-backup-restore-e2e:
+	bash scripts/test-backup-restore.sh
 
 test:
 	go test ./...
