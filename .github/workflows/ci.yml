@@ -26,6 +26,8 @@ permissions:
 # See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Shallow/git в контейнере → "error obtaining VCS status: exit status 128" при -buildvcs=true
+  GOFLAGS: -buildvcs=false
 
 jobs:
   lint-and-test:
