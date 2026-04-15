@@ -81,6 +81,10 @@ func (s *Server) Router() chi.Router {
 			r.Post("/ipwl/local", s.upsertIPWLLocal)
 			r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
 
+			r.Get("/security/blocked-ua", s.listBlockedUA)
+			r.Post("/security/blocked-ua", s.addBlockedUA)
+			r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
+
 			r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 		})
 	})
@@ -377,6 +381,45 @@ func (s *Server) deleteIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "ipwl.local.delete", map[string]string{"id": id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listBlockedUA(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Eng.Store.ListBlockedUserAgents(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
+	var e config.BlockedUserAgent
+	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	e.Pattern = strings.TrimSpace(e.Pattern)
+	if e.Pattern == "" {
+		http.Error(w, "pattern required", http.StatusBadRequest)
+		return
+	}
+	e.ID = ""
+	if err := s.Eng.Store.UpsertBlockedUserAgent(r.Context(), &e); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "blocked_ua.add", map[string]string{"id": e.ID, "pattern": e.Pattern})
+	writeJSON(w, http.StatusOK, e)
+}
+
+func (s *Server) deleteBlockedUA(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.Eng.Store.DeleteBlockedUserAgent(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "blocked_ua.delete", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 

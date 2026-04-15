@@ -30,6 +30,9 @@ var migration004SQL string
 //go:embed migrations/005_restricted_paths.sql
 var migration005SQL string
 
+//go:embed migrations/006_blocked_user_agents.sql
+var migration006SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -55,7 +58,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {
@@ -543,10 +546,60 @@ func (s *Store) TouchIPBLSourceFetch(ctx context.Context, id string, fetchAt tim
 	return err
 }
 
+// --- Blocked User-Agent patterns ---
+
+// ListBlockedUserAgents returns all rows ordered by pattern.
+func (s *Store) ListBlockedUserAgents(ctx context.Context) ([]config.BlockedUserAgent, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, pattern, "comment", created_at FROM blocked_user_agents ORDER BY pattern`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []config.BlockedUserAgent
+	for rows.Next() {
+		var e config.BlockedUserAgent
+		var cm sql.NullString
+		if err := rows.Scan(&e.ID, &e.Pattern, &cm, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		if cm.Valid {
+			e.Comment = cm.String
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// UpsertBlockedUserAgent inserts or updates a pattern row.
+func (s *Store) UpsertBlockedUserAgent(ctx context.Context, e *config.BlockedUserAgent) error {
+	now := time.Now().UTC()
+	if e.ID == "" {
+		e.ID = uuid.NewString()
+	}
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = now
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO blocked_user_agents (id, pattern, "comment", created_at)
+		VALUES ($1,$2,$3,$4)
+		ON CONFLICT (id) DO UPDATE SET
+			pattern = EXCLUDED.pattern,
+			"comment" = EXCLUDED."comment"
+	`, e.ID, strings.TrimSpace(e.Pattern), nullStrPtr(e.Comment), e.CreatedAt)
+	return err
+}
+
+// DeleteBlockedUserAgent removes a row by id.
+func (s *Store) DeleteBlockedUserAgent(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM blocked_user_agents WHERE id = $1`, id)
+	return err
+}
+
 // FactoryReset removes all configuration rows (destructive). Schema is kept.
 func (s *Store) FactoryReset(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
-		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, users
+		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, blocked_user_agents, users
 		RESTART IDENTITY CASCADE`)
 	return err
 }

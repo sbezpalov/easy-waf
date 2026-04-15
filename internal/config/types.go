@@ -75,6 +75,12 @@ type GlobalSettings struct {
 	IPWLEnabled bool `json:"ipwl_enabled"`
 	// WAFBasicRulesEnabled adds HAProxy fe_https regex ACLs for basic SQLi/XSS/path traversal (after IP ACLs).
 	WAFBasicRulesEnabled bool `json:"waf_basic_rules_enabled"`
+	// BlockEmptyUA denies requests with empty User-Agent on fe_https (after IP allowlist).
+	BlockEmptyUA bool `json:"block_empty_ua"`
+	// BlockedUserAgentsMapPath is the generated map file (one substring per line) for -m sub -f matching.
+	BlockedUserAgentsMapPath string `json:"blocked_user_agents_map_path,omitempty"`
+	// BlockedUserAgentsEnabled turns on HAProxy deny for User-Agent substrings from the map file.
+	BlockedUserAgentsEnabled bool `json:"blocked_user_agents_enabled"`
 	// ManagementAllowedCIDRs restricts who can reach the API and UI (not /health).
 	// Stored in DB; defaults are RFC1918 + loopback — narrow in Settings for stricter policy.
 	ManagementAllowedCIDRs []string `json:"management_allowed_cidrs,omitempty"`
@@ -94,19 +100,22 @@ func DefaultManagementCIDRs() []string {
 // DefaultSettings returns safe defaults for development and docs.
 func DefaultSettings(stateDir string) GlobalSettings {
 	return GlobalSettings{
-		ACMEStaging:            true,
-		SPOEConfigPath:         "/etc/haproxy/crowdsec.cfg",
-		HAProxyConfigPath:      stateDir + "/haproxy/haproxy.cfg",
-		HAProxyBinary:          "/usr/sbin/haproxy",
-		CrowdSecEngineName:     "crowdsec",
-		GeoIPCacheTTL:          Duration(24 * time.Hour),
-		ACMERenewalInterval:    Duration(12 * time.Hour),
-		ACMEWebrootPath:        stateDir + "/acme/webroot",
-		IPBlacklistMapPath:     stateDir + "/haproxy/ip_blacklist.map",
-		IPBLExternalEnabled:    true,
-		IPAllowlistMapPath:     stateDir + "/haproxy/ip_allowlist.map",
-		IPWLEnabled:            false,
-		WAFBasicRulesEnabled:   true,
-		ManagementAllowedCIDRs: DefaultManagementCIDRs(),
+		ACMEStaging:              true,
+		SPOEConfigPath:           "/etc/haproxy/crowdsec.cfg",
+		HAProxyConfigPath:        stateDir + "/haproxy/haproxy.cfg",
+		HAProxyBinary:            "/usr/sbin/haproxy",
+		CrowdSecEngineName:       "crowdsec",
+		GeoIPCacheTTL:            Duration(24 * time.Hour),
+		ACMERenewalInterval:      Duration(12 * time.Hour),
+		ACMEWebrootPath:          stateDir + "/acme/webroot",
+		IPBlacklistMapPath:       stateDir + "/haproxy/ip_blacklist.map",
+		IPBLExternalEnabled:      true,
+		IPAllowlistMapPath:       stateDir + "/haproxy/ip_allowlist.map",
+		IPWLEnabled:              false,
+		WAFBasicRulesEnabled:     true,
+		BlockEmptyUA:             true,
+		BlockedUserAgentsMapPath: stateDir + "/haproxy/blocked_ua.map",
+		BlockedUserAgentsEnabled: false,
+		ManagementAllowedCIDRs:   DefaultManagementCIDRs(),
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/apply"
+	"github.com/easy-waf/easy-waf/internal/blockedua"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
@@ -39,11 +40,15 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 	}
 	def := config.DefaultSettings(e.StateDir)
 	var settingsKeyProbe struct {
-		WAFBasic *bool `json:"waf_basic_rules_enabled"`
+		WAFBasic   *bool `json:"waf_basic_rules_enabled"`
+		BlockEmpty *bool `json:"block_empty_ua"`
 	}
 	_ = json.Unmarshal([]byte(raw), &settingsKeyProbe)
 	if settingsKeyProbe.WAFBasic == nil {
 		s.WAFBasicRulesEnabled = def.WAFBasicRulesEnabled
+	}
+	if settingsKeyProbe.BlockEmpty == nil {
+		s.BlockEmptyUA = def.BlockEmptyUA
 	}
 	if s.HAProxyConfigPath == "" {
 		s.HAProxyConfigPath = def.HAProxyConfigPath
@@ -72,6 +77,9 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 	if s.IPAllowlistMapPath == "" {
 		s.IPAllowlistMapPath = def.IPAllowlistMapPath
 	}
+	if s.BlockedUserAgentsMapPath == "" {
+		s.BlockedUserAgentsMapPath = def.BlockedUserAgentsMapPath
+	}
 	if len(s.ManagementAllowedCIDRs) == 0 {
 		s.ManagementAllowedCIDRs = def.ManagementAllowedCIDRs
 	}
@@ -95,6 +103,10 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	}
 	wlPath := ipwl.MapPath(e.Settings, e.StateDir)
 	if err := ipwl.WriteLocalMap(ctx, e.Store, wlPath); err != nil {
+		return haproxy.Rendered{}, err
+	}
+	uaMapPath := blockedua.MapPath(e.Settings, e.StateDir)
+	if err := blockedua.WriteMap(ctx, e.Store, uaMapPath); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	apps, err := e.Store.ListApplications(ctx)
@@ -136,15 +148,18 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 		}
 	}
 	useWL := ipwl.UseInRender(e.Settings.IPWLEnabled, wlPath)
+	useBadUA := blockedua.UseInRender(e.Settings.BlockedUserAgentsEnabled, uaMapPath)
 	ri := haproxy.RenderInput{
-		Settings:           e.Settings,
-		Applications:       apps,
-		Certificates:       cm,
-		CRTListPath:        crtListPath,
-		IPBlacklistMapPath: e.Settings.IPBlacklistMapPath,
-		IPAllowlistMapPath: wlPath,
-		UseIPBlacklist:     useBL,
-		UseIPAllowlist:     useWL,
+		Settings:                 e.Settings,
+		Applications:             apps,
+		Certificates:             cm,
+		CRTListPath:              crtListPath,
+		IPBlacklistMapPath:       e.Settings.IPBlacklistMapPath,
+		IPAllowlistMapPath:       wlPath,
+		UseIPBlacklist:           useBL,
+		UseIPAllowlist:           useWL,
+		BlockedUserAgentsMapPath: uaMapPath,
+		UseBlockedUserAgents:     useBadUA,
 	}
 	return haproxy.Render(ri)
 }

@@ -109,6 +109,22 @@
     </div>
     <p id="ipwl-msg" class="warn"></p>
 
+    <h2>Bot Protection</h2>
+    <p><small>Block empty <code>User-Agent</code> and optional substring list (written to <code>blocked_ua.map</code> on <strong>Apply HAProxy</strong>). Substring ACL runs after IP allowlist.</small></p>
+    <div class="row">
+      <label><input id="ua-block-empty" type="checkbox" checked /> Block empty User-Agent</label>
+      <label><input id="ua-blocklist-enabled" type="checkbox" /> Enable blocked User-Agent list in HAProxy</label>
+      <button type="button" class="secondary" id="btn-ua-settings-save">Save bot protection toggles</button>
+      <button type="button" class="secondary" id="btn-ua-load">Load patterns</button>
+    </div>
+    <div id="ua-table"></div>
+    <div class="row" style="margin-top:0.5rem">
+      <input id="ua-pattern" placeholder="substring pattern" style="min-width:14rem" />
+      <input id="ua-comment" placeholder="comment" style="min-width:10rem" />
+      <button type="button" id="btn-ua-add">Add pattern</button>
+    </div>
+    <p id="ua-msg" class="warn"></p>
+
     <h2>CrowdSec (LAPI)</h2>
     <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in settings (see <code>install-interactive.sh</code> / docs).</small></p>
     <div class="row">
@@ -165,6 +181,8 @@
       loadApps();
       loadSettingsPanel();
       loadIpwlToggleFromSettings();
+      loadBotProtectionFromSettings();
+      loadBlockedUATable();
       initRestrictedPathRows();
     }
   }
@@ -194,6 +212,8 @@
       loadApps();
       loadSettingsPanel();
       loadIpwlToggleFromSettings();
+      loadBotProtectionFromSettings();
+      loadBlockedUATable();
       initRestrictedPathRows();
     }
   };
@@ -224,6 +244,8 @@
     loadApps();
     loadSettingsPanel();
     loadIpwlToggleFromSettings();
+    loadBotProtectionFromSettings();
+    loadBlockedUATable();
     initRestrictedPathRows();
   };
 
@@ -297,11 +319,18 @@
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
     document.getElementById('waf-basic-enabled').checked = cachedSettings.waf_basic_rules_enabled !== false;
     loadIpwlToggleFromSettings();
+    loadBotProtectionFromSettings();
   }
 
   function loadIpwlToggleFromSettings() {
     if (!cachedSettings) return;
     document.getElementById('ipwl-enabled').checked = !!cachedSettings.ipwl_enabled;
+  }
+
+  function loadBotProtectionFromSettings() {
+    if (!cachedSettings) return;
+    document.getElementById('ua-block-empty').checked = cachedSettings.block_empty_ua !== false;
+    document.getElementById('ua-blocklist-enabled').checked = !!cachedSettings.blocked_user_agents_enabled;
   }
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
   document.getElementById('btn-settings-save').onclick = async () => {
@@ -311,7 +340,9 @@
     const patch = {
       acme_email: document.getElementById('acme-email').value.trim(),
       acme_staging: document.getElementById('acme-staging').checked,
-      waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked
+      waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked,
+      block_empty_ua: document.getElementById('ua-block-empty').checked,
+      blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked
     };
     const r = await fetch('/api/v1/settings', {
       method: 'PATCH',
@@ -320,6 +351,7 @@
     });
     if (r.ok) {
       cachedSettings = await r.json();
+      loadBotProtectionFromSettings();
       document.getElementById('settings-msg').textContent = 'Saved.';
     } else {
       document.getElementById('settings-msg').textContent = await r.text();
@@ -438,6 +470,57 @@
     } else {
       document.getElementById('ipwl-msg').textContent = await r.text();
     }
+  };
+
+  document.getElementById('btn-ua-settings-save').onclick = async () => {
+    document.getElementById('ua-msg').textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) { document.getElementById('ua-msg').textContent = 'Load settings first'; return; }
+    const patch = {
+      block_empty_ua: document.getElementById('ua-block-empty').checked,
+      blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked
+    };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      loadBotProtectionFromSettings();
+      document.getElementById('ua-msg').textContent = 'Saved. Apply HAProxy to activate UA rules.';
+    } else {
+      document.getElementById('ua-msg').textContent = await r.text();
+    }
+  };
+
+  async function loadBlockedUATable() {
+    const box = document.getElementById('ua-table');
+    if (!box) return;
+    document.getElementById('ua-msg').textContent = '';
+    const r = await fetch('/api/v1/security/blocked-ua', { headers: hdr() });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('ua-msg').textContent = JSON.stringify(j); return; }
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.pattern)}</code></td><td>${esc(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    box.innerHTML = `<table><thead><tr><th>Pattern</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
+    box.querySelectorAll('[data-ua-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-ua-del');
+        const d = await fetch('/api/v1/security/blocked-ua/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
+        if (!d.ok) { document.getElementById('ua-msg').textContent = await d.text(); return; }
+        loadBlockedUATable();
+      };
+    });
+  }
+  document.getElementById('btn-ua-load').onclick = loadBlockedUATable;
+  document.getElementById('btn-ua-add').onclick = async () => {
+    document.getElementById('ua-msg').textContent = '';
+    const body = {
+      pattern: document.getElementById('ua-pattern').value.trim(),
+      comment: document.getElementById('ua-comment').value.trim()
+    };
+    const r = await fetch('/api/v1/security/blocked-ua', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    if (!r.ok) { document.getElementById('ua-msg').textContent = await r.text(); return; }
+    document.getElementById('ua-pattern').value = '';
+    document.getElementById('ua-comment').value = '';
+    loadBlockedUATable();
   };
 
   document.getElementById('save').onclick = async () => {

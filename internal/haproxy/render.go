@@ -22,15 +22,17 @@ type AppRender struct {
 
 // RenderInput is passed to the HAProxy template.
 type RenderInput struct {
-	Settings           config.GlobalSettings
-	Applications       []config.Application
-	Apps               []AppRender                   `json:"-"` // filled by Render(); enabled apps + resolved profiles
-	Certificates       map[string]config.Certificate // id -> cert
-	CRTListPath        string                        // absolute path to generated crt-list file on disk
-	IPBlacklistMapPath string
-	IPAllowlistMapPath string
-	UseIPBlacklist     bool
-	UseIPAllowlist     bool
+	Settings                 config.GlobalSettings
+	Applications             []config.Application
+	Apps                     []AppRender                   `json:"-"` // filled by Render(); enabled apps + resolved profiles
+	Certificates             map[string]config.Certificate // id -> cert
+	CRTListPath              string                        // absolute path to generated crt-list file on disk
+	IPBlacklistMapPath       string
+	IPAllowlistMapPath       string
+	UseIPBlacklist           bool
+	UseIPAllowlist           bool
+	BlockedUserAgentsMapPath string // absolute path to generated substring map (-m sub -f)
+	UseBlockedUserAgents     bool   // enabled in settings and map has at least one pattern line
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -217,6 +219,16 @@ frontend fe_https
 {{if .UseIPAllowlist}}
 	acl ipwl_white src -f {{.IPAllowlistMapPath}}
 	http-request allow if ipwl_white
+{{end}}
+{{if .Settings.BlockEmptyUA}}
+	# Empty User-Agent
+	acl empty_ua req.hdr(User-Agent) -m len 0
+	http-request deny deny_status 403 if empty_ua
+{{end}}
+{{if .UseBlockedUserAgents}}
+	# Known bad User-Agent substrings (from DB → map file)
+	acl bad_ua req.hdr(User-Agent) -m sub -i -f {{.BlockedUserAgentsMapPath}}
+	http-request deny deny_status 403 if bad_ua
 {{end}}
 {{if .UseIPBlacklist}}
 	acl ipbl_black src -f {{.IPBlacklistMapPath}}

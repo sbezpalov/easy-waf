@@ -68,6 +68,12 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.IPWLEnabled)
 	case "waf_basic_rules_enabled":
 		return json.Unmarshal(raw, &out.WAFBasicRulesEnabled)
+	case "block_empty_ua":
+		return json.Unmarshal(raw, &out.BlockEmptyUA)
+	case "blocked_user_agents_map_path":
+		return json.Unmarshal(raw, &out.BlockedUserAgentsMapPath)
+	case "blocked_user_agents_enabled":
+		return json.Unmarshal(raw, &out.BlockedUserAgentsEnabled)
 	case "management_allowed_cidrs":
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
 	default:

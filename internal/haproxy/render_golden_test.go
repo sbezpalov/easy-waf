@@ -24,18 +24,21 @@ var goldenScenarioNames = []string{
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
 	return config.GlobalSettings{
-		ACMEStaging:            true,
-		SPOEConfigPath:         spoePath,
-		HAProxyConfigPath:      "testdata/golden/state/haproxy/haproxy.cfg",
-		HAProxyBinary:          "/usr/sbin/haproxy",
-		CrowdSecEngineName:     engine,
-		GeoIPCacheTTL:          config.Duration(24 * time.Hour),
-		ACMERenewalInterval:    config.Duration(12 * time.Hour),
-		ACMEWebrootPath:        "testdata/golden/state/acme/webroot",
-		IPBlacklistMapPath:     "testdata/golden/ipbl/test.map",
-		IPBLExternalEnabled:    false,
-		WAFBasicRulesEnabled:   false,
-		ManagementAllowedCIDRs: config.DefaultManagementCIDRs(),
+		ACMEStaging:              true,
+		SPOEConfigPath:           spoePath,
+		HAProxyConfigPath:        "testdata/golden/state/haproxy/haproxy.cfg",
+		HAProxyBinary:            "/usr/sbin/haproxy",
+		CrowdSecEngineName:       engine,
+		GeoIPCacheTTL:            config.Duration(24 * time.Hour),
+		ACMERenewalInterval:      config.Duration(12 * time.Hour),
+		ACMEWebrootPath:          "testdata/golden/state/acme/webroot",
+		IPBlacklistMapPath:       "testdata/golden/ipbl/test.map",
+		IPBLExternalEnabled:      false,
+		WAFBasicRulesEnabled:     false,
+		BlockEmptyUA:             false,
+		BlockedUserAgentsEnabled: false,
+		BlockedUserAgentsMapPath: "testdata/golden/state/haproxy/blocked_ua.map",
+		ManagementAllowedCIDRs:   config.DefaultManagementCIDRs(),
 	}
 }
 
