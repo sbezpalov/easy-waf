@@ -1112,6 +1112,8 @@
       return;
     }
 
+    try {
+
     let status = {};
     try { status = await stR.json(); } catch (_) {}
     document.getElementById('dash-version').textContent = status.version && String(status.version).trim() ? String(status.version) : '—';
@@ -1121,6 +1123,7 @@
     try {
       if (appsR.ok) apps = await appsR.json();
     } catch (_) {}
+    if (!Array.isArray(apps)) apps = [];
     const en = apps.filter((a) => a.enabled).length;
     document.getElementById('dash-apps-stat').textContent = `${en} / ${apps.length}`;
 
@@ -1235,6 +1238,10 @@
 
     await loadDashTraffic();
     startDashStatsTimer();
+    } catch (e) {
+      console.error('loadDashboard', e);
+      stEl.textContent = 'Dashboard script error — open DevTools (F12) Console. ' + (e && e.message ? e.message : String(e));
+    }
   }
 
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
