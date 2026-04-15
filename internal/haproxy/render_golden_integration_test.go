@@ -28,10 +28,13 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			absSock := filepath.Join(t.TempDir(), name+"-admin.sock")
+			// HAProxy 3.x requires an absolute stats socket path, but sun_path is limited (~97 bytes).
+			// t.TempDir() already includes a long test name; keep socket filename very short.
+			d := t.TempDir()
+			absSock := filepath.Join(d, "s.sock")
 			cfgBody := rewriteStatsSocketPathForHAProxyCheck(raw, absSock)
 			cfgBody = augmentGoldenHAProxyCfgForHaproxyCheck(cfgBody)
-			tmp := filepath.Join(t.TempDir(), name+".cfg")
+			tmp := filepath.Join(d, "c.cfg")
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
 				t.Fatal(err)
 			}
