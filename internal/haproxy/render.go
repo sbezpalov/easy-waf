@@ -175,7 +175,8 @@ const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand *
 global
 	log stdout format raw local0
 	maxconn 50000
-	stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
+	stats socket {{.Settings.HAProxyStatsSocketPath}} mode 660 level admin
+	stats timeout 30s
 	pidfile /run/haproxy.pid
 
 defaults

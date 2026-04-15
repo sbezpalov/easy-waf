@@ -18,6 +18,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/geoip"
+	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
 	"github.com/easy-waf/easy-waf/internal/webui"
@@ -119,7 +120,7 @@ func RunAPI() {
 		rejectUnexpandedSystemdArg("HTTPS listen (-listen-https or EASY_WAF_LISTEN_HTTPS)", httpsAddr)
 	}
 
-	srv := &api.Server{Eng: eng, JWTSecret: jwtSecret}
+	srv := &api.Server{Eng: eng, JWTSecret: jwtSecret, HAProxyMetrics: metrics.NewHAProxyCollector()}
 	r := srv.Router()
 
 	sub, err := fs.Sub(webui.Assets, "dist")

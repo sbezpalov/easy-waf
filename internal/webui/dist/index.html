@@ -145,6 +145,8 @@
           <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">—</div><div class="dash-note">valid · expiring ≤30d · expired (+ unknown if no dates)</div></div>
           <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">—</div><div class="dash-note" id="dash-cs-sub">—</div></div>
           <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">—</div><div class="dash-note">local entries · external sources</div></div>
+          <div class="dash-card"><h3>Traffic (HAProxy)</h3><div class="dash-stat" id="dash-req-rate">—</div><div class="dash-note">requests/s (edge frontends)</div></div>
+          <div class="dash-card"><h3>Active sessions</h3><div class="dash-stat" id="dash-active-sessions">—</div><div class="dash-note">frontends · auto-refresh 10s</div></div>
           <div class="dash-card"><h3>Version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">—</div><div class="dash-note" id="dash-state-dir"></div></div>
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
@@ -152,6 +154,11 @@
           <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">—</p>
           <h3 style="margin-top:1rem">Last config activity</h3>
           <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">—</p>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>HAProxy backends (runtime)</h3>
+          <p id="dash-haproxy-err" class="warn" style="min-height:1rem"></p>
+          <div id="dash-haproxy-table"></div>
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Published applications</h3>
@@ -404,6 +411,7 @@
       return;
     }
     const panel = HASH_TO_PANEL[raw];
+    if (panel !== 'dashboard') stopDashStatsTimer();
     showTabPanel(panel);
     switch (panel) {
       case 'dashboard':
@@ -727,6 +735,56 @@
     return null;
   }
 
+  let dashStatsTimer = null;
+  function stopDashStatsTimer() {
+    if (dashStatsTimer) {
+      clearInterval(dashStatsTimer);
+      dashStatsTimer = null;
+    }
+  }
+  function startDashStatsTimer() {
+    stopDashStatsTimer();
+    dashStatsTimer = setInterval(() => { loadDashTraffic(); }, 10000);
+  }
+
+  async function loadDashTraffic() {
+    if (document.getElementById('view-app').classList.contains('hidden')) return;
+    if (panelFromHash() !== 'dashboard') return;
+    const errEl = document.getElementById('dash-haproxy-err');
+    if (errEl) errEl.textContent = '';
+    const sumR = await fetch('/api/v1/stats/summary', { headers: hdr() });
+    const haR = await fetch('/api/v1/stats/haproxy', { headers: hdr() });
+    if (sumR.status === 401 || sumR.status === 403) {
+      if (sumR.status === 401) setTok('');
+      refreshSession();
+      return;
+    }
+    if (!sumR.ok || !haR.ok) {
+      if (errEl) errEl.textContent = 'Stats unavailable (HAProxy running? stats socket path in Settings).';
+      return;
+    }
+    const sum = await sumR.json().catch(() => ({}));
+    const ha = await haR.json().catch(() => ({}));
+    if (errEl && sum.error) errEl.textContent = String(sum.error);
+    const rr = document.getElementById('dash-req-rate');
+    const as = document.getElementById('dash-active-sessions');
+    if (rr) rr.textContent = sum.req_rate != null ? Number(sum.req_rate).toFixed(1) : '—';
+    if (as) as.textContent = sum.active_sessions != null ? String(sum.active_sessions) : '—';
+    const tab = document.getElementById('dash-haproxy-table');
+    if (!tab) return;
+    const backends = Array.isArray(ha.backends) ? ha.backends : [];
+    const rows = backends.map((b) => {
+      const srv = (Array.isArray(b.servers) ? b.servers : []).map((s) => {
+        const ok = String(s.status || '').toUpperCase().startsWith('UP');
+        return `${esc(s.name)}: <span class="${ok ? 'ok' : 'warn'}">${esc(s.status || '')}</span>`;
+      }).join(', ') || '—';
+      return `<tr><td><code>${esc(b.name || '')}</code></td><td>${esc(b.status || '')}</td><td>${esc(b.health || '—')}</td><td>${b.sessions_cur != null ? esc(String(b.sessions_cur)) : '—'}</td><td style="font-size:0.85rem">${srv}</td></tr>`;
+    }).join('');
+    tab.innerHTML = rows
+      ? `<table><thead><tr><th>Backend</th><th>Status</th><th>Health</th><th>Sess</th><th>Servers</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="dash-note">No backend rows yet.</p>';
+  }
+
   async function loadDashboard() {
     const stEl = document.getElementById('dash-status');
     stEl.textContent = '';
@@ -841,6 +899,9 @@
 
     const bad = [stR, appsR, certsR, revR].filter((x) => !x.ok);
     if (bad.length) stEl.textContent = 'Some dashboard requests failed — check session or API logs.';
+
+    await loadDashTraffic();
+    startDashStatsTimer();
   }
 
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;

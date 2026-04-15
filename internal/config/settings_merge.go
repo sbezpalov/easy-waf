@@ -48,6 +48,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.SPOEConfigPath)
 	case "haproxy_config_path":
 		return json.Unmarshal(raw, &out.HAProxyConfigPath)
+	case "haproxy_stats_socket_path":
+		return json.Unmarshal(raw, &out.HAProxyStatsSocketPath)
 	case "haproxy_binary":
 		return json.Unmarshal(raw, &out.HAProxyBinary)
 	case "crowdsec_engine_name":

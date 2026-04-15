@@ -20,6 +20,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
+	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/profiles"
 )
@@ -32,6 +33,7 @@ type Server struct {
 	MgmtTLS         *mgmttls.Manager
 	MgmtTLSCertPath string
 	MgmtTLSKeyPath  string
+	HAProxyMetrics  *metrics.HAProxyCollector
 }
 
 func (s *Server) Router() chi.Router {
@@ -91,6 +93,9 @@ func (s *Server) Router() chi.Router {
 
 			r.Get("/geoip/lookup", s.geoipLookup)
 			r.Get("/geoip/stats", s.geoipStats)
+
+			r.Get("/stats/haproxy", s.handleStatsHAProxy)
+			r.Get("/stats/summary", s.handleStatsSummary)
 
 			r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 		})

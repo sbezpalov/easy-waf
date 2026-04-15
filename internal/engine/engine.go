@@ -59,6 +59,9 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 	if s.HAProxyConfigPath == "" {
 		s.HAProxyConfigPath = def.HAProxyConfigPath
 	}
+	if s.HAProxyStatsSocketPath == "" {
+		s.HAProxyStatsSocketPath = def.HAProxyStatsSocketPath
+	}
 	if s.HAProxyBinary == "" {
 		s.HAProxyBinary = def.HAProxyBinary
 	}

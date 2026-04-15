@@ -28,7 +28,7 @@
 | Требование | Статус | Где |
 |------------|--------|-----|
 | Web UI (LAN) | Partial | `internal/webui/dist/index.html` (минимальный SPA) |
-| Сертификаты, логи, статы, health | Partial / Missing | API частично есть; метрики — `internal/metrics/stub.go` |
+| Сертификаты, логи, статы, health | Partial | API + HAProxy stats socket (`internal/metrics`), `/stats/haproxy`, `/stats/summary`, Dashboard traffic/backends |
 | Backup/restore | Done | `scripts/backup.sh`, `restore.sh`, `scripts/test-backup-restore.sh`, `docs/BACKUP_RESTORE.md` |
 
 ## §3 Constraints
@@ -52,7 +52,7 @@
 | `/internal/security` | нет отдельного пакета | см. `profiles`, `api/mgmtacl`, `auth` |
 | `/internal/geoip` | `internal/geoip` | OK |
 | `/internal/crowdsec` | `internal/crowdsec` | OK |
-| `/internal/stats` | нет | см. `internal/metrics/stub.go` |
+| `/internal/stats` | `internal/metrics` (HAProxy socket) | см. `GET /api/v1/stats/*` |
 | `/web/frontend` | `internal/webui/dist` | Встраивается через `embed` |
 | `/templates/*.tmpl` | внутри `render.go` | При желании вынести в файлы |
 | `/tests` | точечные `*_test.go` + **golden** HAProxy в `internal/haproxy/testdata/golden/` | Нет отдельного дерева e2e |
@@ -75,7 +75,7 @@
 
 ### 7.7 UI страницы — **Partial** (`internal/webui/dist/index.html`: вход, смена пароля, приложения, apply, сертификаты, CrowdSec ping/decisions, settings incl. GeoIP + ACME)
 
-### 7.8 Statistics — **Missing** (заглушка `internal/metrics/stub.go`)
+### 7.8 Statistics — **Done** (`internal/metrics` — HAProxy `show stat` over Unix socket, cache 5s; API `GET /api/v1/stats/haproxy`, `GET /api/v1/stats/summary`; Dashboard traffic + backends, refresh 10s; `haproxy_stats_socket_path` + golden template)
 
 ## §8 Lessons learned
 

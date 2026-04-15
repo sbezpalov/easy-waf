@@ -163,7 +163,8 @@ sequenceDiagram
 ## Log and metrics flow
 
 - HAProxy → file → CrowdSec acquisition (user enables path in CrowdSec config; we ship samples).
-- Metrics: HAProxy Prometheus exporter (optional) or stats socket polling by `easy-waf-api` → aggregates can be stored in PostgreSQL or a time-series DB for SME dashboards.
+- **Runtime metrics:** generated `haproxy.cfg` includes a **stats Unix socket** (`stats socket … mode 660 level admin`, `stats timeout 30s`). The path defaults to `<state>/haproxy/admin.sock` and is stored in settings as **`haproxy_stats_socket_path`** (see `internal/config/types.go`). `easy-waf-api` reads **`show stat`** CSV over that socket (cached ~5s) and exposes **`GET /api/v1/stats/haproxy`** and **`GET /api/v1/stats/summary`** (`internal/metrics`, `internal/api/stats_handlers.go`). The Dashboard polls summary + detail every **10s** while the Dashboard tab is open. For permissions, the API process user typically needs membership in the **`haproxy`** group (or equivalent) so it can open the socket created by the HAProxy service.
+- Optional future: HAProxy Prometheus exporter or persistence of aggregates to PostgreSQL / TSDB for SME dashboards.
 
 ## Local UI flow
 

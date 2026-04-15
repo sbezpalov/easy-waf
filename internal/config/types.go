@@ -53,15 +53,17 @@ type Certificate struct {
 
 // GlobalSettings controls daemon and edge defaults.
 type GlobalSettings struct {
-	ACMEEmail          string   `json:"acme_email,omitempty"`
-	ACMEStaging        bool     `json:"acme_staging"`
-	CrowdSecLAPIURL    string   `json:"crowdsec_lapi_url,omitempty"`
-	CrowdSecLAPIKey    string   `json:"-"` // never serialize to JSON in logs by default
-	SPOEConfigPath     string   `json:"spoe_config_path"`
-	HAProxyConfigPath  string   `json:"haproxy_config_path"`
-	HAProxyBinary      string   `json:"haproxy_binary"`
-	CrowdSecEngineName string   `json:"crowdsec_engine_name"`
-	GeoIPCacheTTL      Duration `json:"geoip_cache_ttl"`
+	ACMEEmail         string `json:"acme_email,omitempty"`
+	ACMEStaging       bool   `json:"acme_staging"`
+	CrowdSecLAPIURL   string `json:"crowdsec_lapi_url,omitempty"`
+	CrowdSecLAPIKey   string `json:"-"` // never serialize to JSON in logs by default
+	SPOEConfigPath    string `json:"spoe_config_path"`
+	HAProxyConfigPath string `json:"haproxy_config_path"`
+	// HAProxyStatsSocketPath is the Unix socket for "show stat" (runtime metrics). Default: <state>/haproxy/admin.sock.
+	HAProxyStatsSocketPath string   `json:"haproxy_stats_socket_path,omitempty"`
+	HAProxyBinary          string   `json:"haproxy_binary"`
+	CrowdSecEngineName     string   `json:"crowdsec_engine_name"`
+	GeoIPCacheTTL          Duration `json:"geoip_cache_ttl"`
 	// GeoIPEnabled turns on batch GeoIP map generation on apply/sync and optional HAProxy fe_https deny ACL.
 	GeoIPEnabled bool `json:"geoip_enabled"`
 	// GeoIPProvider: "ipinfo" (default) or "maxmind" (stub in MVP).
@@ -113,6 +115,7 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		ACMEStaging:              true,
 		SPOEConfigPath:           "/etc/haproxy/crowdsec.cfg",
 		HAProxyConfigPath:        stateDir + "/haproxy/haproxy.cfg",
+		HAProxyStatsSocketPath:   stateDir + "/haproxy/admin.sock",
 		HAProxyBinary:            "/usr/sbin/haproxy",
 		CrowdSecEngineName:       "crowdsec",
 		GeoIPCacheTTL:            Duration(24 * time.Hour),
