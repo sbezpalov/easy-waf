@@ -52,6 +52,15 @@
       <button id="load">Refresh</button>
       <button id="apply">Apply HAProxy</button>
     </div>
+    <div class="panel" style="max-width:100%">
+      <h2>Config Revisions</h2>
+      <p><small>Successful <strong>Apply</strong> and <strong>Rollback</strong> rows; live file hash marks <strong>current</strong>. Rollback restores the saved snapshot and re-validates with <code>haproxy -c</code>.</small></p>
+      <div class="row">
+        <button type="button" class="secondary" id="btn-revisions-refresh">Refresh list</button>
+      </div>
+      <p id="revisions-msg" class="warn"></p>
+      <div id="revisions-table"></div>
+    </div>
     <h2>Applications</h2>
     <div id="apps"></div>
     <h3>Add / update</h3>
@@ -216,6 +225,7 @@
       loadBotProtectionFromSettings();
       loadBlockedUATable();
       initRestrictedPathRows();
+      loadRevisions();
     }
   }
 
@@ -247,6 +257,7 @@
       loadBotProtectionFromSettings();
       loadBlockedUATable();
       initRestrictedPathRows();
+      loadRevisions();
     }
   };
 
@@ -279,6 +290,7 @@
     loadBotProtectionFromSettings();
     loadBlockedUATable();
     initRestrictedPathRows();
+    loadRevisions();
   };
 
   document.getElementById('btn-logout').onclick = () => { setTok(''); refreshSession(); };
@@ -335,11 +347,72 @@
     const rows = j.map(a => `<tr><td>${a.name}</td><td>${a.public_host}</td><td>${a.backend_host}:${a.backend_port}</td><td>${a.profile}</td></tr>`).join('');
     document.getElementById('apps').innerHTML = `<table><thead><tr><th>Name</th><th>Host</th><th>Backend</th><th>Profile</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
-  document.getElementById('load').onclick = loadApps;
+  document.getElementById('load').onclick = async () => {
+    await loadApps();
+    loadRevisions();
+  };
   document.getElementById('apply').onclick = async () => {
     const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
-    alert(await r.text());
+    const txt = await r.text();
+    alert(txt);
+    if (r.ok) loadRevisions();
   };
+
+  function shortSha(full) {
+    if (!full || full.length < 12) return full || '';
+    return full.slice(0, 12);
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  async function loadRevisions() {
+    const msg = document.getElementById('revisions-msg');
+    const box = document.getElementById('revisions-table');
+    if (!msg || !box) return;
+    msg.textContent = '';
+    const r = await fetch('/api/v1/revisions?limit=50', { headers: hdr() });
+    if (r.status === 403) { refreshSession(); return; }
+    if (!r.ok) {
+      msg.textContent = await r.text();
+      return;
+    }
+    const rows = await r.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      box.innerHTML = '<p><small>No revisions yet. Run Apply after a successful config.</small></p>';
+      return;
+    }
+    const head = '<thead><tr><th>SHA (short)</th><th>Created</th><th>Status</th><th>Preview</th><th></th></tr></thead>';
+    const body = rows.map((row) => {
+      const st = row.is_current ? 'current' : 'previous';
+      const rb = row.is_current ? '' : `<button type="button" class="secondary btn-rollback" data-id="${row.id}" data-sha="${esc(row.sha)}">Rollback</button>`;
+      const prev = esc((row.config_snippet_preview || '').slice(0, 120));
+      const dt = esc(row.created_at || '');
+      return `<tr><td><code>${esc(shortSha(row.sha))}</code></td><td>${dt}</td><td>${st}</td><td style="font-size:11px;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.config_snippet_preview || '')}">${prev}</td><td>${rb}</td></tr>`;
+    }).join('');
+    box.innerHTML = `<table>${head}<tbody>${body}</tbody></table>`;
+    box.querySelectorAll('.btn-rollback').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-id');
+        const sha = btn.getAttribute('data-sha');
+        if (!confirm(`Rollback to revision ${shortSha(sha)}?`)) return;
+        msg.textContent = '';
+        const rr = await fetch(`/api/v1/revisions/${encodeURIComponent(id)}/rollback`, { method: 'POST', headers: hdr() });
+        const t = await rr.text();
+        if (rr.ok) {
+          msg.textContent = 'Rollback succeeded.';
+          msg.className = '';
+        } else {
+          msg.textContent = t || rr.statusText;
+          msg.className = 'warn';
+        }
+        loadRevisions();
+      };
+    });
+  }
+
+  document.getElementById('btn-revisions-refresh').onclick = () => loadRevisions();
   let cachedSettings = null;
 
   function parseCountryListText(s) {

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -200,6 +202,42 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	return haproxy.Render(ri)
 }
 
+func sha256HexBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func sha256HexFile(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return sha256HexBytes(b), nil
+}
+
+// LiveHAProxySHA256 returns the sha256 hex digest of the current live haproxy.cfg.
+func (e *Engine) LiveHAProxySHA256() (string, error) {
+	_, cfgPath, _ := haproxy.Paths(e.StateDir)
+	return sha256HexFile(cfgPath)
+}
+
+func (e *Engine) reloadAppendRevisionAndAudit(ctx context.Context, label, sha256Hex, cfgPath, auditAction string, auditDetail map[string]any) error {
+	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
+		if err := e.Store.AppendRevision(ctx, label, sha256Hex, cfgPath); err != nil {
+			return err
+		}
+		auditDetail["skipped_reload"] = true
+		return e.Store.AppendAudit(ctx, auditAction, auditDetail)
+	}
+	if err := apply.ReloadHAProxy(); err != nil {
+		return err
+	}
+	if err := e.Store.AppendRevision(ctx, label, sha256Hex, cfgPath); err != nil {
+		return err
+	}
+	return e.Store.AppendAudit(ctx, auditAction, auditDetail)
+}
+
 // Apply renders, validates with haproxy -c, writes atomically, records revision, reloads.
 func (e *Engine) Apply(ctx context.Context, label string) error {
 	r, err := e.RenderFromStore(ctx)
@@ -230,17 +268,50 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 	if err := apply.WriteAtomic(cfgPath, []byte(r.HAProxyConfig), 0o640); err != nil {
 		return err
 	}
-	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
-		if err := e.Store.AppendRevision(ctx, label, r.SHA256, cfgPath); err != nil {
-			return err
+	return e.reloadAppendRevisionAndAudit(ctx, label, r.SHA256, cfgPath, "apply", map[string]any{"sha256": r.SHA256, "path": cfgPath})
+}
+
+// Rollback restores live haproxy.cfg from the on-disk snapshot for a stored revision,
+// runs haproxy -c, reloads, and appends a new revision row labeled rollback from <short sha>.
+func (e *Engine) Rollback(ctx context.Context, revisionID int64) error {
+	rev, err := e.Store.GetConfigRevision(ctx, revisionID)
+	if err != nil {
+		return err
+	}
+	if len(rev.HAProxySHA256) < 12 {
+		return fmt.Errorf("invalid stored revision hash")
+	}
+	snapPath := filepath.Join(e.StateDir, "revisions", fmt.Sprintf("haproxy-%s.cfg", rev.HAProxySHA256[:12]))
+	b, err := os.ReadFile(snapPath)
+	if err != nil {
+		return fmt.Errorf("revision snapshot not found: %w", err)
+	}
+	got := sha256HexBytes(b)
+	if got != rev.HAProxySHA256 {
+		return fmt.Errorf("revision snapshot corrupt: sha256 mismatch")
+	}
+	_, cfgPath, _ := haproxy.Paths(e.StateDir)
+	if curSHA, err := sha256HexFile(cfgPath); err == nil && curSHA == got {
+		return fmt.Errorf("already using this configuration")
+	}
+	staging := cfgPath + ".staging"
+	if err := apply.WriteAtomic(staging, b, 0o640); err != nil {
+		return err
+	}
+	if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
+		if err := apply.Validate(e.Settings.HAProxyBinary, staging); err != nil {
+			return fmt.Errorf("validation failed: %w", err)
 		}
-		return e.Store.AppendAudit(ctx, "apply", map[string]any{"sha256": r.SHA256, "skipped_reload": true})
 	}
-	if err := apply.ReloadHAProxy(); err != nil {
+	if err := apply.WriteAtomic(cfgPath, b, 0o640); err != nil {
 		return err
 	}
-	if err := e.Store.AppendRevision(ctx, label, r.SHA256, cfgPath); err != nil {
-		return err
+	label := fmt.Sprintf("rollback from %s", rev.HAProxySHA256[:12])
+	detail := map[string]any{
+		"sha256":           got,
+		"path":             cfgPath,
+		"from_revision_id": revisionID,
+		"from_label":       rev.Label,
 	}
-	return e.Store.AppendAudit(ctx, "apply", map[string]any{"sha256": r.SHA256, "path": cfgPath})
+	return e.reloadAppendRevisionAndAudit(ctx, label, got, cfgPath, "rollback", detail)
 }

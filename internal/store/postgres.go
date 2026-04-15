@@ -228,6 +228,57 @@ func (s *Store) AppendRevision(ctx context.Context, label, sha256, path string) 
 	return err
 }
 
+// ConfigRevision is one row in config_revisions (HAProxy cfg snapshot metadata).
+type ConfigRevision struct {
+	ID            int64
+	At            time.Time
+	Label         string
+	HAProxySHA256 string
+	ContentPath   string
+}
+
+// ListConfigRevisions returns the newest rows first (id DESC).
+func (s *Store) ListConfigRevisions(ctx context.Context, limit int) ([]ConfigRevision, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, at, label, haproxy_sha256, content_path
+		FROM config_revisions ORDER BY id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ConfigRevision
+	for rows.Next() {
+		var r ConfigRevision
+		var label sql.NullString
+		if err := rows.Scan(&r.ID, &r.At, &label, &r.HAProxySHA256, &r.ContentPath); err != nil {
+			return nil, err
+		}
+		r.Label = label.String
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetConfigRevision returns a single revision by primary key.
+func (s *Store) GetConfigRevision(ctx context.Context, id int64) (ConfigRevision, error) {
+	var r ConfigRevision
+	var label sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, at, label, haproxy_sha256, content_path
+		FROM config_revisions WHERE id = $1`, id).Scan(&r.ID, &r.At, &label, &r.HAProxySHA256, &r.ContentPath)
+	if err != nil {
+		return ConfigRevision{}, err
+	}
+	r.Label = label.String
+	return r, nil
+}
+
 // ListCertificates returns all certificate rows.
 func (s *Store) ListCertificates(ctx context.Context) ([]config.Certificate, error) {
 	rows, err := s.db.QueryContext(ctx, `

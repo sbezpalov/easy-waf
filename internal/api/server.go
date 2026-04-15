@@ -65,6 +65,8 @@ func (s *Server) Router() chi.Router {
 			r.Get("/certificates", s.listCerts)
 			r.Post("/certificates", s.upsertCert)
 			r.Post("/apply", s.apply)
+			r.Get("/revisions", s.listRevisions)
+			r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
 			r.Get("/integrations/crowdsec", s.crowdsecStatus)
 			r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
 			r.Get("/settings", s.getSettings)
