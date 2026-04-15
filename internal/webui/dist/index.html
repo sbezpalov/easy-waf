@@ -1222,7 +1222,11 @@
         }).join('');
         svcBox.innerHTML = '<table><thead><tr><th>Unit</th><th>Role</th><th>Active</th></tr></thead><tbody>' + srows + '</tbody></table>';
       } else {
-        svcBox.innerHTML = '<p class="dash-note">Service status unavailable or empty response.</p>';
+        const http = svcR && typeof svcR.status === 'number' ? ' HTTP ' + svcR.status : '';
+        svcBox.innerHTML =
+          '<p class="dash-note">Service status unavailable or empty response.' +
+          http +
+          '. If you see <strong>404</strong>, rebuild and restart <code>easy-waf-api</code> (old binary has no <code>/api/v1/system/services</code>).</p>';
       }
     }
 

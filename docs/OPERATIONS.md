@@ -59,6 +59,27 @@ sudo systemctl restart easy-waf-api.service
 
 Жёсткое обновление страницы в браузере: **Ctrl+F5** (без кэша). Старый процесс `easy-waf-api` продолжает отдавать старый embed до рестарта.
 
+### Дашборд: блок «Core services (systemd)» пустой или «unavailable»
+
+1. **Войдите в UI** и откройте вкладку **Dashboard**. Запрос идёт с JWT; при истёкшей сессии дашборд частично не загрузится — перелогиньтесь.
+2. **Проверьте ответ API на хосте** (подставьте порт из `EASY_WAF_LISTEN_HTTP` в `/etc/easy-waf/easy-waf.env`, часто `8000`):
+   ```bash
+   curl -sS -X POST "http://127.0.0.1:8000/api/v1/auth/login" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"ВАШ_ЛОГИН","password":"ВАШ_ПАРОЛЬ"}'
+   ```
+   Скопируйте `token` из JSON, затем:
+   ```bash
+   curl -sS -o /tmp/svc.json -w "HTTP %{http_code}\n" \
+     -H "Authorization: Bearer ТОКЕН" \
+     "http://127.0.0.1:8000/api/v1/system/services"
+   cat /tmp/svc.json
+   ```
+   - **404** — на диске старый `easy-waf-api` без маршрута: пересоберите и переустановите бинарник, **`systemctl restart easy-waf-api`**, снова **Ctrl+F5** в браузере.
+   - **401 / 403** — неверный пароль или **обязательная смена начального пароля**; выполните смену пароля в UI, затем обновите дашборд.
+   - **200** и в JSON есть массив `services` — API в порядке; если таблицы в браузере всё равно нет, откройте инструменты разработчика → **Network** → запрос `system/services` (кэш, другой origin, блокировка расширениями).
+3. **Юнит `easy-waf-api`**: актуальный шаблон в репозитории — `packaging/systemd/easy-waf-api.service` (для `systemctl show` из процесса API нужна запись в **`/run`** в `ReadWritePaths`). После правки unit: **`systemctl daemon-reload`** и **restart**.
+
 Изменения только в **`scripts/install.sh`** (например `ensure_haproxy_systemd_enabled`) на уже установленной системе: либо повторить нужный фрагмент вручную (`sudo systemctl enable haproxy.service`), либо снова запустить установщик с осторожностью к уже настроенным файлам — см. [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Profiles vs generated rules
