@@ -4,10 +4,13 @@ name: CI
 # deb-family-ci в Ubuntu 24.04 (apt) проверяет те же ворота на DEB‑семействе.
 # Поле runs-on — лишь тип ВМ GitHub (хост); среда job — container image.
 #
-# Пакеты ставятся ПЕРВЫМ шагом (до checkout): в контейнере JS-actions (checkout, setup-go,
-# golangci-lint) требуют git + Node в PATH.
+# Пакеты ставятся ПЕРВЫМ шагом (до checkout): в контейнере JS-actions (checkout, setup-go)
+# требуют git + Node в PATH. golangci-lint запускаем shell-шагом внутри контейнера (без
+# golangci-lint-action: у него бывают сбои docker exec / prepare на не-Ubuntu образах).
 #
 # Три блока «dnf» ниже держите синхронными по смыслу (общий базовый набор + профиль job).
+# Alma minimal: сначала dnf install --allowerasing coreutils (снять coreutils-single), затем
+# остальные пакеты тоже с --allowerasing — иначе транзакции с nodejs/gcc тянут coreutils и падают.
 # Блок apt в deb-family-ci держите эквивалентным по смыслу (инструменты сборки + HAProxy).
 
 on:
@@ -19,7 +22,7 @@ on:
 permissions:
   contents: read
 
-# Use Node.js 24 for GitHub-hosted JavaScript actions (checkout, setup-go, golangci-lint-action).
+# Use Node.js 24 for GitHub-hosted JavaScript actions (checkout, setup-go).
 # See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -37,10 +40,11 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          dnf -y install \
+          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
+          dnf -y install --allowerasing coreutils
+          dnf -y install --allowerasing \
             bash \
             bzip2 \
-            coreutils \
             diffutils \
             file \
             findutils \
@@ -59,12 +63,12 @@ jobs:
             unzip \
             which \
             zlib-devel
-          # Node.js — для checkout / setup-go / golangci-lint-action
-          if ! dnf -y install nodejs npm; then
+          # Node.js — для checkout / setup-go (JS actions)
+          if ! dnf -y install --allowerasing nodejs npm; then
             dnf config-manager --enable crb 2>/dev/null || true
             dnf -y module reset nodejs 2>/dev/null || true
             dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install nodejs npm
+            dnf -y install --allowerasing nodejs npm
           fi
 
       - uses: actions/checkout@v4
@@ -78,10 +82,12 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62.2
-          args: --timeout=5m
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b /usr/local/bin v1.62.2
+          golangci-lint --version
+          golangci-lint run ./... --timeout=5m
 
       - name: HAProxy render golden fixtures
         run: go test ./internal/haproxy/... -run Golden -count=1
@@ -101,10 +107,11 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          dnf -y install \
+          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
+          dnf -y install --allowerasing coreutils
+          dnf -y install --allowerasing \
             bash \
             bzip2 \
-            coreutils \
             diffutils \
             findutils \
             git \
@@ -117,11 +124,11 @@ jobs:
             tzdata \
             unzip \
             which
-          if ! dnf -y install nodejs npm; then
+          if ! dnf -y install --allowerasing nodejs npm; then
             dnf config-manager --enable crb 2>/dev/null || true
             dnf -y module reset nodejs 2>/dev/null || true
             dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install nodejs npm
+            dnf -y install --allowerasing nodejs npm
           fi
 
       - uses: actions/checkout@v4
@@ -158,10 +165,11 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          dnf -y install \
+          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
+          dnf -y install --allowerasing coreutils
+          dnf -y install --allowerasing \
             bash \
             bzip2 \
-            coreutils \
             diffutils \
             file \
             findutils \
@@ -181,11 +189,11 @@ jobs:
             unzip \
             which \
             zlib-devel
-          if ! dnf -y install nodejs npm; then
+          if ! dnf -y install --allowerasing nodejs npm; then
             dnf config-manager --enable crb 2>/dev/null || true
             dnf -y module reset nodejs 2>/dev/null || true
             dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install nodejs npm
+            dnf -y install --allowerasing nodejs npm
           fi
 
       - uses: actions/checkout@v4
@@ -235,10 +243,12 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62.2
-          args: --timeout=5m
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b /usr/local/bin v1.62.2
+          golangci-lint --version
+          golangci-lint run ./... --timeout=5m
 
       - name: HAProxy render golden fixtures
         run: go test ./internal/haproxy/... -run Golden -count=1
