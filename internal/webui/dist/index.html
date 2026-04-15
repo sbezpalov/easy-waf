@@ -178,7 +178,9 @@
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Core services (systemd)</h3>
-          <p class="dash-note">Состояние юнитов на хосте API: <code>systemctl show -p ActiveState</code> (с запасным <code>is-active</code>). Если везде <span class="warn">unknown</span> — нет <code>/usr/bin/systemctl</code>, недоступен D-Bus к org.freedesktop.systemd1 (SELinux/polkit) или пересоберите API после обновления. / Live unit state on the API host; all <span class="warn">unknown</span> → check systemctl path, D-Bus/SELinux, and that <code>easy-waf-api</code> was rebuilt and restarted.</p>
+          <p class="dash-note" style="margin-bottom:0.35rem">На хосте API, от имени <code>easy-waf</code>: <code>systemctl show -p ActiveState</code>, при пустом ответе — <code>is-active</code>.</p>
+          <p class="dash-note" style="margin-top:0">Если везде <span class="warn">unknown</span>: нет <code>systemctl</code> в стандартных путях; D-Bus к systemd недоступен из процесса API (проверьте юнит: запись в <code>/run</code>, SELinux); либо после обновления не переустановлен юнит / не перезапущен <code>easy-waf-api</code>.</p>
+          <p class="dash-note" style="margin-top:0.5rem;color:#8b949e">Live state on the API host as <code>easy-waf</code>. All <span class="warn">unknown</span>: missing <code>systemctl</code>, D-Bus to systemd blocked (unit needs <code>/run</code> writable, check SELinux), or service not redeployed/restarted after upgrade.</p>
           <div id="dash-services"></div>
         </div>
         <div class="panel" style="max-width:100%">
