@@ -34,4 +34,4 @@ ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 
 ## 4. Согласованность с CI
 
-Эталон проверок — **Linux** (`make ci` на Alma или GitHub Actions). На Windows перед пушем имеет смысл прогнать те же шаги из **Git Bash / WSL** (см. `.cursor/rules/easy-waf-verify-after-edits.mdc`).
+Эталон проверок — **AlmaLinux 10** (`make ci` на пилоте и **GitHub Actions**: job’ы выполняются в контейнере `almalinux:10`, см. `.github/workflows/ci.yml`). На Windows перед пушем имеет смысл прогнать те же шаги из **Git Bash / WSL** (см. `.cursor/rules/easy-waf-verify-after-edits.mdc`).

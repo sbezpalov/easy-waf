@@ -1,8 +1,13 @@
 name: CI
 
-# Product target OS is AlmaLinux (dnf, layout under /etc, /var/lib). GitHub provides Ubuntu-based
-# hosted runners (runs-on: ubuntu-latest); apt-get in this workflow is only for CI HAProxy installs.
-# Authoritative HAProxy/package checks: Alma host or pilot waf-dev (see docs/DEV_HOST.md).
+# Prod и dev — AlmaLinux 10 (dnf). Все шаги ниже выполняются в контейнере AlmaLinux 10,
+# чтобы пакеты и HAProxy совпадали с целевой ОС. Поле runs-on — лишь тип ВМ GitHub
+# (хост); среда выполнения job — image: almalinux:10.
+#
+# Пакеты ставятся ПЕРВЫМ шагом (до checkout): в контейнере JS-actions (checkout, setup-go,
+# golangci-lint) требуют git + Node в PATH.
+#
+# Три блока «dnf» ниже держите синхронными по смыслу (общий базовый набор + профиль job).
 
 on:
   push:
@@ -21,7 +26,46 @@ env:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    container:
+      image: almalinux:10
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Install OS packages (AlmaLinux 10, before checkout)
+        run: |
+          set -euo pipefail
+          dnf -y install ca-certificates curl dnf-plugins-core
+          dnf -y install \
+            bash \
+            bzip2 \
+            coreutils \
+            diffutils \
+            file \
+            findutils \
+            gcc \
+            gcc-c++ \
+            git \
+            glibc-devel \
+            grep \
+            gzip \
+            make \
+            openssl \
+            procps-ng \
+            sed \
+            tar \
+            tzdata \
+            unzip \
+            which \
+            zlib-devel
+          # Node.js — для checkout / setup-go / golangci-lint-action
+          if ! dnf -y install nodejs npm; then
+            dnf config-manager --enable crb 2>/dev/null || true
+            dnf -y module reset nodejs 2>/dev/null || true
+            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
+            dnf -y install nodejs npm
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -46,8 +90,45 @@ jobs:
 
   verify:
     runs-on: ubuntu-latest
+    container:
+      image: almalinux:10
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Install OS packages (AlmaLinux 10, before checkout)
+        run: |
+          set -euo pipefail
+          dnf -y install ca-certificates curl dnf-plugins-core
+          dnf -y install \
+            bash \
+            bzip2 \
+            coreutils \
+            diffutils \
+            findutils \
+            git \
+            grep \
+            gzip \
+            openssl \
+            procps-ng \
+            sed \
+            tar \
+            tzdata \
+            unzip \
+            which
+          if ! dnf -y install nodejs npm; then
+            dnf config-manager --enable crb 2>/dev/null || true
+            dnf -y module reset nodejs 2>/dev/null || true
+            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
+            dnf -y install nodejs npm
+          fi
+
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
 
       - name: Linux artifact + shell LF checks
         run: bash scripts/check-linux-artifacts.sh
@@ -66,18 +147,52 @@ jobs:
 
   haproxy-config-test:
     runs-on: ubuntu-latest
+    container:
+      image: almalinux:10
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Install OS packages + HAProxy (AlmaLinux 10, before checkout)
+        run: |
+          set -euo pipefail
+          dnf -y install ca-certificates curl dnf-plugins-core
+          dnf -y install \
+            bash \
+            bzip2 \
+            coreutils \
+            diffutils \
+            file \
+            findutils \
+            gcc \
+            gcc-c++ \
+            git \
+            glibc-devel \
+            grep \
+            gzip \
+            haproxy \
+            make \
+            openssl \
+            procps-ng \
+            sed \
+            tar \
+            tzdata \
+            unzip \
+            which \
+            zlib-devel
+          if ! dnf -y install nodejs npm; then
+            dnf config-manager --enable crb 2>/dev/null || true
+            dnf -y module reset nodejs 2>/dev/null || true
+            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
+            dnf -y install nodejs npm
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22.x"
           cache: true
-
-      - name: Install HAProxy (CI runner only; production uses AlmaLinux/dnf)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y haproxy
 
       - name: go test internal/haproxy (includes haproxy -c validation)
         run: go test ./internal/haproxy/... -v -count=1
