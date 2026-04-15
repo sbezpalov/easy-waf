@@ -1,5 +1,7 @@
 # Easy Home WAF — Architecture
 
+**Версия документа / продукта:** согласовано с корневым [`VERSION`](../VERSION) (**1.0.0-rc1**, MVP). Матрица приёмки **AC-01…AC-10:** [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9.
+
 ## Product / technical vision
 
 **Easy Home WAF** is a single-purpose **secure publishing gateway** for homelab and smart-home users: one TLS entry (HAProxy), observable traffic, CrowdSec-backed decisions, local management UI, and ACME automation—without cloud control planes. The product optimizes for **predictable operations** (atomic config apply, rollback, audit) over feature breadth.

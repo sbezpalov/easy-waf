@@ -1,4 +1,4 @@
-.PHONY: build test lint check-linux verify shellcheck-sh test-backup-restore-e2e ci install-help clean-artifacts golden-update
+.PHONY: build test lint check-linux verify shellcheck-sh test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml (install.sh … vX.Y.Z).
@@ -55,6 +55,8 @@ lint:
 
 # Same gates as .github/workflows/ci.yml
 ci: lint test verify
+
+clean: clean-artifacts
 
 clean-artifacts:
 	bash scripts/clean-artifacts.sh

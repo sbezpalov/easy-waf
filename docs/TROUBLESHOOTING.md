@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Документ соответствует ветке релиза **1.0.0-rc1** (см. [`VERSION`](../VERSION)).
+
 ## `$'\r': command not found` when running a `*.sh` script
 
 The file has **Windows CRLF** line endings. On the appliance:

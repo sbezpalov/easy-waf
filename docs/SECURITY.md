@@ -1,5 +1,7 @@
 # Security Guide
 
+Актуально для релиза из корневого [`VERSION`](../VERSION) (**1.0.0-rc1**, MVP). Критерии приёмки по SELinux / ACL: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
+
 ## Principles
 
 - **Least privilege**: user `easy-waf` owns `/var/lib/easy-waf` and generated files; HAProxy runs as `haproxy`; PostgreSQL uses a dedicated DB role with minimal privileges.

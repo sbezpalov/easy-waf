@@ -2,6 +2,8 @@
 
 This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting generated config, manual validation, and toggles used during debugging.
 
+**Версия:** [`VERSION`](../VERSION) — **1.0.0-rc1** (MVP).
+
 ## Layout (defaults)
 
 | Artifact | Path |

@@ -2,6 +2,8 @@
 
 **Target:** AlmaLinux 10 / RHEL-family, or **Debian / Ubuntu** (server install), **root** on the appliance.
 
+**Версия поставки:** см. корневой [`VERSION`](../VERSION) в репозитории (MVP **1.0.0-rc1**); `scripts/install.sh` использует его для попытки скачать готовые бинарники с GitHub Releases.
+
 ## One-command install
 
 From the repo root on the VM:

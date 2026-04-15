@@ -1,5 +1,7 @@
 # Deployment: AlmaLinux / Debian-family, OVF/OVA, distribution
 
+**Версия:** корневой [`VERSION`](../VERSION) (**1.0.0-rc1** для текущего MVP); инсталлятор подставляет его при загрузке релизных артефактов.
+
 ## Development (Windows) vs deployment (Linux)
 
 Typical workflow for this project:

@@ -6,6 +6,8 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 
 **Target platform:** AlmaLinux 10 or **Debian/Ubuntu** (22.04+ / 12+), HAProxy 3.x (distro build), systemd, firewalld; **SELinux Enforcing** on RHEL-family images.
 
+**Release / installer:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub release и документов; для MVP зафиксировано **1.0.0-rc1** (см. [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) §9).
+
 ## Documentation
 
 | Doc | Description |
