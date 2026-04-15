@@ -2,7 +2,31 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set).
+Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`reset-appliance -bootstrap-credentials`**, which reads **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) to discover the role name and host.
+
+## Automated appliance reset (dev / lab)
+
+**`-bootstrap-credentials`** (run as **root** via `sudo`): one command to align PostgreSQL and easy-waf after a broken or unknown DB password:
+
+1. Reads **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (override path with **`-env-file`**).
+2. Runs **`ALTER USER … PASSWORD`** as the OS **`postgres`** superuser (`runuser -u postgres psql` — local cluster only; host in the URL must be **`127.0.0.1`**, **`localhost`**, **`::1`**, or empty for socket).
+3. Generates two random **19-character** secrets (alphanumeric): new **database role password** and new **`EASY_WAF_ADMIN_TOKEN`**, writes them into the env file.
+4. Truncates configuration tables and clears generated state under **`/var/lib/easy-waf`** (same as a normal reset).
+5. Writes **`/root/easy-waf-bootstrap-credentials.txt`** (mode **0600**) with the new **`DATABASE_URL`** and token — **copy, then delete** the file.
+
+The **GUI operator** is recreated on first **`easy-waf-api`** start as **`admin` / `admin`** (unchanged factory login) — change it in the UI.
+
+```bash
+sudo /usr/sbin/easy-waf-admin reset-appliance -confirm RESET -bootstrap-credentials
+sudo systemctl restart easy-waf-api easy-waf-acmed
+sudo cat /root/easy-waf-bootstrap-credentials.txt
+# after saving secrets to your vault:
+sudo rm -f /root/easy-waf-bootstrap-credentials.txt
+```
+
+Optional: **`-credentials-out /path/to/file.txt`** (default **`/root/easy-waf-bootstrap-credentials.txt`**).
+
+**Remote PostgreSQL** is not supported by **`-bootstrap-credentials`** (host must be local). On external DB appliances, rotate the role password on the DB server, update **`DATABASE_URL`** manually, then run **`reset-appliance -confirm RESET`** without **`-bootstrap-credentials`**.
 
 ## `reset-control-panel-access`
 
@@ -64,7 +88,9 @@ cd ~/easy-waf && git pull && make build
 sudo install -m 0755 -t /usr/sbin dist/easy-waf-admin
 ```
 
-After a wipe, ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, the default operator **`admin` / `admin`** is recreated — change the password in the UI.
+After a normal wipe (without **`-bootstrap-credentials`**), ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, the default operator **`admin` / `admin`** is recreated — change the password in the UI.
+
+With **`-bootstrap-credentials`**, **`DATABASE_URL`** is already updated; only restart services and handle the credentials file as above.
 
 ## `factory-reset` (legacy)
 
@@ -76,6 +102,8 @@ sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
 
 Optional **`-database-url`** works the same as for **`reset-appliance`** (see above).
+
+**`-bootstrap-credentials`** is also accepted on **`factory-reset`** (with **`-i-am-sure=true`**).
 
 ## Environment bypass (lockout)
 

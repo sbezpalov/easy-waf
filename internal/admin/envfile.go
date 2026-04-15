@@ -40,6 +40,26 @@ func UpsertEnvKey(path, key, value string) error {
 	return os.WriteFile(path, []byte(out), 0o640)
 }
 
+// ReadEnvKey returns the value for KEY in a line-oriented env file (first match). Empty if missing or unreadable.
+func ReadEnvKey(path, key string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	prefix := key + "="
+	raw := strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n")
+	for _, line := range raw {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimSpace(trimmed[len(prefix):]), nil
+		}
+	}
+	return "", nil
+}
+
 // RemoveEnvKey drops KEY=value lines (e.g. deprecated EASY_WAF_LISTEN after split HTTP/HTTPS).
 func RemoveEnvKey(path, key string) error {
 	b, err := os.ReadFile(path)
