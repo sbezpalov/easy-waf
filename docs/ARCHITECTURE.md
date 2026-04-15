@@ -80,7 +80,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 1. TLS terminates on HAProxy; SNI / Host routes to backend.
 2. SPOE asks CrowdSec bouncer for decision (engine name aligned with SPOE file).
-3. ACLs enforce rate limits, path blocks, geo (via stick-table / maps populated by `easy-wafd` or Lua-less patterns—MVP uses ACL + external map files refreshed periodically).
+3. ACLs enforce rate limits, path blocks, optional **basic WAF** regex ACLs on `fe_https` (`waf_basic_rules_enabled`, SQLi/XSS/traversal), geo (via stick-table / maps populated by `easy-wafd` or Lua-less patterns—MVP uses ACL + external map files refreshed periodically).
 4. HAProxy logs to files/socket; CrowdSec parses; decisions feed bouncer.
 5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists, and **IPWL** allowlist map from `ipwl_local`, before each HAProxy render.
 

@@ -38,6 +38,13 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 		return err
 	}
 	def := config.DefaultSettings(e.StateDir)
+	var settingsKeyProbe struct {
+		WAFBasic *bool `json:"waf_basic_rules_enabled"`
+	}
+	_ = json.Unmarshal([]byte(raw), &settingsKeyProbe)
+	if settingsKeyProbe.WAFBasic == nil {
+		s.WAFBasicRulesEnabled = def.WAFBasicRulesEnabled
+	}
 	if s.HAProxyConfigPath == "" {
 		s.HAProxyConfigPath = def.HAProxyConfigPath
 	}

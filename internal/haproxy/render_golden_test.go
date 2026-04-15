@@ -17,6 +17,8 @@ var goldenScenarioNames = []string{
 	"full-stack",
 	"strict-profile",
 	"trusted-lan",
+	"waf-rules-enabled",
+	"waf-rules-disabled",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -31,6 +33,7 @@ func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
 		ACMEWebrootPath:        "testdata/golden/state/acme/webroot",
 		IPBlacklistMapPath:     "testdata/golden/ipbl/test.map",
 		IPBLExternalEnabled:    false,
+		WAFBasicRulesEnabled:   false,
 		ManagementAllowedCIDRs: config.DefaultManagementCIDRs(),
 	}
 }
@@ -187,6 +190,50 @@ func goldenFixture(name string) RenderInput {
 			},
 			CRTListPath: "testdata/golden/trusted-lan.crt-list.txt",
 		}
+	case "waf-rules-enabled":
+		gs := goldenGlobalSettings(spoeMin, "crowdsec")
+		gs.WAFBasicRulesEnabled = true
+		return RenderInput{
+			Settings:       gs,
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "w1",
+					Name:          "WAF on",
+					PublicHost:    "waf-on.example.com",
+					BackendHost:   "10.0.0.1",
+					BackendPort:   8080,
+					Profile:       "balanced",
+					CertificateID: "c1",
+					Enabled:       true,
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"c1": {ID: "c1", BundlePath: certA},
+			},
+			CRTListPath: "testdata/golden/waf-rules-enabled.crt-list.txt",
+		}
+	case "waf-rules-disabled":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "w0",
+					Name:          "WAF off",
+					PublicHost:    "waf-off.example.com",
+					BackendHost:   "10.0.0.1",
+					BackendPort:   8080,
+					Profile:       "balanced",
+					CertificateID: "c1",
+					Enabled:       true,
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"c1": {ID: "c1", BundlePath: certA},
+			},
+			CRTListPath: "testdata/golden/waf-rules-disabled.crt-list.txt",
+		}
 	default:
 		return RenderInput{}
 	}
@@ -256,4 +303,49 @@ func truncateMsg(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func TestGoldenWAFRuleScenarios(t *testing.T) {
+	t.Run("waf-rules-enabled", func(t *testing.T) {
+		in := goldenFixture("waf-rules-enabled")
+		if in.Settings.SPOEConfigPath == "" {
+			t.Fatal("fixture waf-rules-enabled missing")
+		}
+		if !in.Settings.WAFBasicRulesEnabled {
+			t.Fatal("expected WAFBasicRulesEnabled true")
+		}
+		gotR, err := Render(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := gotR.HAProxyConfig
+		for _, needle := range []string{
+			"acl waf_sqli ",
+			"acl waf_sqli_path",
+			"acl waf_xss ",
+			"acl waf_xss_path",
+			"acl waf_traversal",
+			"http-request deny deny_status 403 if waf_sqli or waf_sqli_path or waf_xss or waf_xss_path or waf_traversal",
+		} {
+			if !strings.Contains(cfg, needle) {
+				t.Fatalf("expected rendered config to contain %q", needle)
+			}
+		}
+	})
+	t.Run("waf-rules-disabled", func(t *testing.T) {
+		in := goldenFixture("waf-rules-disabled")
+		if in.Settings.SPOEConfigPath == "" {
+			t.Fatal("fixture waf-rules-disabled missing")
+		}
+		if in.Settings.WAFBasicRulesEnabled {
+			t.Fatal("expected WAFBasicRulesEnabled false")
+		}
+		gotR, err := Render(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(gotR.HAProxyConfig, "acl waf_sqli") {
+			t.Fatal("WAF ACLs must be absent when waf_basic_rules_enabled is false")
+		}
+	})
 }

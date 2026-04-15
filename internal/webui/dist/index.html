@@ -118,6 +118,7 @@
     <div class="row">
       <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
       <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
+      <label><input id="waf-basic-enabled" type="checkbox" checked /> Basic WAF rules (SQLi/XSS/traversal)</label>
       <button type="button" id="btn-settings-load">Load</button>
       <button type="button" id="btn-settings-save">Save</button>
     </div>
@@ -252,6 +253,7 @@
     cachedSettings = await r.json();
     document.getElementById('acme-email').value = cachedSettings.acme_email || '';
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
+    document.getElementById('waf-basic-enabled').checked = cachedSettings.waf_basic_rules_enabled !== false;
     loadIpwlToggleFromSettings();
   }
 
@@ -266,7 +268,8 @@
     if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
     const patch = {
       acme_email: document.getElementById('acme-email').value.trim(),
-      acme_staging: document.getElementById('acme-staging').checked
+      acme_staging: document.getElementById('acme-staging').checked,
+      waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked
     };
     const r = await fetch('/api/v1/settings', {
       method: 'PATCH',

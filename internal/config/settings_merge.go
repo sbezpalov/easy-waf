@@ -66,6 +66,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.IPAllowlistMapPath)
 	case "ipwl_enabled":
 		return json.Unmarshal(raw, &out.IPWLEnabled)
+	case "waf_basic_rules_enabled":
+		return json.Unmarshal(raw, &out.WAFBasicRulesEnabled)
 	case "management_allowed_cidrs":
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
 	default:
