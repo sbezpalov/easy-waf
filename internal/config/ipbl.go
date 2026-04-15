@@ -14,13 +14,13 @@ type IPBLLocalEntry struct {
 
 // IPBLExternalSource is a downloadable blocklist (plain text, one IP/CIDR per line).
 type IPBLExternalSource struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	URL             string     `json:"url"`
-	Enabled         bool       `json:"enabled"`
-	RefreshSeconds  int        `json:"refresh_seconds"`
-	LastFetchAt     *time.Time `json:"last_fetch_at,omitempty"`
-	LastError       string     `json:"last_error,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	URL            string     `json:"url"`
+	Enabled        bool       `json:"enabled"`
+	RefreshSeconds int        `json:"refresh_seconds"`
+	LastFetchAt    *time.Time `json:"last_fetch_at,omitempty"`
+	LastError      string     `json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }

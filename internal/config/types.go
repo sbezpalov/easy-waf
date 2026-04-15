@@ -4,56 +4,56 @@ import "time"
 
 // Application is a published hostname → backend mapping (source of truth fragment).
 type Application struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	PublicHost   string `json:"public_host"`
-	BackendHost  string `json:"backend_host"`
-	BackendPort  int    `json:"backend_port"`
-	BackendHTTPS bool   `json:"backend_https"`
-	WebSocket    bool   `json:"websocket"`
-	HealthPath   string `json:"health_path,omitempty"`
-	PathPrefix   string `json:"path_prefix,omitempty"`
-	Profile      string `json:"profile"`
-	CertificateID string `json:"certificate_id,omitempty"`
-	Enabled      bool   `json:"enabled"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	PublicHost    string    `json:"public_host"`
+	BackendHost   string    `json:"backend_host"`
+	BackendPort   int       `json:"backend_port"`
+	BackendHTTPS  bool      `json:"backend_https"`
+	WebSocket     bool      `json:"websocket"`
+	HealthPath    string    `json:"health_path,omitempty"`
+	PathPrefix    string    `json:"path_prefix,omitempty"`
+	Profile       string    `json:"profile"`
+	CertificateID string    `json:"certificate_id,omitempty"`
+	Enabled       bool      `json:"enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Certificate stores metadata for HAProxy PEM material.
 type Certificate struct {
-	ID         string    `json:"id"`
-	PrimaryDomain string `json:"primary_domain"`
-	SAN        []string  `json:"san,omitempty"`
-	Mode       string `json:"mode"` // http-01, dns-01, self-signed
+	ID            string   `json:"id"`
+	PrimaryDomain string   `json:"primary_domain"`
+	SAN           []string `json:"san,omitempty"`
+	Mode          string   `json:"mode"` // http-01, dns-01, self-signed
 	// DNSProvider: cloudflare | cloudns (default for dns-01) | route53 | webhook (Lego httpreq).
 	DNSProvider           string `json:"dns_provider,omitempty"`
 	DNSCredentialsEnvFile string `json:"dns_credentials_env_file,omitempty"` // root-readable env file; never store secrets in DB
 	// ACMEStatus: ready | pending | issuing | failed (manual / self-signed use ready).
 	ACMEStatus string `json:"acme_status,omitempty"`
-	Staging    bool      `json:"staging"`
-	PEMCrtPath string    `json:"pem_crt_path"`
-	PEMKeyPath string    `json:"pem_key_path"`
+	Staging    bool   `json:"staging"`
+	PEMCrtPath string `json:"pem_crt_path"`
+	PEMKeyPath string `json:"pem_key_path"`
 	// BundlePath is fullchain + private key in one PEM for HAProxy crt/crt-list (preferred).
-	BundlePath    string `json:"bundle_path,omitempty"`
-	FullchainPath string `json:"fullchain_path,omitempty"`
-	NotBefore  *time.Time `json:"not_before,omitempty"`
-	NotAfter   *time.Time `json:"not_after,omitempty"`
-	LastError  string    `json:"last_error,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	BundlePath    string     `json:"bundle_path,omitempty"`
+	FullchainPath string     `json:"fullchain_path,omitempty"`
+	NotBefore     *time.Time `json:"not_before,omitempty"`
+	NotAfter      *time.Time `json:"not_after,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // GlobalSettings controls daemon and edge defaults.
 type GlobalSettings struct {
-	ACMEEmail           string `json:"acme_email,omitempty"`
-	ACMEStaging         bool   `json:"acme_staging"`
-	CrowdSecLAPIURL     string `json:"crowdsec_lapi_url,omitempty"`
-	CrowdSecLAPIKey     string `json:"-"` // never serialize to JSON in logs by default
-	SPOEConfigPath      string `json:"spoe_config_path"`
-	HAProxyConfigPath   string `json:"haproxy_config_path"`
-	HAProxyBinary       string `json:"haproxy_binary"`
-	CrowdSecEngineName  string `json:"crowdsec_engine_name"`
+	ACMEEmail           string   `json:"acme_email,omitempty"`
+	ACMEStaging         bool     `json:"acme_staging"`
+	CrowdSecLAPIURL     string   `json:"crowdsec_lapi_url,omitempty"`
+	CrowdSecLAPIKey     string   `json:"-"` // never serialize to JSON in logs by default
+	SPOEConfigPath      string   `json:"spoe_config_path"`
+	HAProxyConfigPath   string   `json:"haproxy_config_path"`
+	HAProxyBinary       string   `json:"haproxy_binary"`
+	CrowdSecEngineName  string   `json:"crowdsec_engine_name"`
 	GeoIPCacheTTL       Duration `json:"geoip_cache_ttl"`
 	ACMERenewalInterval Duration `json:"acme_renewal_interval"`
 	// ACMEWebrootPath is the filesystem root for HTTP-01 challenges (HAProxy must expose /.well-known/ → this path).

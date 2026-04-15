@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Use Node.js 24 for GitHub-hosted JavaScript actions (checkout, setup-go, golangci-lint-action).
+# See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest

@@ -7,16 +7,16 @@ import (
 
 func TestApplySettingsJSONPatch_omittedPreservesPaths(t *testing.T) {
 	base := GlobalSettings{
-		ACMEStaging:         true,
-		SPOEConfigPath:        "/etc/haproxy/crowdsec.cfg",
-		HAProxyConfigPath:     "/var/lib/waf/haproxy.cfg",
-		HAProxyBinary:         "/usr/sbin/haproxy",
-		CrowdSecEngineName:   "crowdsec",
-		GeoIPCacheTTL:        Duration(24 * time.Hour),
-		ACMERenewalInterval:  Duration(12 * time.Hour),
-		ACMEWebrootPath:      "/var/lib/waf/acme",
-		IPBlacklistMapPath:   "/var/lib/waf/ip.map",
-		IPBLExternalEnabled:  true,
+		ACMEStaging:            true,
+		SPOEConfigPath:         "/etc/haproxy/crowdsec.cfg",
+		HAProxyConfigPath:      "/var/lib/waf/haproxy.cfg",
+		HAProxyBinary:          "/usr/sbin/haproxy",
+		CrowdSecEngineName:     "crowdsec",
+		GeoIPCacheTTL:          Duration(24 * time.Hour),
+		ACMERenewalInterval:    Duration(12 * time.Hour),
+		ACMEWebrootPath:        "/var/lib/waf/acme",
+		IPBlacklistMapPath:     "/var/lib/waf/ip.map",
+		IPBLExternalEnabled:    true,
 		ManagementAllowedCIDRs: []string{"10.0.0.0/8"},
 	}
 	patch := []byte(`{"acme_staging":false}`)

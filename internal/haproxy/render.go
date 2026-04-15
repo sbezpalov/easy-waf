@@ -24,7 +24,7 @@ type AppRender struct {
 type RenderInput struct {
 	Settings           config.GlobalSettings
 	Applications       []config.Application
-	Apps               []AppRender `json:"-"` // filled by Render(); enabled apps + resolved profiles
+	Apps               []AppRender                   `json:"-"` // filled by Render(); enabled apps + resolved profiles
 	Certificates       map[string]config.Certificate // id -> cert
 	CRTListPath        string                        // absolute path to generated crt-list file on disk
 	IPBlacklistMapPath string

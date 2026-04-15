@@ -20,9 +20,9 @@ import (
 
 // LegoUser implements acme.User for Lego.
 type LegoUser struct {
-	Email          string
-	Registration   *registration.Resource
-	key            crypto.PrivateKey
+	Email        string
+	Registration *registration.Resource
+	key          crypto.PrivateKey
 }
 
 func (u *LegoUser) GetEmail() string {

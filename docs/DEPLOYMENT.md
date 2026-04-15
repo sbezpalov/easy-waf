@@ -1,5 +1,17 @@
 # Deployment: AlmaLinux, OVF/OVA, distribution
 
+## Development (Windows) vs deployment (AlmaLinux)
+
+Typical workflow for this project:
+
+| Phase | Environment | Notes |
+|-------|-------------|--------|
+| **Development** | **Windows 11** (local PC, IDE) | Use **Git Bash** or **WSL** to run the same checks as CI (`make ci`, `bash scripts/check-linux-artifacts.sh`). Avoid CRLF in `scripts/**/*.sh`; keep paths Linux-oriented in configs and docs. |
+| **CI / QA** | **Linux** (e.g. GitHub `ubuntu-latest`) | Mirrors toolchain and shell checks used on Alma. |
+| **Production** | **AlmaLinux** (bare metal, VM, appliance) | `scripts/install.sh` and systemd units target RHEL-style layout under `/var/lib/easy-waf`, `/etc/easy-waf`, etc. |
+
+The **source of truth** for “will it ship?” is what passes on **Linux**, not only ad-hoc commands in PowerShell without `bash`/`go`.
+
 ## What the installer does
 
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):

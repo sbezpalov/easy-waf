@@ -18,44 +18,44 @@ const (
 
 // Profile defines tunables for HAProxy templates and ACLs.
 type Profile struct {
-	Name            ProfileName
-	Description     string
-	RateLimitRPS    int
-	RateLimitBurst  int
-	ConnectTimeout  time.Duration
-	ServerTimeout   time.Duration
-	HTTPKeepAlive   bool
-	BlockPaths      []string
+	Name                ProfileName
+	Description         string
+	RateLimitRPS        int
+	RateLimitBurst      int
+	ConnectTimeout      time.Duration
+	ServerTimeout       time.Duration
+	HTTPKeepAlive       bool
+	BlockPaths          []string
 	ExtraBlockedMethods []string // e.g. TRACE
-	GeoDefaultDeny  bool
-	Notes           string
+	GeoDefaultDeny      bool
+	Notes               string
 }
 
 // All returns built-in profiles for UI and validation.
 func All() map[ProfileName]Profile {
 	return map[ProfileName]Profile{
 		Balanced: {
-			Name:           Balanced,
-			Description:    "Reasonable defaults for most home apps",
-			RateLimitRPS:   50,
-			RateLimitBurst: 100,
-			ConnectTimeout: 5 * time.Second,
-			ServerTimeout:  50 * time.Second,
-			HTTPKeepAlive:  true,
-			BlockPaths:     defaultBlockedPaths(),
+			Name:                Balanced,
+			Description:         "Reasonable defaults for most home apps",
+			RateLimitRPS:        50,
+			RateLimitBurst:      100,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       50 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 		},
 		Strict: {
-			Name:           Strict,
-			Description:    "Tighter limits and broader path blocks",
-			RateLimitRPS:   20,
-			RateLimitBurst: 40,
-			ConnectTimeout: 3 * time.Second,
-			ServerTimeout:  30 * time.Second,
-			HTTPKeepAlive:  true,
-			BlockPaths:     append(defaultBlockedPaths(), "/.svn", "/.hg", "/cgi-bin"),
+			Name:                Strict,
+			Description:         "Tighter limits and broader path blocks",
+			RateLimitRPS:        20,
+			RateLimitBurst:      40,
+			ConnectTimeout:      3 * time.Second,
+			ServerTimeout:       30 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          append(defaultBlockedPaths(), "/.svn", "/.hg", "/cgi-bin"),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
-			GeoDefaultDeny: false,
+			GeoDefaultDeny:      false,
 		},
 		TrustedLAN: {
 			Name:           TrustedLAN,
@@ -68,26 +68,26 @@ func All() map[ProfileName]Profile {
 			BlockPaths:     minimalBlockedPaths(),
 		},
 		PublicApp: {
-			Name:           PublicApp,
-			Description:    "Internet-exposed generic HTTP app",
-			RateLimitRPS:   30,
-			RateLimitBurst: 60,
-			ConnectTimeout: 5 * time.Second,
-			ServerTimeout:  60 * time.Second,
-			BlockPaths:     defaultBlockedPaths(),
+			Name:                PublicApp,
+			Description:         "Internet-exposed generic HTTP app",
+			RateLimitRPS:        30,
+			RateLimitBurst:      60,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       60 * time.Second,
+			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 		},
 		HomeAssistant: {
-			Name:           HomeAssistant,
-			Description:    "WebSocket-friendly timeouts and HA-specific path allowances",
-			RateLimitRPS:   40,
-			RateLimitBurst: 80,
-			ConnectTimeout: 5 * time.Second,
-			ServerTimeout:  3600 * time.Second,
-			HTTPKeepAlive:  true,
-			BlockPaths:     defaultBlockedPaths(),
+			Name:                HomeAssistant,
+			Description:         "WebSocket-friendly timeouts and HA-specific path allowances",
+			RateLimitRPS:        40,
+			RateLimitBurst:      80,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       3600 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
-			Notes:          "Long server timeout for SSE/WebSocket; still block obvious probes",
+			Notes:               "Long server timeout for SSE/WebSocket; still block obvious probes",
 		},
 	}
 }

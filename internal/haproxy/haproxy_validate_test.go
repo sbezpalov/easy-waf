@@ -52,14 +52,14 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		Settings: st,
 		Applications: []config.Application{
 			{
-				ID:             "a1",
-				Name:           "Test",
-				PublicHost:     "app.example.com",
-				BackendHost:    "127.0.0.1",
-				BackendPort:    8080,
-				Profile:        "balanced",
-				CertificateID:  "c1",
-				Enabled:        true,
+				ID:            "a1",
+				Name:          "Test",
+				PublicHost:    "app.example.com",
+				BackendHost:   "127.0.0.1",
+				BackendPort:   8080,
+				Profile:       "balanced",
+				CertificateID: "c1",
+				Enabled:       true,
 			},
 		},
 		Certificates: map[string]config.Certificate{

@@ -5,6 +5,12 @@ alwaysApply: true
 
 # После правок в этом репозитории (easy-waf)
 
+## Среда: Windows → AlmaLinux
+
+- **Разработка** обычно на **Windows 11** (PowerShell, IDE); **проверки CI и развёртывание** — на **AlmaLinux** (и родственные RHEL‑семейства).
+- Считай эталоном то, что проходит на Linux: **`make ci`** / те же шаги из **Git Bash**, **WSL** или с Alma/VM — не только `go test` в Windows без bash.
+- В репозитории — **LF** в `scripts/**/*.sh`, пути и артефакты под Linux; не коммить Windows‑сборки в `dist/` (см. ниже).
+
 1. **Обязательно выполни** из корня репозитория `easy-waf` (Git Bash, WSL или Linux):
    - `make ci` (или по шагам: `make verify`, `make lint`, `make test`)  
    Если `make` нет:  
