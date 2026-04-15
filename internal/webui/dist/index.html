@@ -176,6 +176,11 @@
           <h3 style="margin-top:1rem">Last config activity</h3>
           <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">—</p>
         </div>
+        <div class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Core services (systemd)</h3>
+          <p class="dash-note">Live state from <code>systemctl is-active</code> on the API host (easy-waf-api, HAProxy, CrowdSec, firewalld, …). If all show <span class="warn">unknown</span>, the API user may lack permission to query systemd.</p>
+          <div id="dash-services"></div>
+        </div>
         <div class="panel" style="max-width:100%">
           <h3>HAProxy backends (runtime)</h3>
           <p id="dash-haproxy-err" class="warn" style="min-height:1rem"></p>
@@ -344,7 +349,7 @@
 
       <div id="tab-crowdsec" class="tab-panel">
         <h2>⚑ CrowdSec (LAPI)</h2>
-        <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in <a href="#settings">Settings</a>.</small></p>
+        <p><small>Set <strong>LAPI URL</strong>, <strong>bouncer API key</strong>, and optional <strong>SPOE path / engine</strong> in <a href="#settings">Settings</a> → CrowdSec, then save.</small></p>
         <div class="row">
           <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
           <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
@@ -379,6 +384,17 @@
           <button type="button" id="btn-settings-save">Save</button>
         </div>
         <p id="settings-msg" class="warn"></p>
+
+        <h3>CrowdSec (LAPI + HAProxy SPOE)</h3>
+        <p><small>Used by the <a href="#crowdsec">CrowdSec</a> tab and by the HAProxy template (<code>filter spoe</code>). The API key is stored in the database and is <strong>never</strong> returned in JSON; use <strong>Load</strong> then enter a new key only when rotating.</small></p>
+        <div class="row" style="flex-wrap:wrap;gap:0.75rem">
+          <label>LAPI base URL <input id="cs-lapi-url" type="url" placeholder="http://127.0.0.1:8080/" style="min-width:20rem" autocomplete="off" /></label>
+          <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
+        </div>
+        <div class="row" style="flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
+          <label>SPOE config path <input id="cs-spoe-path" type="text" style="min-width:22rem" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
+          <label>SPOE engine name <input id="cs-engine-name" type="text" style="min-width:10rem" placeholder="crowdsec" autocomplete="off" /></label>
+        </div>
 
         <h3>Management TLS (port 8443)</h3>
         <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied).</small></p>
@@ -783,6 +799,13 @@
     loadIpwlToggleFromSettings();
     loadBotProtectionFromSettings();
     loadGeoIPFromSettings();
+    document.getElementById('cs-lapi-url').value = cachedSettings.crowdsec_lapi_url || '';
+    document.getElementById('cs-lapi-key').value = '';
+    document.getElementById('cs-lapi-key').placeholder = cachedSettings.crowdsec_lapi_key_set
+      ? '•••• key stored — enter new key to replace'
+      : 'Machine bouncer key (cscli bouncers add -o raw)';
+    document.getElementById('cs-spoe-path').value = cachedSettings.spoe_config_path || '';
+    document.getElementById('cs-engine-name').value = cachedSettings.crowdsec_engine_name || 'crowdsec';
   }
 
   function loadIpwlToggleFromSettings() {
@@ -1068,7 +1091,7 @@
   async function loadDashboard() {
     const stEl = document.getElementById('dash-status');
     stEl.textContent = '';
-    const [stR, appsR, certSumR, revR, csR, decR, ipblR, srcR] = await Promise.all([
+    const [stR, appsR, certSumR, revR, csR, decR, ipblR, srcR, svcR] = await Promise.all([
       fetch('/api/v1/status', { headers: hdr() }),
       fetch('/api/v1/applications', { headers: hdr() }),
       fetch('/api/v1/certificates/summary', { headers: hdr() }),
@@ -1076,12 +1099,13 @@
       fetch('/api/v1/integrations/crowdsec', { headers: hdr() }),
       fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() }),
       fetch('/api/v1/ipbl/local', { headers: hdr() }),
-      fetch('/api/v1/ipbl/sources', { headers: hdr() })
+      fetch('/api/v1/ipbl/sources', { headers: hdr() }),
+      fetch('/api/v1/system/services', { headers: hdr() })
     ]);
 
-    if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 ||
-      stR.status === 403 || appsR.status === 403 || certSumR.status === 403) {
-      if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401) setTok('');
+    if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 || svcR.status === 401 ||
+      stR.status === 403 || appsR.status === 403 || certSumR.status === 403 || svcR.status === 403) {
+      if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 || svcR.status === 401) setTok('');
       refreshSession();
       return;
     }
@@ -1182,7 +1206,25 @@
     const srcN = Array.isArray(srcs) ? srcs.length : 0;
     document.getElementById('dash-ipbl-stat').textContent = `${localN} · ${srcN}`;
 
-    const bad = [stR, appsR, certsR, revR].filter((x) => !x.ok);
+    const svcBox = document.getElementById('dash-services');
+    if (svcBox) {
+      let svcData = null;
+      try {
+        if (svcR.ok) svcData = await svcR.json();
+      } catch (_) {}
+      if (svcData && Array.isArray(svcData.services) && svcData.services.length) {
+        const srows = svcData.services.map((s) => {
+          const st = String(s.active_state || 'unknown');
+          const pill = st === 'active' ? '<span class="ok">' + esc(st) + '</span>' : '<span class="warn">' + esc(st) + '</span>';
+          return '<tr><td><code>' + esc(s.unit || '') + '</code></td><td>' + esc(s.label || '') + '</td><td>' + pill + '</td></tr>';
+        }).join('');
+        svcBox.innerHTML = '<table><thead><tr><th>Unit</th><th>Role</th><th>Active</th></tr></thead><tbody>' + srows + '</tbody></table>';
+      } else {
+        svcBox.innerHTML = '<p class="dash-note">Service status unavailable or empty response.</p>';
+      }
+    }
+
+    const bad = [stR, appsR, certSumR, revR, svcR].filter((x) => !x.ok);
     if (bad.length) stEl.textContent = 'Some dashboard requests failed — check session or API logs.';
 
     await loadDashTraffic();
@@ -1203,8 +1245,13 @@
       geoip_enabled: document.getElementById('geoip-enabled').checked,
       geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
       geoip_default_policy: document.getElementById('geoip-policy').value.trim().toLowerCase(),
-      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value)
+      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value),
+      crowdsec_lapi_url: document.getElementById('cs-lapi-url').value.trim(),
+      spoe_config_path: document.getElementById('cs-spoe-path').value.trim(),
+      crowdsec_engine_name: document.getElementById('cs-engine-name').value.trim()
     };
+    const csKey = document.getElementById('cs-lapi-key').value;
+    if (csKey.trim()) patch.crowdsec_lapi_key = csKey.trim();
     const r = await fetch('/api/v1/settings', {
       method: 'PATCH',
       headers: hdr(),

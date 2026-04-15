@@ -62,6 +62,7 @@ func (s *Server) Router() chi.Router {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.PasswordChangeGate)
 				r.Get("/status", s.handleStatus)
+				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
 				r.Get("/applications", s.listApps)
 				r.Post("/applications", s.upsertApp)
@@ -245,8 +246,22 @@ func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(raw)
 }
 
+// settingsAPIJSON is the JSON shape for settings API responses: never exposes CrowdSecLAPIKey (json:"-"),
+// but adds crowdsec_lapi_key_set so the UI can show whether a key is stored.
+type settingsAPIJSON struct {
+	config.GlobalSettings
+	CrowdSecLAPIKeySet bool `json:"crowdsec_lapi_key_set"`
+}
+
+func (s *Server) writeSettingsResponse(w http.ResponseWriter, code int, gs config.GlobalSettings) {
+	writeJSON(w, code, settingsAPIJSON{
+		GlobalSettings:     gs,
+		CrowdSecLAPIKeySet: strings.TrimSpace(gs.CrowdSecLAPIKey) != "",
+	})
+}
+
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.Eng.Settings)
+	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings)
 }
 
 func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
@@ -317,7 +332,7 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Eng.Settings)
+	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

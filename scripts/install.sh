@@ -501,6 +501,21 @@ firewall_hint() {
   log "Management UI: EASY_WAF_LISTEN_HTTP=0.0.0.0:8000 EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 + LAN-only firewalld (see EASY_WAF_FIREWALLD_MGMT_LAN)"
 }
 
+# HAProxy is the public edge; ensure it is enabled at boot even when OS packages were skipped.
+ensure_haproxy_systemd_enabled() {
+  if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
+    return 0
+  fi
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  if systemctl enable haproxy.service 2>/dev/null; then
+    log "Ensured haproxy.service is enabled at boot (edge load balancer)"
+  else
+    log "WARNING: systemctl enable haproxy.service failed — install haproxy or enable the unit manually"
+  fi
+}
+
 main() {
   require_root
   detect_os
@@ -510,6 +525,7 @@ main() {
   easy_waf_detect_pkg_mgr
   log "repo root: $REPO_ROOT (package manager: ${EASY_WAF_PKG_MGR:-none})"
   install_os_packages
+  ensure_haproxy_systemd_enabled
   create_user_and_layout
   install_env_file
   easy_waf_install_crowdsec_optional
