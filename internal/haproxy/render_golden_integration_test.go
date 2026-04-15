@@ -28,7 +28,9 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cfgBody := augmentGoldenHAProxyCfgForHaproxyCheck(raw)
+			absSock := filepath.Join(t.TempDir(), name+"-admin.sock")
+			cfgBody := rewriteStatsSocketPathForHAProxyCheck(raw, absSock)
+			cfgBody = augmentGoldenHAProxyCfgForHaproxyCheck(cfgBody)
 			tmp := filepath.Join(t.TempDir(), name+".cfg")
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
 				t.Fatal(err)
