@@ -36,8 +36,8 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 command -v curl &>/dev/null || die "curl required"
 [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE"
-# shellcheck disable=SC1090
 set -a
+# shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
 [[ -n "${DATABASE_URL:-}" ]] || die "DATABASE_URL not set in $ENV_FILE"
