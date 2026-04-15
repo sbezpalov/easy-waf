@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -202,6 +204,22 @@ func wipeApplianceData(ctx context.Context, st *store.Store, stateDir string) {
 		}
 	}
 	log.Printf("recreated empty state subdirs under %s", stateDir)
+	maybeChownStateDirToServiceUser(stateDir)
+}
+
+// maybeChownStateDirToServiceUser ensures easy-waf-api (User=easy-waf) can write secrets/ and certs/
+// after a root-run wipe recreated directories as root:root.
+func maybeChownStateDirToServiceUser(stateDir string) {
+	if runtime.GOOS == "windows" || os.Geteuid() != 0 {
+		return
+	}
+	cmd := exec.Command("chown", "-R", "easy-waf:easy-waf", stateDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("warning: chown %s to easy-waf:easy-waf: %v: %s", stateDir, err, strings.TrimSpace(string(out)))
+		return
+	}
+	log.Printf("chowned %s to easy-waf:easy-waf (API/ACME can write state)", stateDir)
 }
 
 func logPostWipeHints() {
