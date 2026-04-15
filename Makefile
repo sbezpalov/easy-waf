@@ -1,6 +1,8 @@
 .PHONY: build test lint check-linux verify ci install-help clean-artifacts golden-update
 
 DIST=dist
+# Keep in sync with .github/workflows/ci.yml (install.sh … vX.Y.Z).
+GOLANGCI_LINT_VER ?= v1.62.2
 
 install-help:
 	@echo "Production install (Alma/RHEL or Debian/Ubuntu, as root) — plug-and-play:"
@@ -33,9 +35,14 @@ golden-update:
 
 lint:
 	go vet ./...
-	golangci-lint run ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./... --timeout=5m; \
+	else \
+		echo >&2 "golangci-lint not in PATH; using go run $(GOLANGCI_LINT_VER) (optional install: https://golangci-lint.run/welcome/install/)"; \
+		go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VER) run ./... --timeout=5m; \
+	fi
 
-# Same gates as .github/workflows/ci.yml (install golangci-lint: https://golangci-lint.run/welcome/install/)
+# Same gates as .github/workflows/ci.yml
 ci: lint test verify
 
 clean-artifacts:
