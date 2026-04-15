@@ -47,6 +47,6 @@ require (
 	golang.org/x/tools v0.28.0 // indirect
 )
 
-// v0.28.0+ pulls go1.24-only sources (e.g. unix/vgetrandom_linux.go), which breaks
-// golangci-lint / staticcheck on Go 1.22–1.23. Keep x/sys compatible with go.mod.
-replace golang.org/x/sys => golang.org/x/sys v0.27.0
+// v0.26+ carries unix/vgetrandom_linux.go (go1.24-only). On Go 1.23, vet/staticcheck
+// can still typecheck that file and fail. v0.25.x has no vgetrandom split — safe for 1.22–1.23.
+replace golang.org/x/sys => golang.org/x/sys v0.25.0
