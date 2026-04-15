@@ -5,26 +5,93 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Easy Home WAF</title>
   <style>
-    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
+    :root {
+      font-family: system-ui, sans-serif;
+      background: #0f1419;
+      color: #e6edf3;
+      --border: #30363d;
+      --panel: #161b22;
+      --accent: #238636;
+      --muted: #8b949e;
+    }
     a { color: #58a6ff; }
-    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
     code { background: #161b22; padding: 0.15rem 0.35rem; border-radius: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border-bottom: 1px solid #30363d; padding: 0.5rem; text-align: left; }
-    button { background: #238636; color: #fff; border: 0; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; }
-    button.secondary { background: #21262d; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+    th, td { border-bottom: 1px solid var(--border); padding: 0.5rem; text-align: left; font-size: 0.9rem; }
+    button { background: var(--accent); color: #fff; border: 0; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; }
+    button.secondary { background: #21262d; color: #e6edf3; }
+    input, select, textarea { background: #0d1117; color: #e6edf3; border: 1px solid var(--border); padding: 0.35rem 0.5rem; border-radius: 4px; }
     .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
-    input, select { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; padding: 0.35rem 0.5rem; border-radius: 4px; }
-    .panel { border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; max-width: 420px; }
+    .panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--panel); max-width: 52rem; }
     .warn { color: #d29922; }
+    .ok { color: #3fb950; }
     .hidden { display: none !important; }
+
+    .login-wrap { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+
+    .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+    .app-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.65rem 1rem; border-bottom: 1px solid var(--border);
+      background: #0d1117; position: sticky; top: 0; z-index: 40;
+    }
+    .nav-toggle {
+      display: none; background: #21262d; padding: 0.35rem 0.6rem; font-size: 1.25rem; line-height: 1;
+    }
+    .app-title { font-size: 1.1rem; margin: 0; flex: 1; }
+    .header-logout { margin-left: auto; }
+
+    .app-layout { display: flex; flex: 1; min-height: 0; }
+    .app-sidebar {
+      width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
+      background: #0d1117; padding: 0.75rem 0; z-index: 30;
+    }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.5rem; }
+    .nav-link {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 0.65rem; border-radius: 6px; color: #e6edf3; text-decoration: none; font-size: 0.9rem;
+    }
+    .nav-link:hover { background: #21262d; }
+    .nav-link.active { background: #21262d; border-left: 3px solid var(--accent); margin-left: -3px; }
+
+    .app-content { flex: 1; padding: 1rem 1.25rem 2rem; max-width: 100%; overflow-x: auto; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .nav-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 25;
+    }
+    body.nav-open .nav-overlay { display: block; }
+
+    .dash-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem;
+    }
+    .dash-card {
+      border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--panel);
+    }
+    .dash-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--muted); font-weight: 600; }
+    .dash-stat { font-size: 1.35rem; font-weight: 600; }
+    .dash-note { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
+
+    .tab-panel h2 { margin-top: 0; font-size: 1.15rem; }
+    .tab-panel h3 { font-size: 1rem; }
+
+    @media (max-width: 768px) {
+      .nav-toggle { display: inline-block; }
+      .app-sidebar {
+        position: fixed; left: 0; top: 0; bottom: 0; width: min(280px, 88vw);
+        transform: translateX(-100%); transition: transform 0.2s ease; padding-top: 3.5rem;
+        box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+      }
+      body.nav-open .app-sidebar { transform: translateX(0); }
+      .header-logout { font-size: 0.85rem; padding: 0.35rem 0.55rem; }
+    }
   </style>
 </head>
 <body>
-<main>
-  <h1>Easy Home WAF</h1>
 
-  <div id="view-login" class="panel">
+<div id="view-login" class="login-wrap">
+  <div class="panel" style="max-width:420px">
     <h2>Sign in</h2>
     <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel). Default <code>admin</code> / <code>admin</code> — change password after first login.</p>
     <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
@@ -32,167 +99,256 @@
     <div class="row"><button type="button" id="btn-login">Sign in</button></div>
     <p id="login-err" class="warn"></p>
   </div>
+</div>
 
-  <div id="view-pass" class="panel hidden">
+<div id="view-pass" class="login-wrap hidden">
+  <div class="panel" style="max-width:420px">
     <h2>Change password</h2>
     <p>You must set a new password (min 8 characters) before using the control plane.</p>
-    <p><small>Until this step is done, the Applications / Apply buttons stay hidden — not disabled.</small></p>
+    <p><small>Until this step is done, the main tabs stay hidden.</small></p>
     <div class="row"><label>Current <input id="old-pass" type="password" autocomplete="current-password" /></label></div>
     <div class="row"><label>New <input id="new-pass" type="password" minlength="8" autocomplete="new-password" /></label></div>
     <div class="row"><label>Confirm new <input id="new-pass2" type="password" minlength="8" autocomplete="new-password" /></label></div>
     <div class="row"><button type="button" id="btn-pass">Save</button></div>
     <p id="pass-err" class="warn"></p>
   </div>
+</div>
 
-  <div id="view-app" class="hidden">
-    <p>Signed in. Optional: legacy automation <code>EASY_WAF_ADMIN_TOKEN</code> still works as Bearer.</p>
-    <p><small>Dark gray buttons (Sign out, Load certificates, …) are still clickable — that is the secondary style, not disabled.</small></p>
-    <div class="row">
-      <button type="button" class="secondary" id="btn-logout">Sign out</button>
-      <button id="load">Refresh</button>
-      <button id="apply">Apply HAProxy</button>
-    </div>
-    <div class="panel" style="max-width:100%">
-      <h2>Config Revisions</h2>
-      <p><small>Successful <strong>Apply</strong> and <strong>Rollback</strong> rows; live file hash marks <strong>current</strong>. Rollback restores the saved snapshot and re-validates with <code>haproxy -c</code>.</small></p>
-      <div class="row">
-        <button type="button" class="secondary" id="btn-revisions-refresh">Refresh list</button>
+<div id="view-app" class="app-shell hidden">
+  <header class="app-header">
+    <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open menu">☰</button>
+    <h1 class="app-title">◆ Easy Home WAF</h1>
+    <button type="button" class="secondary header-logout" id="btn-logout">Sign out</button>
+  </header>
+  <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
+  <div class="app-layout">
+    <aside class="app-sidebar" id="app-sidebar">
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <a href="#dashboard" class="nav-link" data-tab="dashboard"><span>▣</span> Dashboard</a>
+        <a href="#apps" class="nav-link" data-tab="apps"><span>◇</span> Applications</a>
+        <a href="#certs" class="nav-link" data-tab="certs"><span>▤</span> Certificates</a>
+        <a href="#security" class="nav-link" data-tab="security"><span>◎</span> Security</a>
+        <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span>⚑</span> CrowdSec</a>
+        <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config</a>
+        <a href="#settings" class="nav-link" data-tab="settings"><span>✎</span> Settings</a>
+        <a href="#logs" class="nav-link" data-tab="logs"><span>◈</span> Logs / Audit</a>
+      </nav>
+    </aside>
+    <div class="app-content">
+
+      <div id="tab-dashboard" class="tab-panel">
+        <h2>▣ Dashboard</h2>
+        <p class="dash-note" style="margin-top:0">Overview from the API. Open each tab for full controls.</p>
+        <p id="dash-status" class="warn" style="min-height:1.25rem"></p>
+        <div class="dash-grid">
+          <div class="dash-card"><h3>Applications</h3><div class="dash-stat" id="dash-apps-stat">—</div><div class="dash-note">enabled / total</div></div>
+          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">—</div><div class="dash-note">valid · expiring ≤30d · expired (+ unknown if no dates)</div></div>
+          <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">—</div><div class="dash-note" id="dash-cs-sub">—</div></div>
+          <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">—</div><div class="dash-note">local entries · external sources</div></div>
+          <div class="dash-card"><h3>Version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">—</div><div class="dash-note" id="dash-state-dir"></div></div>
+        </div>
+        <div class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Current HAProxy revision</h3>
+          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">—</p>
+          <h3 style="margin-top:1rem">Last config activity</h3>
+          <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">—</p>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Published applications</h3>
+          <p class="dash-note">Browser cannot probe backends; status reflects <strong>enabled</strong> in the database.</p>
+          <div id="dash-backends"></div>
+        </div>
       </div>
-      <p id="revisions-msg" class="warn"></p>
-      <div id="revisions-table"></div>
-    </div>
-    <h2>Applications</h2>
-    <div id="apps"></div>
-    <h3>Add / update</h3>
-    <p><small>Each <strong>Save app</strong> adds a new published host → backend mapping (new row). Pick a <strong>profile</strong> preset below; then <strong>Apply HAProxy</strong>.</small></p>
-    <div class="row">
-      <input id="name" placeholder="name" value="Home Assistant" />
-      <input id="host" placeholder="public host" value="ha.home.local" />
-      <input id="backend" placeholder="backend IP" value="192.168.1.10" />
-      <input id="port" placeholder="port" value="8123" type="number" />
-      <select id="profile">
-        <option value="home-assistant">home-assistant</option>
-        <option value="balanced">balanced</option>
-        <option value="strict">strict</option>
-      </select>
-      <label><input id="ws" type="checkbox" checked /> WebSocket</label>
-      <button id="save">Save app</button>
-    </div>
-    <h4>Restricted paths</h4>
-    <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
-    <div id="restricted-rows"></div>
-    <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
-    <p><small>After saving, click <strong>Apply HAProxy</strong>. Requires <code>haproxy</code> for validation unless <code>EASY_WAF_SKIP_RELOAD</code> is set.</small></p>
 
-    <h2>Certificates</h2>
-    <p><small>Status / dates from database; issue flows via API or ACME worker.</small></p>
-    <div class="row"><button type="button" class="secondary" id="btn-certs">Load certificates</button></div>
-    <div id="certs"></div>
+      <div id="tab-apps" class="tab-panel">
+        <h2>◇ Applications</h2>
+        <p><small>Each <strong>Save app</strong> adds a published host → backend mapping. Use <a href="#config">Config</a> for <strong>Apply HAProxy</strong>.</small></p>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-apps-refresh">Refresh list</button>
+        </div>
+        <div id="apps"></div>
+        <h3>Add / update</h3>
+        <div class="row">
+          <input id="name" placeholder="name" value="Home Assistant" />
+          <input id="host" placeholder="public host" value="ha.home.local" />
+          <input id="backend" placeholder="backend IP" value="192.168.1.10" />
+          <input id="port" placeholder="port" value="8123" type="number" />
+          <select id="profile">
+            <option value="home-assistant">home-assistant</option>
+            <option value="balanced">balanced</option>
+            <option value="strict">strict</option>
+          </select>
+          <label><input id="ws" type="checkbox" checked /> WebSocket</label>
+          <button id="save">Save app</button>
+        </div>
+        <h4>Restricted paths</h4>
+        <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
+        <div id="restricted-rows"></div>
+        <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
+      </div>
 
-    <h2>IP Blacklist</h2>
-    <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map file; <strong>Apply HAProxy</strong> still needed for a new config.</small></p>
-    <div class="row">
-      <button type="button" class="secondary" id="btn-ipbl-load">Load blacklist</button>
-      <button type="button" class="secondary" id="btn-ipbl-sync">Sync lists</button>
-    </div>
-    <div id="ipbl-table"></div>
-    <div class="row" style="margin-top:0.5rem">
-      <input id="ipbl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
-      <input id="ipbl-note" placeholder="note" style="min-width:10rem" />
-      <button type="button" id="btn-ipbl-add">Add to blacklist</button>
-    </div>
-    <p id="ipbl-msg" class="warn"></p>
+      <div id="tab-certs" class="tab-panel">
+        <h2>▤ Certificates</h2>
+        <p><small>Status / dates from database; issue flows via API or ACME worker.</small></p>
+        <div class="row"><button type="button" class="secondary" id="btn-certs">Load certificates</button></div>
+        <div id="certs"></div>
+      </div>
 
-    <h2>IP Allowlist</h2>
-    <p><small>Trusted CIDRs bypass IP blacklist and per-app HTTP rate limits when enabled. Map: <code>ip_allowlist.map</code>. Toggle + <strong>Apply HAProxy</strong> to activate.</small></p>
-    <div class="row">
-      <label><input id="ipwl-enabled" type="checkbox" /> Enable allowlist in HAProxy</label>
-      <button type="button" class="secondary" id="btn-ipwl-settings-save">Save allowlist toggle</button>
-      <button type="button" class="secondary" id="btn-ipwl-load">Load entries</button>
-    </div>
-    <div id="ipwl-table"></div>
-    <div class="row" style="margin-top:0.5rem">
-      <input id="ipwl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
-      <input id="ipwl-comment" placeholder="comment" style="min-width:10rem" />
-      <button type="button" id="btn-ipwl-add">Add to allowlist</button>
-    </div>
-    <p id="ipwl-msg" class="warn"></p>
+      <div id="tab-security" class="tab-panel">
+        <h2>◎ Security</h2>
 
-    <h2>Bot Protection</h2>
-    <p><small>Block empty <code>User-Agent</code> and optional substring list (written to <code>blocked_ua.map</code> on <strong>Apply HAProxy</strong>). Substring ACL runs after IP allowlist.</small></p>
-    <div class="row">
-      <label><input id="ua-block-empty" type="checkbox" checked /> Block empty User-Agent</label>
-      <label><input id="ua-blocklist-enabled" type="checkbox" /> Enable blocked User-Agent list in HAProxy</label>
-      <button type="button" class="secondary" id="btn-ua-settings-save">Save bot protection toggles</button>
-      <button type="button" class="secondary" id="btn-ua-load">Load patterns</button>
-    </div>
-    <div id="ua-table"></div>
-    <div class="row" style="margin-top:0.5rem">
-      <input id="ua-pattern" placeholder="substring pattern" style="min-width:14rem" />
-      <input id="ua-comment" placeholder="comment" style="min-width:10rem" />
-      <button type="button" id="btn-ua-add">Add pattern</button>
-    </div>
-    <p id="ua-msg" class="warn"></p>
+        <div class="panel" style="max-width:100%">
+          <h3>Profile presets</h3>
+          <p><small>Reference for <strong>Applications</strong> → profile dropdown. Data from <code>GET /api/v1/profiles</code>.</small></p>
+          <div id="profiles-doc" class="dash-note" style="color:#e6edf3">Open this tab to load presets…</div>
+        </div>
 
-    <h2>CrowdSec (LAPI)</h2>
-    <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in settings (see <code>install-interactive.sh</code> / docs).</small></p>
-    <div class="row">
-      <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
-      <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
-    </div>
-    <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;"></pre>
+        <div class="panel" style="max-width:100%">
+          <h3>WAF rules</h3>
+          <label><input id="waf-basic-enabled" type="checkbox" checked /> Basic WAF rules (SQLi / XSS / traversal)</label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-waf-security-save">Save WAF toggle</button>
+          </div>
+          <p id="waf-security-msg" class="warn" style="margin:0.5rem 0 0"></p>
+        </div>
 
-    <h2>Global settings (ACME)</h2>
-    <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set. <strong>Save</strong> uses <code>PATCH /api/v1/settings</code> (only changed fields; other settings are left intact).</small></p>
-    <div class="row">
-      <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
-      <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
-      <label><input id="waf-basic-enabled" type="checkbox" checked /> Basic WAF rules (SQLi/XSS/traversal)</label>
-      <button type="button" id="btn-settings-load">Load</button>
-      <button type="button" id="btn-settings-save">Save</button>
-    </div>
-    <p id="settings-msg" class="warn"></p>
+        <h3>IP Blacklist</h3>
+        <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map; <a href="#config">Apply HAProxy</a> for a new config.</small></p>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-ipbl-load">Load blacklist</button>
+          <button type="button" class="secondary" id="btn-ipbl-sync">Sync lists</button>
+        </div>
+        <div id="ipbl-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <input id="ipbl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
+          <input id="ipbl-note" placeholder="note" style="min-width:10rem" />
+          <button type="button" id="btn-ipbl-add">Add to blacklist</button>
+        </div>
+        <p id="ipbl-msg" class="warn"></p>
 
-    <h2>GeoIP</h2>
-    <p><small>When enabled, <strong>Sync lists</strong> / <strong>Apply HAProxy</strong> resolve blacklist CIDRs to countries and refresh <code>geoip_enforce.map</code>. Optional API token: env <code>GEOIP_IPINFO_TOKEN</code> on the API host.</small></p>
-    <div class="row">
-      <label><input id="geoip-enabled" type="checkbox" /> Enable GeoIP in HAProxy (batch map)</label>
-    </div>
-    <div class="row">
-      <label>Provider
-        <select id="geoip-provider">
-          <option value="ipinfo">ipinfo</option>
-          <option value="maxmind">maxmind (stub)</option>
-        </select>
-      </label>
-      <label>Policy
-        <select id="geoip-policy">
-          <option value="allow">Allow listed only (deny other countries from blacklist)</option>
-          <option value="deny">Deny listed (block blacklist IPs in listed countries)</option>
-        </select>
-      </label>
-    </div>
-    <label>Country codes (ISO alpha-2, comma-separated)<br />
-      <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
-    </label>
-    <div class="row" style="margin-top:0.5rem">
-      <button type="button" class="secondary" id="btn-geoip-settings-save">Save GeoIP settings</button>
-    </div>
-    <h3>Lookup test</h3>
-    <div class="row">
-      <input id="geoip-lookup-ip" placeholder="8.8.8.8" style="min-width:12rem" />
-      <button type="button" class="secondary" id="btn-geoip-lookup">Lookup</button>
-    </div>
-    <pre id="geoip-lookup-out" style="max-height:8rem;overflow:auto;background:#161b22;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+        <h3>IP Allowlist</h3>
+        <p><small>Trusted CIDRs bypass IP blacklist and per-app HTTP rate limits when enabled.</small></p>
+        <div class="row">
+          <label><input id="ipwl-enabled" type="checkbox" /> Enable allowlist in HAProxy</label>
+          <button type="button" class="secondary" id="btn-ipwl-settings-save">Save allowlist toggle</button>
+          <button type="button" class="secondary" id="btn-ipwl-load">Load entries</button>
+        </div>
+        <div id="ipwl-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <input id="ipwl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
+          <input id="ipwl-comment" placeholder="comment" style="min-width:10rem" />
+          <button type="button" id="btn-ipwl-add">Add to allowlist</button>
+        </div>
+        <p id="ipwl-msg" class="warn"></p>
 
-    <h2>Management TLS (port 8443)</h2>
-    <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied; no restart).</small></p>
-    <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
-    <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
-    <div class="row"><button type="button" id="btn-tls-save">Install TLS certificate</button></div>
-    <p id="tls-msg" class="warn"></p>
+        <h3>Bot protection</h3>
+        <p><small>Blocked UA map is written on <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
+        <div class="row">
+          <label><input id="ua-block-empty" type="checkbox" checked /> Block empty User-Agent</label>
+          <label><input id="ua-blocklist-enabled" type="checkbox" /> Enable blocked User-Agent list in HAProxy</label>
+          <button type="button" class="secondary" id="btn-ua-settings-save">Save bot protection toggles</button>
+          <button type="button" class="secondary" id="btn-ua-load">Load patterns</button>
+        </div>
+        <div id="ua-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <input id="ua-pattern" placeholder="substring pattern" style="min-width:14rem" />
+          <input id="ua-comment" placeholder="comment" style="min-width:10rem" />
+          <button type="button" id="btn-ua-add">Add pattern</button>
+        </div>
+        <p id="ua-msg" class="warn"></p>
+
+        <h3>GeoIP</h3>
+        <p><small>When enabled, Sync / Apply resolve blacklist CIDRs to countries. Token: env <code>GEOIP_IPINFO_TOKEN</code> on the API host.</small></p>
+        <div class="row">
+          <label><input id="geoip-enabled" type="checkbox" /> Enable GeoIP in HAProxy (batch map)</label>
+        </div>
+        <div class="row">
+          <label>Provider
+            <select id="geoip-provider">
+              <option value="ipinfo">ipinfo</option>
+              <option value="maxmind">maxmind (stub)</option>
+            </select>
+          </label>
+          <label>Policy
+            <select id="geoip-policy">
+              <option value="allow">Allow listed only</option>
+              <option value="deny">Deny listed</option>
+            </select>
+          </label>
+        </div>
+        <label>Country codes (ISO alpha-2, comma-separated)<br />
+          <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
+        </label>
+        <div class="row" style="margin-top:0.5rem">
+          <button type="button" class="secondary" id="btn-geoip-settings-save">Save GeoIP settings</button>
+        </div>
+        <p id="security-geo-msg" class="warn" style="min-height:1rem;margin:0.35rem 0 0"></p>
+        <h4>Lookup test</h4>
+        <div class="row">
+          <input id="geoip-lookup-ip" placeholder="8.8.8.8" style="min-width:12rem" />
+          <button type="button" class="secondary" id="btn-geoip-lookup">Lookup</button>
+        </div>
+        <pre id="geoip-lookup-out" style="max-height:8rem;overflow:auto;background:#161b22;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+      </div>
+
+      <div id="tab-crowdsec" class="tab-panel">
+        <h2>⚑ CrowdSec (LAPI)</h2>
+        <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in <a href="#settings">Settings</a>.</small></p>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
+          <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
+        </div>
+        <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;"></pre>
+      </div>
+
+      <div id="tab-config" class="tab-panel">
+        <h2>⚙ Config</h2>
+        <p><small>Apply renders from the database, validates with <code>haproxy -c</code>, writes the live config, and records a revision.</small></p>
+        <div class="row">
+          <button id="apply">Apply HAProxy</button>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Config revisions</h3>
+          <p><small>Successful <strong>Apply</strong> and <strong>Rollback</strong>; live file hash = <strong>current</strong>.</small></p>
+          <div class="row">
+            <button type="button" class="secondary" id="btn-revisions-refresh">Refresh list</button>
+          </div>
+          <p id="revisions-msg" class="warn"></p>
+          <div id="revisions-table"></div>
+        </div>
+      </div>
+
+      <div id="tab-settings" class="tab-panel">
+        <h2>☰ Settings</h2>
+        <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set. <strong>Save</strong> uses <code>PATCH /api/v1/settings</code>.</small></p>
+        <div class="row">
+          <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
+          <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
+          <button type="button" id="btn-settings-load">Load</button>
+          <button type="button" id="btn-settings-save">Save</button>
+        </div>
+        <p id="settings-msg" class="warn"></p>
+
+        <h3>Management TLS (port 8443)</h3>
+        <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied).</small></p>
+        <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+        <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+        <div class="row"><button type="button" id="btn-tls-save">Install TLS certificate</button></div>
+        <p id="tls-msg" class="warn"></p>
+      </div>
+
+      <div id="tab-logs" class="tab-panel">
+        <h2>▤ Logs / Audit</h2>
+        <div class="panel" style="max-width:42rem">
+          <p><strong>Placeholder.</strong> Server-side audit log API is not exposed in this build. Use host logs, <code>journalctl</code>, or PostgreSQL <code>audit_log</code> for investigations.</p>
+          <p class="dash-note">Future: <code>GET /api/v1/audit</code> with filters and export.</p>
+        </div>
+      </div>
+
+    </div>
   </div>
-</main>
+</div>
+
 <script>
   const TOK = 'easy_waf_token';
   const getTok = () => sessionStorage.getItem(TOK) || '';
@@ -205,7 +361,92 @@
     return h;
   };
 
+  const HASH_TO_PANEL = {
+    '#dashboard': 'dashboard',
+    '#apps': 'apps',
+    '#certs': 'certs',
+    '#security': 'security',
+    '#crowdsec': 'crowdsec',
+    '#config': 'config',
+    '#settings': 'settings',
+    '#logs': 'logs'
+  };
+
   function show(el, on) { document.getElementById(el).classList.toggle('hidden', !on); }
+
+  function panelFromHash() {
+    const raw = (location.hash || '#dashboard').split('?')[0].toLowerCase();
+    return HASH_TO_PANEL[raw] || 'dashboard';
+  }
+
+  function setActiveNav(panel) {
+    document.querySelectorAll('.nav-link').forEach((a) => {
+      a.classList.toggle('active', a.getAttribute('data-tab') === panel);
+    });
+  }
+
+  function showTabPanel(panel) {
+    document.querySelectorAll('.tab-panel').forEach((el) => {
+      el.classList.toggle('active', el.id === 'tab-' + panel);
+    });
+    setActiveNav(panel);
+  }
+
+  function closeMobileNav() {
+    document.body.classList.remove('nav-open');
+  }
+
+  function showTabFromHash() {
+    if (document.getElementById('view-app').classList.contains('hidden')) return;
+    const raw = (location.hash || '#dashboard').split('?')[0].toLowerCase();
+    if (!HASH_TO_PANEL[raw]) {
+      location.hash = '#dashboard';
+      return;
+    }
+    const panel = HASH_TO_PANEL[raw];
+    showTabPanel(panel);
+    switch (panel) {
+      case 'dashboard':
+        loadDashboard();
+        break;
+      case 'apps':
+        loadApps();
+        loadProfileSelect();
+        break;
+      case 'certs':
+        document.getElementById('btn-certs').click();
+        break;
+      case 'security':
+        loadSettingsPanel();
+        loadProfilesDoc();
+        loadBlockedUATable();
+        break;
+      case 'crowdsec':
+        break;
+      case 'config':
+        loadRevisions();
+        break;
+      case 'settings':
+        loadSettingsPanel();
+        break;
+      case 'logs':
+        break;
+      default:
+        break;
+    }
+  }
+
+  document.getElementById('nav-toggle').onclick = () => {
+    document.body.classList.toggle('nav-open');
+  };
+  document.getElementById('nav-overlay').onclick = closeMobileNav;
+  document.getElementById('sidebar-nav').onclick = (e) => {
+    if (e.target.closest('a.nav-link')) closeMobileNav();
+  };
+
+  window.addEventListener('hashchange', () => {
+    showTabFromHash();
+  });
 
   async function refreshSession() {
     const t = getTok();
@@ -218,14 +459,13 @@
       show('view-login', false); show('view-pass', true); show('view-app', false);
     } else {
       show('view-login', false); show('view-pass', false); show('view-app', true);
+      await loadSettingsPanel();
       loadProfileSelect();
-      loadApps();
-      loadSettingsPanel();
-      loadIpwlToggleFromSettings();
-      loadBotProtectionFromSettings();
-      loadBlockedUATable();
       initRestrictedPathRows();
-      loadRevisions();
+      if (!location.hash || !HASH_TO_PANEL[location.hash.toLowerCase().split('?')[0]]) {
+        location.hash = '#dashboard';
+      }
+      showTabFromHash();
     }
   }
 
@@ -250,14 +490,11 @@
       show('view-login', false); show('view-pass', true); show('view-app', false);
     } else {
       show('view-login', false); show('view-pass', false); show('view-app', true);
+      await loadSettingsPanel();
       loadProfileSelect();
-      loadApps();
-      loadSettingsPanel();
-      loadIpwlToggleFromSettings();
-      loadBotProtectionFromSettings();
-      loadBlockedUATable();
       initRestrictedPathRows();
-      loadRevisions();
+      location.hash = '#dashboard';
+      showTabFromHash();
     }
   };
 
@@ -283,17 +520,14 @@
     document.getElementById('new-pass').value = '';
     document.getElementById('new-pass2').value = '';
     show('view-pass', false); show('view-app', true);
+    await loadSettingsPanel();
     loadProfileSelect();
-    loadApps();
-    loadSettingsPanel();
-    loadIpwlToggleFromSettings();
-    loadBotProtectionFromSettings();
-    loadBlockedUATable();
     initRestrictedPathRows();
-    loadRevisions();
+    location.hash = '#dashboard';
+    showTabFromHash();
   };
 
-  document.getElementById('btn-logout').onclick = () => { setTok(''); refreshSession(); };
+  document.getElementById('btn-logout').onclick = () => { setTok(''); closeMobileNav(); refreshSession(); };
 
   function addRestrictedPathRow(prefix, cidrsText) {
     const wrap = document.createElement('div');
@@ -331,12 +565,29 @@
     if (!r.ok) return;
     const j = await r.json();
     const keys = Object.keys(j).sort();
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const escLocal = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     sel.innerHTML = keys.map((k) => {
       const d = (j[k] && (j[k].Description || j[k].description)) || '';
-      return `<option value="${esc(k)}" title="${esc(d)}">${esc(k)}</option>`;
+      return `<option value="${escLocal(k)}" title="${escLocal(d)}">${escLocal(k)}</option>`;
     }).join('');
     if (keys.includes(prev)) sel.value = prev;
+  }
+
+  async function loadProfilesDoc() {
+    const el = document.getElementById('profiles-doc');
+    if (!el) return;
+    el.textContent = 'Loading…';
+    const r = await fetch('/api/v1/profiles', { headers: hdr() });
+    if (!r.ok) { el.textContent = await r.text(); return; }
+    const j = await r.json();
+    const keys = Object.keys(j).sort();
+    const escLocal = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = keys.map((k) => {
+      const p = j[k] || {};
+      const d = escLocal((p.Description || p.description || '').trim() || '—');
+      return `<tr><td><code>${escLocal(k)}</code></td><td>${d}</td></tr>`;
+    }).join('');
+    el.innerHTML = `<table><thead><tr><th>Profile</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   async function loadApps() {
@@ -344,18 +595,20 @@
     const j = await r.json();
     if (r.status === 403 && j.must_change_password) { refreshSession(); return; }
     if (!r.ok) { document.getElementById('apps').textContent = JSON.stringify(j); return; }
-    const rows = j.map(a => `<tr><td>${a.name}</td><td>${a.public_host}</td><td>${a.backend_host}:${a.backend_port}</td><td>${a.profile}</td></tr>`).join('');
+    const rows = j.map(a => `<tr><td>${esc(a.name)}</td><td>${esc(a.public_host)}</td><td>${esc(a.backend_host)}:${a.backend_port}</td><td>${esc(a.profile)}</td></tr>`).join('');
     document.getElementById('apps').innerHTML = `<table><thead><tr><th>Name</th><th>Host</th><th>Backend</th><th>Profile</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
-  document.getElementById('load').onclick = async () => {
+
+  document.getElementById('btn-apps-refresh').onclick = async () => {
     await loadApps();
-    loadRevisions();
+    await loadProfileSelect();
   };
+
   document.getElementById('apply').onclick = async () => {
     const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
     const txt = await r.text();
     alert(txt);
-    if (r.ok) loadRevisions();
+    if (r.ok && panelFromHash() === 'config') loadRevisions();
   };
 
   function shortSha(full) {
@@ -413,6 +666,7 @@
   }
 
   document.getElementById('btn-revisions-refresh').onclick = () => loadRevisions();
+
   let cachedSettings = null;
 
   function parseCountryListText(s) {
@@ -453,6 +707,142 @@
     document.getElementById('ua-block-empty').checked = cachedSettings.block_empty_ua !== false;
     document.getElementById('ua-blocklist-enabled').checked = !!cachedSettings.blocked_user_agents_enabled;
   }
+
+  function certBucket(c) {
+    const na = c.not_after;
+    if (!na) return 'unknown';
+    const t = new Date(na).getTime();
+    if (Number.isNaN(t)) return 'unknown';
+    if (t < Date.now()) return 'expired';
+    if (t < Date.now() + 30 * 86400000) return 'expiring';
+    return 'valid';
+  }
+
+  function decisionsCount(rawText) {
+    try {
+      const j = JSON.parse(rawText);
+      if (Array.isArray(j)) return j.length;
+      if (j && Array.isArray(j.data)) return j.data.length;
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  async function loadDashboard() {
+    const stEl = document.getElementById('dash-status');
+    stEl.textContent = '';
+    const [stR, appsR, certsR, revR, csR, decR, ipblR, srcR] = await Promise.all([
+      fetch('/api/v1/status', { headers: hdr() }),
+      fetch('/api/v1/applications', { headers: hdr() }),
+      fetch('/api/v1/certificates', { headers: hdr() }),
+      fetch('/api/v1/revisions?limit=30', { headers: hdr() }),
+      fetch('/api/v1/integrations/crowdsec', { headers: hdr() }),
+      fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() }),
+      fetch('/api/v1/ipbl/local', { headers: hdr() }),
+      fetch('/api/v1/ipbl/sources', { headers: hdr() })
+    ]);
+
+    if (stR.status === 401 || appsR.status === 401 || stR.status === 403 || appsR.status === 403) {
+      if (stR.status === 401 || appsR.status === 401) setTok('');
+      refreshSession();
+      return;
+    }
+
+    let status = {};
+    try { status = await stR.json(); } catch (_) {}
+    document.getElementById('dash-version').textContent = status.version && String(status.version).trim() ? String(status.version) : '—';
+    document.getElementById('dash-state-dir').textContent = status.state_dir ? `State: ${status.state_dir}` : '';
+
+    let apps = [];
+    try {
+      if (appsR.ok) apps = await appsR.json();
+    } catch (_) {}
+    const en = apps.filter((a) => a.enabled).length;
+    document.getElementById('dash-apps-stat').textContent = `${en} / ${apps.length}`;
+
+    let certs = [];
+    try {
+      if (certsR.ok) certs = await certsR.json();
+    } catch (_) {}
+    let v = 0, e = 0, x = 0, u = 0;
+    (certs || []).forEach((c) => {
+      const b = certBucket(c);
+      if (b === 'valid') v++;
+      else if (b === 'expiring') e++;
+      else if (b === 'expired') x++;
+      else u++;
+    });
+    document.getElementById('dash-certs-stat').textContent = `${v} / ${e} / ${x}` + (u ? ` (+${u} unknown)` : '');
+
+    let cs = {};
+    try { if (csR.ok) cs = await csR.json(); } catch (_) {}
+    const connected = !!cs.reachable;
+    document.getElementById('dash-cs-stat').innerHTML = connected
+      ? '<span class="ok">● connected</span>'
+      : '<span class="warn">○ disconnected</span>';
+    document.getElementById('dash-cs-sub').textContent = cs.last_message || '';
+
+    let decN = null;
+    if (decR.ok) {
+      const t = await decR.text();
+      decN = decisionsCount(t);
+    }
+    if (decN != null) {
+      document.getElementById('dash-cs-sub').textContent =
+        (document.getElementById('dash-cs-sub').textContent || '') +
+        (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') +
+        `decisions (sample): ${decN}`;
+    } else if (decR && !decR.ok) {
+      document.getElementById('dash-cs-sub').textContent =
+        (document.getElementById('dash-cs-sub').textContent || '') + ' · decisions: unavailable';
+    }
+
+    let revs = [];
+    try {
+      if (revR.ok) revs = await revR.json();
+    } catch (_) {}
+    if (Array.isArray(revs) && revs.length) {
+      const cur = revs.find((r) => r.is_current);
+      if (cur) {
+        document.getElementById('dash-revision-line').textContent =
+          `SHA ${shortSha(cur.sha)} · recorded ${cur.created_at || '—'}`;
+      } else {
+        document.getElementById('dash-revision-line').textContent = 'No row marked current (live file may be newer than DB).';
+      }
+      const top = revs[0];
+      const lab = (top.label || '').trim();
+      const isRb = lab.toLowerCase().startsWith('rollback from');
+      document.getElementById('dash-last-apply').textContent =
+        `${top.created_at || '—'} · ${lab || '(no label)'} · SHA ${shortSha(top.sha)}` +
+        (isRb ? ' · note: rollback entry' : '');
+    } else {
+      document.getElementById('dash-revision-line').textContent = 'No revisions yet.';
+      document.getElementById('dash-last-apply').textContent = '—';
+    }
+
+    const rowsHtml = (apps || []).map((a) => {
+      const st = a.enabled ? '<span class="ok">● enabled</span>' : '<span class="warn">○ disabled</span>';
+      return `<tr><td>${esc(a.name)}</td><td>${esc(a.public_host)}</td><td><code>${esc(a.backend_host)}:${a.backend_port}</code></td><td>${st}</td></tr>`;
+    }).join('');
+    document.getElementById('dash-backends').innerHTML = apps.length
+      ? `<table><thead><tr><th>Name</th><th>Public</th><th>Backend</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>`
+      : '<p class="dash-note">No applications yet.</p>';
+
+    let locals = [];
+    try {
+      if (ipblR.ok) locals = await ipblR.json();
+    } catch (_) {}
+    let srcs = [];
+    try {
+      if (srcR.ok) srcs = await srcR.json();
+    } catch (_) {}
+    const localN = Array.isArray(locals) ? locals.length : 0;
+    const srcN = Array.isArray(srcs) ? srcs.length : 0;
+    document.getElementById('dash-ipbl-stat').textContent = `${localN} · ${srcN}`;
+
+    const bad = [stR, appsR, certsR, revR].filter((x) => !x.ok);
+    if (bad.length) stEl.textContent = 'Some dashboard requests failed — check session or API logs.';
+  }
+
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
   document.getElementById('btn-settings-save').onclick = async () => {
     document.getElementById('settings-msg').textContent = '';
@@ -484,10 +874,34 @@
     }
   };
 
+  document.getElementById('btn-waf-security-save').onclick = async () => {
+    const msg = document.getElementById('waf-security-msg');
+    msg.textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) { msg.textContent = 'Load settings from Settings tab first.'; return; }
+    const patch = { waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      msg.textContent = 'WAF toggle saved.';
+      msg.className = 'ok';
+    } else {
+      msg.textContent = await r.text();
+      msg.className = 'warn';
+    }
+  };
+
   document.getElementById('btn-geoip-settings-save').onclick = async () => {
     document.getElementById('settings-msg').textContent = '';
+    const geoMsg = document.getElementById('security-geo-msg');
+    if (geoMsg) geoMsg.textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
+    if (!cachedSettings) {
+      const t = 'Load settings first';
+      document.getElementById('settings-msg').textContent = t;
+      if (geoMsg) geoMsg.textContent = t;
+      return;
+    }
     const patch = {
       geoip_enabled: document.getElementById('geoip-enabled').checked,
       geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
@@ -499,8 +913,11 @@
       cachedSettings = await r.json();
       loadGeoIPFromSettings();
       document.getElementById('settings-msg').textContent = 'GeoIP settings saved.';
+      if (geoMsg) { geoMsg.textContent = 'GeoIP settings saved.'; geoMsg.className = 'ok'; }
     } else {
-      document.getElementById('settings-msg').textContent = await r.text();
+      const err = await r.text();
+      document.getElementById('settings-msg').textContent = err;
+      if (geoMsg) { geoMsg.textContent = err; geoMsg.className = 'warn'; }
     }
   };
 
@@ -518,7 +935,7 @@
     const r = await fetch('/api/v1/certificates', { headers: hdr() });
     const j = await r.json();
     if (!r.ok) { document.getElementById('certs').textContent = JSON.stringify(j); return; }
-    const rows = (j || []).map(c => `<tr><td>${c.primary_domain || ''}</td><td>${c.acme_status || ''}</td><td>${c.not_after || ''}</td><td>${c.last_error || ''}</td></tr>`).join('');
+    const rows = (j || []).map(c => `<tr><td>${esc(c.primary_domain || '')}</td><td>${esc(c.acme_status || '')}</td><td>${esc(c.not_after || '')}</td><td>${esc(c.last_error || '')}</td></tr>`).join('');
     document.getElementById('certs').innerHTML = `<table><thead><tr><th>Domain</th><th>ACME</th><th>Not after</th><th>Last error</th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
   };
 
@@ -554,8 +971,8 @@
     const r = await fetch('/api/v1/ipbl/local', { headers: hdr() });
     const j = await r.json();
     if (!r.ok) { document.getElementById('ipbl-msg').textContent = JSON.stringify(j); return; }
-    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.cidr)}</code></td><td>${esc(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
     document.getElementById('ipbl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Note</th><th>Enabled</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
     document.getElementById('ipbl-table').querySelectorAll('[data-ipbl-del]').forEach((btn) => {
       btn.onclick = async () => {
@@ -590,8 +1007,8 @@
     const r = await fetch('/api/v1/ipwl/local', { headers: hdr() });
     const j = await r.json();
     if (!r.ok) { document.getElementById('ipwl-msg').textContent = JSON.stringify(j); return; }
-    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.cidr)}</code></td><td>${esc(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
     document.getElementById('ipwl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
     document.getElementById('ipwl-table').querySelectorAll('[data-ipwl-del]').forEach((btn) => {
       btn.onclick = async () => {
@@ -653,8 +1070,8 @@
     const r = await fetch('/api/v1/security/blocked-ua', { headers: hdr() });
     const j = await r.json();
     if (!r.ok) { document.getElementById('ua-msg').textContent = JSON.stringify(j); return; }
-    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.pattern)}</code></td><td>${esc(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.pattern)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
     box.innerHTML = `<table><thead><tr><th>Pattern</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
     box.querySelectorAll('[data-ua-del]').forEach((btn) => {
       btn.onclick = async () => {
