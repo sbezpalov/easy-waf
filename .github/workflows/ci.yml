@@ -39,9 +39,10 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install OS packages (AlmaLinux 10, before checkout)
+      - name: "Alma10 deps: swap coreutils-single → coreutils, then dnf --allowerasing"
         run: |
           set -euo pipefail
+          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
           dnf -y install ca-certificates curl dnf-plugins-core
           # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
           if rpm -qa | grep -qE '^coreutils-single-'; then
@@ -113,9 +114,10 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install OS packages (AlmaLinux 10, before checkout)
+      - name: "Alma10 deps: swap coreutils-single → coreutils, then dnf --allowerasing"
         run: |
           set -euo pipefail
+          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
           dnf -y install ca-certificates curl dnf-plugins-core
           if rpm -qa | grep -qE '^coreutils-single-'; then
             dnf -y swap coreutils-single coreutils
@@ -177,9 +179,10 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install OS packages + HAProxy (AlmaLinux 10, before checkout)
+      - name: "Alma10 deps + HAProxy: swap coreutils-single → coreutils, then dnf --allowerasing"
         run: |
           set -euo pipefail
+          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
           dnf -y install ca-certificates curl dnf-plugins-core
           # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
           if rpm -qa | grep -qE '^coreutils-single-'; then
