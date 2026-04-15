@@ -9,8 +9,9 @@ name: CI
 # golangci-lint-action: у него бывают сбои docker exec / prepare на не-Ubuntu образах).
 #
 # Три блока «dnf» ниже держите синхронными по смыслу (общий базовый набор + профиль job).
-# Alma minimal: сначала dnf install --allowerasing coreutils (снять coreutils-single), затем
-# остальные пакеты тоже с --allowerasing — иначе транзакции с nodejs/gcc тянут coreutils и падают.
+# Alma minimal: образ с coreutils-single — перед остальными пакетами выполнить
+# dnf swap coreutils-single coreutils (надёжнее, чем только install --allowerasing).
+# Дальше dnf install --allowerasing … для gcc/nodejs и т.д.
 # Блок apt в deb-family-ci держите эквивалентным по смыслу (инструменты сборки + HAProxy).
 
 on:
@@ -42,8 +43,9 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
-          dnf -y install --allowerasing coreutils
+          if rpm -q coreutils-single >/dev/null 2>&1; then
+            dnf -y swap coreutils-single coreutils
+          fi
           dnf -y install --allowerasing \
             bash \
             bzip2 \
@@ -109,8 +111,9 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
-          dnf -y install --allowerasing coreutils
+          if rpm -q coreutils-single >/dev/null 2>&1; then
+            dnf -y swap coreutils-single coreutils
+          fi
           dnf -y install --allowerasing \
             bash \
             bzip2 \
@@ -167,8 +170,9 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          # Alma minimal: coreutils-single conflicts with deps that need full coreutils — fix first.
-          dnf -y install --allowerasing coreutils
+          if rpm -q coreutils-single >/dev/null 2>&1; then
+            dnf -y swap coreutils-single coreutils
+          fi
           dnf -y install --allowerasing \
             bash \
             bzip2 \
