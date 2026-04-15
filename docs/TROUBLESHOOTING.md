@@ -24,6 +24,12 @@ Or re-run **`sudo bash scripts/install.sh`** (idempotent; inserts `scram-sha-256
 
 Then: `sudo systemctl restart easy-waf-api easy-waf-acmed`.
 
+## PostgreSQL: `password authentication failed for user "easywaf"` (SQLSTATE 28P01)
+
+The password in **`DATABASE_URL`** in **`/etc/easy-waf/easy-waf.env`** does not match **`ALTER USER easywaf`** in the cluster (common after **`scripts/lib/db-password.sh`** rotation or a manual password change).
+
+**Fix:** align credentials — e.g. `sudo -u postgres psql -c "ALTER USER easywaf PASSWORD '…';"` and update **`DATABASE_URL`**, or restore the password from backup. A full **configuration** wipe does **not** reset the DB role password; see [`docs/ADMIN-CLI.md`](ADMIN-CLI.md) **`reset-appliance`** only for app data / HAProxy state / UI users in PostgreSQL tables.
+
 ## `systemctl start easy-waf-api` fails immediately (exit 1)
 
 1. Logs: `sudo journalctl -u easy-waf-api -n 50 --no-pager` (often `DATABASE_URL` missing, DB down, or bad env file).

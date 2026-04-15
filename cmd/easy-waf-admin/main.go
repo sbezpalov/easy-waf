@@ -25,6 +25,8 @@ func main() {
 	switch os.Args[1] {
 	case "reset-control-panel-access":
 		resetControlPanelAccess()
+	case "reset-appliance":
+		resetAppliance()
 	case "factory-reset":
 		factoryReset()
 	default:
@@ -37,8 +39,10 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-control-panel-access [-env-file path] [-state-dir path]")
 	fmt.Fprintln(os.Stderr, "      Resets management CIDR allowlist to defaults and binds API to loopback in env file.")
-	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset -state-dir path -i-am-sure")
-	fmt.Fprintln(os.Stderr, "      Truncates DB config tables and clears generated state (destructive).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-appliance [-state-dir path] -confirm RESET")
+	fmt.Fprintln(os.Stderr, "      Factory reset: truncates DB config tables and clears generated state (preferred).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] -i-am-sure")
+	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required)")
 }
 
@@ -85,14 +89,43 @@ func resetControlPanelAccess() {
 	log.Print("optional: review firewalld — remove broad 8000/8443/tcp on public zone if present")
 }
 
-func factoryReset() {
-	fs := flag.NewFlagSet("factory-reset", flag.ExitOnError)
-	sure := fs.Bool("i-am-sure", false, "required to proceed")
+const resetConfirmToken = "RESET"
+
+// wipeApplianceData truncates configuration tables and recreates empty state subdirectories.
+func wipeApplianceData(ctx context.Context, st *store.Store, stateDir string) {
+	if err := st.FactoryReset(ctx); err != nil {
+		log.Fatalf("database factory reset: %v", err)
+	}
+	log.Print("truncated configuration tables")
+
+	sub := []string{"haproxy", "revisions", "certs", "acme", "secrets"}
+	for _, name := range sub {
+		p := filepath.Join(stateDir, name)
+		if err := os.RemoveAll(p); err != nil {
+			log.Printf("warning: remove %s: %v", p, err)
+			continue
+		}
+		if err := os.MkdirAll(p, 0o750); err != nil {
+			log.Printf("warning: mkdir %s: %v", p, err)
+		}
+	}
+	log.Printf("recreated empty state subdirs under %s", stateDir)
+}
+
+func logPostWipeHints() {
+	log.Print("next: ensure DATABASE_URL in /etc/easy-waf/easy-waf.env matches PostgreSQL user password (see scripts/lib/db-password.sh if install rotated it)")
+	log.Print("next: systemctl restart easy-waf-api easy-waf-acmed")
+	log.Print("hint: first API start recreates default operator admin/admin — change password in the UI")
+}
+
+func resetAppliance() {
+	fs := flag.NewFlagSet("reset-appliance", flag.ExitOnError)
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	confirm := fs.String("confirm", "", fmt.Sprintf("must be %q to erase all appliance configuration", resetConfirmToken))
 	_ = fs.Parse(os.Args[2:])
 
-	if !*sure {
-		log.Fatal("refusing: pass --i-am-sure to confirm full data wipe")
+	if *confirm != resetConfirmToken {
+		log.Fatalf("refusing: pass -confirm %s to erase all appliance configuration (DB + state under %s)", resetConfirmToken, *stateDir)
 	}
 
 	st, err := openStore()
@@ -102,22 +135,27 @@ func factoryReset() {
 	defer st.Close()
 
 	ctx := context.Background()
-	if err := st.FactoryReset(ctx); err != nil {
-		log.Fatalf("database factory reset: %v", err)
-	}
-	log.Print("truncated configuration tables")
+	wipeApplianceData(ctx, st, *stateDir)
+	logPostWipeHints()
+}
 
-	sub := []string{"haproxy", "revisions", "certs", "acme", "secrets"}
-	for _, name := range sub {
-		p := filepath.Join(*stateDir, name)
-		if err := os.RemoveAll(p); err != nil {
-			log.Printf("warning: remove %s: %v", p, err)
-			continue
-		}
-		if err := os.MkdirAll(p, 0o750); err != nil {
-			log.Printf("warning: mkdir %s: %v", p, err)
-		}
+func factoryReset() {
+	fs := flag.NewFlagSet("factory-reset", flag.ExitOnError)
+	sure := fs.Bool("i-am-sure", false, "required to proceed (prefer: reset-appliance -confirm RESET)")
+	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	_ = fs.Parse(os.Args[2:])
+
+	if !*sure {
+		log.Fatal("refusing: pass -i-am-sure to confirm full data wipe (or use: reset-appliance -confirm RESET)")
 	}
-	log.Printf("recreated empty state subdirs under %s", *stateDir)
-	log.Print("next: configure DATABASE_URL / tokens, systemctl restart easy-waf-api easy-waf-acmed")
+
+	st, err := openStore()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	wipeApplianceData(ctx, st, *stateDir)
+	logPostWipeHints()
 }

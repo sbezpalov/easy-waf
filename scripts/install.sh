@@ -323,7 +323,7 @@ install_binaries() {
   fi
   if [[ -f "${DIST_DIR}/easy-waf-admin" ]]; then
     install -m 0755 "${DIST_DIR}/easy-waf-admin" "$ADMIN_BIN"
-    log "Installed $ADMIN_BIN (emergency: reset-control-panel-access, factory-reset)"
+    log "Installed $ADMIN_BIN (emergency: reset-control-panel-access, reset-appliance, factory-reset)"
     found=1
   fi
   if [[ "$found" -eq 0 ]]; then

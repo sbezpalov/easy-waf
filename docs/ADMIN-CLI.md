@@ -20,16 +20,33 @@ Effects:
 
 Review **firewalld** afterwards if you had opened 8443/tcp broadly on the public zone.
 
-## `factory-reset`
+## `reset-appliance` (preferred)
 
-**Destructive:** truncates configuration tables and clears generated state under the state directory.
+**Destructive:** same as legacy `factory-reset` — truncates configuration tables and clears generated state under the state directory (`haproxy/`, `revisions/`, `certs/`, `acme/`, `secrets/`). PostgreSQL schema is kept.
+
+Confirmation must be the literal token **`RESET`** (avoids accidental one-flag typos):
 
 ```bash
-sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin factory-reset --i-am-sure'
+sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin reset-appliance -confirm RESET'
 sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
 
-Reconfigure **`DATABASE_URL`**, sign-in (**`admin` / `admin`** is recreated on next `easy-waf-api` start when the `users` table is empty), and applications from scratch.
+Optional state path (default `/var/lib/easy-waf`):
+
+```bash
+/usr/sbin/easy-waf-admin reset-appliance -state-dir /var/lib/easy-waf -confirm RESET
+```
+
+After a wipe, ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, the default operator **`admin` / `admin`** is recreated — change the password in the UI.
+
+## `factory-reset` (legacy)
+
+Same effect as **`reset-appliance`**. Kept for scripts and older docs.
+
+```bash
+sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true'
+sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
+```
 
 ## Environment bypass (lockout)
 
