@@ -144,6 +144,38 @@
     </div>
     <p id="settings-msg" class="warn"></p>
 
+    <h2>GeoIP</h2>
+    <p><small>When enabled, <strong>Sync lists</strong> / <strong>Apply HAProxy</strong> resolve blacklist CIDRs to countries and refresh <code>geoip_enforce.map</code>. Optional API token: env <code>GEOIP_IPINFO_TOKEN</code> on the API host.</small></p>
+    <div class="row">
+      <label><input id="geoip-enabled" type="checkbox" /> Enable GeoIP in HAProxy (batch map)</label>
+    </div>
+    <div class="row">
+      <label>Provider
+        <select id="geoip-provider">
+          <option value="ipinfo">ipinfo</option>
+          <option value="maxmind">maxmind (stub)</option>
+        </select>
+      </label>
+      <label>Policy
+        <select id="geoip-policy">
+          <option value="allow">Allow listed only (deny other countries from blacklist)</option>
+          <option value="deny">Deny listed (block blacklist IPs in listed countries)</option>
+        </select>
+      </label>
+    </div>
+    <label>Country codes (ISO alpha-2, comma-separated)<br />
+      <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
+    </label>
+    <div class="row" style="margin-top:0.5rem">
+      <button type="button" class="secondary" id="btn-geoip-settings-save">Save GeoIP settings</button>
+    </div>
+    <h3>Lookup test</h3>
+    <div class="row">
+      <input id="geoip-lookup-ip" placeholder="8.8.8.8" style="min-width:12rem" />
+      <button type="button" class="secondary" id="btn-geoip-lookup">Lookup</button>
+    </div>
+    <pre id="geoip-lookup-out" style="max-height:8rem;overflow:auto;background:#161b22;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+
     <h2>Management TLS (port 8443)</h2>
     <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied; no restart).</small></p>
     <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
@@ -310,6 +342,21 @@
   };
   let cachedSettings = null;
 
+  function parseCountryListText(s) {
+    return String(s || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+  }
+
+  function loadGeoIPFromSettings() {
+    if (!cachedSettings) return;
+    document.getElementById('geoip-enabled').checked = !!cachedSettings.geoip_enabled;
+    const pr = (cachedSettings.geoip_provider || 'ipinfo').toLowerCase();
+    document.getElementById('geoip-provider').value = pr === 'maxmind' ? 'maxmind' : 'ipinfo';
+    const pol = (cachedSettings.geoip_default_policy || 'allow').toLowerCase();
+    document.getElementById('geoip-policy').value = pol === 'deny' ? 'deny' : 'allow';
+    const list = cachedSettings.geoip_country_list;
+    document.getElementById('geoip-countries').value = Array.isArray(list) ? list.join(', ') : '';
+  }
+
   async function loadSettingsPanel() {
     document.getElementById('settings-msg').textContent = '';
     const r = await fetch('/api/v1/settings', { headers: hdr() });
@@ -320,6 +367,7 @@
     document.getElementById('waf-basic-enabled').checked = cachedSettings.waf_basic_rules_enabled !== false;
     loadIpwlToggleFromSettings();
     loadBotProtectionFromSettings();
+    loadGeoIPFromSettings();
   }
 
   function loadIpwlToggleFromSettings() {
@@ -342,7 +390,11 @@
       acme_staging: document.getElementById('acme-staging').checked,
       waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked,
       block_empty_ua: document.getElementById('ua-block-empty').checked,
-      blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked
+      blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked,
+      geoip_enabled: document.getElementById('geoip-enabled').checked,
+      geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
+      geoip_default_policy: document.getElementById('geoip-policy').value.trim().toLowerCase(),
+      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value)
     };
     const r = await fetch('/api/v1/settings', {
       method: 'PATCH',
@@ -352,10 +404,41 @@
     if (r.ok) {
       cachedSettings = await r.json();
       loadBotProtectionFromSettings();
+      loadGeoIPFromSettings();
       document.getElementById('settings-msg').textContent = 'Saved.';
     } else {
       document.getElementById('settings-msg').textContent = await r.text();
     }
+  };
+
+  document.getElementById('btn-geoip-settings-save').onclick = async () => {
+    document.getElementById('settings-msg').textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
+    const patch = {
+      geoip_enabled: document.getElementById('geoip-enabled').checked,
+      geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
+      geoip_default_policy: document.getElementById('geoip-policy').value.trim().toLowerCase(),
+      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value)
+    };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      loadGeoIPFromSettings();
+      document.getElementById('settings-msg').textContent = 'GeoIP settings saved.';
+    } else {
+      document.getElementById('settings-msg').textContent = await r.text();
+    }
+  };
+
+  document.getElementById('btn-geoip-lookup').onclick = async () => {
+    const ip = document.getElementById('geoip-lookup-ip').value.trim();
+    const out = document.getElementById('geoip-lookup-out');
+    out.textContent = '';
+    if (!ip) { out.textContent = 'Enter an IP'; return; }
+    const r = await fetch('/api/v1/geoip/lookup?ip=' + encodeURIComponent(ip), { headers: hdr() });
+    const txt = await r.text();
+    try { out.textContent = JSON.stringify(JSON.parse(txt), null, 2); } catch { out.textContent = txt; }
   };
 
   document.getElementById('btn-certs').onclick = async () => {

@@ -17,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
 	"github.com/easy-waf/easy-waf/internal/webui"
@@ -77,6 +78,7 @@ func RunAPI() {
 	if err := eng.SaveSettings(ctx); err != nil {
 		log.Printf("persist settings: %v", err)
 	}
+	eng.GeoIP = geoip.NewRuntime(time.Duration(eng.Settings.GeoIPCacheTTL))
 
 	jwtSecret, err := auth.LoadJWTSecret(stateDir)
 	if err != nil {

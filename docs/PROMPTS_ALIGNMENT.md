@@ -21,7 +21,7 @@
 | CrowdSec + решения | Partial | `internal/crowdsec/client.go`, API `integrations/crowdsec*`, `docs/CROWDSEC.md` |
 | SPOE bouncer | Partial | Настройки SPOE path / engine; полная автосборка в `install.sh` — нет (см. interactive) |
 | Fail2Ban | Partial | Установка в `install.sh`, не оркестрируется API |
-| GeoIP + кэш | Partial | `internal/geoip/cache.go`; API lookup / интеграция в UI — минимальна |
+| GeoIP + кэш | Done | `internal/geoip/*` (LRU+TTL, ipinfo.io, batch `geoip_enforce.map`), API `/geoip/lookup`, `/geoip/stats`, HAProxy ACL, UI Settings |
 
 ## §2 UX / Observability
 
@@ -40,7 +40,7 @@
 | SPOE, WebSocket, SNI, redirect | Partial | Шаблон HAProxy; проверять под конкретный релиз |
 | CrowdSec LAPI не Lua | Partial | Доки + SPOA пакет через interactive |
 | Генератор, валидация, атомарный apply, rollback | Partial | apply + revisions в engine |
-| GeoIP API + кэш + смена на MMDB | Partial | кэш есть; провайдер API — дорисовать |
+| GeoIP API + кэш + смена на MMDB | Partial | ipinfo + batch map — **Done**; MaxMind MMDB — заглушка (`maxmind.go`) |
 
 ## §6 Repository structure (целевая схема в prompts)
 
@@ -71,9 +71,9 @@
 
 ### 7.5 CrowdSec — **Partial** (ping LAPI, `GET /api/v1/integrations/crowdsec/decisions`; whitelist/unblock в UI — не реализовано, использовать `cscli` / LAPI)
 
-### 7.6 GeoIP — **Partial** (кэш; HAProxy ACL по странам — в шаблоне/настройках по мере развития)
+### 7.6 GeoIP — **Done** (`internal/geoip`, `GET /api/v1/geoip/lookup`, `GET /api/v1/geoip/stats`, настройки `geoip_*`, миграция `007`, batch `geoip_enforce.map` + ACL в `render.go`, секция в UI)
 
-### 7.7 UI страницы — **Partial** (`internal/webui/dist/index.html`: вход, смена пароля, приложения, apply, сертификаты, CrowdSec ping/decisions, ACME email в settings)
+### 7.7 UI страницы — **Partial** (`internal/webui/dist/index.html`: вход, смена пароля, приложения, apply, сертификаты, CrowdSec ping/decisions, settings incl. GeoIP + ACME)
 
 ### 7.8 Statistics — **Missing** (заглушка `internal/metrics/stub.go`)
 
@@ -99,7 +99,7 @@
 1. **Метрики**: stats socket HAProxy + агрегация в API (`internal/metrics`).
 2. **UI**: отдельные маршруты/страницы или фреймворк; логи/аудит из `audit_log`.
 3. **CrowdSec**: кнопка «обновить decisions», опционально delete decision через LAPI.
-4. **GeoIP**: драйвер ipinfo/аналог + поля в settings.
+4. **GeoIP**: MaxMind MMDB / live lookup path при необходимости.
 5. **Тесты**: интеграционные `tests/` против podman-compose PostgreSQL.
 
 Обновляй этот файл при закрытии пунктов MVP.

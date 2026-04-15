@@ -54,6 +54,16 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.CrowdSecEngineName)
 	case "geoip_cache_ttl":
 		return json.Unmarshal(raw, &out.GeoIPCacheTTL)
+	case "geoip_enabled":
+		return json.Unmarshal(raw, &out.GeoIPEnabled)
+	case "geoip_provider":
+		return json.Unmarshal(raw, &out.GeoIPProvider)
+	case "geoip_default_policy":
+		return json.Unmarshal(raw, &out.GeoIPDefaultPolicy)
+	case "geoip_country_list":
+		return json.Unmarshal(raw, &out.GeoIPCountryList)
+	case "geoip_enforce_map_path":
+		return json.Unmarshal(raw, &out.GeoIPEnforceMapPath)
 	case "acme_renewal_interval":
 		return json.Unmarshal(raw, &out.ACMERenewalInterval)
 	case "acme_webroot_path":

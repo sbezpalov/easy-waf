@@ -33,6 +33,8 @@ type RenderInput struct {
 	UseIPAllowlist           bool
 	BlockedUserAgentsMapPath string // absolute path to generated substring map (-m sub -f)
 	UseBlockedUserAgents     bool   // enabled in settings and map has at least one pattern line
+	GeoIPEnforceMapPath      string // absolute path to src map of CIDRs to deny (batch GeoIP)
+	UseGeoIPEnforce          bool   // geoip_enabled and map has at least one data line
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -233,6 +235,11 @@ frontend fe_https
 {{if .UseIPBlacklist}}
 	acl ipbl_black src -f {{.IPBlacklistMapPath}}
 	http-request deny deny_status 403 if ipbl_black
+{{end}}
+{{if .UseGeoIPEnforce}}
+	# GeoIP batch — CIDRs resolved at apply/sync (see docs/ARCHITECTURE.md GeoIP)
+	acl geo_enforce src -f {{.GeoIPEnforceMapPath}}
+	http-request deny deny_status 403 if geo_enforce
 {{end}}
 {{if .Settings.WAFBasicRulesEnabled}}
 	# Basic WAF — SQLi / XSS / path traversal (after IP ACLs; ipwl_white "allow" above still short-circuits these denies)

@@ -22,6 +22,8 @@ type SyncResult struct {
 	ExternalLines int
 	TotalLines    int
 	MapPath       string
+	// AllCIDRs is the sorted unique CIDR/IP lines written to the blacklist map (GeoIP batch uses this).
+	AllCIDRs []string `json:"all_cidrs,omitempty"`
 }
 
 // SyncAndWrite merges local DB entries and optional external HTTP lists into a HAProxy-compatible text file
@@ -33,11 +35,11 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 	}
 	_ = os.MkdirAll(filepath.Dir(outPath), 0o750)
 
-	set := map[string]struct{}{}
 	local, err := st.ListIPBLLocal(ctx)
 	if err != nil {
 		return SyncResult{}, err
 	}
+	set := map[string]struct{}{}
 	for _, e := range local {
 		if !e.Enabled {
 			continue
@@ -110,7 +112,63 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		ExternalLines: extN,
 		TotalLines:    len(lines),
 		MapPath:       outPath,
+		AllCIDRs:      append([]string(nil), lines...),
 	}, nil
+}
+
+// CollectBlacklistCIDRs returns the merged blacklist CIDR set without writing the map (tests / tooling).
+// It does not update external source fetch metadata (use SyncAndWrite for production sync).
+func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.GlobalSettings) ([]string, error) {
+	set := map[string]struct{}{}
+	local, err := st.ListIPBLLocal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range local {
+		if !e.Enabled {
+			continue
+		}
+		line := strings.TrimSpace(e.CIDR)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if err := validateCIDRLine(line); err != nil {
+			continue
+		}
+		set[line] = struct{}{}
+	}
+	if g.IPBLExternalEnabled {
+		srcs, err := st.ListIPBLExternalSources(ctx)
+		if err != nil {
+			return nil, err
+		}
+		client := &http.Client{Timeout: 45 * time.Second}
+		for _, src := range srcs {
+			if !src.Enabled {
+				continue
+			}
+			lines, ferr := fetchPlainList(ctx, client, src.URL)
+			if ferr != nil {
+				continue
+			}
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				if err := validateCIDRLine(line); err != nil {
+					continue
+				}
+				set[line] = struct{}{}
+			}
+		}
+	}
+	var lines []string
+	for k := range set {
+		lines = append(lines, k)
+	}
+	sort.Strings(lines)
+	return lines, nil
 }
 
 // FileHasEntries returns true if data contains at least one non-comment line (used before enabling HAProxy ACL).

@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/apply"
 	"github.com/easy-waf/easy-waf/internal/blockedua"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
@@ -25,6 +27,8 @@ type Engine struct {
 	StateDir string
 	Store    *store.Store
 	Settings config.GlobalSettings
+	// GeoIP is optional in-memory cache + API lookups (initialized lazily).
+	GeoIP *geoip.Runtime
 }
 
 // LoadSettings merges stored JSON with defaults.
@@ -80,6 +84,15 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 	if s.BlockedUserAgentsMapPath == "" {
 		s.BlockedUserAgentsMapPath = def.BlockedUserAgentsMapPath
 	}
+	if s.GeoIPEnforceMapPath == "" {
+		s.GeoIPEnforceMapPath = def.GeoIPEnforceMapPath
+	}
+	if strings.TrimSpace(s.GeoIPProvider) == "" {
+		s.GeoIPProvider = def.GeoIPProvider
+	}
+	if strings.TrimSpace(s.GeoIPDefaultPolicy) == "" {
+		s.GeoIPDefaultPolicy = def.GeoIPDefaultPolicy
+	}
 	if len(s.ManagementAllowedCIDRs) == 0 {
 		s.ManagementAllowedCIDRs = def.ManagementAllowedCIDRs
 	}
@@ -96,9 +109,28 @@ func (e *Engine) SaveSettings(ctx context.Context) error {
 	return e.Store.SetSetting(ctx, settingsKeyGlobal, string(b))
 }
 
+// WriteGeoIPEnforceMap refreshes the HAProxy GeoIP batch map from merged blacklist CIDRs.
+func (e *Engine) WriteGeoIPEnforceMap(ctx context.Context, blacklistCIDRs []string) error {
+	if !e.Settings.GeoIPEnabled {
+		return geoip.WriteDisabledEnforceMap(e.Settings, e.StateDir)
+	}
+	prov, err := geoip.NewProviderForSettings(e.Settings)
+	if err != nil {
+		return err
+	}
+	if e.GeoIP == nil {
+		e.GeoIP = geoip.NewRuntime(time.Duration(e.Settings.GeoIPCacheTTL))
+	}
+	return geoip.WriteEnforceMap(ctx, prov, e.GeoIP.Cache, e.Settings, e.StateDir, blacklistCIDRs)
+}
+
 // RenderFromStore builds HAProxy config from current DB state.
 func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) {
-	if _, err := ipbl.SyncAndWrite(ctx, e.Store, e.Settings, e.StateDir); err != nil {
+	syncRes, err := ipbl.SyncAndWrite(ctx, e.Store, e.Settings, e.StateDir)
+	if err != nil {
+		return haproxy.Rendered{}, err
+	}
+	if err := e.WriteGeoIPEnforceMap(ctx, syncRes.AllCIDRs); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	wlPath := ipwl.MapPath(e.Settings, e.StateDir)
@@ -149,6 +181,8 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	}
 	useWL := ipwl.UseInRender(e.Settings.IPWLEnabled, wlPath)
 	useBadUA := blockedua.UseInRender(e.Settings.BlockedUserAgentsEnabled, uaMapPath)
+	geoPath := geoip.EnforceMapPath(e.Settings, e.StateDir)
+	useGeo := geoip.UseEnforceMapInRender(e.Settings.GeoIPEnabled, geoPath)
 	ri := haproxy.RenderInput{
 		Settings:                 e.Settings,
 		Applications:             apps,
@@ -160,6 +194,8 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 		UseIPAllowlist:           useWL,
 		BlockedUserAgentsMapPath: uaMapPath,
 		UseBlockedUserAgents:     useBadUA,
+		GeoIPEnforceMapPath:      geoPath,
+		UseGeoIPEnforce:          useGeo,
 	}
 	return haproxy.Render(ri)
 }

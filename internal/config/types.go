@@ -53,15 +53,25 @@ type Certificate struct {
 
 // GlobalSettings controls daemon and edge defaults.
 type GlobalSettings struct {
-	ACMEEmail           string   `json:"acme_email,omitempty"`
-	ACMEStaging         bool     `json:"acme_staging"`
-	CrowdSecLAPIURL     string   `json:"crowdsec_lapi_url,omitempty"`
-	CrowdSecLAPIKey     string   `json:"-"` // never serialize to JSON in logs by default
-	SPOEConfigPath      string   `json:"spoe_config_path"`
-	HAProxyConfigPath   string   `json:"haproxy_config_path"`
-	HAProxyBinary       string   `json:"haproxy_binary"`
-	CrowdSecEngineName  string   `json:"crowdsec_engine_name"`
-	GeoIPCacheTTL       Duration `json:"geoip_cache_ttl"`
+	ACMEEmail          string   `json:"acme_email,omitempty"`
+	ACMEStaging        bool     `json:"acme_staging"`
+	CrowdSecLAPIURL    string   `json:"crowdsec_lapi_url,omitempty"`
+	CrowdSecLAPIKey    string   `json:"-"` // never serialize to JSON in logs by default
+	SPOEConfigPath     string   `json:"spoe_config_path"`
+	HAProxyConfigPath  string   `json:"haproxy_config_path"`
+	HAProxyBinary      string   `json:"haproxy_binary"`
+	CrowdSecEngineName string   `json:"crowdsec_engine_name"`
+	GeoIPCacheTTL      Duration `json:"geoip_cache_ttl"`
+	// GeoIPEnabled turns on batch GeoIP map generation on apply/sync and optional HAProxy fe_https deny ACL.
+	GeoIPEnabled bool `json:"geoip_enabled"`
+	// GeoIPProvider: "ipinfo" (default) or "maxmind" (stub in MVP).
+	GeoIPProvider string `json:"geoip_provider,omitempty"`
+	// GeoIPDefaultPolicy: "allow" = allow-list; "deny" = deny-list (see docs/ARCHITECTURE.md GeoIP).
+	GeoIPDefaultPolicy string `json:"geoip_default_policy,omitempty"`
+	// GeoIPCountryList is ISO 3166-1 alpha-2 codes, e.g. ["US","DE"].
+	GeoIPCountryList []string `json:"geoip_country_list,omitempty"`
+	// GeoIPEnforceMapPath is the HAProxy src map of CIDRs to deny for GeoIP batch enforcement.
+	GeoIPEnforceMapPath string   `json:"geoip_enforce_map_path,omitempty"`
 	ACMERenewalInterval Duration `json:"acme_renewal_interval"`
 	// ACMEWebrootPath is the filesystem root for HTTP-01 challenges (HAProxy must expose /.well-known/ → this path).
 	ACMEWebrootPath string `json:"acme_webroot_path,omitempty"`
@@ -106,6 +116,11 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		HAProxyBinary:            "/usr/sbin/haproxy",
 		CrowdSecEngineName:       "crowdsec",
 		GeoIPCacheTTL:            Duration(24 * time.Hour),
+		GeoIPEnabled:             false,
+		GeoIPProvider:            "ipinfo",
+		GeoIPDefaultPolicy:       "allow",
+		GeoIPCountryList:         nil,
+		GeoIPEnforceMapPath:      stateDir + "/haproxy/geoip_enforce.map",
 		ACMERenewalInterval:      Duration(12 * time.Hour),
 		ACMEWebrootPath:          stateDir + "/acme/webroot",
 		IPBlacklistMapPath:       stateDir + "/haproxy/ip_blacklist.map",

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
@@ -84,6 +86,9 @@ func (s *Server) Router() chi.Router {
 			r.Get("/security/blocked-ua", s.listBlockedUA)
 			r.Post("/security/blocked-ua", s.addBlockedUA)
 			r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
+
+			r.Get("/geoip/lookup", s.geoipLookup)
+			r.Get("/geoip/stats", s.geoipStats)
 
 			r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 		})
@@ -259,6 +264,10 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateGeoIPSettings(gs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	s.Eng.Settings = gs
 	if err := s.Eng.SaveSettings(r.Context()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -338,8 +347,41 @@ func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := s.Eng.WriteGeoIPEnforceMap(r.Context(), res.AllCIDRs); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "ipbl.sync", map[string]any{"total": res.TotalLines})
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
+	ip := strings.TrimSpace(r.URL.Query().Get("ip"))
+	if ip == "" {
+		http.Error(w, "ip query parameter required", http.StatusBadRequest)
+		return
+	}
+	if net.ParseIP(ip) == nil {
+		http.Error(w, "invalid ip", http.StatusBadRequest)
+		return
+	}
+	if s.Eng.GeoIP == nil {
+		s.Eng.GeoIP = geoip.NewRuntime(time.Duration(s.Eng.Settings.GeoIPCacheTTL))
+	}
+	cc, cached, err := s.Eng.GeoIP.Lookup(r.Context(), s.Eng.Settings, ip)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ip": ip, "country": cc, "cached": cached})
+}
+
+func (s *Server) geoipStats(w http.ResponseWriter, r *http.Request) {
+	if s.Eng.GeoIP == nil || s.Eng.GeoIP.Cache == nil {
+		writeJSON(w, http.StatusOK, geoip.Stats{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Eng.GeoIP.Cache.Stats())
 }
 
 func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +463,18 @@ func (s *Server) deleteBlockedUA(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "blocked_ua.delete", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func validateGeoIPSettings(gs config.GlobalSettings) error {
+	p := strings.ToLower(strings.TrimSpace(gs.GeoIPDefaultPolicy))
+	if p != "" && p != "allow" && p != "deny" {
+		return fmt.Errorf("geoip_default_policy must be allow or deny")
+	}
+	pr := strings.ToLower(strings.TrimSpace(gs.GeoIPProvider))
+	if pr != "" && pr != "ipinfo" && pr != "maxmind" {
+		return fmt.Errorf("geoip_provider must be ipinfo or maxmind")
+	}
+	return nil
 }
 
 func validateIPOrCIDR(s string) error {

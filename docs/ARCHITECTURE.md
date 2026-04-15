@@ -178,9 +178,13 @@ sequenceDiagram
 
 ## GeoIP architecture
 
-- **Provider interface**: `GeoProvider` (lookup IP → country).
-- **MVP**: ipinfo.io token optional; **LRU + TTL cache** in memory; batch refresh for seen IPs; never per-request without cache hit.
-- **Future**: MaxMind GeoLite2 local mmdb with same interface.
+- **Provider interface**: `GeoProvider` (`Lookup(ctx, ip) → ISO 3166-1 alpha-2`).
+- **MVP provider**: **ipinfo.io** (`internal/geoip/ipinfo.go`) — `https://ipinfo.io/{ip}/json`, optional `GEOIP_IPINFO_TOKEN` query param, outbound **~1 req/s** (`MinInterval`). Tests may set `BaseURL` to an `httptest` server.
+- **Cache**: in-memory **LRU + TTL** (`internal/geoip/cache.go`); stats: hits, misses, size — exposed at **`GET /api/v1/geoip/stats`**.
+- **API**: **`GET /api/v1/geoip/lookup?ip=`** → `{ ip, country, cached }` for diagnostics (uses current `geoip_provider` / cache).
+- **Settings** (global JSON / migration `007`): `geoip_enabled`, `geoip_provider` (`ipinfo`|`maxmind`), `geoip_default_policy` (`allow` = allow-list, `deny` = deny-list), `geoip_country_list` (alpha-2 codes), `geoip_enforce_map_path` (optional override).
+- **HAProxy (batch MVP)**: on **Apply** / IPBL **Sync**, when `geoip_enabled`, each blacklist CIDR’s **network address** is resolved once → `geoip_enforce.map` lists CIDRs to **deny** (subset matching policy vs country list). `fe_https` uses `acl geo_enforce src -f …` and `http-request deny deny_status 403 if geo_enforce`. Not real-time per connection (cf. CrowdSec); map refreshes on sync/apply.
+- **Future**: MaxMind GeoLite2 **MMDB** behind the same interface (`maxmind` stub today).
 
 ## Risks and contentious areas
 
