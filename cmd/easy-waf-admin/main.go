@@ -28,6 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "reset-control-panel-access":
 		resetControlPanelAccess()
+	case "management-config":
+		managementConfig()
 	case "reset-appliance":
 		resetAppliance()
 	case "factory-reset":
@@ -42,12 +44,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-control-panel-access [-env-file path] [-state-dir path]")
 	fmt.Fprintln(os.Stderr, "      Resets management CIDR allowlist to defaults and binds API to loopback in env file.")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin management-config [-env-file path] [-state-dir path] [-database-url URL]")
+	fmt.Fprintln(os.Stderr, "      Prints management listen addresses (env) and GUI/API source CIDRs (database).")
+	fmt.Fprintln(os.Stderr, "      Optional: -listen-loopback | -listen-lan | -listen-http ADDR -listen-https ADDR")
+	fmt.Fprintln(os.Stderr, "                -management-cidrs '10.0.0.0/8,...' | -default-management-cidrs")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-appliance [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -confirm RESET")
 	fmt.Fprintln(os.Stderr, "      Factory reset: truncates DB config tables and clears generated state (preferred).")
 	fmt.Fprintln(os.Stderr, "      -bootstrap-credentials (root): new random 19-char DB password + EASY_WAF_ADMIN_TOKEN, updates env file, then wipes; GUI stays admin/admin after API start.")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
-	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file)")
+	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 
 // openStoreFrom connects using url when non-empty; otherwise DATABASE_URL from the environment.
@@ -155,7 +161,7 @@ func resetControlPanelAccess() {
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
 	_ = fs.Parse(os.Args[2:])
 
-	st, err := openStore()
+	st, err := openStoreFromEnvFile(*envFile, "")
 	if err != nil {
 		log.Fatal(err)
 	}

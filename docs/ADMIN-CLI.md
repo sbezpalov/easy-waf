@@ -2,7 +2,7 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`reset-appliance -bootstrap-credentials`**, which reads **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) to discover the role name and host.
+Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
 
 ## Automated appliance reset (dev / lab)
 
@@ -28,14 +28,48 @@ Optional: **`-credentials-out /path/to/file.txt`** (default **`/root/easy-waf-bo
 
 **Remote PostgreSQL** is not supported by **`-bootstrap-credentials`** (host must be local). On external DB appliances, rotate the role password on the DB server, update **`DATABASE_URL`** manually, then run **`reset-appliance -confirm RESET`** without **`-bootstrap-credentials`**.
 
+## `management-config`
+
+Inspect or adjust **management bind addresses** (`EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS` in **`easy-waf.env`**) and the **application-level GUI/API source allowlist** (`management_allowed_cidrs` in the database — same semantics as the Settings UI / API).
+
+**Read-only** (prints env-derived listeners, stored CIDRs, and the **effective** allowlist used when the stored list is empty):
+
+```bash
+sudo /usr/sbin/easy-waf-admin management-config
+```
+
+**Examples — write changes** (always **`sudo systemctl restart easy-waf-api.service`** afterwards so a running process reloads env and DB-backed settings):
+
+```bash
+# Listen on all interfaces (LAN / RFC1918 + firewalld as in install.sh)
+sudo /usr/sbin/easy-waf-admin management-config -listen-lan
+
+# Loopback only (use SSH port-forward to reach the UI)
+sudo /usr/sbin/easy-waf-admin management-config -listen-loopback
+
+# Custom bind addresses
+sudo /usr/sbin/easy-waf-admin management-config -listen-http 0.0.0.0:8000 -listen-https 0.0.0.0:8443
+
+# Replace allowlist (comma-separated CIDRs; at least one required)
+sudo /usr/sbin/easy-waf-admin management-config \
+  -management-cidrs '127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+
+# Reset CIDR allowlist to built-in defaults (RFC1918 + loopback)
+sudo /usr/sbin/easy-waf-admin management-config -default-management-cidrs
+```
+
+Flags: **`-env-file`**, **`-state-dir`**, **`-database-url`** (same meaning as on **`reset-appliance`**). Do not combine **`-listen-loopback`** with **`-listen-lan`** or with **`-listen-http` / `-listen-https`**. Do not combine **`-default-management-cidrs`** with **`-management-cidrs`**.
+
 ## `reset-control-panel-access`
 
 Use when the management UI/API is unreachable because of **IP allowlist** or **bind address** mistakes.
 
 ```bash
-sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin reset-control-panel-access'
+sudo /usr/sbin/easy-waf-admin reset-control-panel-access
 sudo systemctl restart easy-waf-api.service
 ```
+
+(Alternatively: `sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin reset-control-panel-access'` — not required; **`DATABASE_URL`** is read from **`/etc/easy-waf/easy-waf.env`** by default.)
 
 Effects:
 

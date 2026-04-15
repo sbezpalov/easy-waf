@@ -7,7 +7,10 @@ easy_waf_firewalld_remove_broad_management_port() {
   local zone="${2:-public}"
   command -v firewall-cmd &>/dev/null || return 0
   systemctl is-active --quiet firewalld 2>/dev/null || return 0
-  firewall-cmd --permanent --zone="$zone" --remove-port="${port}/tcp" &>/dev/null || true
+  # Avoid firewalld journal noise (NOT_ENABLED) when the port was never opened as a plain --add-port.
+  if firewall-cmd --permanent --zone="$zone" --query-port="${port}/tcp" &>/dev/null; then
+    firewall-cmd --permanent --zone="$zone" --remove-port="${port}/tcp" &>/dev/null || true
+  fi
 }
 
 # Allow TCP ports (space-separated, default "8000 8443") only from RFC1918 + 127.0.0.0/8 on $zone.

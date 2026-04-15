@@ -11,7 +11,8 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
-func validateManagementCIDRs(cidrs []string) error {
+// ValidateManagementCIDRs checks the allowlist used for management GUI/API (same rules as settings save).
+func ValidateManagementCIDRs(cidrs []string) error {
 	if len(cidrs) == 0 {
 		return fmt.Errorf("management_allowed_cidrs: at least one CIDR is required")
 	}

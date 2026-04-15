@@ -262,7 +262,7 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request,
 	if gs.ManagementAllowedCIDRs == nil {
 		gs.ManagementAllowedCIDRs = s.Eng.Settings.ManagementAllowedCIDRs
 	}
-	if err := validateManagementCIDRs(gs.ManagementAllowedCIDRs); err != nil {
+	if err := ValidateManagementCIDRs(gs.ManagementAllowedCIDRs); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

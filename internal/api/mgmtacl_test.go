@@ -44,13 +44,13 @@ func TestIPAllowed(t *testing.T) {
 }
 
 func TestValidateManagementCIDRs(t *testing.T) {
-	if err := validateManagementCIDRs([]string{"10.0.0.0/8"}); err != nil {
+	if err := ValidateManagementCIDRs([]string{"10.0.0.0/8"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateManagementCIDRs([]string{}); err == nil {
+	if err := ValidateManagementCIDRs([]string{}); err == nil {
 		t.Fatal("expected error for empty list")
 	}
-	if err := validateManagementCIDRs([]string{"not-a-cidr"}); err == nil {
+	if err := ValidateManagementCIDRs([]string{"not-a-cidr"}); err == nil {
 		t.Fatal("expected error for bad CIDR")
 	}
 }
