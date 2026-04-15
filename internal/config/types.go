@@ -64,6 +64,25 @@ type Certificate struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// CertificateSummaryEntry is one row for GET /api/v1/certificates/summary (dashboard + UI).
+type CertificateSummaryEntry struct {
+	ID            string     `json:"id"`
+	PrimaryDomain string     `json:"primary_domain"`
+	NotAfter      *time.Time `json:"not_after,omitempty"`
+	DaysRemaining *int       `json:"days_remaining,omitempty"`
+	Status        string     `json:"status"` // valid | expiring | expired | pending
+	Mode          string     `json:"mode"`   // http-01 | dns-01 | manual
+}
+
+// CertificateSummaryResponse aggregates counts and per-certificate rows for dashboards.
+type CertificateSummaryResponse struct {
+	Total        int                       `json:"total"`
+	Valid        int                       `json:"valid"`
+	ExpiringSoon int                       `json:"expiring_soon"`
+	Expired      int                       `json:"expired"`
+	Certificates []CertificateSummaryEntry `json:"certificates"`
+}
+
 // GlobalSettings controls daemon and edge defaults.
 type GlobalSettings struct {
 	ACMEEmail         string `json:"acme_email,omitempty"`

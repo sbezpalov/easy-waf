@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -64,8 +66,10 @@ func (s *Server) Router() chi.Router {
 				r.Get("/applications", s.listApps)
 				r.Post("/applications", s.upsertApp)
 				r.Delete("/applications/{id}", s.deleteApp)
+				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)
 				r.Post("/certificates", s.upsertCert)
+				r.Delete("/certificates/{id}", s.deleteCert)
 				r.Post("/apply", s.apply)
 				r.Get("/revisions", s.listRevisions)
 				r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
@@ -163,6 +167,40 @@ func (s *Server) listCerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+func (s *Server) listCertsSummary(w http.ResponseWriter, r *http.Request) {
+	certs, err := s.Eng.Store.ListCertificates(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp := BuildCertificateSummaryResponse(certs, time.Now().UTC())
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) deleteCert(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	n, err := s.Eng.Store.CountApplicationsByCertificateID(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if n > 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("%d application(s) still reference this certificate; detach or delete them first", n),
+		})
+		return
+	}
+	if err := s.Eng.Store.DeleteCertificate(r.Context(), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {

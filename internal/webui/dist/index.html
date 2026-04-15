@@ -76,6 +76,27 @@
     .tab-panel h2 { margin-top: 0; font-size: 1.15rem; }
     .tab-panel h3 { font-size: 1rem; }
 
+    .cert-stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; margin: 1rem 0;
+    }
+    .cert-stat-card {
+      border-radius: 8px; padding: 0.75rem 1rem; border: 1px solid var(--border);
+    }
+    .cert-stat-card .lab { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .cert-stat-card .num { font-size: 1.35rem; font-weight: 600; margin-top: 0.25rem; }
+    .cert-stat-total { background: var(--panel); }
+    .cert-stat-valid { background: #0d2818; border-color: #238636; }
+    .cert-stat-valid .num { color: #3fb950; }
+    .cert-stat-expiring { background: #2d2710; border-color: #9e6a03; }
+    .cert-stat-expiring .num { color: #d29922; }
+    .cert-stat-expired { background: #2d1619; border-color: #da3633; }
+    .cert-stat-expired .num { color: #f85149; }
+    .status-pill { display: inline-block; padding: 0.12rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .status-valid { background: #0d2818; color: #3fb950; }
+    .status-expiring { background: #2d2710; color: #d29922; }
+    .status-expired { background: #2d1619; color: #f85149; }
+    .status-pending { background: #21262d; color: #8b949e; }
+
     @media (max-width: 768px) {
       .nav-toggle { display: inline-block; }
       .app-sidebar {
@@ -142,7 +163,7 @@
         <p id="dash-status" class="warn" style="min-height:1.25rem"></p>
         <div class="dash-grid">
           <div class="dash-card"><h3>Applications</h3><div class="dash-stat" id="dash-apps-stat">—</div><div class="dash-note">enabled / total</div></div>
-          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">—</div><div class="dash-note">valid · expiring ≤30d · expired (+ unknown if no dates)</div></div>
+          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">—</div><div class="dash-note" id="dash-certs-sub">valid · expiring (&lt;30d) · expired</div></div>
           <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">—</div><div class="dash-note" id="dash-cs-sub">—</div></div>
           <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">—</div><div class="dash-note">local entries · external sources</div></div>
           <div class="dash-card"><h3>Traffic (HAProxy)</h3><div class="dash-stat" id="dash-req-rate">—</div><div class="dash-note">requests/s (edge frontends)</div></div>
@@ -196,9 +217,32 @@
 
       <div id="tab-certs" class="tab-panel">
         <h2>▤ Certificates</h2>
-        <p><small>Status / dates from database; issue flows via API or ACME worker.</small></p>
-        <div class="row"><button type="button" class="secondary" id="btn-certs">Load certificates</button></div>
-        <div id="certs"></div>
+        <p class="dash-note" style="margin-top:0">TLS material metadata from PostgreSQL. ACME issuance is picked up by <code>acmed</code> after <strong>Request issue</strong> / <strong>Renew</strong>.</p>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-certs">Refresh</button>
+        </div>
+        <p id="cert-dash-msg" class="warn" style="min-height:1rem"></p>
+        <div class="cert-stat-grid">
+          <div class="cert-stat-card cert-stat-total"><div class="lab">Total</div><div class="num" id="cert-sum-total">—</div></div>
+          <div class="cert-stat-card cert-stat-valid"><div class="lab">Valid</div><div class="num" id="cert-sum-valid">—</div></div>
+          <div class="cert-stat-card cert-stat-expiring"><div class="lab">Expiring soon</div><div class="num" id="cert-sum-expiring">—</div></div>
+          <div class="cert-stat-card cert-stat-expired"><div class="lab">Expired</div><div class="num" id="cert-sum-expired">—</div></div>
+        </div>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Expires (UTC)</th>
+                <th>Days left</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cert-table-body"></tbody>
+          </table>
+        </div>
       </div>
 
       <div id="tab-security" class="tab-panel">
@@ -451,7 +495,7 @@
         loadProfileSelect();
         break;
       case 'certs':
-        document.getElementById('btn-certs').click();
+        loadCertDashboard();
         break;
       case 'security':
         loadSettingsPanel();
@@ -752,14 +796,105 @@
     document.getElementById('ua-blocklist-enabled').checked = !!cachedSettings.blocked_user_agents_enabled;
   }
 
-  function certBucket(c) {
-    const na = c.not_after;
-    if (!na) return 'unknown';
-    const t = new Date(na).getTime();
-    if (Number.isNaN(t)) return 'unknown';
-    if (t < Date.now()) return 'expired';
-    if (t < Date.now() + 30 * 86400000) return 'expiring';
-    return 'valid';
+  function certStatusPillHTML(status) {
+    const cls = status === 'valid' ? 'status-valid'
+      : status === 'expiring' ? 'status-expiring'
+        : status === 'expired' ? 'status-expired' : 'status-pending';
+    return '<span class="status-pill ' + cls + '">' + esc(status) + '</span>';
+  }
+
+  function formatCertNotAfter(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toISOString().slice(0, 19).replace('T', ' ');
+    } catch (_) {
+      return esc(String(iso));
+    }
+  }
+
+  async function loadCertDashboard() {
+    const msg = document.getElementById('cert-dash-msg');
+    const tbody = document.getElementById('cert-table-body');
+    if (!msg || !tbody) return;
+    msg.textContent = '';
+    const r = await fetch('/api/v1/certificates/summary', { headers: hdr() });
+    if (r.status === 401) {
+      setTok('');
+      refreshSession();
+      return;
+    }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      msg.textContent = j.error || (typeof j === 'string' ? j : JSON.stringify(j));
+      return;
+    }
+    document.getElementById('cert-sum-total').textContent = String(j.total ?? '—');
+    document.getElementById('cert-sum-valid').textContent = String(j.valid ?? '—');
+    document.getElementById('cert-sum-expiring').textContent = String(j.expiring_soon ?? '—');
+    document.getElementById('cert-sum-expired').textContent = String(j.expired ?? '—');
+
+    const rows = Array.isArray(j.certificates) ? j.certificates : [];
+    tbody.innerHTML = '';
+    if (rows.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="6"><span class="dash-note">No certificates yet.</span></td>';
+      tbody.appendChild(tr);
+      return;
+    }
+    rows.forEach((c) => {
+      const id = c.id || '';
+      const actions = [];
+      if (c.status === 'pending') {
+        actions.push('<button type="button" data-cert-issue="' + esc(id) + '">Request issue</button>');
+      }
+      if (c.status === 'expiring' || c.status === 'expired') {
+        actions.push('<button type="button" data-cert-renew="' + esc(id) + '">Renew now</button>');
+      }
+      actions.push('<button type="button" class="secondary" data-cert-del="' + esc(id) + '">Delete</button>');
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + esc(c.primary_domain || '') + '</code></td>' +
+        '<td><code>' + esc(c.mode || '') + '</code></td>' +
+        '<td>' + certStatusPillHTML(c.status || '') + '</td>' +
+        '<td><code>' + formatCertNotAfter(c.not_after) + '</code></td>' +
+        '<td>' + (c.days_remaining == null ? '—' : esc(String(c.days_remaining))) + '</td>' +
+        '<td class="row" style="gap:0.35rem;flex-wrap:wrap">' + actions.join(' ') + '</td>';
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('[data-cert-issue]').forEach((btn) => {
+      btn.onclick = async () => {
+        msg.textContent = '';
+        const cid = btn.getAttribute('data-cert-issue');
+        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
+        if (!rr.ok) { msg.textContent = await rr.text(); return; }
+        msg.textContent = 'Issue queued (pending). Ensure acmed is running and ACME email is set.';
+        msg.className = 'ok';
+        loadCertDashboard();
+      };
+    });
+    tbody.querySelectorAll('[data-cert-renew]').forEach((btn) => {
+      btn.onclick = async () => {
+        msg.textContent = '';
+        const cid = btn.getAttribute('data-cert-renew');
+        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
+        if (!rr.ok) { msg.textContent = await rr.text(); return; }
+        msg.textContent = 'Renew queued (pending).';
+        msg.className = 'ok';
+        loadCertDashboard();
+      };
+    });
+    tbody.querySelectorAll('[data-cert-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        const cid = btn.getAttribute('data-cert-del');
+        if (!cid || !confirm('Delete certificate for ' + cid + '?')) return;
+        msg.textContent = '';
+        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid), { method: 'DELETE', headers: hdr() });
+        if (!rr.ok) { msg.textContent = await rr.text(); msg.className = 'warn'; return; }
+        msg.textContent = 'Deleted.';
+        msg.className = 'ok';
+        loadCertDashboard();
+      };
+    });
   }
 
   function decisionsCount(rawText) {
@@ -933,10 +1068,10 @@
   async function loadDashboard() {
     const stEl = document.getElementById('dash-status');
     stEl.textContent = '';
-    const [stR, appsR, certsR, revR, csR, decR, ipblR, srcR] = await Promise.all([
+    const [stR, appsR, certSumR, revR, csR, decR, ipblR, srcR] = await Promise.all([
       fetch('/api/v1/status', { headers: hdr() }),
       fetch('/api/v1/applications', { headers: hdr() }),
-      fetch('/api/v1/certificates', { headers: hdr() }),
+      fetch('/api/v1/certificates/summary', { headers: hdr() }),
       fetch('/api/v1/revisions?limit=30', { headers: hdr() }),
       fetch('/api/v1/integrations/crowdsec', { headers: hdr() }),
       fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() }),
@@ -944,8 +1079,9 @@
       fetch('/api/v1/ipbl/sources', { headers: hdr() })
     ]);
 
-    if (stR.status === 401 || appsR.status === 401 || stR.status === 403 || appsR.status === 403) {
-      if (stR.status === 401 || appsR.status === 401) setTok('');
+    if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 ||
+      stR.status === 403 || appsR.status === 403 || certSumR.status === 403) {
+      if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401) setTok('');
       refreshSession();
       return;
     }
@@ -962,19 +1098,23 @@
     const en = apps.filter((a) => a.enabled).length;
     document.getElementById('dash-apps-stat').textContent = `${en} / ${apps.length}`;
 
-    let certs = [];
+    let certSum = null;
     try {
-      if (certsR.ok) certs = await certsR.json();
+      if (certSumR.ok) certSum = await certSumR.json();
     } catch (_) {}
-    let v = 0, e = 0, x = 0, u = 0;
-    (certs || []).forEach((c) => {
-      const b = certBucket(c);
-      if (b === 'valid') v++;
-      else if (b === 'expiring') e++;
-      else if (b === 'expired') x++;
-      else u++;
-    });
-    document.getElementById('dash-certs-stat').textContent = `${v} / ${e} / ${x}` + (u ? ` (+${u} unknown)` : '');
+    if (certSum && typeof certSum.valid === 'number') {
+      document.getElementById('dash-certs-stat').textContent =
+        `${certSum.valid} / ${certSum.expiring_soon} / ${certSum.expired}`;
+      const pend = certSum.total - certSum.valid - certSum.expiring_soon - certSum.expired;
+      const sub = document.getElementById('dash-certs-sub');
+      if (sub) {
+        sub.textContent = `total ${certSum.total}` + (pend > 0 ? ` · pending ${pend}` : '');
+      }
+    } else {
+      document.getElementById('dash-certs-stat').textContent = '—';
+      const sub = document.getElementById('dash-certs-sub');
+      if (sub) sub.textContent = 'summary unavailable';
+    }
 
     let cs = {};
     try { if (csR.ok) cs = await csR.json(); } catch (_) {}
@@ -1137,13 +1277,7 @@
     try { out.textContent = JSON.stringify(JSON.parse(txt), null, 2); } catch { out.textContent = txt; }
   };
 
-  document.getElementById('btn-certs').onclick = async () => {
-    const r = await fetch('/api/v1/certificates', { headers: hdr() });
-    const j = await r.json();
-    if (!r.ok) { document.getElementById('certs').textContent = JSON.stringify(j); return; }
-    const rows = (j || []).map(c => `<tr><td>${esc(c.primary_domain || '')}</td><td>${esc(c.acme_status || '')}</td><td>${esc(c.not_after || '')}</td><td>${esc(c.last_error || '')}</td></tr>`).join('');
-    document.getElementById('certs').innerHTML = `<table><thead><tr><th>Domain</th><th>ACME</th><th>Not after</th><th>Last error</th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
-  };
+  document.getElementById('btn-certs').onclick = () => { loadCertDashboard(); };
 
   function csOut(obj) {
     document.getElementById('crowdsec-out').textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);

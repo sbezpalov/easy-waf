@@ -358,6 +358,32 @@ func scanCertificates(rows *sql.Rows) ([]config.Certificate, error) {
 	return out, rows.Err()
 }
 
+// CountApplicationsByCertificateID returns how many applications reference this certificate.
+func (s *Store) CountApplicationsByCertificateID(ctx context.Context, certID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications WHERE certificate_id = $1`, certID).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// DeleteCertificate removes a certificate row by id.
+func (s *Store) DeleteCertificate(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM certificates WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // UpsertCertificate inserts or updates a certificate record.
 func (s *Store) UpsertCertificate(ctx context.Context, c *config.Certificate) error {
 	now := time.Now().UTC()
