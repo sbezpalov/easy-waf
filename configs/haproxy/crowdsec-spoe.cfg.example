@@ -1,23 +1,18 @@
-# Legacy minimal SPOE example — production installs use the vendor file:
-#   /etc/haproxy/crowdsec.cfg   (package: crowdsec-haproxy-spoa-bouncer; see docs/CROWDSEC.md)
-# GlobalSettings default spoe_config_path matches that path. The `filter spoe engine` name must match
-# the [crowdsec] block in that file (default engine id: crowdsec).
+# Legacy / reference SPOE — HAProxy 2.8+ expects a [engine] scope matching `filter spoe engine …`,
+# `spoe-message` (not `message`), and the `use-backend` target as a normal `backend` in haproxy.cfg.
+# Production installs use the vendor file, e.g. /etc/haproxy/crowdsec.cfg (crowdsec-haproxy-spoa-bouncer; see docs/CROWDSEC.md).
 
-spoe-agent crowdsec {
-    messages    crowdsec
-    option      var-prefix crowdsec
-    timeout     hello   100ms
-    timeout     idle    30s
-    timeout     processing 5s
-    use-backend crowdsec-socket
-    log         global
-}
+[crowdsec]
 
-crowdsec-socket {
-    server crowdsec 127.0.0.1:9000
-}
+spoe-agent crowdsec
+	messages crowdsec
+	option var-prefix crowdsec
+	timeout hello 100ms
+	timeout idle 30s
+	timeout processing 5s
+	use-backend crowdsec-socket
+	log global
 
-message crowdsec {
-    args id=unique-id src-ip=src src-port=src_port
-    event on-frontend-http-request
-}
+spoe-message crowdsec
+	args src
+	event on-frontend-http-request

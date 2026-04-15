@@ -3,6 +3,7 @@
 package haproxy
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -22,8 +23,17 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 
 	for _, name := range goldenScenarioNames {
 		t.Run(name, func(t *testing.T) {
-			cfg := filepath.Join("testdata", "golden", name+".cfg")
-			if err := apply.Validate(hx, cfg); err != nil {
+			cfgPath := filepath.Join("testdata", "golden", name+".cfg")
+			raw, err := os.ReadFile(cfgPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfgBody := augmentGoldenHAProxyCfgForHaproxyCheck(raw)
+			tmp := filepath.Join(t.TempDir(), name+".cfg")
+			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := apply.Validate(hx, tmp); err != nil {
 				t.Fatal(err)
 			}
 		})

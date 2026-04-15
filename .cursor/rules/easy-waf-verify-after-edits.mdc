@@ -11,8 +11,11 @@ alwaysApply: true
 - Считай эталоном то, что проходит на Linux: **`make ci`** / те же шаги из **Git Bash**, **WSL** или с Alma/VM — не только `go test` в Windows без bash.
 - В репозитории — **LF** в `scripts/**/*.sh`, пути и артефакты под Linux; не коммить Windows‑сборки в `dist/` (см. ниже).
 - **Пилот Linux по SSH:** алиас **`waf-dev`** — см. **`docs/DEV_HOST.md`** и **`.vscode/settings.json`** (`remote.SSH.remotePlatform`).
+- **Эталонные проверки** (HAProxy в PATH, `make`, Linux как в проде): по возможности выполняй на **`waf-dev`**, а не только на Windows. После `git push` — на пилоте `git pull` в `~/easy-waf`, иначе там останется старый код и тесты дадут ложные падения.
+  - Пример: `ssh waf-dev 'cd ~/easy-waf && git pull && make ci'`
+  - Интеграция HAProxy golden: `ssh waf-dev 'cd ~/easy-waf && go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1'`
 
-1. **Обязательно выполни** из корня репозитория `easy-waf` (Git Bash, WSL или Linux):
+1. **Обязательно выполни** из корня репозитория `easy-waf` на **Linux** (предпочтительно **`waf-dev`** по SSH) или в **Git Bash / WSL**:
    - `make ci` (или по шагам: `make verify`, `make lint`, `make test`)  
    Если `make` нет:  
    `bash scripts/check-linux-artifacts.sh && go vet ./... && golangci-lint run ./... && go test ./...`
