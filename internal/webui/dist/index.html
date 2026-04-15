@@ -345,10 +345,38 @@
       </div>
 
       <div id="tab-logs" class="tab-panel">
-        <h2>▤ Logs / Audit</h2>
-        <div class="panel" style="max-width:42rem">
-          <p><strong>Placeholder.</strong> Server-side audit log API is not exposed in this build. Use host logs, <code>journalctl</code>, or PostgreSQL <code>audit_log</code> for investigations.</p>
-          <p class="dash-note">Future: <code>GET /api/v1/audit</code> with filters and export.</p>
+        <h2>◈ Logs / Audit</h2>
+        <p class="dash-note" style="margin-top:0">Append-only administrative audit (mutating HTTP requests and engine events). Request bodies are not stored.</p>
+        <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.75rem 0">
+          <label>Action filter
+            <select id="audit-filter-action">
+              <option value="all">All</option>
+              <option value="apply">apply (engine / URL)</option>
+              <option value="rollback">rollback</option>
+              <option value="settings">settings</option>
+              <option value="/applications">applications</option>
+              <option value="/certificates">certificates</option>
+              <option value="ipbl">ipbl</option>
+              <option value="ipwl">ipwl</option>
+              <option value="blocked-ua">blocked-ua</option>
+              <option value="change-password">change-password</option>
+            </select>
+          </label>
+          <label><input type="checkbox" id="audit-auto-refresh" /> Auto-refresh (15s)</label>
+          <button type="button" class="secondary" id="btn-audit-refresh">Refresh</button>
+        </div>
+        <p id="audit-err" class="warn" style="min-height:1rem"></p>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <table>
+            <thead>
+              <tr><th>Date (UTC)</th><th>User</th><th>Action</th><th>IP</th><th>Details</th></tr>
+            </thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+          <div class="row" style="margin-top:0.75rem;align-items:center">
+            <button type="button" class="secondary" id="btn-audit-more">Load more</button>
+            <span id="audit-shown" class="dash-note"></span>
+          </div>
         </div>
       </div>
 
@@ -412,6 +440,7 @@
     }
     const panel = HASH_TO_PANEL[raw];
     if (panel !== 'dashboard') stopDashStatsTimer();
+    if (panel !== 'logs') stopAuditRefreshTimer();
     showTabPanel(panel);
     switch (panel) {
       case 'dashboard':
@@ -438,6 +467,8 @@
         loadSettingsPanel();
         break;
       case 'logs':
+        loadAuditPage(true);
+        syncAuditAutoRefresh();
         break;
       default:
         break;
@@ -536,6 +567,11 @@
   };
 
   document.getElementById('btn-logout').onclick = () => { setTok(''); closeMobileNav(); refreshSession(); };
+
+  document.getElementById('btn-audit-refresh').onclick = () => { loadAuditPage(true); };
+  document.getElementById('btn-audit-more').onclick = () => { loadAuditPage(false); };
+  document.getElementById('audit-filter-action').onchange = () => { loadAuditPage(true); syncAuditAutoRefresh(); };
+  document.getElementById('audit-auto-refresh').onchange = () => { syncAuditAutoRefresh(); };
 
   function addRestrictedPathRow(prefix, cidrsText) {
     const wrap = document.createElement('div');
@@ -745,6 +781,115 @@
   function startDashStatsTimer() {
     stopDashStatsTimer();
     dashStatsTimer = setInterval(() => { loadDashTraffic(); }, 10000);
+  }
+
+  const AUDIT_PAGE = 50;
+  let auditTimer = null;
+  let auditOffset = 0;
+  let auditTotal = 0;
+
+  function stopAuditRefreshTimer() {
+    if (auditTimer) {
+      clearInterval(auditTimer);
+      auditTimer = null;
+    }
+  }
+
+  function syncAuditAutoRefresh() {
+    stopAuditRefreshTimer();
+    const cb = document.getElementById('audit-auto-refresh');
+    if (cb && cb.checked && panelFromHash() === 'logs' && !document.getElementById('view-app').classList.contains('hidden')) {
+      auditTimer = setInterval(() => { loadAuditPage(true); }, 15000);
+    }
+  }
+
+  function formatAuditDetails(d) {
+    if (d == null || d === '') return '—';
+    const raw = typeof d === 'string' ? d : JSON.stringify(d);
+    if (raw === 'null' || raw === '{}') return '—';
+    if (typeof d === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(d));
+      } catch (_) {
+        return d;
+      }
+    }
+    return JSON.stringify(d);
+  }
+
+  function formatAuditTime(ts) {
+    if (!ts) return '—';
+    try {
+      return new Date(ts).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' Z');
+    } catch (_) {
+      return String(ts);
+    }
+  }
+
+  async function loadAuditPage(reset) {
+    const errEl = document.getElementById('audit-err');
+    const tbody = document.getElementById('audit-tbody');
+    const moreBtn = document.getElementById('btn-audit-more');
+    const shownEl = document.getElementById('audit-shown');
+    if (!tbody || !errEl) return;
+    if (document.getElementById('view-app').classList.contains('hidden')) return;
+    if (panelFromHash() !== 'logs') return;
+
+    const sel = document.getElementById('audit-filter-action');
+    const actionVal = sel && sel.value !== 'all' ? sel.value : '';
+
+    const off = reset ? 0 : auditOffset;
+    if (reset) {
+      auditOffset = 0;
+      tbody.innerHTML = '';
+    }
+
+    errEl.textContent = '';
+    const params = new URLSearchParams({ limit: String(AUDIT_PAGE), offset: String(off) });
+    if (actionVal) params.set('action', actionVal);
+
+    const r = await fetch('/api/v1/audit?' + params.toString(), { headers: hdr() });
+    if (r.status === 401) {
+      setTok('');
+      refreshSession();
+      return;
+    }
+    if (!r.ok) {
+      errEl.textContent = await r.text().catch(() => r.statusText);
+      return;
+    }
+    const data = await r.json().catch(() => ({}));
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    auditTotal = typeof data.total === 'number' ? data.total : 0;
+
+    for (const e of entries) {
+      const tr = document.createElement('tr');
+      const c0 = document.createElement('td');
+      const c1 = document.createElement('td');
+      const c2 = document.createElement('td');
+      const c3 = document.createElement('td');
+      const c4 = document.createElement('td');
+      c0.innerHTML = '<code>' + esc(formatAuditTime(e.timestamp)) + '</code>';
+      c1.textContent = e.user_name || '';
+      c2.innerHTML = '<code>' + esc(e.action || '') + '</code>';
+      c3.textContent = e.source_ip || '';
+      c4.style.maxWidth = '28rem';
+      c4.style.wordBreak = 'break-word';
+      c4.style.fontSize = '0.8rem';
+      const pre = document.createElement('code');
+      pre.textContent = formatAuditDetails(e.details);
+      c4.appendChild(pre);
+      tr.appendChild(c0);
+      tr.appendChild(c1);
+      tr.appendChild(c2);
+      tr.appendChild(c3);
+      tr.appendChild(c4);
+      tbody.appendChild(tr);
+    }
+
+    auditOffset = off + entries.length;
+    if (shownEl) shownEl.textContent = 'Showing ' + auditOffset + ' of ' + auditTotal;
+    if (moreBtn) moreBtn.disabled = entries.length === 0 || auditOffset >= auditTotal;
   }
 
   async function loadDashTraffic() {

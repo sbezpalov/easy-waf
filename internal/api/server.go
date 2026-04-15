@@ -53,51 +53,54 @@ func (s *Server) Router() chi.Router {
 		r.Post("/auth/login", s.handleLogin)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Session(s.Eng.Store, s.JWTSecret))
+			r.Use(attachAuditRequestMeta)
+			r.Use(s.auditHTTPMutations)
 			r.Get("/auth/me", s.handleAuthMe)
 			r.Post("/auth/change-password", s.handleChangePassword)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(auth.Session(s.Eng.Store, s.JWTSecret))
-			r.Use(auth.PasswordChangeGate)
-			r.Get("/status", s.handleStatus)
-			r.Get("/profiles", s.handleProfiles)
-			r.Get("/applications", s.listApps)
-			r.Post("/applications", s.upsertApp)
-			r.Delete("/applications/{id}", s.deleteApp)
-			r.Get("/certificates", s.listCerts)
-			r.Post("/certificates", s.upsertCert)
-			r.Post("/apply", s.apply)
-			r.Get("/revisions", s.listRevisions)
-			r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
-			r.Get("/integrations/crowdsec", s.crowdsecStatus)
-			r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
-			r.Get("/settings", s.getSettings)
-			r.Put("/settings", s.putSettings)
-			r.Patch("/settings", s.patchSettings)
-			r.Put("/settings/management-tls", s.putManagementTLS)
+			r.Group(func(r chi.Router) {
+				r.Use(auth.PasswordChangeGate)
+				r.Get("/status", s.handleStatus)
+				r.Get("/profiles", s.handleProfiles)
+				r.Get("/applications", s.listApps)
+				r.Post("/applications", s.upsertApp)
+				r.Delete("/applications/{id}", s.deleteApp)
+				r.Get("/certificates", s.listCerts)
+				r.Post("/certificates", s.upsertCert)
+				r.Post("/apply", s.apply)
+				r.Get("/revisions", s.listRevisions)
+				r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
+				r.Get("/integrations/crowdsec", s.crowdsecStatus)
+				r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
+				r.Get("/settings", s.getSettings)
+				r.Put("/settings", s.putSettings)
+				r.Patch("/settings", s.patchSettings)
+				r.Put("/settings/management-tls", s.putManagementTLS)
 
-			r.Get("/ipbl/local", s.listIPBLLocal)
-			r.Post("/ipbl/local", s.upsertIPBLLocal)
-			r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)
-			r.Get("/ipbl/sources", s.listIPBLSources)
-			r.Post("/ipbl/sources", s.upsertIPBLSource)
-			r.Post("/ipbl/sync", s.syncIPBL)
+				r.Get("/ipbl/local", s.listIPBLLocal)
+				r.Post("/ipbl/local", s.upsertIPBLLocal)
+				r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)
+				r.Get("/ipbl/sources", s.listIPBLSources)
+				r.Post("/ipbl/sources", s.upsertIPBLSource)
+				r.Post("/ipbl/sync", s.syncIPBL)
 
-			r.Get("/ipwl/local", s.listIPWLLocal)
-			r.Post("/ipwl/local", s.upsertIPWLLocal)
-			r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
+				r.Get("/ipwl/local", s.listIPWLLocal)
+				r.Post("/ipwl/local", s.upsertIPWLLocal)
+				r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
 
-			r.Get("/security/blocked-ua", s.listBlockedUA)
-			r.Post("/security/blocked-ua", s.addBlockedUA)
-			r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
+				r.Get("/security/blocked-ua", s.listBlockedUA)
+				r.Post("/security/blocked-ua", s.addBlockedUA)
+				r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
 
-			r.Get("/geoip/lookup", s.geoipLookup)
-			r.Get("/geoip/stats", s.geoipStats)
+				r.Get("/geoip/lookup", s.geoipLookup)
+				r.Get("/geoip/stats", s.geoipStats)
 
-			r.Get("/stats/haproxy", s.handleStatsHAProxy)
-			r.Get("/stats/summary", s.handleStatsSummary)
+				r.Get("/stats/haproxy", s.handleStatsHAProxy)
+				r.Get("/stats/summary", s.handleStatsSummary)
 
-			r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
+				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
+
+				r.Get("/audit", s.listAudit)
+			})
 		})
 	})
 	return r
@@ -141,7 +144,6 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "app.upsert", map[string]string{"id": a.ID, "host": a.PublicHost})
 	writeJSON(w, http.StatusOK, a)
 }
 
@@ -151,7 +153,6 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "app.delete", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -174,7 +175,6 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "cert.upsert", map[string]string{"id": c.ID, "domain": c.PrimaryDomain})
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -232,22 +232,21 @@ func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "mgmt.tls.replaced", map[string]string{})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
-	s.mergeAndPersistSettings(w, r, "settings.patch")
+	s.mergeAndPersistSettings(w, r)
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
-	s.mergeAndPersistSettings(w, r, "settings.put")
+	s.mergeAndPersistSettings(w, r)
 }
 
 // mergeAndPersistSettings reads the body as a JSON object and merges it over current settings.
 // Omitted keys keep existing values (PATCH semantics). PUT uses the same merge so partial bodies
 // do not zero paths or durations; send only the fields you want to change, or use GET → edit → PUT.
-func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request, auditAction string) {
+func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -280,7 +279,6 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), auditAction, map[string]string{})
 	writeJSON(w, http.StatusOK, s.Eng.Settings)
 }
 
@@ -309,7 +307,6 @@ func (s *Server) upsertIPBLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "ipbl.local.upsert", map[string]string{"id": e.ID, "cidr": e.CIDR})
 	writeJSON(w, http.StatusOK, e)
 }
 
@@ -358,7 +355,6 @@ func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "ipbl.sync", map[string]any{"total": res.TotalLines})
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -419,7 +415,6 @@ func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "ipwl.local.upsert", map[string]string{"id": e.ID, "cidr": e.CIDR})
 	writeJSON(w, http.StatusOK, e)
 }
 
@@ -429,7 +424,6 @@ func (s *Server) deleteIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "ipwl.local.delete", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -458,7 +452,6 @@ func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "blocked_ua.add", map[string]string{"id": e.ID, "pattern": e.Pattern})
 	writeJSON(w, http.StatusOK, e)
 }
 
@@ -468,7 +461,6 @@ func (s *Server) deleteBlockedUA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "blocked_ua.delete", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 

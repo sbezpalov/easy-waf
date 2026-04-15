@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/audit"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -36,6 +37,9 @@ var migration006SQL string
 //go:embed migrations/007_geoip_settings_note.sql
 var migration007SQL string
 
+//go:embed migrations/008_audit_log_columns.sql
+var migration008SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -61,7 +65,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {
@@ -205,7 +209,8 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
-// AppendAudit writes an audit record.
+// AppendAudit writes an append-only audit record. user_name and source_ip are taken from
+// audit.Meta on the context when present (see API attachAuditRequestMeta after auth.Session).
 func (s *Store) AppendAudit(ctx context.Context, action string, detail any) error {
 	var b []byte
 	var err error
@@ -215,8 +220,20 @@ func (s *Store) AppendAudit(ctx context.Context, action string, detail any) erro
 			return err
 		}
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO audit_log(at, action, detail_json) VALUES($1,$2,$3)`,
-		time.Now().UTC(), action, b)
+	userArg := any(nil)
+	ipArg := any(nil)
+	if m, ok := audit.From(ctx); ok {
+		if strings.TrimSpace(m.User) != "" {
+			userArg = strings.TrimSpace(m.User)
+		}
+		if strings.TrimSpace(m.SourceIP) != "" {
+			ipArg = strings.TrimSpace(m.SourceIP)
+		}
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
+		VALUES ($1,$2,$3,$4,$5)`,
+		time.Now().UTC(), action, b, userArg, ipArg)
 	return err
 }
 

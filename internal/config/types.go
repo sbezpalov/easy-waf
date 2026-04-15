@@ -1,6 +1,19 @@
 package config
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
+
+// AuditLogEntry is one row from PostgreSQL audit_log (API / UI).
+type AuditLogEntry struct {
+	ID        int64           `json:"id"`
+	Timestamp time.Time       `json:"timestamp"`
+	UserName  string          `json:"user_name"`
+	Action    string          `json:"action"`
+	Details   json.RawMessage `json:"details"`
+	SourceIP  string          `json:"source_ip"`
+}
 
 // RestrictedPath limits a path prefix on an app to requests from AllowedCIDRs only (LAN-style).
 type RestrictedPath struct {

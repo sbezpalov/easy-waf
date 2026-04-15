@@ -119,7 +119,6 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.Eng.Store.AppendAudit(r.Context(), "auth.password_change", map[string]string{"user": u.Username})
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
 		MustChangePassword: false,
