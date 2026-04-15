@@ -76,6 +76,35 @@
     <div class="row"><button type="button" class="secondary" id="btn-certs">Load certificates</button></div>
     <div id="certs"></div>
 
+    <h2>IP Blacklist</h2>
+    <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map file; <strong>Apply HAProxy</strong> still needed for a new config.</small></p>
+    <div class="row">
+      <button type="button" class="secondary" id="btn-ipbl-load">Load blacklist</button>
+      <button type="button" class="secondary" id="btn-ipbl-sync">Sync lists</button>
+    </div>
+    <div id="ipbl-table"></div>
+    <div class="row" style="margin-top:0.5rem">
+      <input id="ipbl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
+      <input id="ipbl-note" placeholder="note" style="min-width:10rem" />
+      <button type="button" id="btn-ipbl-add">Add to blacklist</button>
+    </div>
+    <p id="ipbl-msg" class="warn"></p>
+
+    <h2>IP Allowlist</h2>
+    <p><small>Trusted CIDRs bypass IP blacklist and per-app HTTP rate limits when enabled. Map: <code>ip_allowlist.map</code>. Toggle + <strong>Apply HAProxy</strong> to activate.</small></p>
+    <div class="row">
+      <label><input id="ipwl-enabled" type="checkbox" /> Enable allowlist in HAProxy</label>
+      <button type="button" class="secondary" id="btn-ipwl-settings-save">Save allowlist toggle</button>
+      <button type="button" class="secondary" id="btn-ipwl-load">Load entries</button>
+    </div>
+    <div id="ipwl-table"></div>
+    <div class="row" style="margin-top:0.5rem">
+      <input id="ipwl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
+      <input id="ipwl-comment" placeholder="comment" style="min-width:10rem" />
+      <button type="button" id="btn-ipwl-add">Add to allowlist</button>
+    </div>
+    <p id="ipwl-msg" class="warn"></p>
+
     <h2>CrowdSec (LAPI)</h2>
     <p><small>Requires <code>crowdsec_lapi_url</code> and machine bouncer key in settings (see <code>install-interactive.sh</code> / docs).</small></p>
     <div class="row">
@@ -130,6 +159,7 @@
       loadProfileSelect();
       loadApps();
       loadSettingsPanel();
+      loadIpwlToggleFromSettings();
     }
   }
 
@@ -150,6 +180,7 @@
       loadProfileSelect();
       loadApps();
       loadSettingsPanel();
+      loadIpwlToggleFromSettings();
     }
   };
 
@@ -178,6 +209,7 @@
     loadProfileSelect();
     loadApps();
     loadSettingsPanel();
+    loadIpwlToggleFromSettings();
   };
 
   document.getElementById('btn-logout').onclick = () => { setTok(''); refreshSession(); };
@@ -220,6 +252,12 @@
     cachedSettings = await r.json();
     document.getElementById('acme-email').value = cachedSettings.acme_email || '';
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
+    loadIpwlToggleFromSettings();
+  }
+
+  function loadIpwlToggleFromSettings() {
+    if (!cachedSettings) return;
+    document.getElementById('ipwl-enabled').checked = !!cachedSettings.ipwl_enabled;
   }
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
   document.getElementById('btn-settings-save').onclick = async () => {
@@ -276,6 +314,85 @@
     document.getElementById('tls-msg').textContent = 'TLS updated. Reload https:// on :8443.';
     document.getElementById('tls-cert').value = '';
     document.getElementById('tls-key').value = '';
+  };
+
+  document.getElementById('btn-ipbl-load').onclick = async () => {
+    document.getElementById('ipbl-msg').textContent = '';
+    const r = await fetch('/api/v1/ipbl/local', { headers: hdr() });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('ipbl-msg').textContent = JSON.stringify(j); return; }
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.cidr)}</code></td><td>${esc(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    document.getElementById('ipbl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Note</th><th>Enabled</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
+    document.getElementById('ipbl-table').querySelectorAll('[data-ipbl-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-ipbl-del');
+        const d = await fetch('/api/v1/ipbl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
+        if (!d.ok) { document.getElementById('ipbl-msg').textContent = await d.text(); return; }
+        document.getElementById('btn-ipbl-load').click();
+      };
+    });
+  };
+  document.getElementById('btn-ipbl-sync').onclick = async () => {
+    document.getElementById('ipbl-msg').textContent = '';
+    const r = await fetch('/api/v1/ipbl/sync', { method: 'POST', headers: hdr(), body: '{}' });
+    document.getElementById('ipbl-msg').textContent = r.ok ? 'Sync OK (map updated).' : await r.text();
+  };
+  document.getElementById('btn-ipbl-add').onclick = async () => {
+    document.getElementById('ipbl-msg').textContent = '';
+    const body = {
+      cidr: document.getElementById('ipbl-cidr').value.trim(),
+      note: document.getElementById('ipbl-note').value.trim(),
+      enabled: true
+    };
+    const r = await fetch('/api/v1/ipbl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    if (!r.ok) { document.getElementById('ipbl-msg').textContent = await r.text(); return; }
+    document.getElementById('ipbl-cidr').value = '';
+    document.getElementById('ipbl-note').value = '';
+    document.getElementById('btn-ipbl-load').click();
+  };
+
+  document.getElementById('btn-ipwl-load').onclick = async () => {
+    document.getElementById('ipwl-msg').textContent = '';
+    const r = await fetch('/api/v1/ipwl/local', { headers: hdr() });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('ipwl-msg').textContent = JSON.stringify(j); return; }
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const rows = (j || []).map((e) => `<tr><td><code>${esc(e.cidr)}</code></td><td>${esc(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${esc(e.id)}">Delete</button></td></tr>`).join('');
+    document.getElementById('ipwl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
+    document.getElementById('ipwl-table').querySelectorAll('[data-ipwl-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-ipwl-del');
+        const d = await fetch('/api/v1/ipwl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
+        if (!d.ok) { document.getElementById('ipwl-msg').textContent = await d.text(); return; }
+        document.getElementById('btn-ipwl-load').click();
+      };
+    });
+  };
+  document.getElementById('btn-ipwl-add').onclick = async () => {
+    document.getElementById('ipwl-msg').textContent = '';
+    const body = {
+      cidr: document.getElementById('ipwl-cidr').value.trim(),
+      comment: document.getElementById('ipwl-comment').value.trim()
+    };
+    const r = await fetch('/api/v1/ipwl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    if (!r.ok) { document.getElementById('ipwl-msg').textContent = await r.text(); return; }
+    document.getElementById('ipwl-cidr').value = '';
+    document.getElementById('ipwl-comment').value = '';
+    document.getElementById('btn-ipwl-load').click();
+  };
+  document.getElementById('btn-ipwl-settings-save').onclick = async () => {
+    document.getElementById('ipwl-msg').textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) { document.getElementById('ipwl-msg').textContent = 'Load settings first'; return; }
+    const patch = { ipwl_enabled: document.getElementById('ipwl-enabled').checked };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      document.getElementById('ipwl-msg').textContent = 'Saved. Apply HAProxy to use new allowlist toggle.';
+    } else {
+      document.getElementById('ipwl-msg').textContent = await r.text();
+    }
   };
 
   document.getElementById('save').onclick = async () => {

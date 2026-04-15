@@ -82,12 +82,12 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 2. SPOE asks CrowdSec bouncer for decision (engine name aligned with SPOE file).
 3. ACLs enforce rate limits, path blocks, geo (via stick-table / maps populated by `easy-wafd` or Lua-less patterns—MVP uses ACL + external map files refreshed periodically).
 4. HAProxy logs to files/socket; CrowdSec parses; decisions feed bouncer.
-5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists before each HAProxy render.
+5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists, and **IPWL** allowlist map from `ipwl_local`, before each HAProxy render.
 
 ## Configuration model
 
-- **Source of truth**: PostgreSQL tables (`applications`, `certificates`, `settings`, `audit_log`, `config_revisions`, `ipbl_local`, `ipbl_external_sources`) + export bundles for backup.
-- **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), optional `crowdsec-spoe.cfg` fragments.
+- **Source of truth**: PostgreSQL tables (`applications`, `certificates`, `settings`, `audit_log`, `config_revisions`, `ipwl_local`, `ipbl_local`, `ipbl_external_sources`) + export bundles for backup.
+- **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), `ip_allowlist.map` (from `ipwl_local` when enabled), optional `crowdsec-spoe.cfg` fragments.
 - **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
 
 ## Directory layout (on appliance)

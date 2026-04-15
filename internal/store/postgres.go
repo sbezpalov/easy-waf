@@ -24,6 +24,9 @@ var migration002SQL string
 //go:embed migrations/003_users.sql
 var migration003SQL string
 
+//go:embed migrations/004_ipwl.sql
+var migration004SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -49,7 +52,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {
@@ -357,6 +360,56 @@ func (s *Store) UpdateCertificateACMEState(ctx context.Context, id, status, last
 	return err
 }
 
+// --- IP allowlist (local) ---
+
+// ListIPWLLocal returns all allowlist rows ordered by CIDR.
+func (s *Store) ListIPWLLocal(ctx context.Context) ([]config.IPWLLocalEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, cidr, "comment", created_at FROM ipwl_local ORDER BY cidr`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []config.IPWLLocalEntry
+	for rows.Next() {
+		var e config.IPWLLocalEntry
+		var cm sql.NullString
+		if err := rows.Scan(&e.ID, &e.CIDR, &cm, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		if cm.Valid {
+			e.Comment = cm.String
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// UpsertIPWLLocal inserts or updates a local allow entry.
+func (s *Store) UpsertIPWLLocal(ctx context.Context, e *config.IPWLLocalEntry) error {
+	now := time.Now().UTC()
+	if e.ID == "" {
+		e.ID = uuid.NewString()
+	}
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = now
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO ipwl_local (id, cidr, "comment", created_at)
+		VALUES ($1,$2,$3,$4)
+		ON CONFLICT (id) DO UPDATE SET
+			cidr = EXCLUDED.cidr,
+			"comment" = EXCLUDED."comment"
+	`, e.ID, e.CIDR, nullStrPtr(e.Comment), e.CreatedAt)
+	return err
+}
+
+// DeleteIPWLLocal removes a row by id.
+func (s *Store) DeleteIPWLLocal(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM ipwl_local WHERE id = $1`, id)
+	return err
+}
+
 // --- IPBL ---
 
 // ListIPBLLocal returns enabled and disabled entries.
@@ -477,7 +530,7 @@ func (s *Store) TouchIPBLSourceFetch(ctx context.Context, id string, fetchAt tim
 // FactoryReset removes all configuration rows (destructive). Schema is kept.
 func (s *Store) FactoryReset(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
-		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipbl_local, ipbl_external_sources, users
+		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, users
 		RESTART IDENTITY CASCADE`)
 	return err
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
+	"github.com/easy-waf/easy-waf/internal/ipwl"
 	"github.com/easy-waf/easy-waf/internal/pemutil"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -61,6 +62,9 @@ func (e *Engine) LoadSettings(ctx context.Context) error {
 	if s.IPBlacklistMapPath == "" {
 		s.IPBlacklistMapPath = def.IPBlacklistMapPath
 	}
+	if s.IPAllowlistMapPath == "" {
+		s.IPAllowlistMapPath = def.IPAllowlistMapPath
+	}
 	if len(s.ManagementAllowedCIDRs) == 0 {
 		s.ManagementAllowedCIDRs = def.ManagementAllowedCIDRs
 	}
@@ -80,6 +84,10 @@ func (e *Engine) SaveSettings(ctx context.Context) error {
 // RenderFromStore builds HAProxy config from current DB state.
 func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) {
 	if _, err := ipbl.SyncAndWrite(ctx, e.Store, e.Settings, e.StateDir); err != nil {
+		return haproxy.Rendered{}, err
+	}
+	wlPath := ipwl.MapPath(e.Settings, e.StateDir)
+	if err := ipwl.WriteLocalMap(ctx, e.Store, wlPath); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	apps, err := e.Store.ListApplications(ctx)
@@ -120,13 +128,16 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 			}
 		}
 	}
+	useWL := ipwl.UseInRender(e.Settings.IPWLEnabled, wlPath)
 	ri := haproxy.RenderInput{
 		Settings:           e.Settings,
 		Applications:       apps,
 		Certificates:       cm,
 		CRTListPath:        crtListPath,
 		IPBlacklistMapPath: e.Settings.IPBlacklistMapPath,
+		IPAllowlistMapPath: wlPath,
 		UseIPBlacklist:     useBL,
+		UseIPAllowlist:     useWL,
 	}
 	return haproxy.Render(ri)
 }

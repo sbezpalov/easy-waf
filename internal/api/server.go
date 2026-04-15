@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
+	"github.com/easy-waf/easy-waf/internal/ipwl"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/profiles"
 )
@@ -73,6 +76,10 @@ func (s *Server) Router() chi.Router {
 			r.Get("/ipbl/sources", s.listIPBLSources)
 			r.Post("/ipbl/sources", s.upsertIPBLSource)
 			r.Post("/ipbl/sync", s.syncIPBL)
+
+			r.Get("/ipwl/local", s.listIPWLLocal)
+			r.Post("/ipwl/local", s.upsertIPWLLocal)
+			r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
 
 			r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 		})
@@ -323,8 +330,65 @@ func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := ipwl.WriteLocalMap(r.Context(), s.Eng.Store, ipwl.MapPath(s.Eng.Settings, s.Eng.StateDir)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "ipbl.sync", map[string]any{"total": res.TotalLines})
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Eng.Store.ListIPWLLocal(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
+	var e config.IPWLLocalEntry
+	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	e.CIDR = strings.TrimSpace(e.CIDR)
+	if e.CIDR == "" {
+		http.Error(w, "cidr required", http.StatusBadRequest)
+		return
+	}
+	if err := validateIPOrCIDR(e.CIDR); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.Eng.Store.UpsertIPWLLocal(r.Context(), &e); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "ipwl.local.upsert", map[string]string{"id": e.ID, "cidr": e.CIDR})
+	writeJSON(w, http.StatusOK, e)
+}
+
+func (s *Server) deleteIPWLLocal(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.Eng.Store.DeleteIPWLLocal(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "ipwl.local.delete", map[string]string{"id": id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func validateIPOrCIDR(s string) error {
+	if strings.Contains(s, "/") {
+		_, _, err := net.ParseCIDR(s)
+		return err
+	}
+	if net.ParseIP(s) == nil {
+		return fmt.Errorf("invalid ip or cidr")
+	}
+	return nil
 }
 
 func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {

@@ -62,6 +62,10 @@ type GlobalSettings struct {
 	IPBlacklistMapPath string `json:"ip_blacklist_map_path,omitempty"`
 	// IPBLExternalEnabled enables merging synced external lists into the map file.
 	IPBLExternalEnabled bool `json:"ipbl_external_enabled"`
+	// IPAllowlistMapPath is the generated HAProxy src map for trusted CIDRs (see docs/IPBL.md).
+	IPAllowlistMapPath string `json:"ip_allowlist_map_path,omitempty"`
+	// IPWLEnabled turns on HAProxy ACL + http-request allow for sources in the allowlist map.
+	IPWLEnabled bool `json:"ipwl_enabled"`
 	// ManagementAllowedCIDRs restricts who can reach the API and UI (not /health).
 	// Stored in DB; defaults are RFC1918 + loopback — narrow in Settings for stricter policy.
 	ManagementAllowedCIDRs []string `json:"management_allowed_cidrs,omitempty"`
@@ -91,6 +95,8 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		ACMEWebrootPath:        stateDir + "/acme/webroot",
 		IPBlacklistMapPath:     stateDir + "/haproxy/ip_blacklist.map",
 		IPBLExternalEnabled:    true,
+		IPAllowlistMapPath:     stateDir + "/haproxy/ip_allowlist.map",
+		IPWLEnabled:            false,
 		ManagementAllowedCIDRs: DefaultManagementCIDRs(),
 	}
 }

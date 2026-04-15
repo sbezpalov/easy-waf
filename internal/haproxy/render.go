@@ -28,7 +28,9 @@ type RenderInput struct {
 	Certificates       map[string]config.Certificate // id -> cert
 	CRTListPath        string                        // absolute path to generated crt-list file on disk
 	IPBlacklistMapPath string
+	IPAllowlistMapPath string
 	UseIPBlacklist     bool
+	UseIPAllowlist     bool
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -195,6 +197,10 @@ frontend fe_https
 	http-request deny deny_status 403 if p_git || p_env
 	acl bad_method method TRACE CONNECT
 	http-request deny deny_status 405 if bad_method
+{{if .UseIPAllowlist}}
+	acl ipwl_white src -f {{.IPAllowlistMapPath}}
+	http-request allow if ipwl_white
+{{end}}
 {{if .UseIPBlacklist}}
 	acl ipbl_black src -f {{.IPBlacklistMapPath}}
 	http-request deny deny_status 403 if ipbl_black
@@ -232,7 +238,12 @@ backend {{backendName $a.Application.PublicHost}}
 	stick-table type ip size 200k expire 5m store http_req_rate(10s)
 	http-request track-sc0 src
 	acl rl_abuse_{{$i}} sc0_http_req_rate gt {{$a.Profile.RateLimitBurst}}
+{{if $.UseIPAllowlist}}
+	acl ipwl_white src -f {{$.IPAllowlistMapPath}}
+	http-request deny deny_status 429 if rl_abuse_{{$i}} !ipwl_white
+{{else}}
 	http-request deny deny_status 429 if rl_abuse_{{$i}}
+{{end}}
 	{{- if $a.Application.WebSocket }}
 	timeout tunnel 3600s
 	{{- end }}
