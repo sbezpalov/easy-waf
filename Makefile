@@ -3,7 +3,7 @@
 DIST=dist
 
 install-help:
-	@echo "Production install (AlmaLinux, as root) — plug-and-play:"
+	@echo "Production install (Alma/RHEL or Debian/Ubuntu, as root) — plug-and-play:"
 	@echo "  sudo bash scripts/install.sh"
 	@echo "  (HAProxy stack + local PostgreSQL by default, DB user/db, start api+acmed)"
 	@echo "  External DB only: EASY_WAF_INSTALL_POSTGRES=0"

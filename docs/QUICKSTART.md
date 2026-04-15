@@ -1,6 +1,6 @@
 # Quick Start
 
-**Target:** AlmaLinux 10 (or RHEL 10 family), root on the appliance.
+**Target:** AlmaLinux 10 / RHEL-family, or **Debian / Ubuntu** (server install), **root** on the appliance.
 
 ## One-command install
 
@@ -12,7 +12,7 @@ sudo bash scripts/install.sh
 
 This **by default**:
 
-1. Installs **HAProxy, firewalld, nginx**, and **PostgreSQL** (plus optional fail2ban/EPEL).
+1. Installs **HAProxy, firewalld, nginx**, and **PostgreSQL** (optional **fail2ban**; on Alma/RHEL also **EPEL** when needed for fail2ban).
 2. Creates `/etc/easy-waf/easy-waf.env`, **creates** the `easywaf` DB user and `easywaf` database, and **rotates** weak default passwords in `DATABASE_URL` when possible.
 3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api` and `easy-waf-acmed`.
 

@@ -1,13 +1,14 @@
 name: CI
 
-# Prod и dev — AlmaLinux 10 (dnf). Все шаги ниже выполняются в контейнере AlmaLinux 10,
-# чтобы пакеты и HAProxy совпадали с целевой ОС. Поле runs-on — лишь тип ВМ GitHub
-# (хост); среда выполнения job — image: almalinux:10.
+# Prod и dev: AlmaLinux 10 (dnf) — основной эталон HAProxy/OS. Дополнительно job
+# deb-family-ci в Ubuntu 24.04 (apt) проверяет те же ворота на DEB‑семействе.
+# Поле runs-on — лишь тип ВМ GitHub (хост); среда job — container image.
 #
 # Пакеты ставятся ПЕРВЫМ шагом (до checkout): в контейнере JS-actions (checkout, setup-go,
 # golangci-lint) требуют git + Node в PATH.
 #
 # Три блока «dnf» ниже держите синхронными по смыслу (общий базовый набор + профиль job).
+# Блок apt в deb-family-ci держите эквивалентным по смыслу (инструменты сборки + HAProxy).
 
 on:
   push:
@@ -199,3 +200,76 @@ jobs:
 
       - name: go test internal/haproxy integration (golden haproxy -c)
         run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1
+
+  # Same gates as AlmaLinux jobs above, but on Ubuntu 24.04 (apt) for Debian-family parity.
+  deb-family-ci:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install OS packages (Ubuntu 24.04 / apt, before checkout)
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl \
+            bash bzip2 coreutils diffutils file findutils \
+            gcc g++ libc6-dev make \
+            git grep gzip openssl procps sed tar tzdata unzip \
+            zlib1g-dev \
+            nodejs npm \
+            haproxy \
+            debianutils
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+          args: --timeout=5m
+
+      - name: HAProxy render golden fixtures
+        run: go test ./internal/haproxy/... -run Golden -count=1
+
+      - name: go test (race)
+        run: go test -race -count=1 -skip '^TestGoldenRender$' ./...
+
+      - name: Linux artifact + shell LF checks
+        run: bash scripts/check-linux-artifacts.sh
+
+      - name: Assert scripts/**/*.sh use LF only
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r -d '' f; do
+            if grep -q $'\r' "$f" 2>/dev/null; then
+              echo "ERROR: CRLF in $f" >&2
+              bad=1
+            fi
+          done < <(find scripts -name '*.sh' -type f -print0)
+          exit "$bad"
+
+      - name: go test internal/haproxy (includes haproxy -c validation)
+        run: go test ./internal/haproxy/... -v -count=1
+
+      - name: go test internal/haproxy integration (golden haproxy -c)
+        run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1
+
+      - name: Installer scripts syntax (bash -n)
+        run: |
+          set -euo pipefail
+          bash -n scripts/install.sh
+          bash -n scripts/install-interactive.sh
+          bash -n scripts/lib/os-pkg.sh

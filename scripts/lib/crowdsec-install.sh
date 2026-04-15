@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CrowdSec + HAProxy SPOA bouncer (RHEL/Alma/Fedora via official packagecloud repo).
+# CrowdSec + HAProxy SPOA bouncer (official packagecloud repo: RPM or DEB).
 # Sourced by install-interactive.sh — requires root.
 
 crowdsec_add_packagecloud_repo() {
@@ -7,23 +7,44 @@ crowdsec_add_packagecloud_repo() {
     echo "[easy-waf] CrowdSec: install curl first" >&2
     return 1
   }
-  local url="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.rpm.sh"
-  curl -sSf "$url" | bash
+  if command -v dnf &>/dev/null; then
+    curl -sSf "https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.rpm.sh" | bash
+  elif command -v apt-get &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y --no-install-recommends gnupg ca-certificates curl
+    curl -sSf "https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh" | bash
+  else
+    echo "[easy-waf] CrowdSec: need dnf or apt-get" >&2
+    return 1
+  fi
 }
 
 crowdsec_install_agent_package() {
-  command -v dnf &>/dev/null || {
-    echo "[easy-waf] CrowdSec: dnf not found" >&2
-    return 1
-  }
   mkdir -p /etc/haproxy/errors
-  dnf install -y crowdsec
+  if command -v dnf &>/dev/null; then
+    dnf install -y crowdsec
+  elif command -v apt-get &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y crowdsec
+  else
+    echo "[easy-waf] CrowdSec: dnf or apt-get not found" >&2
+    return 1
+  fi
 }
 
 crowdsec_install_spoa_bouncer_package() {
-  command -v dnf &>/dev/null || return 1
   mkdir -p /etc/haproxy/errors
-  dnf install -y crowdsec-haproxy-spoa-bouncer
+  if command -v dnf &>/dev/null; then
+    dnf install -y crowdsec-haproxy-spoa-bouncer
+  elif command -v apt-get &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y crowdsec-haproxy-spoa-bouncer
+  else
+    return 1
+  fi
 }
 
 crowdsec_wait_lapi() {

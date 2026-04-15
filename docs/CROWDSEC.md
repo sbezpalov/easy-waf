@@ -8,7 +8,7 @@
 
 ## Automated install (recommended)
 
-On AlmaLinux / RHEL-family (with `dnf`), run as **root**:
+On **AlmaLinux / RHEL** (`dnf`) or **Debian / Ubuntu** (`apt`), run as **root**:
 
 ```bash
 sudo bash scripts/install-interactive.sh

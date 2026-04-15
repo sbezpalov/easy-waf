@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Easy Home WAF — appliance installer (AlmaLinux 10 / RHEL-family first-class).
+# Easy Home WAF — appliance installer (Alma/RHEL via dnf; Debian/Ubuntu via apt).
 # Run as root: sudo bash scripts/install.sh
 #
 # For interactive setup (LAN-only API, optional CrowdSec + SPOA): scripts/install-interactive.sh
 #
 # Environment (optional):
 #   EASY_WAF_STATE_DIR=/var/lib/easy-waf
-#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip dnf base packages (default: 1 = HAProxy, firewalld, fail2ban, nginx, curl)
-#   EASY_WAF_INSTALL_POSTGRES=0       — skip local PostgreSQL (default: 1 = dnf install + init + create DB/user; use 0 with external DATABASE_URL)
+#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip OS base packages (default: 1 = HAProxy, firewalld, fail2ban, nginx, curl)
+#   EASY_WAF_INSTALL_POSTGRES=0       — skip local PostgreSQL (default: 1 = install server + init + create DB/user; use 0 with external DATABASE_URL)
 #   EASY_WAF_ENABLE_SYSTEMD_UNITS=0   — after install, do not systemctl enable --now api+acmed (default: 1)
 #   EASY_WAF_DIST_DIR=/path          — pre-built binaries (if set and non-empty, used as-is; else auto-fetch/build → repo dist/)
 #   EASY_WAF_SKIP_SYSTEMD=1          — do not copy systemd units or daemon-reload
 #   EASY_WAF_REPO_ROOT=/path         — root of git checkout (default: parent of scripts/)
 #   EASY_WAF_RELEASE_VERSION=x.y.z   — try GitHub release before building (overrides VERSION file)
 #   EASY_WAF_SKIP_BINARY_FETCH=1     — do not download or build; require EASY_WAF_DIST_DIR with binaries
-#   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not dnf install golang/make/git before source build
+#   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via dnf/apt before source build
 #   EASY_WAF_FIREWALLD_MGMT_LAN=0     — skip rich rules: TCP management port only from RFC1918 + 127.0.0.0/8 (default: 1 with OS packages)
 #   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443" — TCP ports for LAN-only rich rules (management UI)
 #   EASY_WAF_FIREWALLD_ZONE=public    EASY_WAF_EXTRA_LAN_CIDR= — optional VPN CIDR for firewalld
@@ -130,7 +130,7 @@ setup_local_postgres_database() {
   fi
 }
 
-# Plug-and-play: populate REPO_ROOT/dist — try GitHub release, else dnf install toolchain + make build.
+# Plug-and-play: populate REPO_ROOT/dist — try GitHub release, else install toolchain + make build.
 acquire_dist_binaries() {
   mkdir -p "${REPO_ROOT}/dist"
 
@@ -170,13 +170,30 @@ acquire_dist_binaries() {
 
   [[ -f "${REPO_ROOT}/Makefile" ]] || die "No Makefile in $REPO_ROOT — clone full repo or set EASY_WAF_DIST_DIR to pre-built binaries"
 
-  if command -v dnf &>/dev/null && [[ "${EASY_WAF_INSTALL_BUILD_DEPS:-1}" == "1" ]]; then
-    log "Installing build toolchain (golang, make, git) via dnf..."
-    dnf install -y golang make git ca-certificates curl 2>/dev/null || dnf install -y go-toolset make git ca-certificates curl 2>/dev/null || true
+  if [[ "${EASY_WAF_INSTALL_BUILD_DEPS:-1}" == "1" ]]; then
+    case "${EASY_WAF_PKG_MGR:-}" in
+      dnf)
+        log "Installing build toolchain (golang, make, git) via dnf..."
+        dnf install -y golang make git ca-certificates curl 2>/dev/null || dnf install -y go-toolset make git ca-certificates curl 2>/dev/null || true
+        ;;
+      apt)
+        easy_waf_apt_get_update
+        log "Installing build toolchain (golang, make, git) via apt..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y golang-go make git ca-certificates curl 2>/dev/null || true
+        if ! easy_waf_go_version_meets 1 22; then
+          log "Distro Go is older than 1.22 or missing — bootstrapping Go from go.dev..."
+          easy_waf_bootstrap_go_toolchain || die "Go bootstrap failed (network or arch?)"
+        fi
+        ;;
+      *)
+        log "No dnf/apt — expecting preinstalled go/make/git for build"
+        ;;
+    esac
   fi
 
-  command -v go &>/dev/null || die "go not found after dnf — install: dnf install golang (or set EASY_WAF_DIST_DIR)"
-  command -v make &>/dev/null || die "make not found — dnf install make"
+  command -v go &>/dev/null || die "go not found — install Go 1.22+ (dnf install golang / apt install golang-go, or set EASY_WAF_DIST_DIR)"
+  easy_waf_go_version_meets 1 22 || die "go is older than 1.22 — use EASY_WAF_DIST_DIR, install newer Go, or set EASY_WAF_BOOTSTRAP_GO_VERSION"
+  command -v make &>/dev/null || die "make not found — install make (dnf/apt)"
   log "Building: go mod tidy && make build in $REPO_ROOT"
   (cd "$REPO_ROOT" && go mod tidy && make build) || die "Build failed — check Go/network, or use EASY_WAF_DIST_DIR with pre-built binaries"
   # Root-owned dist/ breaks later "make build" as normal user — hand back to invoking user.
@@ -223,7 +240,7 @@ Build from source on this machine (needs Go 1.22+, make):
 Then install (binaries are in dist/):
   sudo EASY_WAF_DIST_DIR=$REPO_ROOT/dist bash $REPO_ROOT/scripts/install.sh
 
-Plug-and-play (default): re-run install — it installs golang via dnf and builds.
+Plug-and-play (default): re-run install — it installs golang via dnf/apt (or go.dev tarball on older Debian) and builds.
 
 Release tarball: extract so dist/ contains easy-waf-api, then:
   sudo EASY_WAF_DIST_DIR=/path/to/extract/dist bash $REPO_ROOT/scripts/install.sh
@@ -261,56 +278,97 @@ install_os_packages() {
     log "Skipping OS packages (EASY_WAF_INSTALL_OS_PACKAGES=0)"
     return 0
   fi
-  command -v dnf &>/dev/null || die "dnf not found — install dependencies manually (see docs/DEPLOYMENT.md)"
 
-  log "Installing base OS packages via dnf..."
-  # Core edge stack — must exist in base/AppStream (EL10).
-  dnf install -y \
-    haproxy \
-    firewalld \
-    nginx \
-    ca-certificates \
-    curl \
-    || die "dnf install failed (haproxy/firewalld/nginx)"
+  case "${EASY_WAF_PKG_MGR:-}" in
+    dnf)
+      log "Installing base OS packages via dnf..."
+      dnf install -y \
+        haproxy \
+        firewalld \
+        nginx \
+        ca-certificates \
+        curl \
+        || die "dnf install failed (haproxy/firewalld/nginx)"
 
-  # fail2ban is often in EPEL on RHEL 10 / AlmaLinux 10, not in default repos.
-  if rpm -q fail2ban &>/dev/null; then
-    log "fail2ban already installed"
-  elif dnf install -y fail2ban 2>/dev/null; then
-    :
-  else
-    log "fail2ban not in default repos — trying epel-release..."
-    dnf install -y epel-release 2>/dev/null || true
-    if dnf install -y fail2ban fail2ban-firewalld 2>/dev/null; then
-      log "Installed fail2ban from EPEL"
-    else
-      log "warning: fail2ban unavailable (optional). Install later: dnf install epel-release && dnf install fail2ban"
-    fi
-  fi
+      if easy_waf_pkg_installed fail2ban; then
+        log "fail2ban already installed"
+      elif dnf install -y fail2ban 2>/dev/null; then
+        :
+      else
+        log "fail2ban not in default repos — trying epel-release..."
+        dnf install -y epel-release 2>/dev/null || true
+        if dnf install -y fail2ban fail2ban-firewalld 2>/dev/null; then
+          log "Installed fail2ban from EPEL"
+        else
+          log "warning: fail2ban unavailable (optional). Install later: dnf install epel-release && dnf install fail2ban"
+        fi
+      fi
 
-  # Local PostgreSQL (default on) — single-node / home appliance quickstart; use EASY_WAF_INSTALL_POSTGRES=0 for external DB only
-  if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" == "1" ]]; then
-    dnf install -y postgresql-server postgresql || die "postgresql install failed"
-    if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
-      postgresql-setup --initdb || true
-    fi
-    systemctl enable --now postgresql || true
-    log "PostgreSQL enabled — next steps create /etc/easy-waf/easy-waf.env and provision DB user/database"
-  else
-    log "PostgreSQL server not installed (EASY_WAF_INSTALL_POSTGRES=0) — set DATABASE_URL to your external instance"
-  fi
+      if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" == "1" ]]; then
+        dnf install -y postgresql-server postgresql || die "postgresql install failed"
+        if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
+          postgresql-setup --initdb || true
+        fi
+        systemctl enable --now postgresql || true
+        log "PostgreSQL enabled — next steps create /etc/easy-waf/easy-waf.env and provision DB user/database"
+      else
+        log "PostgreSQL server not installed (EASY_WAF_INSTALL_POSTGRES=0) — set DATABASE_URL to your external instance"
+      fi
 
-  # CrowdSec: official repo + SPOA bouncer — use scripts/install-interactive.sh
-  if rpm -q crowdsec &>/dev/null; then
-    log "CrowdSec package already installed"
-  else
-    log "CrowdSec: run sudo bash scripts/install-interactive.sh (or see docs/CROWDSEC.md)"
-  fi
+      if easy_waf_pkg_installed crowdsec; then
+        log "CrowdSec package already installed"
+      else
+        log "CrowdSec: run sudo bash scripts/install-interactive.sh (or see docs/CROWDSEC.md)"
+      fi
 
-  systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
-  systemctl enable haproxy 2>/dev/null || true
-  rpm -q fail2ban &>/dev/null && systemctl enable fail2ban 2>/dev/null || true
-  log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
+      systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
+      systemctl enable haproxy 2>/dev/null || true
+      easy_waf_pkg_installed fail2ban && systemctl enable fail2ban 2>/dev/null || true
+      log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
+      ;;
+    apt)
+      easy_waf_apt_get_update
+      log "Installing base OS packages via apt..."
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        haproxy \
+        firewalld \
+        nginx \
+        ca-certificates \
+        curl \
+        || die "apt install failed (haproxy/firewalld/nginx)"
+
+      if easy_waf_pkg_installed fail2ban; then
+        log "fail2ban already installed"
+      elif DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban; then
+        :
+      else
+        log "warning: fail2ban unavailable (optional). Install later: apt install fail2ban"
+      fi
+
+      if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" == "1" ]]; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib \
+          || die "postgresql install failed"
+        systemctl enable --now postgresql || true
+        log "PostgreSQL enabled (Debian/Ubuntu layout) — ensure /etc/easy-waf/easy-waf.env DATABASE_URL matches your cluster"
+      else
+        log "PostgreSQL server not installed (EASY_WAF_INSTALL_POSTGRES=0) — set DATABASE_URL to your external instance"
+      fi
+
+      if easy_waf_pkg_installed crowdsec; then
+        log "CrowdSec package already installed"
+      else
+        log "CrowdSec: run sudo bash scripts/install-interactive.sh (or see docs/CROWDSEC.md)"
+      fi
+
+      systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
+      systemctl enable haproxy 2>/dev/null || true
+      easy_waf_pkg_installed fail2ban && systemctl enable fail2ban 2>/dev/null || true
+      log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
+      ;;
+    *)
+      die "no dnf or apt-get — install haproxy/firewalld/nginx manually or set EASY_WAF_INSTALL_OS_PACKAGES=0 (see docs/DEPLOYMENT.md)"
+      ;;
+  esac
 }
 
 # Rich rules: management HTTP+HTTPS (8000, 8443) only from LAN (RFC1918) + loopback.
@@ -340,7 +398,10 @@ main() {
   require_root
   detect_os
   normalize_lib_scripts_lf
-  log "repo root: $REPO_ROOT"
+  # shellcheck source=lib/os-pkg.sh
+  source "${SCRIPT_DIR}/lib/os-pkg.sh"
+  easy_waf_detect_pkg_mgr
+  log "repo root: $REPO_ROOT (package manager: ${EASY_WAF_PKG_MGR:-none})"
   install_os_packages
   create_user_and_layout
   install_env_file

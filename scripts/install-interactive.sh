@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Easy Home WAF — interactive appliance setup (AlmaLinux / RHEL-family).
+# Easy Home WAF — interactive appliance setup (Alma/RHEL or Debian/Ubuntu).
 # Run as root: sudo bash scripts/install-interactive.sh
 #
 # Collects: management bind policy (loopback vs LAN-only + firewalld), optional CrowdSec + SPOA,
@@ -170,14 +170,14 @@ main() {
   fi
 
   if [[ -z "$install_cs" ]]; then
-    install_cs="$(prompt "Install CrowdSec + HAProxy SPOA bouncer (dnf + LAPI keys)" "n")"
+    install_cs="$(prompt "Install CrowdSec + HAProxy SPOA bouncer (OS packages + LAPI keys)" "n")"
   fi
   install_cs="${install_cs,,}"
 
   export EASY_WAF_INSTALL_OS_PACKAGES="${EASY_WAF_INSTALL_OS_PACKAGES:-1}"
   if [[ -t 0 ]] && [[ -z "${EASY_WAF_INSTALL_POSTGRES+x}" ]]; then
     local pg
-    pg="$(prompt "Install local PostgreSQL via dnf (recommended; n if DATABASE_URL is external only)" "y")"
+    pg="$(prompt "Install local PostgreSQL via OS packages (recommended; n if DATABASE_URL is external only)" "y")"
     pg="${pg,,}"
     case "$pg" in y|yes|1|true) export EASY_WAF_INSTALL_POSTGRES=1 ;; *) export EASY_WAF_INSTALL_POSTGRES=0 ;; esac
   fi
