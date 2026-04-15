@@ -178,7 +178,7 @@
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Core services (systemd)</h3>
-          <p class="dash-note">Live state from <code>systemctl is-active</code> on the API host (easy-waf-api, HAProxy, CrowdSec, firewalld, …). If all show <span class="warn">unknown</span>, the API user may lack permission to query systemd.</p>
+          <p class="dash-note">Состояние юнитов на хосте API: <code>systemctl show -p ActiveState</code> (с запасным <code>is-active</code>). Если везде <span class="warn">unknown</span> — нет <code>/usr/bin/systemctl</code>, недоступен D-Bus к org.freedesktop.systemd1 (SELinux/polkit) или пересоберите API после обновления. / Live unit state on the API host; all <span class="warn">unknown</span> → check systemctl path, D-Bus/SELinux, and that <code>easy-waf-api</code> was rebuilt and restarted.</p>
           <div id="dash-services"></div>
         </div>
         <div class="panel" style="max-width:100%">

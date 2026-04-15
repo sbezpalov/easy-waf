@@ -2,6 +2,14 @@
 
 Документ соответствует ветке релиза **1.0.0-rc1** (см. [`VERSION`](../VERSION)).
 
+## Dashboard: все сервисы в блоке «Core services» = `unknown`
+
+API вызывает **`/usr/bin/systemctl show -p ActiveState`** (и при необходимости **`is-active`**) от пользователя **`easy-waf`**.
+
+1. Убедитесь, что на хосте установлен **актуальный** `easy-waf-api` после `git pull` и **`systemctl restart easy-waf-api`** (см. [OPERATIONS.md](OPERATIONS.md) — UI встроен в бинарник).
+2. Проверьте от имени `easy-waf`: `sudo -u easy-waf /usr/bin/systemctl show -p ActiveState --value haproxy.service` — должно вывести `active` или `inactive`, не пусто.
+3. Если команда недоступна: **SELinux** (`ausearch`, контекст сервиса), **отсутствие `/usr/bin/systemctl`**, или ограничения unit (юнит `easy-waf-api.service` уже содержит `ReadWritePaths=/run` для D-Bus).
+
 ## `$'\r': command not found` when running a `*.sh` script
 
 The file has **Windows CRLF** line endings. On the appliance:

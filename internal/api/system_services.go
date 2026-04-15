@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// coreSystemdUnits are inspected with `systemctl is-active` for the dashboard / ops view.
+// coreSystemdUnits are inspected with `systemctl show` (fallback `is-active`) for the dashboard / ops view.
 var coreSystemdUnits = []struct {
 	ID    string `json:"id"`
 	Unit  string `json:"unit"`
@@ -24,21 +24,31 @@ var coreSystemdUnits = []struct {
 	{"postgresql", "postgresql.service", "PostgreSQL (local default unit name)"},
 }
 
-// systemdIsActive returns the first line from `systemctl is-active` (e.g. active, inactive, failed)
-// or "unknown" if the command fails or times out.
-func systemdIsActive(ctx context.Context, unit string) string {
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+// systemctlBins are tried in order (minimal PATH under systemd sometimes omits /usr/bin).
+var systemctlBins = []string{"/usr/bin/systemctl", "/bin/systemctl", "systemctl"}
+
+// systemdUnitActiveState returns systemd ActiveState (active, inactive, failed, activating, …)
+// or "unknown" if systemctl is missing / D-Bus is unreachable / unit name not loaded.
+func systemdUnitActiveState(ctx context.Context, unit string) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemctl", "is-active", unit)
-	out, err := cmd.Output()
-	s := strings.TrimSpace(string(out))
-	if err != nil && s == "" {
-		return "unknown"
+
+	// Prefer `systemctl show`: exit status is usually 0 even for inactive units (unlike `is-active`, which uses 3/4).
+	for _, bin := range systemctlBins {
+		if out, err := exec.CommandContext(ctx, bin, "show", "-p", "ActiveState", "--value", unit).Output(); err == nil {
+			if s := strings.TrimSpace(string(out)); s != "" {
+				return s
+			}
+		}
+		// `is-active` prints a state line even when exit code is non-zero (e.g. inactive → exit 3).
+		out, err := exec.CommandContext(ctx, bin, "is-active", unit).Output()
+		s := strings.TrimSpace(string(out))
+		if s != "" {
+			return s
+		}
+		_ = err
 	}
-	if s == "" {
-		return "unknown"
-	}
-	return s
+	return "unknown"
 }
 
 func (s *Server) listSystemServices(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +65,7 @@ func (s *Server) listSystemServices(w http.ResponseWriter, r *http.Request) {
 			ID:          u.ID,
 			Unit:        u.Unit,
 			Label:       u.Label,
-			ActiveState: systemdIsActive(ctx, u.Unit),
+			ActiveState: systemdUnitActiveState(ctx, u.Unit),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"services": out})

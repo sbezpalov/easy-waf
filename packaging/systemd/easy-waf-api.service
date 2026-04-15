@@ -17,6 +17,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+# /run covers D-Bus and systemd’s runtime dir so `systemctl show` from the dashboard can query other units.
 ReadWritePaths=/var/lib/easy-waf /run
 StateDirectory=easy-waf
 
