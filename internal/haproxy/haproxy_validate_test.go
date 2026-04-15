@@ -25,7 +25,7 @@ import (
 func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	hx, err := exec.LookPath("haproxy")
 	if err != nil {
-		t.Skip("haproxy not in PATH (install apt package haproxy to run this check)")
+		t.Skip("haproxy not in PATH (install the haproxy package to run this check)")
 	}
 
 	dir := t.TempDir()
@@ -71,6 +71,19 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	r, err := Render(in)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Regression guard: older template used `(\.\./|\.\.[\\])` which HAProxy turns into invalid PCRE `[\]`.
+	// If this fails on CI, the job is building a commit without the fixed traversal ACL in render.go.
+	if strings.Contains(r.HAProxyConfig, "acl waf_traversal") {
+		const wantTraversalACL = `acl waf_traversal path -m reg -i \.\./`
+		if !strings.Contains(r.HAProxyConfig, wantTraversalACL) {
+			i := strings.Index(r.HAProxyConfig, "acl waf_traversal")
+			snippet := r.HAProxyConfig[i:]
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "…"
+			}
+			t.Fatalf("expected %q in rendered config (re-run after merging latest internal/haproxy/render.go); got near: %q", wantTraversalACL, snippet)
+		}
 	}
 	if err := os.WriteFile(crtListPath, []byte(r.CRTList), 0o640); err != nil {
 		t.Fatal(err)
