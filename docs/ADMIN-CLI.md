@@ -31,10 +31,37 @@ sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-adm
 sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
 
+With a one-shot DSN when **`DATABASE_URL` in the env file is wrong** (do not source `easy-waf.env` for `DATABASE_URL` in that case, or export the correct URL after sourcing):
+
+```bash
+sudo /usr/sbin/easy-waf-admin reset-appliance -confirm RESET \
+  -database-url 'postgres://easywaf:REAL_PASSWORD@127.0.0.1:5432/easywaf?sslmode=disable'
+```
+
 Optional state path (default `/var/lib/easy-waf`):
 
 ```bash
 /usr/sbin/easy-waf-admin reset-appliance -state-dir /var/lib/easy-waf -confirm RESET
+```
+
+### Wrong password in `easy-waf.env` (cannot connect to PostgreSQL)
+
+If **`DATABASE_URL`** in the env file is stale but you know the real password (e.g. after `ALTER USER` as `postgres`), run the wipe **without** sourcing the broken URL — pass a one-shot DSN (quote carefully; URL-encode `@` and other special characters in the password):
+
+```bash
+sudo /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true \
+  -database-url 'postgres://easywaf:REAL_PASSWORD@127.0.0.1:5432/easywaf?sslmode=disable'
+```
+
+Then update **`/etc/easy-waf/easy-waf.env`** so **`DATABASE_URL`** matches that password, or services will fail again on restart.
+
+### `Usage:` does not list `reset-appliance`
+
+The **`/usr/sbin/easy-waf-admin`** binary is older than the repo. Rebuild and reinstall:
+
+```bash
+cd ~/easy-waf && git pull && make build
+sudo install -m 0755 -t /usr/sbin dist/easy-waf-admin
 ```
 
 After a wipe, ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, the default operator **`admin` / `admin`** is recreated — change the password in the UI.
@@ -47,6 +74,8 @@ Same effect as **`reset-appliance`**. Kept for scripts and older docs.
 sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true'
 sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
+
+Optional **`-database-url`** works the same as for **`reset-appliance`** (see above).
 
 ## Environment bypass (lockout)
 

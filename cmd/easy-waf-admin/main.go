@@ -39,19 +39,27 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-control-panel-access [-env-file path] [-state-dir path]")
 	fmt.Fprintln(os.Stderr, "      Resets management CIDR allowlist to defaults and binds API to loopback in env file.")
-	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-appliance [-state-dir path] -confirm RESET")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-appliance [-state-dir path] [-database-url URL] -confirm RESET")
 	fmt.Fprintln(os.Stderr, "      Factory reset: truncates DB config tables and clears generated state (preferred).")
-	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] -i-am-sure")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-database-url URL] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
-	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required)")
+	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed)")
+}
+
+// openStoreFrom connects using url when non-empty; otherwise DATABASE_URL from the environment.
+func openStoreFrom(url string) (*store.Store, error) {
+	dsn := strings.TrimSpace(url)
+	if dsn == "" {
+		dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	}
+	if dsn == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required (export it or pass -database-url)")
+	}
+	return store.OpenPostgres(dsn)
 }
 
 func openStore() (*store.Store, error) {
-	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if dsn == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
-	}
-	return store.OpenPostgres(dsn)
+	return openStoreFrom("")
 }
 
 func resetControlPanelAccess() {
@@ -121,6 +129,7 @@ func logPostWipeHints() {
 func resetAppliance() {
 	fs := flag.NewFlagSet("reset-appliance", flag.ExitOnError)
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	databaseURL := fs.String("database-url", "", "optional: postgres URL for this command only (overrides DATABASE_URL)")
 	confirm := fs.String("confirm", "", fmt.Sprintf("must be %q to erase all appliance configuration", resetConfirmToken))
 	_ = fs.Parse(os.Args[2:])
 
@@ -128,7 +137,7 @@ func resetAppliance() {
 		log.Fatalf("refusing: pass -confirm %s to erase all appliance configuration (DB + state under %s)", resetConfirmToken, *stateDir)
 	}
 
-	st, err := openStore()
+	st, err := openStoreFrom(*databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -143,13 +152,14 @@ func factoryReset() {
 	fs := flag.NewFlagSet("factory-reset", flag.ExitOnError)
 	sure := fs.Bool("i-am-sure", false, "required to proceed (prefer: reset-appliance -confirm RESET)")
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	databaseURL := fs.String("database-url", "", "optional: postgres URL for this command only (overrides DATABASE_URL)")
 	_ = fs.Parse(os.Args[2:])
 
 	if !*sure {
 		log.Fatal("refusing: pass -i-am-sure to confirm full data wipe (or use: reset-appliance -confirm RESET)")
 	}
 
-	st, err := openStore()
+	st, err := openStoreFrom(*databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
