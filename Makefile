@@ -1,4 +1,4 @@
-.PHONY: build test lint check-linux verify shellcheck-sh test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
+.PHONY: build test lint check-linux verify verify. shellcheck-sh test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml (install.sh … vX.Y.Z).
@@ -32,6 +32,10 @@ shellcheck-sh:
 	fi
 
 verify: check-linux shellcheck-sh
+
+# Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
+verify.:
+	@$(MAKE) verify
 
 # Exits 0 with SKIP unless RUN_BACKUP_RESTORE_E2E=1 and root (destructive on real appliance).
 test-backup-restore-e2e:
