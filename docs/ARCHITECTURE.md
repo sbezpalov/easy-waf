@@ -216,6 +216,6 @@ sequenceDiagram
 | ACME worker | `easy-waf-acmed` — Lego v4 HTTP-01 (webroot) |
 | State | PostgreSQL (`pgx` / `database/sql`) |
 | Templates | `text/template` for HAProxy / SPOE |
-| UI | Static SPA (vanilla or Vite build) embedded |
+| UI | Static HTML embedded (`internal/webui/dist`); global settings edited per tab (**Certificates** = ACME + management TLS, **CrowdSec** = LAPI/SPOE, **Security** = WAF/GeoIP/lists); **Settings** = load-all from API |
 
 NGINX remains **optional** in MVP for ACME webroot split or admin-only reverse proxy; primary edge is HAProxy per product definition.

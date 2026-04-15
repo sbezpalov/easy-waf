@@ -224,9 +224,31 @@
 
       <div id="tab-certs" class="tab-panel">
         <h2>▤ Certificates</h2>
-        <p class="dash-note" style="margin-top:0">TLS material metadata from PostgreSQL. ACME issuance is picked up by <code>acmed</code> after <strong>Request issue</strong> / <strong>Renew</strong>.</p>
+        <p class="dash-note" style="margin-top:0">TLS material metadata from PostgreSQL, <strong>ACME</strong> for issuance (<code>acmed</code> picks up after <strong>Request issue</strong> / <strong>Renew</strong>), and <strong>management HTTPS</strong> for the UI.</p>
+
+        <div class="panel" style="max-width:100%">
+          <h3>ACME (Let's Encrypt)</h3>
+          <p><small>Registration email and staging flag. Use <a href="#settings">Settings</a> → <strong>Load from server</strong> if fields are empty.</small></p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+            <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
+            <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
+            <button type="button" id="btn-acme-settings-save">Save ACME</button>
+          </div>
+          <p id="certs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Management TLS (UI on port 8443)</h3>
+          <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed cert (hot-applied).</small></p>
+          <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+          <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+          <div class="row" style="margin-top:0.5rem"><button type="button" id="btn-tls-save">Install management TLS</button></div>
+          <p id="tls-msg" class="warn"></p>
+        </div>
+
+        <h3>Inventory</h3>
         <div class="row">
-          <button type="button" class="secondary" id="btn-certs">Refresh</button>
+          <button type="button" class="secondary" id="btn-certs">Refresh list</button>
         </div>
         <p id="cert-dash-msg" class="warn" style="min-height:1rem"></p>
         <div class="cert-stat-grid">
@@ -350,13 +372,31 @@
       </div>
 
       <div id="tab-crowdsec" class="tab-panel">
-        <h2>⚑ CrowdSec (LAPI)</h2>
-        <p><small>Set <strong>LAPI URL</strong>, <strong>bouncer API key</strong>, and optional <strong>SPOE path / engine</strong> in <a href="#settings">Settings</a> → CrowdSec, then save.</small></p>
-        <div class="row">
-          <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
-          <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
+        <h2>⚑ CrowdSec</h2>
+        <p class="dash-note" style="margin-top:0">LAPI + HAProxy SPOE (<code>filter spoe</code>). The bouncer API key is stored server-side and <strong>never</strong> returned in JSON — use <a href="#settings">Settings</a> → <strong>Load from server</strong> before rotating.</p>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Connection &amp; SPOE</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem">
+            <label>LAPI base URL <input id="cs-lapi-url" type="url" placeholder="http://127.0.0.1:8080/" style="min-width:20rem" autocomplete="off" /></label>
+            <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
+            <label>SPOE config path <input id="cs-spoe-path" type="text" style="min-width:22rem" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
+            <label>SPOE engine name <input id="cs-engine-name" type="text" style="min-width:10rem" placeholder="crowdsec" autocomplete="off" /></label>
+            <button type="button" id="btn-cs-settings-save">Save CrowdSec</button>
+          </div>
+          <p id="cs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
-        <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;"></pre>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Diagnostics</h3>
+          <div class="row">
+            <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
+            <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
+          </div>
+          <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;margin-top:0.75rem"></pre>
+        </div>
       </div>
 
       <div id="tab-config" class="tab-panel">
@@ -377,33 +417,12 @@
       </div>
 
       <div id="tab-settings" class="tab-panel">
-        <h2>☰ Settings</h2>
-        <p><small><code>acmed</code> stays idle until <strong>ACME email</strong> is set. <strong>Save</strong> uses <code>PATCH /api/v1/settings</code>.</small></p>
+        <h2>✎ Settings</h2>
+        <p class="dash-note" style="margin-top:0">Service-specific options live under <strong>Certificates</strong> (ACME, management TLS), <strong>CrowdSec</strong> (LAPI / SPOE), and <strong>Security</strong> (WAF, IP lists, GeoIP). Use <strong>Load from server</strong> here to fill all tabs from <code>GET /api/v1/settings</code>.</p>
         <div class="row">
-          <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
-          <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
-          <button type="button" id="btn-settings-load">Load</button>
-          <button type="button" id="btn-settings-save">Save</button>
+          <button type="button" id="btn-settings-load">Load from server</button>
         </div>
         <p id="settings-msg" class="warn"></p>
-
-        <h3>CrowdSec (LAPI + HAProxy SPOE)</h3>
-        <p><small>Used by the <a href="#crowdsec">CrowdSec</a> tab and by the HAProxy template (<code>filter spoe</code>). The API key is stored in the database and is <strong>never</strong> returned in JSON; use <strong>Load</strong> then enter a new key only when rotating.</small></p>
-        <div class="row" style="flex-wrap:wrap;gap:0.75rem">
-          <label>LAPI base URL <input id="cs-lapi-url" type="url" placeholder="http://127.0.0.1:8080/" style="min-width:20rem" autocomplete="off" /></label>
-          <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
-        </div>
-        <div class="row" style="flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
-          <label>SPOE config path <input id="cs-spoe-path" type="text" style="min-width:22rem" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
-          <label>SPOE engine name <input id="cs-engine-name" type="text" style="min-width:10rem" placeholder="crowdsec" autocomplete="off" /></label>
-        </div>
-
-        <h3>Management TLS (port 8443)</h3>
-        <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed certificate (hot-applied).</small></p>
-        <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
-        <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
-        <div class="row"><button type="button" id="btn-tls-save">Install TLS certificate</button></div>
-        <p id="tls-msg" class="warn"></p>
       </div>
 
       <div id="tab-logs" class="tab-panel">
@@ -513,7 +532,10 @@
         loadProfileSelect();
         break;
       case 'certs':
-        loadCertDashboard();
+        void (async () => {
+          await loadSettingsPanel();
+          loadCertDashboard();
+        })();
         break;
       case 'security':
         loadSettingsPanel();
@@ -521,6 +543,7 @@
         loadBlockedUATable();
         break;
       case 'crowdsec':
+        void loadSettingsPanel();
         break;
       case 'config':
         loadRevisions();
@@ -791,9 +814,26 @@
   }
 
   async function loadSettingsPanel() {
-    document.getElementById('settings-msg').textContent = '';
+    const sm = document.getElementById('settings-msg');
+    const cm = document.getElementById('certs-settings-msg');
+    const csm = document.getElementById('cs-settings-msg');
+    if (sm) {
+      sm.textContent = '';
+      sm.className = 'warn';
+    }
+    if (cm) {
+      cm.textContent = '';
+      cm.className = 'warn';
+    }
+    if (csm) {
+      csm.textContent = '';
+      csm.className = 'warn';
+    }
     const r = await fetch('/api/v1/settings', { headers: hdr() });
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (sm) sm.textContent = await r.text();
+      return;
+    }
     cachedSettings = await r.json();
     document.getElementById('acme-email').value = cachedSettings.acme_email || '';
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
@@ -808,6 +848,10 @@
       : 'Machine bouncer key (cscli bouncers add -o raw)';
     document.getElementById('cs-spoe-path').value = cachedSettings.spoe_config_path || '';
     document.getElementById('cs-engine-name').value = cachedSettings.crowdsec_engine_name || 'crowdsec';
+    if (sm) {
+      sm.textContent = 'Loaded from server.';
+      sm.className = 'ok';
+    }
   }
 
   function loadIpwlToggleFromSettings() {
@@ -1065,7 +1109,7 @@
       return;
     }
     if (!sumR.ok || !haR.ok) {
-      if (errEl) errEl.textContent = 'Stats unavailable (HAProxy running? stats socket path in Settings).';
+      if (errEl) errEl.textContent = 'Stats unavailable (HAProxy running? Check stats socket path in global settings / DB).';
       return;
     }
     const sum = await sumR.json().catch(() => ({}));
@@ -1245,38 +1289,65 @@
   }
 
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
-  document.getElementById('btn-settings-save').onclick = async () => {
-    document.getElementById('settings-msg').textContent = '';
+
+  document.getElementById('btn-acme-settings-save').onclick = async () => {
+    const msg = document.getElementById('certs-settings-msg');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
     if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('settings-msg').textContent = 'Load settings first'; return; }
+    if (!cachedSettings) {
+      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      return;
+    }
     const patch = {
       acme_email: document.getElementById('acme-email').value.trim(),
-      acme_staging: document.getElementById('acme-staging').checked,
-      waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked,
-      block_empty_ua: document.getElementById('ua-block-empty').checked,
-      blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked,
-      geoip_enabled: document.getElementById('geoip-enabled').checked,
-      geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
-      geoip_default_policy: document.getElementById('geoip-policy').value.trim().toLowerCase(),
-      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value),
+      acme_staging: document.getElementById('acme-staging').checked
+    };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      if (msg) {
+        msg.textContent = 'ACME saved.';
+        msg.className = 'ok';
+      }
+    } else if (msg) {
+      msg.textContent = await r.text();
+    }
+  };
+
+  document.getElementById('btn-cs-settings-save').onclick = async () => {
+    const msg = document.getElementById('cs-settings-msg');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) {
+      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      return;
+    }
+    const patch = {
       crowdsec_lapi_url: document.getElementById('cs-lapi-url').value.trim(),
       spoe_config_path: document.getElementById('cs-spoe-path').value.trim(),
       crowdsec_engine_name: document.getElementById('cs-engine-name').value.trim()
     };
     const csKey = document.getElementById('cs-lapi-key').value;
     if (csKey.trim()) patch.crowdsec_lapi_key = csKey.trim();
-    const r = await fetch('/api/v1/settings', {
-      method: 'PATCH',
-      headers: hdr(),
-      body: JSON.stringify(patch)
-    });
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
       cachedSettings = await r.json();
-      loadBotProtectionFromSettings();
-      loadGeoIPFromSettings();
-      document.getElementById('settings-msg').textContent = 'Saved.';
-    } else {
-      document.getElementById('settings-msg').textContent = await r.text();
+      document.getElementById('cs-lapi-key').value = '';
+      document.getElementById('cs-lapi-key').placeholder = cachedSettings.crowdsec_lapi_key_set
+        ? '•••• key stored — enter new key to replace'
+        : 'Machine bouncer key (cscli bouncers add -o raw)';
+      if (msg) {
+        msg.textContent = 'CrowdSec settings saved.';
+        msg.className = 'ok';
+      }
+    } else if (msg) {
+      msg.textContent = await r.text();
     }
   };
 
@@ -1284,7 +1355,7 @@
     const msg = document.getElementById('waf-security-msg');
     msg.textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { msg.textContent = 'Load settings from Settings tab first.'; return; }
+    if (!cachedSettings) { msg.textContent = 'Use Settings → Load from server first.'; return; }
     const patch = { waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked };
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
@@ -1298,13 +1369,11 @@
   };
 
   document.getElementById('btn-geoip-settings-save').onclick = async () => {
-    document.getElementById('settings-msg').textContent = '';
     const geoMsg = document.getElementById('security-geo-msg');
     if (geoMsg) geoMsg.textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) {
-      const t = 'Load settings first';
-      document.getElementById('settings-msg').textContent = t;
+      const t = 'Use Settings → Load from server first.';
       if (geoMsg) geoMsg.textContent = t;
       return;
     }
@@ -1318,12 +1387,16 @@
     if (r.ok) {
       cachedSettings = await r.json();
       loadGeoIPFromSettings();
-      document.getElementById('settings-msg').textContent = 'GeoIP settings saved.';
-      if (geoMsg) { geoMsg.textContent = 'GeoIP settings saved.'; geoMsg.className = 'ok'; }
+      if (geoMsg) {
+        geoMsg.textContent = 'GeoIP settings saved.';
+        geoMsg.className = 'ok';
+      }
     } else {
       const err = await r.text();
-      document.getElementById('settings-msg').textContent = err;
-      if (geoMsg) { geoMsg.textContent = err; geoMsg.className = 'warn'; }
+      if (geoMsg) {
+        geoMsg.textContent = err;
+        geoMsg.className = 'warn';
+      }
     }
   };
 
@@ -1434,7 +1507,7 @@
   document.getElementById('btn-ipwl-settings-save').onclick = async () => {
     document.getElementById('ipwl-msg').textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('ipwl-msg').textContent = 'Load settings first'; return; }
+    if (!cachedSettings) { document.getElementById('ipwl-msg').textContent = 'Use Settings → Load from server first.'; return; }
     const patch = { ipwl_enabled: document.getElementById('ipwl-enabled').checked };
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
@@ -1448,7 +1521,7 @@
   document.getElementById('btn-ua-settings-save').onclick = async () => {
     document.getElementById('ua-msg').textContent = '';
     if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('ua-msg').textContent = 'Load settings first'; return; }
+    if (!cachedSettings) { document.getElementById('ua-msg').textContent = 'Use Settings → Load from server first.'; return; }
     const patch = {
       block_empty_ua: document.getElementById('ua-block-empty').checked,
       blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked
