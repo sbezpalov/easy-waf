@@ -43,8 +43,14 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          if rpm -q coreutils-single >/dev/null 2>&1; then
+          # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
+          if rpm -qa | grep -qE '^coreutils-single-'; then
             dnf -y swap coreutils-single coreutils
+          fi
+          if rpm -qa | grep -qE '^coreutils-single-'; then
+            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
+            rpm -qa 'coreutils*' | sort >&2 || true
+            exit 1
           fi
           dnf -y install --allowerasing \
             bash \
@@ -111,8 +117,13 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          if rpm -q coreutils-single >/dev/null 2>&1; then
+          if rpm -qa | grep -qE '^coreutils-single-'; then
             dnf -y swap coreutils-single coreutils
+          fi
+          if rpm -qa | grep -qE '^coreutils-single-'; then
+            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
+            rpm -qa 'coreutils*' | sort >&2 || true
+            exit 1
           fi
           dnf -y install --allowerasing \
             bash \
@@ -170,8 +181,14 @@ jobs:
         run: |
           set -euo pipefail
           dnf -y install ca-certificates curl dnf-plugins-core
-          if rpm -q coreutils-single >/dev/null 2>&1; then
+          # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
+          if rpm -qa | grep -qE '^coreutils-single-'; then
             dnf -y swap coreutils-single coreutils
+          fi
+          if rpm -qa | grep -qE '^coreutils-single-'; then
+            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
+            rpm -qa 'coreutils*' | sort >&2 || true
+            exit 1
           fi
           dnf -y install --allowerasing \
             bash \
