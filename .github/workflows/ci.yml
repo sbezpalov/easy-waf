@@ -1,5 +1,9 @@
 name: CI
 
+# Product target OS is AlmaLinux (dnf, layout under /etc, /var/lib). GitHub provides Ubuntu-based
+# hosted runners (runs-on: ubuntu-latest); apt-get in this workflow is only for CI HAProxy installs.
+# Authoritative HAProxy/package checks: Alma host or pilot waf-dev (see docs/DEV_HOST.md).
+
 on:
   push:
     branches: [main, dev]
@@ -70,7 +74,7 @@ jobs:
           go-version: "1.22.x"
           cache: true
 
-      - name: Install HAProxy
+      - name: Install HAProxy (CI runner only; production uses AlmaLinux/dnf)
         run: |
           sudo apt-get update
           sudo apt-get install -y haproxy
