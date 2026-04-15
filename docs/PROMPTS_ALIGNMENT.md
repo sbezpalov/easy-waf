@@ -19,7 +19,7 @@
 | Rate limit (stick-tables) | Partial | `internal/profiles/profiles.go` → шаблон |
 | Базовый WACL (ACL) | Partial | Профили, `internal/haproxy/render.go` |
 | CrowdSec + решения | Partial | `internal/crowdsec/client.go`, API `integrations/crowdsec*`, `docs/CROWDSEC.md` |
-| SPOE bouncer | Done (код + установка) | `filter spoe` в шаблоне; `EASY_WAF_INSTALL_CROWDSEC=1` в `install.sh` + `docs/CROWDSEC.md`; конкретный deny 403 по решению — в конфиге SPOA от пакета bouncer |
+| SPOE bouncer | Done (код + установка) | `filter spoe` в шаблоне; пакеты CrowdSec по умолчанию в `install.sh` + `docs/CROWDSEC.md` / `crowdsec-bootstrap-lapi.sh`; deny 403 по решению — в конфиге SPOA от пакета bouncer |
 | Fail2Ban | Partial | Установка в `install.sh`, не оркестрируется API |
 | GeoIP + кэш | Done | `internal/geoip/*` (LRU+TTL, ipinfo.io, batch `geoip_enforce.map`), API `/geoip/lookup`, `/geoip/stats`, HAProxy ACL, UI Settings |
 

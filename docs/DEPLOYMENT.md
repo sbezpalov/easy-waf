@@ -27,10 +27,10 @@ Pilot SSH host alias **`waf-dev`** (dev/test): see **[DEV_HOST.md](DEV_HOST.md)*
 5. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs base packages via **dnf** (Alma/RHEL) or **apt** (Debian/Ubuntu): HAProxy, firewalld, fail2ban, nginx, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
 6. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (avoids Alma/RHEL defaults that often use **ident** and break `DATABASE_URL` password auth), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
 7. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
-8. Optionally **`EASY_WAF_INSTALL_CROWDSEC=1`**: after `/etc/easy-waf/easy-waf.env` exists, installs CrowdSec from packagecloud, SPOA bouncer, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)).
+8. **CrowdSec + SPOA bouncer (default on dnf/apt):** installs packages from packagecloud so units exist; **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** (or **`scripts/crowdsec-bootstrap-lapi.sh`**) starts LAPI, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)). Set **`EASY_WAF_INSTALL_CROWDSEC=0`** to skip packages entirely.
 9. Runs **restorecon** on state/config paths when SELinux tools are present (typically Alma/RHEL only).
 
-Optional **CrowdSec** + **HAProxy SPOA** packages: set **`EASY_WAF_INSTALL_CROWDSEC=1`** on **`scripts/install.sh`** (non-interactive), or use **`scripts/install-interactive.sh`** (see [CROWDSEC.md](CROWDSEC.md)).
+CrowdSec is part of the default appliance install; see [CROWDSEC.md](CROWDSEC.md) for **`EASY_WAF_INSTALL_CROWDSEC`**, **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL`**, and **`scripts/crowdsec-bootstrap-lapi.sh`**.
 
 ## AlmaLinux (bare metal / VM)
 
@@ -38,7 +38,7 @@ Optional **CrowdSec** + **HAProxy SPOA** packages: set **`EASY_WAF_INSTALL_CROWD
 2. **Recommended (interactive, LAN-only API + optional CrowdSec):** `sudo bash scripts/install-interactive.sh`  
    **Or minimal:** `sudo bash scripts/install.sh` (same as [QUICKSTART.md](QUICKSTART.md): local PostgreSQL + DB provisioning + start services by default).
 3. **External database only:** `sudo EASY_WAF_INSTALL_POSTGRES=0 bash scripts/install.sh`, edit `/etc/easy-waf/easy-waf.env` (`DATABASE_URL`), then `sudo systemctl enable --now easy-waf-api easy-waf-acmed` (or use `EASY_WAF_ENABLE_SYSTEMD_UNITS=0` on install and start after editing).
-4. If you did not enable CrowdSec during install: use **`EASY_WAF_INSTALL_CROWDSEC=1`** with `install.sh`, run **`install-interactive.sh`**, or install **CrowdSec** + HAProxy **SPOE bouncer** manually per [CROWDSEC.md](CROWDSEC.md).
+4. If CrowdSec packages were skipped (**`EASY_WAF_INSTALL_CROWDSEC=0`**) or LAPI was not bootstrapped: run **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** or **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** per [CROWDSEC.md](CROWDSEC.md).
 
 ## Debian / Ubuntu (bare metal / VM)
 

@@ -8,8 +8,9 @@
 # Non-interactive overrides (optional):
 #   EASY_WAF_MGMT_MODE=loopback|lan_rfc1918
 #   EASY_WAF_LISTEN_HTTP / EASY_WAF_LISTEN_HTTPS — if unset, derived from mgmt_mode (8000 / 8443)
-#   EASY_WAF_INSTALL_CROWDSEC=0|1
-#   EASY_WAF_CROWDSEC_CONSOLE_TOKEN=   — optional; passed to: cscli console enroll
+#   EASY_WAF_INSTALL_CROWDSEC=0|1       — skip CrowdSec packages when 0 (default 1 in install.sh on dnf/apt)
+#   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — if set, skips prompt; else TTY prompt for LAPI bootstrap
+#   EASY_WAF_CROWDSEC_CONSOLE_TOKEN=   — optional; passed to: cscli console enroll during bootstrap
 #   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443"
 #   EASY_WAF_FIREWALLD_ZONE=public
 #   EASY_WAF_EXTRA_LAN_CIDR=10.5.0.0/16  — optional extra source for rich rules (VPN, etc.)
@@ -30,8 +31,6 @@ done
 
 # shellcheck source=lib/firewalld-management-api.sh
 source "${SCRIPT_DIR}/lib/firewalld-management-api.sh"
-# shellcheck source=lib/crowdsec-install.sh
-source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
 # shellcheck source=lib/db-password.sh
 source "${SCRIPT_DIR}/lib/db-password.sh"
 
@@ -88,45 +87,11 @@ upsert_env_kv() {
   chown root:easy-waf "$ENV_FILE" 2>/dev/null || true
 }
 
-run_crowdsec_flow() {
-  log "Adding CrowdSec package repository..."
-  crowdsec_add_packagecloud_repo
-  log "Installing CrowdSec agent..."
-  crowdsec_install_agent_package
-  crowdsec_start_agent
-  crowdsec_wait_lapi || die "CrowdSec LAPI unavailable"
-
-  local enroll="${EASY_WAF_CROWDSEC_CONSOLE_TOKEN:-}"
-  if [[ -z "$enroll" ]] && [[ -t 0 ]]; then
-    enroll="$(prompt "CrowdSec Console enrollment token (empty to skip)" "")"
-  fi
-  if [[ -n "${enroll// }" ]]; then
-    crowdsec_console_enroll "$enroll" || true
-  fi
-
-  log "Registering LAPI bouncers..."
-  local spoa_key ui_key
-  spoa_key="$(cscli bouncers add easy-waf-haproxy-spoa -o raw)"
-  ui_key="$(cscli bouncers add easy-waf-management -o raw)"
-
-  log "Installing HAProxy SPOA bouncer package..."
-  crowdsec_install_spoa_bouncer_package
-  crowdsec_inject_spoa_api_key "$spoa_key" || die "failed to configure SPOA bouncer key"
-
-  systemctl enable --now crowdsec-haproxy-spoa-bouncer || log "warning: could not enable crowdsec-haproxy-spoa-bouncer"
-  systemctl restart crowdsec-haproxy-spoa-bouncer 2>/dev/null || true
-
-  upsert_env_kv "CROWDSEC_LAPI_URL" "http://127.0.0.1:8080"
-  upsert_env_kv "CROWDSEC_LAPI_KEY" "$ui_key"
-  log "Wrote CROWDSEC_LAPI_* to $ENV_FILE (management bouncer key for UI health)"
-}
-
 main() {
   require_root
   log "repo root: $REPO_ROOT"
 
   local mgmt_mode="${EASY_WAF_MGMT_MODE:-}"
-  local install_cs="${EASY_WAF_INSTALL_CROWDSEC:-}"
   local fw_ports="${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}"
 
   if [[ -z "$mgmt_mode" ]]; then
@@ -169,10 +134,17 @@ main() {
     fi
   fi
 
-  if [[ -z "$install_cs" ]]; then
-    install_cs="$(prompt "Install CrowdSec + HAProxy SPOA bouncer (OS packages + LAPI keys)" "n")"
+  # CrowdSec RPM/DEBs: install.sh defaults to EASY_WAF_INSTALL_CROWDSEC=1 (packages on disk, units stopped/disabled).
+  if [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "0" ]]; then
+    export EASY_WAF_INSTALL_CROWDSEC=0
+    export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0
+  elif [[ -z "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-}" ]] && [[ -t 0 ]]; then
+    local cs_now
+    cs_now="$(prompt "Start CrowdSec LAPI now and register bouncer keys (writes CROWDSEC_LAPI_KEY; y/n)" "n")"
+    cs_now="${cs_now,,}"
+    case "$cs_now" in y|yes|1|true) export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 ;; *) export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0 ;; esac
   fi
-  install_cs="${install_cs,,}"
+  export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL="${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-0}"
 
   export EASY_WAF_INSTALL_OS_PACKAGES="${EASY_WAF_INSTALL_OS_PACKAGES:-1}"
   if [[ -t 0 ]] && [[ -z "${EASY_WAF_INSTALL_POSTGRES+x}" ]]; then
@@ -181,7 +153,7 @@ main() {
     pg="${pg,,}"
     case "$pg" in y|yes|1|true) export EASY_WAF_INSTALL_POSTGRES=1 ;; *) export EASY_WAF_INSTALL_POSTGRES=0 ;; esac
   fi
-  log "Running scripts/install.sh (EASY_WAF_INSTALL_OS_PACKAGES=$EASY_WAF_INSTALL_OS_PACKAGES EASY_WAF_INSTALL_POSTGRES=${EASY_WAF_INSTALL_POSTGRES:-1})..."
+  log "Running scripts/install.sh (EASY_WAF_INSTALL_OS_PACKAGES=$EASY_WAF_INSTALL_OS_PACKAGES EASY_WAF_INSTALL_POSTGRES=${EASY_WAF_INSTALL_POSTGRES:-1} EASY_WAF_INSTALL_CROWDSEC=${EASY_WAF_INSTALL_CROWDSEC:-1} EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL})..."
   bash "${SCRIPT_DIR}/install.sh"
 
   if [[ "${EASY_WAF_INSTALL_POSTGRES:-0}" == "1" ]] && [[ "${EASY_WAF_ROTATE_WEAK_DB_PASSWORD:-1}" == "1" ]]; then
@@ -201,14 +173,9 @@ main() {
       ;;
   esac
 
-  case "$install_cs" in
-    y|yes|1|true)
-      run_crowdsec_flow
-      ;;
-    *)
-      log "Skipping CrowdSec install (set EASY_WAF_INSTALL_CROWDSEC=1 to force non-interactive)"
-      ;;
-  esac
+  if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-0}" != "1" ]] && [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]]; then
+    log "CrowdSec packages are on the host; to start LAPI and keys later: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
+  fi
 
   log "Done. Review $ENV_FILE then: systemctl enable --now easy-waf-api easy-waf-acmed"
 }

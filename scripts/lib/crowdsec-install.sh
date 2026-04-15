@@ -86,6 +86,17 @@ crowdsec_start_agent() {
   systemctl enable --now crowdsec
 }
 
+# After package install: units exist but do not run until the operator (or bootstrap) enables them.
+crowdsec_leave_stopped_disabled() {
+  if ! command -v systemctl &>/dev/null; then
+    return 0
+  fi
+  systemctl stop crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || true
+  systemctl stop crowdsec.service 2>/dev/null || true
+  systemctl disable crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || true
+  systemctl disable crowdsec.service 2>/dev/null || true
+}
+
 crowdsec_console_enroll() {
   local token="$1"
   [[ -n "$token" ]] || return 0

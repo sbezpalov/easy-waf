@@ -2,6 +2,12 @@
 
 Документ соответствует ветке релиза **1.0.0-rc1** (см. [`VERSION`](../VERSION)).
 
+## `systemctl`: нет юнита `crowdsec.service` / `crowdsec-haproxy-spoa-bouncer.service`
+
+Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud или не **dnf/apt**). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer на dnf/apt; см. [CROWDSEC.md](CROWDSEC.md).
+
+После установки пакеты есть, а юниты могут быть **disabled** до явного запуска LAPI: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** или **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`**.
+
 ## Dashboard: все сервисы в блоке «Core services» = `unknown`
 
 API вызывает **`/usr/bin/systemctl show -p ActiveState`** (и при необходимости **`is-active`**) от пользователя **`easy-waf`**.

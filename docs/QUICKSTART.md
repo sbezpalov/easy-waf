@@ -32,13 +32,17 @@ Then set `DATABASE_URL` in `/etc/easy-waf/easy-waf.env` before starting services
 sudo EASY_WAF_ENABLE_SYSTEMD_UNITS=0 bash scripts/install.sh
 ```
 
-**CrowdSec + HAProxy SPOA bouncer (non-interactive)** — same machine, `dnf` or `apt`; see [CROWDSEC.md](CROWDSEC.md):
+**CrowdSec + HAProxy SPOA bouncer** — installed by default on `dnf`/`apt` with `install.sh` (units stopped until you bootstrap LAPI). See [CROWDSEC.md](CROWDSEC.md):
 
 ```bash
-sudo EASY_WAF_INSTALL_CROWDSEC=1 bash scripts/install.sh
+sudo EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh
 ```
 
-Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` (same install command).
+**Later:** `sudo bash scripts/crowdsec-bootstrap-lapi.sh` — same bootstrap without a full reinstall.
+
+Skip CrowdSec packages (air-gapped): `sudo EASY_WAF_INSTALL_CROWDSEC=0 bash scripts/install.sh`
+
+Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` during a run with **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`**.
 
 ## After install
 
