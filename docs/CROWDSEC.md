@@ -14,6 +14,38 @@ On **AlmaLinux / RHEL** (`dnf`) or **Debian / Ubuntu** (`apt`), run as **root**:
 sudo bash scripts/install-interactive.sh
 ```
 
+### Non-interactive install (`install.sh`)
+
+`scripts/install.sh` can install **CrowdSec**, the **HAProxy SPOA bouncer** package, register LAPI bouncers, and write keys into `/etc/easy-waf/easy-waf.env` **without** the interactive wizard.
+
+| Variable | Default | Meaning |
+|----------|---------|--------|
+| `EASY_WAF_INSTALL_CROWDSEC` | `0` | Set to **`1`** to run the CrowdSec flow after `/etc/easy-waf/easy-waf.env` is created. Requires **dnf** or **apt** (same as base OS packages path). |
+| `EASY_WAF_CROWDSEC_CONSOLE_TOKEN` | *(empty)* | If set, runs `cscli console enroll <token>` after LAPI is up (optional). |
+
+Steps performed when `EASY_WAF_INSTALL_CROWDSEC=1`:
+
+1. Add the official CrowdSec **packagecloud** repo (`scripts/lib/crowdsec-install.sh`).
+2. Install **`crowdsec`**, start **`crowdsec`**, wait for LAPI.
+3. Optionally **`cscli console enroll`** when `EASY_WAF_CROWDSEC_CONSOLE_TOKEN` is set.
+4. Register bouncers **`easy-waf-spoa`** (SPOA) and **`easy-waf-api`** (easy-waf-api health / decisions): existing bouncers with the same name are **deleted** first, then recreated (`cscli bouncers delete` is ignored if missing).
+5. Install **`crowdsec-haproxy-spoa-bouncer`**, inject the **SPOA** key into `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml`, **`systemctl enable --now`** for **`crowdsec-haproxy-spoa-bouncer`**.
+6. Set **`CROWDSEC_LAPI_URL`** and **`CROWDSEC_LAPI_KEY`** in **`/etc/easy-waf/easy-waf.env`** — the key is the **`easy-waf-api`** bouncer (same role as `easy-waf-management` in the interactive script). The **SPOA** key is **not** stored in `easy-waf.env`; it lives only in the bouncer YAML.
+
+**Errors (non-fatal where noted):** if the packagecloud repo script fails, agent install fails, or LAPI never becomes ready, the installer logs a **WARNING** and continues (no `exit 1`). If the SPOA package or service fails, a **WARNING** is logged; CrowdSec agent may still be running.
+
+Examples:
+
+```bash
+sudo EASY_WAF_INSTALL_CROWDSEC=1 bash scripts/install.sh
+```
+
+```bash
+sudo EASY_WAF_INSTALL_CROWDSEC=1 EASY_WAF_CROWDSEC_CONSOLE_TOKEN='your-console-enroll-token' bash scripts/install.sh
+```
+
+**Note:** `install-interactive.sh` registers **`easy-waf-haproxy-spoa`** and **`easy-waf-management`**; `install.sh` uses **`easy-waf-spoa`** / **`easy-waf-api`** so non-interactive runs do not collide with an earlier interactive install on the same host.
+
 The wizard can:
 
 - Set **`EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS`** (loopback or `0.0.0.0`), and optionally add **firewalld rich rules** so management **8000** and **8443/tcp** are allowed only from **RFC1918** (not from the public Internet).
@@ -21,13 +53,9 @@ The wizard can:
 - Optionally run **`cscli console enroll`** when you paste a **CrowdSec Console** enrollment token.
 - Register two LAPI bouncers: one for the SPOA binary, one for **Easy WAF** UI health (`CROWDSEC_LAPI_KEY` in `/etc/easy-waf/easy-waf.env`).
 
-Re-running the CrowdSec steps on the same host may fail if bouncer names already exist — remove them with `cscli bouncers delete <name>` first.
+Re-running the CrowdSec steps on the same host is safe when using **`install.sh`** with `EASY_WAF_INSTALL_CROWDSEC=1` (bouncers are deleted and recreated). For manual `cscli bouncers add`, remove duplicates with `cscli bouncers delete <name>` first.
 
-Non-interactive hints (see `scripts/install-interactive.sh` for the full list):
-
-- `EASY_WAF_MGMT_MODE=loopback` or `lan_rfc1918`
-- `EASY_WAF_INSTALL_CROWDSEC=1`
-- `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` (optional)
+Non-interactive hints for **`install-interactive.sh`** only (management bind / DB prompts): see `scripts/install-interactive.sh` header — e.g. `EASY_WAF_MGMT_MODE=loopback` or `lan_rfc1918`, `EASY_WAF_INSTALL_CROWDSEC=1`, `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...`.
 
 ## SPOE paths and naming
 

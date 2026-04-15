@@ -46,3 +46,7 @@ require (
 	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 )
+
+// v0.28.0+ pulls go1.24-only sources (e.g. unix/vgetrandom_linux.go), which breaks
+// golangci-lint / staticcheck on Go 1.22–1.23. Keep x/sys compatible with go.mod.
+replace golang.org/x/sys => golang.org/x/sys v0.27.0

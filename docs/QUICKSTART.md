@@ -30,6 +30,14 @@ Then set `DATABASE_URL` in `/etc/easy-waf/easy-waf.env` before starting services
 sudo EASY_WAF_ENABLE_SYSTEMD_UNITS=0 bash scripts/install.sh
 ```
 
+**CrowdSec + HAProxy SPOA bouncer (non-interactive)** — same machine, `dnf` or `apt`; see [CROWDSEC.md](CROWDSEC.md):
+
+```bash
+sudo EASY_WAF_INSTALL_CROWDSEC=1 bash scripts/install.sh
+```
+
+Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` (same install command).
+
 ## After install
 
 - **UI (LAN):** по умолчанию **`EASY_WAF_LISTEN_HTTP=0.0.0.0:8000`** и **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Открой **`http://<LAN-IP>:8000`** или **`https://<LAN-IP>:8443`**. На **8443** изначально **самоподписанный** сертификат (`…/secrets/management.crt`); замена — блок **Management TLS** в UI или `PUT /api/v1/settings/management-tls`. **`install.sh`** открывает в firewalld **8000 и 8443/tcp** только с **127.0.0.0/8** и **RFC1918**.

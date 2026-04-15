@@ -2,7 +2,8 @@
 # Easy Home WAF — appliance installer (Alma/RHEL via dnf; Debian/Ubuntu via apt).
 # Run as root: sudo bash scripts/install.sh
 #
-# For interactive setup (LAN-only API, optional CrowdSec + SPOA): scripts/install-interactive.sh
+# Optional CrowdSec + SPOA (non-interactive): EASY_WAF_INSTALL_CROWDSEC=1 (see docs/CROWDSEC.md).
+# Interactive setup (LAN-only API, prompts): scripts/install-interactive.sh
 #
 # Environment (optional):
 #   EASY_WAF_STATE_DIR=/var/lib/easy-waf
@@ -18,6 +19,8 @@
 #   EASY_WAF_FIREWALLD_MGMT_LAN=0     — skip rich rules: TCP management port only from RFC1918 + 127.0.0.0/8 (default: 1 with OS packages)
 #   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443" — TCP ports for LAN-only rich rules (management UI)
 #   EASY_WAF_FIREWALLD_ZONE=public    EASY_WAF_EXTRA_LAN_CIDR= — optional VPN CIDR for firewalld
+#   EASY_WAF_INSTALL_CROWDSEC=0|1   — non-interactive CrowdSec + SPOA bouncer (default 0; dnf/apt only; see docs/CROWDSEC.md)
+#   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when EASY_WAF_INSTALL_CROWDSEC=1)
 
 set -euo pipefail
 
@@ -90,6 +93,102 @@ install_env_file() {
     log "Keeping existing $CFG_DIR/easy-waf.env"
   fi
   chown root:easy-waf "$CFG_DIR/easy-waf.env" 2>/dev/null || chmod 0640 "$CFG_DIR/easy-waf.env"
+}
+
+# Upsert KEY=value in /etc/easy-waf/easy-waf.env (file must exist).
+easy_waf_env_upsert_kv() {
+  local key="$1" val="$2"
+  local env_file="$CFG_DIR/easy-waf.env"
+  if [[ ! -f "$env_file" ]]; then
+    log "WARNING: missing $env_file — cannot set $key"
+    return 1
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  grep -vE "^${key}=" "$env_file" >"$tmp" || true
+  printf '%s=%s\n' "$key" "$val" >>"$tmp"
+  install -m 0640 "$tmp" "$env_file"
+  rm -f "$tmp"
+  chown root:easy-waf "$env_file" 2>/dev/null || true
+}
+
+# Delete CrowdSec bouncer if present, then add; print raw API key (one line).
+easy_waf_cscli_bouncer_recreate_raw() {
+  local name="$1"
+  cscli bouncers delete "$name" 2>/dev/null || true
+  cscli bouncers add "$name" -o raw
+}
+
+# Optional CrowdSec + HAProxy SPOA bouncer (EASY_WAF_INSTALL_CROWDSEC=1). Non-fatal on repo/LAPI/SPOA issues.
+easy_waf_install_crowdsec_optional() {
+  if [[ "${EASY_WAF_INSTALL_CROWDSEC:-0}" != "1" ]]; then
+    return 0
+  fi
+  case "${EASY_WAF_PKG_MGR:-}" in
+    dnf | apt) ;;
+    *)
+      log "WARNING: EASY_WAF_INSTALL_CROWDSEC=1 but package manager is not dnf/apt — skip CrowdSec"
+      return 0
+      ;;
+  esac
+
+  # shellcheck source=lib/crowdsec-install.sh
+  source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
+
+  if ! crowdsec_add_packagecloud_repo; then
+    log "WARNING: CrowdSec packagecloud repo setup failed — skip CrowdSec (see docs/CROWDSEC.md)"
+    return 0
+  fi
+
+  if ! crowdsec_install_agent_package; then
+    log "WARNING: CrowdSec agent package install failed — skip CrowdSec"
+    return 0
+  fi
+
+  crowdsec_start_agent
+
+  if ! crowdsec_wait_lapi; then
+    log "WARNING: CrowdSec LAPI not ready — skip bouncers and SPOA (check: systemctl status crowdsec)"
+    return 0
+  fi
+
+  local enroll="${EASY_WAF_CROWDSEC_CONSOLE_TOKEN:-}"
+  if [[ -n "${enroll// }" ]]; then
+    crowdsec_console_enroll "$enroll" || log "WARNING: cscli console enroll failed (optional)"
+  fi
+
+  if ! command -v cscli &>/dev/null; then
+    log "WARNING: cscli not found — skip bouncers"
+    return 0
+  fi
+
+  local spoa_key api_key
+  spoa_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-spoa | tr -d '\r\n')" || spoa_key=""
+  api_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-api | tr -d '\r\n')" || api_key=""
+  if [[ -z "$spoa_key" ]] || [[ -z "$api_key" ]]; then
+    log "WARNING: bouncer registration incomplete (easy-waf-spoa / easy-waf-api) — check: cscli bouncers list"
+  fi
+
+  if crowdsec_install_spoa_bouncer_package; then
+    if [[ -n "$spoa_key" ]] && ! crowdsec_inject_spoa_api_key "$spoa_key"; then
+      log "WARNING: could not inject SPOA api_key into bouncer yaml"
+    fi
+    if systemctl enable --now crowdsec-haproxy-spoa-bouncer 2>/dev/null; then
+      systemctl restart crowdsec-haproxy-spoa-bouncer 2>/dev/null || true
+    else
+      log "WARNING: crowdsec-haproxy-spoa-bouncer service not enabled/started"
+    fi
+  else
+    log "WARNING: crowdsec-haproxy-spoa-bouncer package install failed"
+  fi
+
+  easy_waf_env_upsert_kv "CROWDSEC_LAPI_URL" "http://127.0.0.1:8080" || true
+  if [[ -n "$api_key" ]]; then
+    easy_waf_env_upsert_kv "CROWDSEC_LAPI_KEY" "$api_key" || true
+    log "Wrote CROWDSEC_LAPI_KEY to $CFG_DIR/easy-waf.env (bouncer easy-waf-api for API / UI health)"
+  fi
+
+  systemctl enable --now crowdsec 2>/dev/null || log "WARNING: systemctl enable --now crowdsec failed"
 }
 
 # After local PostgreSQL is installed: wait for the daemon, create role/db (idempotent), rotate weak default password in DATABASE_URL.
@@ -317,8 +416,10 @@ install_os_packages() {
 
       if easy_waf_pkg_installed crowdsec; then
         log "CrowdSec package already installed"
+      elif [[ "${EASY_WAF_INSTALL_CROWDSEC:-0}" == "1" ]]; then
+        log "CrowdSec packages will be installed when EASY_WAF_INSTALL_CROWDSEC=1 (after easy-waf.env exists)"
       else
-        log "CrowdSec: run sudo bash scripts/install-interactive.sh (or see docs/CROWDSEC.md)"
+        log "CrowdSec: set EASY_WAF_INSTALL_CROWDSEC=1 on install.sh, or run sudo bash scripts/install-interactive.sh (docs/CROWDSEC.md)"
       fi
 
       systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
@@ -356,8 +457,10 @@ install_os_packages() {
 
       if easy_waf_pkg_installed crowdsec; then
         log "CrowdSec package already installed"
+      elif [[ "${EASY_WAF_INSTALL_CROWDSEC:-0}" == "1" ]]; then
+        log "CrowdSec packages will be installed when EASY_WAF_INSTALL_CROWDSEC=1 (after easy-waf.env exists)"
       else
-        log "CrowdSec: run sudo bash scripts/install-interactive.sh (or see docs/CROWDSEC.md)"
+        log "CrowdSec: set EASY_WAF_INSTALL_CROWDSEC=1 on install.sh, or run sudo bash scripts/install-interactive.sh (docs/CROWDSEC.md)"
       fi
 
       systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
@@ -405,6 +508,7 @@ main() {
   install_os_packages
   create_user_and_layout
   install_env_file
+  easy_waf_install_crowdsec_optional
   setup_local_postgres_database
   acquire_dist_binaries
   install_binaries
