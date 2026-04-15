@@ -11,4 +11,4 @@ Thumbs.db
 $RECYCLE.BIN/
 .env
 .idea/
-.vscode/
+# .vscode/ — в репозитории общие настройки проекта (Remote SSH → waf-dev); личные launch.json можно в .git/info/exclude

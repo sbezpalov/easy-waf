@@ -2,3 +2,6 @@
 scripts/**/*.sh text eol=lf
 scripts/lib/*.sh text eol=lf
 .cursor/rules/*.mdc text eol=lf
+
+# HAProxy golden fixtures + SPOE/IPBL snippets — LF only (Windows checkout + haproxy -c on Linux).
+internal/haproxy/testdata/golden/** text eol=lf

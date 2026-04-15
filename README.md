@@ -10,6 +10,7 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 
 | Doc | Description |
 |-----|-------------|
+| [docs/DEV_HOST.md](docs/DEV_HOST.md) | Пилот по SSH: хост **`waf-dev`**, Remote SSH, `.vscode/settings.json` |
 | [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) | Требования [prompts.md](prompts.md) ↔ код (MVP gap matrix) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, config lifecycle, risks |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install and first application |
