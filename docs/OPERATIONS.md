@@ -41,6 +41,26 @@ Fix template/data issues, then use the UI **Apply** or your orchestration.
 
 Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
 
+## Обновление кода после `git pull` (почему «не вижу изменений» в UI)
+
+Веб‑интерфейс **встроен в бинарник** `easy-waf-api` на этапе сборки (`go:embed` → `internal/webui/dist`). Изменения в `index.html` и новые API‑маршруты **не появятся**, пока не пересобрать API и не перезапустить сервис.
+
+На машине с репозиторием (от root или с правами на `make install`):
+
+```bash
+cd /path/to/easy-waf
+git pull
+make clean && make build && make test   # или: go build -o dist/easy-waf-api ./cmd/easy-waf-api …
+sudo install -m 0755 dist/easy-waf-api /usr/sbin/easy-waf-api
+sudo install -m 0755 dist/easy-waf-acmed /usr/sbin/easy-waf-acmed   # при изменениях acmed
+sudo systemctl restart easy-waf-api.service
+# при необходимости: sudo systemctl restart easy-waf-acmed.service
+```
+
+Жёсткое обновление страницы в браузере: **Ctrl+F5** (без кэша). Старый процесс `easy-waf-api` продолжает отдавать старый embed до рестарта.
+
+Изменения только в **`scripts/install.sh`** (например `ensure_haproxy_systemd_enabled`) на уже установленной системе: либо повторить нужный фрагмент вручную (`sudo systemctl enable haproxy.service`), либо снова запустить установщик с осторожностью к уже настроенным файлам — см. [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Profiles vs generated rules
 
 Security profiles (`internal/profiles`) drive per‑application behaviour in the generated config:
