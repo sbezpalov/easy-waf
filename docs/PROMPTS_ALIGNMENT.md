@@ -1,46 +1,53 @@
 # Соответствие `prompts.md` (Easy Home WAF)
 
+**Последнее обновление:** 2026-04-16  
+**Текущий VERSION:** 1.1.0-rc1 (см. корневой файл `VERSION`)  
+**Сводка по строкам таблиц §2–§3:** Done — **17**, Partial — **3**, Missing — **1**, N/A — **0**
+
 Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
+
+Источник истины по реализации — **§7 Features** и проверка приёмки — **§9 Acceptance criteria**. Ниже в §2–§3 только компактный указатель со статусом и ссылкой `см. §7.*` / при необходимости на §9.
 
 ## §2 Goals — Core
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Публикация сервисов по доменам → backend | Done | `internal/config/types.go`, `internal/haproxy/render.go`, API `applications`, UI Applications |
-| TLS на HAProxy | Done | crt-list, сертификаты из ACME / DB, `docs/ACME.md` |
-| ACME выдача/продление | Done | `cmd/easy-waf-acmed`, `internal/acme/*`, apply hook после выдачи (`eng.Apply`) |
-| WebSocket | Done | `Application.WebSocket` + `timeout tunnel` в `internal/haproxy/render.go` |
-| Единая точка входа HAProxy | Done | `fe_http` / `fe_https`, SNI, редирект HTTP→HTTPS |
+| Публикация сервисов по доменам → backend | **Done** | см. **§7.1** |
+| TLS на HAProxy (crt-list, сертификаты из ACME/DB, SNI, HTTP→HTTPS) | **Done** | см. **§7.1**, **§7.2**, **§7.3** |
+| ACME выдача/продление | **Done** | см. **§7.2** |
+| WebSocket (`Application.WebSocket`, `timeout tunnel`) | **Done** | см. **§7.3**; **§9** AC-09 |
+| Единая точка входа HAProxy (`fe_http` / `fe_https`) | **Done** | см. **§7.3** |
 
 ## §2 Security
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Rate limit (stick-tables) | Done | Per-app toggle + профиль; `Application.security`, `internal/haproxy/render.go` |
-| Базовый WACL (ACL) | Done | Per-app toggles + профили; `internal/haproxy/render.go`, `docs/APPLICATION_SECURITY.md` |
-| CrowdSec + решения | Partial | `internal/crowdsec/client.go`, API `integrations/crowdsec*`, `docs/CROWDSEC.md` |
-| SPOE bouncer | Done (код + установка) | `filter spoe` в шаблоне; пакеты CrowdSec по умолчанию в `install.sh` + `docs/CROWDSEC.md` / `crowdsec-bootstrap-lapi.sh`; deny 403 по решению — в конфиге SPOA от пакета bouncer |
-| Fail2Ban | Partial | Установка в `install.sh`, не оркестрируется API |
-| GeoIP + кэш | Done | `internal/geoip/*` (LRU+TTL, ipinfo.io, batch `geoip_enforce.map`), API `/geoip/lookup`, `/geoip/stats`, HAProxy ACL, UI Settings |
+| Rate limit (stick-tables), per-app | **Done** | см. **§7.1a** |
+| Базовый WAF (ACL), per-app | **Done** | см. **§7.1a** |
+| CrowdSec + решения (LAPI, decisions в UI) | **Partial** | см. **§7.5** (нет unblock/ban в UI) |
+| SPOE bouncer | **Done** | см. **§7.3**; шаблон `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
+| Fail2Ban | **Partial** | установка в `install.sh`; оркестрация через API — нет |
+| GeoIP + кэш (ipinfo, batch map, ACL) | **Done** | см. **§7.6** |
 
 ## §2 UX / Observability
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Web UI (LAN) | Done | `internal/webui/dist/index.html` — dashboard, apps, certs (+summary), security/IPBL/UA, CrowdSec, config/apply/rollback, settings, audit |
-| Сертификаты, логи, статы, health | Done | `GET /certificates/summary`, audit `GET /audit`; stats `/stats/*`; health `/health`, `/status` |
-| Backup/restore | Done | `scripts/backup.sh`, `restore.sh`, `scripts/test-backup-restore.sh`, `docs/BACKUP_RESTORE.md` |
+| Web UI (LAN): 8 вкладок, dashboard | **Done** | см. **§7.7** |
+| Сертификаты, логи, stats, health | **Done** | см. **§7.7**, **§7.8**; audit, `/health`, `/status` |
+| Backup/restore | **Done** | **§9** AC-10; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
 ## §3 Constraints
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Alma 10, systemd, firewalld, SELinux | Done | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md` |
-| `haproxy -c` до reload | Done | `internal/apply/apply.go`, `internal/engine/engine.go` |
-| SPOE, WebSocket, SNI, redirect | Done | Golden + `haproxy -c` в CI; см. `internal/haproxy/render.go` |
-| CrowdSec LAPI не Lua | Partial | Доки + SPOA пакет через interactive |
-| Генератор, валидация, атомарный apply, rollback | Done | `internal/engine/engine.go`, API apply/rollback, UI Config |
-| GeoIP API + кэш + смена на MMDB | Partial | ipinfo + batch map — **Done**; MaxMind MMDB — заглушка (`maxmind.go`) |
+| Alma 10, systemd, firewalld, SELinux | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md` |
+| `haproxy -c` до reload | **Done** | см. **§7.3**; `internal/apply`, `internal/engine` |
+| SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | см. **§7.3** |
+| CrowdSec LAPI не через Lua | **Partial** | доки + SPOA пакет; см. **§7.5** |
+| Генератор конфига, валидация, атомарный apply, rollback | **Done** | см. **§7.3**; **§9** AC-06 |
+| GeoIP API + batch map + ACL | **Done** | см. **§7.6** |
+| MaxMind MMDB как провайдер | **Missing** | Roadmap; заглушка `internal/geoip/maxmind.go` |
 
 ## §6 Repository structure (целевая схема в prompts)
 
@@ -104,12 +111,17 @@
 
 ## Roadmap (после MVP)
 
-1. **CrowdSec UI**: unblock / delete decision через LAPI при необходимости.
-2. **GeoIP**: полноценный MaxMind MMDB path (сейчас заглушка `maxmind.go`).
-3. **Тесты**: расширенные e2e / `tests/` против compose PostgreSQL.
-4. **UI**: при желании отдельный фронтенд-фреймворк вместо одного `index.html`.
+1. **Release pipeline:** GitHub Actions → артефакт (tarball/install bundle) для выкладки без ручной сборки на пилоте.
+2. **MaxMind MMDB provider:** полноценный путь к `.mmdb` и выбор провайдера (сейчас заглушка `maxmind.go`).
+3. **CrowdSec в UI:** unblock / ban / delete decision через LAPI (см. также §7.5).
+4. **Prometheus:** экспорт метрик на `/metrics` (рядом с существующим API stats).
+5. **Diagnostics bundle:** скрипт `scripts/diagnostics.sh` (логи, версии, конфиг-снимок, проверки сокетов) для поддержки.
+6. **OVA/OVF appliance template** для быстрого развёртывания ВМ.
+7. **Smoke test checklist** (ручной/полуавтоматический прогон после установки).
+8. **Тесты:** расширенные e2e / дерево `tests/` против compose PostgreSQL.
+9. **UI:** при желании отдельный фронтенд-фреймворк вместо одного `index.html`.
 
-Обновляй этот файл при закрытии пунктов MVP.
+Обновляй этот файл при закрытии пунктов MVP и при смене `VERSION`.
 
 ## Golden tests: **Done**
 
