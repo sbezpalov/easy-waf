@@ -78,7 +78,7 @@
 
 ### 7.4 Security profiles — **Done** (имена из prompts: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
 
-### 7.5 CrowdSec — **Partial** (ping LAPI, decisions в UI; whitelist/unblock в UI — нет, `cscli` / LAPI)
+### 7.5 CrowdSec — **Partial** (ping LAPI, decisions в UI, **Unban** + ручной **Ban IP** через LAPI; whitelist и прочие операции `cscli` — вне UI)
 
 ### 7.6 GeoIP — **Done** (`internal/geoip`, `GET /api/v1/geoip/lookup`, `GET /api/v1/geoip/stats`, настройки `geoip_*`, миграция `007`, batch `geoip_enforce.map` + ACL в `render.go`, секция в UI)
 

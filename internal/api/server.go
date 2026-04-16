@@ -82,6 +82,8 @@ func (s *Server) Router() chi.Router {
 				r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
 				r.Get("/integrations/crowdsec", s.crowdsecStatus)
 				r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
+				r.Post("/integrations/crowdsec/decisions", s.crowdsecAddDecision)
+				r.Delete("/integrations/crowdsec/decisions/{id}", s.crowdsecDeleteDecision)
 				r.Get("/settings", s.getSettings)
 				r.Put("/settings", s.putSettings)
 				r.Patch("/settings", s.patchSettings)

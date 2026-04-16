@@ -418,11 +418,33 @@
           <p id="cs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
 
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <h3>Active decisions</h3>
+          <p id="cs-decisions-msg" class="warn" style="min-height:1rem"></p>
+          <div id="cs-decisions-table-wrap"></div>
+          <h3 style="margin-top:1.25rem">Manual ban</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-top:0.35rem">
+            <label>IP <input id="cs-ban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
+            <label>Duration
+              <select id="cs-ban-duration">
+                <option value="1h">1 hour</option>
+                <option value="4h">4 hours</option>
+                <option value="24h" selected>24 hours</option>
+                <option value="168h">7 days</option>
+                <option value="permanent">Permanent</option>
+              </select>
+            </label>
+            <label style="flex:1;min-width:14rem">Reason<br /><textarea id="cs-ban-reason" rows="2" style="width:100%;min-width:14rem" placeholder="manual ban from UI"></textarea></label>
+            <button type="button" id="btn-cs-ban">Ban IP</button>
+          </div>
+          <p id="cs-ban-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+
         <div class="panel" style="max-width:100%">
           <h3>Diagnostics</h3>
           <div class="row">
             <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
-            <button type="button" class="secondary" id="btn-cs-dec">Load decisions (100)</button>
+            <button type="button" class="secondary" id="btn-cs-dec">Refresh decisions table</button>
           </div>
           <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;margin-top:0.75rem"></pre>
         </div>
@@ -468,9 +490,10 @@
               <option value="/certificates">certificates</option>
               <option value="ipbl">ipbl</option>
               <option value="ipwl">ipwl</option>
-              <option value="blocked-ua">blocked-ua</option>
-              <option value="change-password">change-password</option>
-            </select>
+            <option value="blocked-ua">blocked-ua</option>
+            <option value="change-password">change-password</option>
+            <option value="crowdsec">crowdsec (decisions / LAPI)</option>
+          </select>
           </label>
           <label><input type="checkbox" id="audit-auto-refresh" /> Auto-refresh (15s)</label>
           <button type="button" class="secondary" id="btn-audit-refresh">Refresh</button>
@@ -573,7 +596,10 @@
         loadBlockedUATable();
         break;
       case 'crowdsec':
-        void loadSettingsPanel();
+        void (async () => {
+          await loadSettingsPanel();
+          await loadCrowdsecDecisionsTable();
+        })();
         break;
       case 'config':
         loadRevisions();
@@ -1607,14 +1633,128 @@
   function csOut(obj) {
     document.getElementById('crowdsec-out').textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
   }
+
+  async function loadCrowdsecDecisionsTable() {
+    const wrap = document.getElementById('cs-decisions-table-wrap');
+    const msg = document.getElementById('cs-decisions-msg');
+    if (!wrap) return;
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    const r = await fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() });
+    const txt = await r.text();
+    if (r.status === 401 || r.status === 403) {
+      if (r.status === 401) setTok('');
+      refreshSession();
+      return;
+    }
+    if (!r.ok) {
+      if (msg) msg.textContent = txt || 'HTTP ' + r.status;
+      wrap.innerHTML = '';
+      return;
+    }
+    let arr = [];
+    try {
+      const j = JSON.parse(txt);
+      if (Array.isArray(j)) arr = j;
+      else if (j && Array.isArray(j.data)) arr = j.data;
+    } catch (_) {
+      if (msg) msg.textContent = 'Invalid JSON from decisions API';
+      wrap.innerHTML = '';
+      return;
+    }
+    if (!arr.length) {
+      wrap.innerHTML = '<p class="dash-note">No active decisions in sample (limit 100).</p>';
+      return;
+    }
+    const rows = arr.map((d) => {
+      const id = d.id != null ? String(d.id) : '';
+      const ip = d.value != null ? String(d.value) : '';
+      const typ = esc(d.type || '');
+      const scen = esc(d.scenario || '');
+      const dur = esc(d.duration || d.decision || '');
+      const exp = esc(d.expires_at || d.until || '');
+      return (
+        '<tr><td><code>' + esc(id) + '</code></td><td><code>' + esc(ip) + '</code></td><td>' + typ + '</td><td>' + scen +
+        '</td><td>' + dur + '</td><td>' + exp + '</td><td><button type="button" class="secondary cs-unban" data-id="' +
+        esc(id) + '" data-ip="' + esc(ip) + '">Unban</button></td></tr>'
+      );
+    }).join('');
+    wrap.innerHTML =
+      '<table><thead><tr><th>ID</th><th>Value (IP)</th><th>Type</th><th>Scenario</th><th>Duration</th><th>Expires</th><th></th></tr></thead><tbody>' +
+      rows +
+      '</tbody></table>';
+  }
+
   document.getElementById('btn-cs-ping').onclick = async () => {
     const r = await fetch('/api/v1/integrations/crowdsec', { headers: hdr() });
     csOut(await r.json().catch(() => ({})));
   };
-  document.getElementById('btn-cs-dec').onclick = async () => {
-    const r = await fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() });
-    const txt = await r.text();
-    try { csOut(JSON.parse(txt)); } catch { csOut(txt); }
+  document.getElementById('btn-cs-dec').onclick = () => {
+    void loadCrowdsecDecisionsTable();
+  };
+
+  (function bindCrowdsecDecisionActions() {
+    const wrap = document.getElementById('cs-decisions-table-wrap');
+    if (!wrap) return;
+    wrap.addEventListener('click', async (ev) => {
+      const btn = ev.target && ev.target.closest && ev.target.closest('button.cs-unban');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const ip = btn.getAttribute('data-ip') || '';
+      if (!id) return;
+      if (!confirm('Remove ban for ' + ip + '? Decision ID: ' + id)) return;
+      const msg = document.getElementById('cs-decisions-msg');
+      if (msg) {
+        msg.textContent = '';
+        msg.className = 'warn';
+      }
+      const r = await fetch('/api/v1/integrations/crowdsec/decisions/' + encodeURIComponent(id), {
+        method: 'DELETE',
+        headers: hdr()
+      });
+      if (!r.ok) {
+        if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+        return;
+      }
+      await loadCrowdsecDecisionsTable();
+    });
+  })();
+
+  document.getElementById('btn-cs-ban').onclick = async () => {
+    const msg = document.getElementById('cs-ban-msg');
+    const ipEl = document.getElementById('cs-ban-ip');
+    const durEl = document.getElementById('cs-ban-duration');
+    const reasonEl = document.getElementById('cs-ban-reason');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    const ip = ipEl && ipEl.value ? ipEl.value.trim() : '';
+    if (!ip) {
+      if (msg) msg.textContent = 'Enter an IP address.';
+      return;
+    }
+    const duration = durEl ? durEl.value : '24h';
+    const reason = reasonEl && reasonEl.value.trim() ? reasonEl.value.trim() : 'manual ban from UI';
+    const body = { ip: ip, type: 'ban', duration: duration, reason: reason };
+    const r = await fetch('/api/v1/integrations/crowdsec/decisions', {
+      method: 'POST',
+      headers: hdr(),
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+      return;
+    }
+    if (msg) {
+      msg.textContent = 'Ban submitted.';
+      msg.className = 'ok';
+    }
+    if (ipEl) ipEl.value = '';
+    if (reasonEl) reasonEl.value = '';
+    await loadCrowdsecDecisionsTable();
   };
 
   document.getElementById('btn-tls-save').onclick = async () => {

@@ -56,6 +56,8 @@ func auditHTTPRouteCategory(path string) string {
 		return "ipwl"
 	case strings.Contains(path, "/blocked-ua"):
 		return "blocked-ua"
+	case strings.Contains(path, "/integrations/crowdsec"):
+		return "crowdsec"
 	case strings.Contains(path, "/auth/change-password"):
 		return "auth"
 	default:

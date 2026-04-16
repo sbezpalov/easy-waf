@@ -75,6 +75,19 @@ Authenticated session:
 
 - `GET /api/v1/integrations/crowdsec` — LAPI reachability (ping).
 - `GET /api/v1/integrations/crowdsec/decisions` — JSON from LAPI `GET /v1/decisions?limit=100` (blocked IPs preview; aligns with [prompts.md](../prompts.md) §7.5).
+- `DELETE /api/v1/integrations/crowdsec/decisions/{id}` — removes one decision via LAPI `DELETE /v1/decisions/{id}` (same ID as in the decisions list). Audit: `crowdsec.decision_deleted`.
+- `POST /api/v1/integrations/crowdsec/decisions` — adds a manual ban; body JSON `{ "ip", "type": "ban", "duration": "1h"|"4h"|"24h"|"168h"|"permanent", "reason" }`. Proxied to LAPI `POST /v1/decisions` as a single-element array (`scope: Ip`, `origin: easy-waf`, `scenario` = `reason`). Audit: `crowdsec.decision_added`.
+
+### Managing decisions from UI
+
+Open **CrowdSec** in the management UI (after **Settings → Load from server** so LAPI URL and key are present):
+
+1. **Active decisions** — table is filled from `GET …/decisions` (up to 100 rows). Each row has **Unban**; you are prompted to confirm (IP and decision ID are shown in the dialog). Success calls the delete API and refreshes the table.
+2. **Manual ban** — enter **IP**, pick **Duration** (1h / 4h / 24h / 7 days / permanent), optional **Reason**, then **Ban IP**. Permanent bans use a very long LAPI duration (`876000h`). The table refreshes after a successful ban.
+
+Requirements: **`CROWDSEC_LAPI_URL`** and a valid **`CROWDSEC_LAPI_KEY`** (machine bouncer with decisions rights, e.g. from `cscli bouncers add -o raw`) in **`/etc/easy-waf/easy-waf.env`**. If LAPI returns an error, the UI shows the API error text.
+
+The generic HTTP audit middleware also records mutating calls under category **crowdsec**; filter audit logs with action substring **`crowdsec`** to see both those rows and the explicit `crowdsec.decision_*` entries.
 
 ## Verification
 
