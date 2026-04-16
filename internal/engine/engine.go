@@ -119,12 +119,12 @@ func (e *Engine) WriteGeoIPEnforceMap(ctx context.Context, blacklistCIDRs []stri
 	if !e.Settings.GeoIPEnabled {
 		return geoip.WriteDisabledEnforceMap(e.Settings, e.StateDir)
 	}
-	prov, err := geoip.NewProviderForSettings(e.Settings)
-	if err != nil {
-		return err
-	}
 	if e.GeoIP == nil {
 		e.GeoIP = geoip.NewRuntime(time.Duration(e.Settings.GeoIPCacheTTL))
+	}
+	prov, err := geoip.ProviderForRuntime(e.GeoIP, e.Settings)
+	if err != nil {
+		return err
 	}
 	return geoip.WriteEnforceMap(ctx, prov, e.GeoIP.Cache, e.Settings, e.StateDir, blacklistCIDRs)
 }
@@ -214,12 +214,12 @@ func (e *Engine) writePerAppGeoMaps(ctx context.Context, apps []config.Applicati
 			}
 			continue
 		}
-		prov, err := geoip.NewProviderForSettings(e.Settings)
-		if err != nil {
-			return err
-		}
 		if e.GeoIP == nil {
 			e.GeoIP = geoip.NewRuntime(time.Duration(e.Settings.GeoIPCacheTTL))
+		}
+		prov, err := geoip.ProviderForRuntime(e.GeoIP, e.Settings)
+		if err != nil {
+			return err
 		}
 		if err := geoip.WriteAppEnforceMap(ctx, prov, e.GeoIP.Cache, a.Security.GeoIPPolicy, a.Security.GeoIPCountryList, blacklistCIDRs, out); err != nil {
 			return err

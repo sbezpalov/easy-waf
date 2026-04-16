@@ -23,6 +23,7 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 | [docs/DNS01.md](docs/DNS01.md) | DNS-01: Cloudflare, CloudNS (default), Route53, webhook |
 | [docs/CROWDSEC.md](docs/CROWDSEC.md) | SPOE, bouncer, logs |
 | [docs/IPBL.md](docs/IPBL.md) | IP blacklist: local + external feeds → HAProxy map |
+| [docs/GEOIP.md](docs/GEOIP.md) | GeoIP: ipinfo vs MaxMind MMDB, updates, batch vs lookup API |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common failures |
 | [docs/ADMIN-CLI.md](docs/ADMIN-CLI.md) | Emergency: reset control panel access, factory reset |
 | [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md) | ESXi / QEMU–KVM: vCPU, RAM, disk, NICs |

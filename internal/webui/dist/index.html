@@ -367,7 +367,8 @@
         <p id="ua-msg" class="warn"></p>
 
         <h3>GeoIP</h3>
-        <p><small>When enabled, Sync / Apply resolve blacklist CIDRs to countries. Token: env <code>GEOIP_IPINFO_TOKEN</code> on the API host.</small></p>
+        <p><small>When enabled, Sync / Apply resolve blacklist CIDRs to countries. <strong>ipinfo:</strong> optional <code>GEOIP_IPINFO_TOKEN</code> on the API host. <strong>maxmind:</strong> local GeoLite2-Country MMDB — see repository file <code>docs/GEOIP.md</code>.</small></p>
+        <p id="geoip-providers-note" class="dash-note" style="margin-top:0.25rem"></p>
         <div class="row">
           <label><input id="geoip-enabled" type="checkbox" /> Enable GeoIP in HAProxy (batch map)</label>
         </div>
@@ -375,7 +376,7 @@
           <label>Provider
             <select id="geoip-provider">
               <option value="ipinfo">ipinfo</option>
-              <option value="maxmind">maxmind (stub)</option>
+              <option value="maxmind">maxmind (MMDB)</option>
             </select>
           </label>
           <label>Policy
@@ -384,6 +385,12 @@
               <option value="deny">Deny listed</option>
             </select>
           </label>
+        </div>
+        <div id="geoip-maxmind-row" class="row hidden" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin-top:0.35rem">
+          <label>MMDB path
+            <input id="geoip-mmdb-path" type="text" style="min-width:22rem" placeholder="/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb" autocomplete="off" />
+          </label>
+          <button type="button" class="secondary" id="btn-geoip-validate-mm">Validate (8.8.8.8)</button>
         </div>
         <label>Country codes (ISO alpha-2, comma-separated)<br />
           <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
@@ -591,9 +598,12 @@
         })();
         break;
       case 'security':
-        loadSettingsPanel();
-        loadProfilesDoc();
-        loadBlockedUATable();
+        void (async () => {
+          await loadSettingsPanel();
+          loadProfilesDoc();
+          loadBlockedUATable();
+          await refreshGeoIPProvidersNote();
+        })();
         break;
       case 'crowdsec':
         void (async () => {
@@ -994,6 +1004,32 @@
     return String(s || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
   }
 
+  function syncGeoIPMaxMindRow() {
+    const row = document.getElementById('geoip-maxmind-row');
+    const sel = document.getElementById('geoip-provider');
+    if (!row || !sel) return;
+    row.classList.toggle('hidden', sel.value !== 'maxmind');
+  }
+
+  async function refreshGeoIPProvidersNote() {
+    const el = document.getElementById('geoip-providers-note');
+    if (!el) return;
+    el.textContent = '';
+    try {
+      const r = await fetch('/api/v1/geoip/providers', { headers: hdr() });
+      if (!r.ok) return;
+      const arr = await r.json();
+      const mm = Array.isArray(arr) ? arr.find((x) => x && x.name === 'maxmind') : null;
+      if (mm && mm.available) {
+        el.textContent = 'Providers: ipinfo (API) · maxmind — MMDB on disk OK (' + (mm.mmdb_path || '') + ').';
+      } else if (mm) {
+        el.textContent = 'Providers: ipinfo (API) · maxmind — set a readable geoip_mmdb_path (current: ' + (mm.mmdb_path || '(empty)') + ').';
+      } else {
+        el.textContent = 'Providers: (unavailable)';
+      }
+    } catch (_) { /* ignore */ }
+  }
+
   function loadGeoIPFromSettings() {
     if (!cachedSettings) return;
     document.getElementById('geoip-enabled').checked = !!cachedSettings.geoip_enabled;
@@ -1003,6 +1039,10 @@
     document.getElementById('geoip-policy').value = pol === 'deny' ? 'deny' : 'allow';
     const list = cachedSettings.geoip_country_list;
     document.getElementById('geoip-countries').value = Array.isArray(list) ? list.join(', ') : '';
+    const mp = document.getElementById('geoip-mmdb-path');
+    if (mp) mp.value = cachedSettings.geoip_mmdb_path || '';
+    syncGeoIPMaxMindRow();
+    void refreshGeoIPProvidersNote();
   }
 
   async function loadSettingsPanel() {
@@ -1599,7 +1639,8 @@
       geoip_enabled: document.getElementById('geoip-enabled').checked,
       geoip_provider: document.getElementById('geoip-provider').value.trim().toLowerCase(),
       geoip_default_policy: document.getElementById('geoip-policy').value.trim().toLowerCase(),
-      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value)
+      geoip_country_list: parseCountryListText(document.getElementById('geoip-countries').value),
+      geoip_mmdb_path: document.getElementById('geoip-mmdb-path') ? document.getElementById('geoip-mmdb-path').value.trim() : ''
     };
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
@@ -1615,6 +1656,32 @@
         geoMsg.textContent = err;
         geoMsg.className = 'warn';
       }
+    }
+  };
+
+  const geoipProviderEl = document.getElementById('geoip-provider');
+  if (geoipProviderEl) geoipProviderEl.addEventListener('change', () => { syncGeoIPMaxMindRow(); });
+
+  document.getElementById('btn-geoip-validate-mm').onclick = async () => {
+    const out = document.getElementById('geoip-lookup-out');
+    out.textContent = '';
+    const pathEl = document.getElementById('geoip-mmdb-path');
+    const path = pathEl ? pathEl.value.trim() : '';
+    if (!path) {
+      out.textContent = 'Enter MMDB path first.';
+      return;
+    }
+    const q =
+      'ip=' +
+      encodeURIComponent('8.8.8.8') +
+      '&nocache=1&probe_mmdb_path=' +
+      encodeURIComponent(path);
+    const r = await fetch('/api/v1/geoip/lookup?' + q, { headers: hdr() });
+    const txt = await r.text();
+    try {
+      out.textContent = JSON.stringify(JSON.parse(txt), null, 2);
+    } catch {
+      out.textContent = txt;
     }
   };
 

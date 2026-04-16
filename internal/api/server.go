@@ -106,6 +106,8 @@ func (s *Server) Router() chi.Router {
 
 				r.Get("/geoip/lookup", s.geoipLookup)
 				r.Get("/geoip/stats", s.geoipStats)
+				r.Get("/geoip/providers", s.geoipListProviders)
+				r.Post("/geoip/reload", s.geoipReload)
 
 				r.Get("/stats/haproxy", s.handleStatsHAProxy)
 				r.Get("/stats/summary", s.handleStatsSummary)
@@ -348,6 +350,9 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.Eng.Settings = gs
+	if s.Eng.GeoIP != nil {
+		s.Eng.GeoIP.InvalidateGeoProvider()
+	}
 	if err := s.Eng.SaveSettings(r.Context()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -444,7 +449,15 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 	if s.Eng.GeoIP == nil {
 		s.Eng.GeoIP = geoip.NewRuntime(time.Duration(s.Eng.Settings.GeoIPCacheTTL))
 	}
-	cc, cached, err := s.Eng.GeoIP.Lookup(r.Context(), s.Eng.Settings, ip)
+	if r.URL.Query().Get("nocache") == "1" && s.Eng.GeoIP.Cache != nil {
+		s.Eng.GeoIP.Cache.Delete(ip)
+	}
+	g := s.Eng.Settings
+	if probe := strings.TrimSpace(r.URL.Query().Get("probe_mmdb_path")); probe != "" {
+		g.GeoIPMMDBPath = probe
+		g.GeoIPProvider = "maxmind"
+	}
+	cc, cached, err := s.Eng.GeoIP.Lookup(r.Context(), g, ip)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -545,6 +558,9 @@ func validateGeoIPSettings(gs config.GlobalSettings) error {
 	pr := strings.ToLower(strings.TrimSpace(gs.GeoIPProvider))
 	if pr != "" && pr != "ipinfo" && pr != "maxmind" {
 		return fmt.Errorf("geoip_provider must be ipinfo or maxmind")
+	}
+	if gs.GeoIPEnabled && pr == "maxmind" && strings.TrimSpace(gs.GeoIPMMDBPath) == "" {
+		return fmt.Errorf("geoip_mmdb_path is required when GeoIP is enabled and provider is maxmind")
 	}
 	return nil
 }

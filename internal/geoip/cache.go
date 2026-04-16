@@ -66,6 +66,20 @@ func (m *MemoryCache) Get(ip string) (country string, ok bool) {
 	return e.Country, true
 }
 
+// Delete removes one IP from the cache (e.g. before a forced lookup).
+func (m *MemoryCache) Delete(ip string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.items, ip)
+}
+
+// Clear drops all cached entries (e.g. after MMDB reload).
+func (m *MemoryCache) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.items = map[string]Entry{}
+}
+
 func (m *MemoryCache) Set(ip, country string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

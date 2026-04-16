@@ -2,7 +2,7 @@
 
 **Последнее обновление:** 2026-04-16  
 **Текущий VERSION:** 1.0.0 (см. корневой файл `VERSION`)  
-**Сводка по строкам таблиц §2–§3:** Done — **17**, Partial — **3**, Missing — **1**, N/A — **0**
+**Сводка по строкам таблиц §2–§3:** Done — **18**, Partial — **3**, Missing — **0**, N/A — **0**
 
 Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
 
@@ -47,7 +47,7 @@
 | CrowdSec LAPI не через Lua | **Partial** | доки + SPOA пакет; см. **§7.5** |
 | Генератор конфига, валидация, атомарный apply, rollback | **Done** | см. **§7.3**; **§9** AC-06 |
 | GeoIP API + batch map + ACL | **Done** | см. **§7.6** |
-| MaxMind MMDB как провайдер | **Missing** | Roadmap; заглушка `internal/geoip/maxmind.go` |
+| MaxMind MMDB как провайдер | **Done** | `geoip_mmdb_path`, `internal/geoip/maxmind.go`, `GET/POST /api/v1/geoip/*`, `docs/GEOIP.md`, `scripts/update-geoip-db.sh` |
 
 ## §6 Repository structure (целевая схема в prompts)
 
@@ -80,7 +80,7 @@
 
 ### 7.5 CrowdSec — **Partial** (ping LAPI, decisions в UI, **Unban** + ручной **Ban IP** через LAPI; whitelist и прочие операции `cscli` — вне UI)
 
-### 7.6 GeoIP — **Done** (`internal/geoip`, `GET /api/v1/geoip/lookup`, `GET /api/v1/geoip/stats`, настройки `geoip_*`, миграция `007`, batch `geoip_enforce.map` + ACL в `render.go`, секция в UI)
+### 7.6 GeoIP — **Done** (`internal/geoip` — ipinfo + **MaxMind GeoLite2-Country.mmdb**, `GET /api/v1/geoip/lookup|stats|providers`, `POST /api/v1/geoip/reload`, настройки `geoip_*` / `geoip_mmdb_path`, миграции `007`+`010`, batch `geoip_enforce.map` + ACL в `render.go`, секция в UI, `docs/GEOIP.md`)
 
 ### 7.7 UI страницы — **Done** (вкладки из §7 prompts + audit/logs, certificate summary)
 
@@ -112,7 +112,7 @@
 ## Roadmap (после MVP)
 
 1. **Release pipeline (базово сделано):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push тега `v*`, `make build`, tarball + `SHA256SUMS`, GitHub Release с текстом из `CHANGELOG.md`. Далее: подпись артефактов, pre-release/nightly.
-2. **MaxMind MMDB provider:** полноценный путь к `.mmdb` и выбор провайдера (сейчас заглушка `maxmind.go`).
+2. **MaxMind MMDB (done):** см. **`docs/GEOIP.md`**, **`scripts/update-geoip-db.sh`**. Далее: подпись MMDB, метрики размера/epoch файла.
 3. **CrowdSec в UI:** unblock / ban / delete decision через LAPI (см. также §7.5).
 4. **Prometheus:** экспорт метрик на `/metrics` (рядом с существующим API stats).
 5. **Diagnostics bundle:** скрипт `scripts/diagnostics.sh` (логи, версии, конфиг-снимок, проверки сокетов) для поддержки.

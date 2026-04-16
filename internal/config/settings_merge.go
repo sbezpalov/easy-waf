@@ -60,6 +60,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.GeoIPEnabled)
 	case "geoip_provider":
 		return json.Unmarshal(raw, &out.GeoIPProvider)
+	case "geoip_mmdb_path":
+		return json.Unmarshal(raw, &out.GeoIPMMDBPath)
 	case "geoip_default_policy":
 		return json.Unmarshal(raw, &out.GeoIPDefaultPolicy)
 	case "geoip_country_list":

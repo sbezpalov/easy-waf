@@ -154,8 +154,10 @@ type GlobalSettings struct {
 	GeoIPCacheTTL          Duration `json:"geoip_cache_ttl"`
 	// GeoIPEnabled turns on batch GeoIP map generation on apply/sync and optional HAProxy fe_https deny ACL.
 	GeoIPEnabled bool `json:"geoip_enabled"`
-	// GeoIPProvider: "ipinfo" (default) or "maxmind" (stub in MVP).
+	// GeoIPProvider: "ipinfo" (default) or "maxmind" (local GeoLite2-Country MMDB).
 	GeoIPProvider string `json:"geoip_provider,omitempty"`
+	// GeoIPMMDBPath is the filesystem path to GeoLite2-Country.mmdb (or compatible) when GeoIPProvider is maxmind.
+	GeoIPMMDBPath string `json:"geoip_mmdb_path,omitempty"`
 	// GeoIPDefaultPolicy: "allow" = allow-list; "deny" = deny-list (see docs/ARCHITECTURE.md GeoIP).
 	GeoIPDefaultPolicy string `json:"geoip_default_policy,omitempty"`
 	// GeoIPCountryList is ISO 3166-1 alpha-2 codes, e.g. ["US","DE"].
