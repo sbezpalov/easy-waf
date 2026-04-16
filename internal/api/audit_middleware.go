@@ -44,6 +44,8 @@ func auditHTTPRouteCategory(path string) string {
 		return "rollback"
 	case strings.Contains(path, "/applications"):
 		return "applications"
+	case strings.Contains(path, "/security/modes"):
+		return "security-modes"
 	case strings.Contains(path, "/certificates"):
 		return "certificates"
 	case strings.Contains(path, "/settings"):

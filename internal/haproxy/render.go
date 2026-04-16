@@ -11,13 +11,18 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/profiles"
 )
 
 // AppRender pairs an enabled application with its resolved profile for templating.
 type AppRender struct {
-	Application config.Application
-	Profile     profiles.Profile
+	Application       config.Application
+	Profile           profiles.Profile
+	ACLTag            string
+	GeoEnforceMapPath string
+	UsePerAppGeo      bool
+	RateLimitBurst    int
 }
 
 // RenderInput is passed to the HAProxy template.
@@ -33,8 +38,8 @@ type RenderInput struct {
 	UseIPAllowlist           bool
 	BlockedUserAgentsMapPath string // absolute path to generated substring map (-m sub -f)
 	UseBlockedUserAgents     bool   // enabled in settings and map has at least one pattern line
-	GeoIPEnforceMapPath      string // absolute path to src map of CIDRs to deny (batch GeoIP)
-	UseGeoIPEnforce          bool   // geoip_enabled and map has at least one data line
+	StateDir                 string // state directory for per-app GeoIP map paths
+	UseCrowdSecFilter        bool   // at least one app requests CrowdSec and SPOE path is configured
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -46,6 +51,24 @@ type Rendered struct {
 
 // Render generates HAProxy configuration and crt-list body.
 func Render(in RenderInput) (Rendered, error) {
+	if strings.TrimSpace(in.StateDir) == "" && strings.TrimSpace(in.Settings.HAProxyConfigPath) != "" {
+		in.StateDir = filepath.Clean(filepath.Join(filepath.Dir(in.Settings.HAProxyConfigPath), ".."))
+	}
+	in.UseCrowdSecFilter = strings.TrimSpace(in.Settings.SPOEConfigPath) != ""
+	if in.UseCrowdSecFilter {
+		in.UseCrowdSecFilter = false
+		for i := range in.Applications {
+			if !in.Applications[i].Enabled {
+				continue
+			}
+			a := in.Applications[i]
+			config.NormalizeApplicationSecurity(&a.Security)
+			if a.Security.CrowdSecEnabled {
+				in.UseCrowdSecFilter = true
+				break
+			}
+		}
+	}
 	for i := range in.Applications {
 		if _, err := profiles.Resolve(in.Applications[i].Profile); err != nil {
 			return Rendered{}, err
@@ -56,11 +79,31 @@ func Render(in RenderInput) (Rendered, error) {
 		if !app.Enabled {
 			continue
 		}
+		config.NormalizeApplicationSecurity(&app.Security)
 		p, err := profiles.Resolve(app.Profile)
 		if err != nil {
 			return Rendered{}, err
 		}
-		apps = append(apps, AppRender{Application: app, Profile: p})
+		tag := sanitizeAppACLTag(app.ID, app.PublicHost)
+		geoPath := geoip.AppEnforceMapPath(in.StateDir, app.ID)
+		useAppGeo := app.Security.GeoIPEnabled && geoip.UseEnforceMapInRender(true, geoPath)
+		burst := p.RateLimitBurst
+		if app.Security.RateLimitBurstOverride != nil {
+			burst = *app.Security.RateLimitBurstOverride
+		} else if app.Security.RateLimitRPSOverride != nil {
+			burst = *app.Security.RateLimitRPSOverride * 2
+		}
+		if burst < 1 {
+			burst = 1
+		}
+		apps = append(apps, AppRender{
+			Application:       app,
+			Profile:           p,
+			ACLTag:            tag,
+			GeoEnforceMapPath: geoPath,
+			UsePerAppGeo:      useAppGeo,
+			RateLimitBurst:    burst,
+		})
 	}
 	in.Apps = apps
 
@@ -132,6 +175,27 @@ func sanitizeBackendName(host string) string {
 	h := strings.ReplaceAll(host, ".", "_")
 	h = strings.ReplaceAll(h, "-", "_")
 	return "bk_" + h
+}
+
+func sanitizeAppACLTag(id, publicHost string) string {
+	s := strings.TrimSpace(id)
+	if s == "" {
+		s = strings.TrimPrefix(sanitizeBackendName(publicHost), "bk_")
+	}
+	s = strings.ReplaceAll(s, ".", "_")
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, s)
+	if strings.Trim(s, "_") == "" {
+		return "app"
+	}
+	return s
 }
 
 func formatHAProxyDuration(d time.Duration) string {
@@ -211,68 +275,81 @@ frontend fe_https
 	option forwardfor
 	http-request set-header X-Forwarded-Proto https
 	http-response set-header Strict-Transport-Security "max-age=15552000; includeSubDomains" if { ssl_fc }
+{{if .UseCrowdSecFilter}}
 	# CrowdSec SPOE — engine id must match spoe-agent section name in {{.Settings.SPOEConfigPath}}
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
-	# Universal blocks (all vhosts); per-app profile paths are scoped below
+{{end}}
+	# Universal blocks (all vhosts)
 	acl p_git     path_beg /.git
 	acl p_env     path_beg /.env
 	http-request deny deny_status 403 if p_git || p_env
 	acl bad_method method TRACE CONNECT
 	http-request deny deny_status 405 if bad_method
-{{if .UseIPAllowlist}}
-	acl ipwl_white src -f {{.IPAllowlistMapPath}}
-	http-request allow if ipwl_white
-{{end}}
-{{if .Settings.BlockEmptyUA}}
-	# Empty User-Agent
-	acl empty_ua req.hdr(User-Agent) -m len 0
-	http-request deny deny_status 403 if empty_ua
-{{end}}
-{{if .UseBlockedUserAgents}}
-	# Known bad User-Agent substrings (from DB → map file)
-	acl bad_ua req.hdr(User-Agent) -m sub -i -f {{.BlockedUserAgentsMapPath}}
-	http-request deny deny_status 403 if bad_ua
-{{end}}
-{{if .UseIPBlacklist}}
-	acl ipbl_black src -f {{.IPBlacklistMapPath}}
-	http-request deny deny_status 403 if ipbl_black
-{{end}}
-{{if .UseGeoIPEnforce}}
-	# GeoIP batch — CIDRs resolved at apply/sync (see docs/ARCHITECTURE.md GeoIP)
-	acl geo_enforce src -f {{.GeoIPEnforceMapPath}}
-	http-request deny deny_status 403 if geo_enforce
-{{end}}
-{{if .Settings.WAFBasicRulesEnabled}}
-	# Basic WAF — SQLi / XSS / path traversal (after IP ACLs; ipwl_white "allow" above still short-circuits these denies)
-	acl waf_sqli query -m reg -i (union\s+select|insert\s+into|drop\s+table|delete\s+from|update[^;]*set|;.*--)
-	acl waf_sqli_path path -m reg -i (union\s+select|insert\s+into|drop\s+table|\.\./\.\.)
-	acl waf_xss query -m reg -i (<script|javascript:|on(error|load|click|mouse)\s*=)
-	acl waf_xss_path path -m reg -i (<script|javascript:)
-	acl waf_traversal path -m reg -i \.\./
-	http-request deny deny_status 403 if waf_sqli or waf_sqli_path or waf_xss or waf_xss_path or waf_traversal
-{{end}}
 {{range $i, $a := .Apps}}
-	acl host_{{backendName $a.Application.PublicHost}} hdr(host) -i {{$a.Application.PublicHost}}
-{{range $j, $p := $a.Profile.BlockPaths}}
-	acl bp_{{$i}}_{{$j}} path_beg {{$p}}
-	http-request deny deny_status 403 if host_{{backendName $a.Application.PublicHost}} bp_{{$i}}_{{$j}}
-{{end}}
-{{range $k, $m := $a.Profile.ExtraBlockedMethods}}
-	acl bm_{{$i}}_{{$k}}_{{methodSlug $m}} method {{$m}}
-	http-request deny deny_status 405 if host_{{backendName $a.Application.PublicHost}} bm_{{$i}}_{{$k}}_{{methodSlug $m}}
-{{end}}
-{{range $ri, $rp := $a.Application.RestrictedPaths}}
+	# === Application: {{$a.Application.Name}} ({{$a.Application.PublicHost}}) ===
+	acl app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
+{{- if and $.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
+	acl app_{{$a.ACLTag}}_white src -f {{$.IPAllowlistMapPath}}
+	http-request allow if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_white
+{{- end}}
+{{- if and $.UseIPBlacklist $a.Application.Security.IPBlacklistEnabled}}
+	acl app_{{$a.ACLTag}}_black src -f {{$.IPBlacklistMapPath}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_black
+{{- end}}
+{{- if $a.UsePerAppGeo}}
+	acl app_{{$a.ACLTag}}_geo src -f {{$a.GeoEnforceMapPath}}
+{{- if eq $a.Application.Security.GeoIPPolicy "deny"}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_geo
+{{- else}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host !app_{{$a.ACLTag}}_geo
+{{- end}}
+{{- end}}
+{{- if and $.Settings.BlockEmptyUA $a.Application.Security.BotProtectionEnabled}}
+	acl app_{{$a.ACLTag}}_empty_ua req.hdr(User-Agent) -m len 0
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_empty_ua
+{{- end}}
+{{- if and $.UseBlockedUserAgents $a.Application.Security.BotProtectionEnabled}}
+	acl app_{{$a.ACLTag}}_bad_ua req.hdr(User-Agent) -m sub -i -f {{$.BlockedUserAgentsMapPath}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_bad_ua
+{{- end}}
+{{- if $a.Application.Security.BasicWAFEnabled}}
+	acl app_{{$a.ACLTag}}_sqli query -m reg -i (union\s+select|insert\s+into|drop\s+table|delete\s+from|update[^;]*set|;.*--)
+	acl app_{{$a.ACLTag}}_sqli_path path -m reg -i (union\s+select|insert\s+into|drop\s+table|\.\./\.\.)
+	acl app_{{$a.ACLTag}}_xss query -m reg -i (<script|javascript:|on(error|load|click|mouse)\s*=)
+	acl app_{{$a.ACLTag}}_xss_path path -m reg -i (<script|javascript:)
+	acl app_{{$a.ACLTag}}_traversal path -m reg -i \.\./
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_sqli
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_sqli_path
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_xss
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_xss_path
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_traversal
+{{- end}}
+{{- if $a.Application.Security.MethodFilterEnabled}}
+{{- range $k, $m := $a.Profile.ExtraBlockedMethods}}
+	acl app_{{$a.ACLTag}}_bm_{{$k}}_{{methodSlug $m}} method {{$m}}
+	http-request deny deny_status 405 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_bm_{{$k}}_{{methodSlug $m}}
+{{- end}}
+{{- end}}
+{{- if $a.Application.Security.PathACLEnabled}}
+{{- range $j, $p := $a.Profile.BlockPaths}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host { path_beg {{$p}} }
+{{- end}}
+{{- end}}
+{{- range $ri, $rp := $a.Application.RestrictedPaths}}
 {{- $rpCidr := joinCIDRs $rp.AllowedCIDRs}}
 {{- if and $rp.PathPrefix $rpCidr}}
 	# Per-app restricted path: {{$a.Application.Name}} {{$rp.PathPrefix}}
-	acl rp_{{$i}}_{{$ri}}_rpath path_beg {{$rp.PathPrefix}}
-	acl rp_{{$i}}_{{$ri}}_rnet src {{$rpCidr}}
-	http-request deny deny_status 403 if host_{{backendName $a.Application.PublicHost}} rp_{{$i}}_{{$ri}}_rpath !rp_{{$i}}_{{$ri}}_rnet
+	acl app_{{$a.ACLTag}}_rp_{{$ri}}_path path_beg {{$rp.PathPrefix}}
+	acl app_{{$a.ACLTag}}_rp_{{$ri}}_net src {{$rpCidr}}
+	http-request deny deny_status 403 if app_{{$a.ACLTag}}_host app_{{$a.ACLTag}}_rp_{{$ri}}_path !app_{{$a.ACLTag}}_rp_{{$ri}}_net
+{{- end}}
+{{- end}}
+{{- if and $.UseCrowdSecFilter $a.Application.Security.CrowdSecEnabled}}
+	http-request send-spoe-group {{$.Settings.CrowdSecEngineName}} crowdsec-req if app_{{$a.ACLTag}}_host
 {{- end}}
 {{end}}
-{{end}}
 {{range $a := .Apps}}
-	use_backend {{backendName $a.Application.PublicHost}} if host_{{backendName $a.Application.PublicHost}}
+	use_backend {{backendName $a.Application.PublicHost}} if app_{{$a.ACLTag}}_host
 {{end}}
 	default_backend bk_not_found
 
@@ -290,15 +367,17 @@ backend {{backendName $a.Application.PublicHost}}
 	{{- else }}
 	option http-server-close
 	{{- end }}
+{{- if $a.Application.Security.RateLimitEnabled}}
 	stick-table type ip size 200k expire 5m store http_req_rate(10s)
 	http-request track-sc0 src
-	acl rl_abuse_{{$i}} sc0_http_req_rate gt {{$a.Profile.RateLimitBurst}}
-{{if $.UseIPAllowlist}}
-	acl ipwl_white src -f {{$.IPAllowlistMapPath}}
-	http-request deny deny_status 429 if rl_abuse_{{$i}} !ipwl_white
-{{else}}
+	acl rl_abuse_{{$i}} sc0_http_req_rate gt {{$a.RateLimitBurst}}
+{{- if and $.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
+	acl be_ipwl_white_{{$i}} src -f {{$.IPAllowlistMapPath}}
+	http-request deny deny_status 429 if rl_abuse_{{$i}} !be_ipwl_white_{{$i}}
+{{- else}}
 	http-request deny deny_status 429 if rl_abuse_{{$i}}
-{{end}}
+{{- end}}
+{{- end}}
 	{{- if $a.Application.WebSocket }}
 	timeout tunnel 3600s
 	{{- end }}

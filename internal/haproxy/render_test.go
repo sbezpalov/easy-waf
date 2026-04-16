@@ -39,6 +39,6 @@ func TestRenderProfileWiring(t *testing.T) {
 		t.Error("expected profile server timeout in backend")
 	}
 	if !strings.Contains(cfg, "path_beg /.git") {
-		t.Error("expected profile block path in frontend")
+		t.Error("expected profile block path (path_beg /.git) in frontend rules")
 	}
 }

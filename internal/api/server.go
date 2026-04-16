@@ -64,9 +64,15 @@ func (s *Server) Router() chi.Router {
 				r.Get("/status", s.handleStatus)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
+				r.Get("/security/modes", s.listSecurityModes)
 				r.Get("/applications", s.listApps)
+				r.Get("/applications/{id}", s.getApp)
 				r.Post("/applications", s.upsertApp)
 				r.Delete("/applications/{id}", s.deleteApp)
+				r.Get("/applications/{id}/security", s.getAppSecurity)
+				r.Put("/applications/{id}/security", s.putAppSecurity)
+				r.Patch("/applications/{id}/security", s.patchAppSecurity)
+				r.Post("/applications/{id}/security/mode", s.postAppSecurityMode)
 				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)
 				r.Post("/certificates", s.upsertCert)
@@ -135,6 +141,16 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apps)
 }
 
+func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	a, err := s.Eng.Store.GetApplication(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
+}
+
 func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	var a config.Application
 	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
@@ -145,6 +161,8 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	config.NormalizeApplicationSecurity(&a.Security)
+	a.Security.Mode = string(profiles.DetectMode(a.Security))
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -21,23 +22,78 @@ type RestrictedPath struct {
 	AllowedCIDRs []string `json:"allowed_cidrs"`
 }
 
+// ApplicationSecurity holds per-application protection toggles and GeoIP overrides.
+type ApplicationSecurity struct {
+	Mode string `json:"mode"` // full | balanced | trusted-lan | reverse-proxy-only | custom
+
+	RateLimitEnabled     bool `json:"rate_limit_enabled"`
+	PathACLEnabled       bool `json:"path_acl_enabled"`
+	MethodFilterEnabled  bool `json:"method_filter_enabled"`
+	BasicWAFEnabled      bool `json:"basic_waf_enabled"`
+	BotProtectionEnabled bool `json:"bot_protection_enabled"`
+	IPBlacklistEnabled   bool `json:"ip_blacklist_enabled"`
+	IPAllowlistEnabled   bool `json:"ip_allowlist_enabled"`
+	GeoIPEnabled         bool `json:"geoip_enabled"`
+	CrowdSecEnabled      bool `json:"crowdsec_enabled"`
+
+	GeoIPPolicy      string   `json:"geoip_policy"`       // allow | deny
+	GeoIPCountryList []string `json:"geoip_country_list"` // ISO 3166-1 alpha-2
+
+	RateLimitRPSOverride   *int `json:"rate_limit_rps_override,omitempty"`
+	RateLimitBurstOverride *int `json:"rate_limit_burst_override,omitempty"`
+}
+
+// DefaultApplicationSecurity is used for new applications and when JSON is missing fields.
+func DefaultApplicationSecurity() ApplicationSecurity {
+	return ApplicationSecurity{
+		Mode:                 "balanced",
+		RateLimitEnabled:     true,
+		PathACLEnabled:       true,
+		MethodFilterEnabled:  true,
+		BasicWAFEnabled:      true,
+		BotProtectionEnabled: true,
+		IPBlacklistEnabled:   true,
+		IPAllowlistEnabled:   true,
+		GeoIPEnabled:         false,
+		CrowdSecEnabled:      true,
+		GeoIPPolicy:          "allow",
+		GeoIPCountryList:     nil,
+	}
+}
+
+// NormalizeApplicationSecurity fills legacy zero structs and normalizes GeoIP policy.
+func NormalizeApplicationSecurity(s *ApplicationSecurity) {
+	if s == nil {
+		return
+	}
+	if strings.TrimSpace(s.Mode) == "" {
+		*s = DefaultApplicationSecurity()
+		return
+	}
+	p := strings.ToLower(strings.TrimSpace(s.GeoIPPolicy))
+	if p != "deny" {
+		s.GeoIPPolicy = "allow"
+	}
+}
+
 // Application is a published hostname → backend mapping (source of truth fragment).
 type Application struct {
-	ID              string           `json:"id"`
-	Name            string           `json:"name"`
-	PublicHost      string           `json:"public_host"`
-	BackendHost     string           `json:"backend_host"`
-	BackendPort     int              `json:"backend_port"`
-	BackendHTTPS    bool             `json:"backend_https"`
-	WebSocket       bool             `json:"websocket"`
-	HealthPath      string           `json:"health_path,omitempty"`
-	PathPrefix      string           `json:"path_prefix,omitempty"`
-	RestrictedPaths []RestrictedPath `json:"restricted_paths,omitempty"`
-	Profile         string           `json:"profile"`
-	CertificateID   string           `json:"certificate_id,omitempty"`
-	Enabled         bool             `json:"enabled"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	ID              string              `json:"id"`
+	Name            string              `json:"name"`
+	PublicHost      string              `json:"public_host"`
+	BackendHost     string              `json:"backend_host"`
+	BackendPort     int                 `json:"backend_port"`
+	BackendHTTPS    bool                `json:"backend_https"`
+	WebSocket       bool                `json:"websocket"`
+	HealthPath      string              `json:"health_path,omitempty"`
+	PathPrefix      string              `json:"path_prefix,omitempty"`
+	RestrictedPaths []RestrictedPath    `json:"restricted_paths,omitempty"`
+	Profile         string              `json:"profile"`
+	CertificateID   string              `json:"certificate_id,omitempty"`
+	Enabled         bool                `json:"enabled"`
+	Security        ApplicationSecurity `json:"security"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
 }
 
 // Certificate stores metadata for HAProxy PEM material.

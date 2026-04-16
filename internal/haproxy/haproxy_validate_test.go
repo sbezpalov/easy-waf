@@ -74,10 +74,10 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	}
 	// Regression guard: older template used `(\.\./|\.\.[\\])` which HAProxy turns into invalid PCRE `[\]`.
 	// If this fails on CI, the job is building a commit without the fixed traversal ACL in render.go.
-	if strings.Contains(r.HAProxyConfig, "acl waf_traversal") {
-		const wantTraversalACL = `acl waf_traversal path -m reg -i \.\./`
+	if strings.Contains(r.HAProxyConfig, "_traversal path -m reg") {
+		const wantTraversalACL = `_traversal path -m reg -i \.\./`
 		if !strings.Contains(r.HAProxyConfig, wantTraversalACL) {
-			i := strings.Index(r.HAProxyConfig, "acl waf_traversal")
+			i := strings.Index(r.HAProxyConfig, "_traversal path")
 			snippet := r.HAProxyConfig[i:]
 			if len(snippet) > 200 {
 				snippet = snippet[:200] + "…"

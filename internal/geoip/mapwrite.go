@@ -21,14 +21,41 @@ func EnforceMapPath(g config.GlobalSettings, stateDir string) string {
 	return filepath.Join(stateDir, "haproxy", "geoip_enforce.map")
 }
 
+// AppEnforceMapPath is the HAProxy src map path for one application's GeoIP policy.
+func AppEnforceMapPath(stateDir, appID string) string {
+	id := strings.Map(func(r rune) rune {
+		switch r {
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', '_':
+			return r
+		default:
+			return '_'
+		}
+	}, appID)
+	if strings.TrimSpace(id) == "" {
+		id = "app"
+	}
+	return filepath.Join(stateDir, "haproxy", "geoip_app_"+id+".map")
+}
+
 // WriteEnforceMap resolves each blacklist CIDR to a country (first address of the network),
 // uses cache+provider, and writes HAProxy src map lines (one CIDR per line) for CIDRs that
 // match the current allow/deny country policy. Empty list → empty map file (ACL disabled).
 func WriteEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, g config.GlobalSettings, stateDir string, blacklistCIDRs []string) error {
 	out := EnforceMapPath(g, stateDir)
 	_ = os.MkdirAll(filepath.Dir(out), 0o750)
+	return writeEnforceMapCore(ctx, prov, cache, g.GeoIPDefaultPolicy, g.GeoIPCountryList, blacklistCIDRs, out)
+}
 
-	list := normalizeCountryList(g.GeoIPCountryList)
+// WriteAppEnforceMap writes a per-application GeoIP map using app-level policy and country list.
+func WriteAppEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, policy string, countries []string, blacklistCIDRs []string, outPath string) error {
+	_ = os.MkdirAll(filepath.Dir(outPath), 0o750)
+	return writeEnforceMapCore(ctx, prov, cache, policy, countries, blacklistCIDRs, outPath)
+}
+
+func writeEnforceMapCore(ctx context.Context, prov GeoProvider, cache *MemoryCache, defaultPolicy string, countryList []string, blacklistCIDRs []string, out string) error {
+	list := normalizeCountryList(countryList)
 	if len(list) == 0 {
 		// No policy targets → write header-only so HAProxy ACL stays off.
 		return writeMapFile(out, "# easy-waf geoip enforce — empty country list\n")
@@ -66,7 +93,7 @@ func WriteEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, 
 			continue
 		}
 		_, inList := set[cc]
-		policy := strings.ToLower(strings.TrimSpace(g.GeoIPDefaultPolicy))
+		policy := strings.ToLower(strings.TrimSpace(defaultPolicy))
 		if policy == "deny" {
 			// Deny-listed countries → put CIDR in enforce map.
 			if !inList {
@@ -88,6 +115,12 @@ func WriteEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, 
 		b.WriteByte('\n')
 	}
 	return writeMapFile(out, b.String())
+}
+
+// WriteDisabledAppEnforceMap clears a per-application GeoIP map file.
+func WriteDisabledAppEnforceMap(path string) error {
+	_ = os.MkdirAll(filepath.Dir(path), 0o750)
+	return writeMapFile(path, "# easy-waf geoip enforce — app scope disabled\n")
 }
 
 // WriteDisabledEnforceMap writes a header-only map when GeoIP batch is off (clears stale CIDR lines).
@@ -114,6 +147,11 @@ func normalizeCountryList(in []string) []string {
 		}
 	}
 	return out
+}
+
+// HasCountryTargets reports whether the list contains at least one valid alpha-2 code.
+func HasCountryTargets(countries []string) bool {
+	return len(normalizeCountryList(countries)) > 0
 }
 
 func firstHostIP(cidr string) (net.IP, error) {

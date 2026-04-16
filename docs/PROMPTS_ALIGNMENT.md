@@ -16,8 +16,8 @@
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Rate limit (stick-tables) | Partial | `internal/profiles/profiles.go` → шаблон |
-| Базовый WACL (ACL) | Partial | Профили, `internal/haproxy/render.go` |
+| Rate limit (stick-tables) | Done | Per-app toggle + профиль; `Application.security`, `internal/haproxy/render.go` |
+| Базовый WACL (ACL) | Done | Per-app toggles + профили; `internal/haproxy/render.go`, `docs/APPLICATION_SECURITY.md` |
 | CrowdSec + решения | Partial | `internal/crowdsec/client.go`, API `integrations/crowdsec*`, `docs/CROWDSEC.md` |
 | SPOE bouncer | Done (код + установка) | `filter spoe` в шаблоне; пакеты CrowdSec по умолчанию в `install.sh` + `docs/CROWDSEC.md` / `crowdsec-bootstrap-lapi.sh`; deny 403 по решению — в конфиге SPOA от пакета bouncer |
 | Fail2Ban | Partial | Установка в `install.sh`, не оркестрируется API |
@@ -60,6 +60,8 @@
 ## §7 Features
 
 ### 7.1 App publishing — **Done** (CRUD API + UI, профили, restricted paths, health path в модели)
+
+### 7.1a Per-application security — **Done** (миграция `009_application_security.sql`, `Application.security`, пресеты `internal/profiles/modes.go`, HAProxy per-host ACL порядок, per-app GeoIP maps `geoip_app_*.map`, API `GET/PUT/PATCH /applications/{id}/security`, `POST …/security/mode`, `GET /security/modes`, audit `app_security_mode_changed`, UI карточки + Dashboard overview, golden `app-*` / `mixed-apps`, `docs/APPLICATION_SECURITY.md`)
 
 ### 7.2 ACME — **Done** (HTTP-01, DNS-01 провайдеры, renew worker, apply hook в `easy-waf-acmed`)
 

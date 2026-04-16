@@ -135,9 +135,6 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	if err != nil {
 		return haproxy.Rendered{}, err
 	}
-	if err := e.WriteGeoIPEnforceMap(ctx, syncRes.AllCIDRs); err != nil {
-		return haproxy.Rendered{}, err
-	}
 	wlPath := ipwl.MapPath(e.Settings, e.StateDir)
 	if err := ipwl.WriteLocalMap(ctx, e.Store, wlPath); err != nil {
 		return haproxy.Rendered{}, err
@@ -148,6 +145,12 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	}
 	apps, err := e.Store.ListApplications(ctx)
 	if err != nil {
+		return haproxy.Rendered{}, err
+	}
+	if err := e.WriteGeoIPEnforceMap(ctx, syncRes.AllCIDRs); err != nil {
+		return haproxy.Rendered{}, err
+	}
+	if err := e.writePerAppGeoMaps(ctx, apps, syncRes.AllCIDRs); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	certs, err := e.Store.ListCertificates(ctx)
@@ -186,8 +189,6 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	}
 	useWL := ipwl.UseInRender(e.Settings.IPWLEnabled, wlPath)
 	useBadUA := blockedua.UseInRender(e.Settings.BlockedUserAgentsEnabled, uaMapPath)
-	geoPath := geoip.EnforceMapPath(e.Settings, e.StateDir)
-	useGeo := geoip.UseEnforceMapInRender(e.Settings.GeoIPEnabled, geoPath)
 	ri := haproxy.RenderInput{
 		Settings:                 e.Settings,
 		Applications:             apps,
@@ -199,10 +200,32 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 		UseIPAllowlist:           useWL,
 		BlockedUserAgentsMapPath: uaMapPath,
 		UseBlockedUserAgents:     useBadUA,
-		GeoIPEnforceMapPath:      geoPath,
-		UseGeoIPEnforce:          useGeo,
+		StateDir:                 e.StateDir,
 	}
 	return haproxy.Render(ri)
+}
+
+func (e *Engine) writePerAppGeoMaps(ctx context.Context, apps []config.Application, blacklistCIDRs []string) error {
+	for _, a := range apps {
+		out := geoip.AppEnforceMapPath(e.StateDir, a.ID)
+		if !a.Enabled || !a.Security.GeoIPEnabled || !geoip.HasCountryTargets(a.Security.GeoIPCountryList) {
+			if err := geoip.WriteDisabledAppEnforceMap(out); err != nil {
+				return err
+			}
+			continue
+		}
+		prov, err := geoip.NewProviderForSettings(e.Settings)
+		if err != nil {
+			return err
+		}
+		if e.GeoIP == nil {
+			e.GeoIP = geoip.NewRuntime(time.Duration(e.Settings.GeoIPCacheTTL))
+		}
+		if err := geoip.WriteAppEnforceMap(ctx, prov, e.GeoIP.Cache, a.Security.GeoIPPolicy, a.Security.GeoIPCountryList, blacklistCIDRs, out); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sha256HexBytes(b []byte) string {

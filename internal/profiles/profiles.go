@@ -14,6 +14,8 @@ const (
 	TrustedLAN    ProfileName = "trusted-lan"
 	PublicApp     ProfileName = "public-app"
 	HomeAssistant ProfileName = "home-assistant"
+	None          ProfileName = "none"
+	Custom        ProfileName = "custom"
 )
 
 // Profile defines tunables for HAProxy templates and ACLs.
@@ -88,6 +90,28 @@ func All() map[ProfileName]Profile {
 			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 			Notes:               "Long server timeout for SSE/WebSocket; still block obvious probes",
+		},
+		None: {
+			Name:                None,
+			Description:         "No profile path blocks; high rate limits — combine with per-app security toggles",
+			RateLimitRPS:        500,
+			RateLimitBurst:      1000,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       300 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          nil,
+			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
+		},
+		Custom: {
+			Name:                Custom,
+			Description:         "Alias of balanced numeric defaults; tuning is via per-app toggles and overrides",
+			RateLimitRPS:        50,
+			RateLimitBurst:      100,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       50 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          defaultBlockedPaths(),
+			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 		},
 	}
 }

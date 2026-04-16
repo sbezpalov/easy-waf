@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/profiles"
 )
 
 // goldenScenarioNames must match testdata/golden/<name>.cfg and <name>.crt-list.txt
@@ -20,6 +21,12 @@ var goldenScenarioNames = []string{
 	"waf-rules-enabled",
 	"waf-rules-disabled",
 	"app-with-restricted-path",
+	"app-full-protection",
+	"app-balanced",
+	"app-trusted-lan",
+	"app-reverse-proxy-only",
+	"app-custom-partial",
+	"mixed-apps",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -197,7 +204,8 @@ func goldenFixture(name string) RenderInput {
 		}
 	case "waf-rules-enabled":
 		gs := goldenGlobalSettings(spoeMin, "crowdsec")
-		gs.WAFBasicRulesEnabled = true
+		sec := config.DefaultApplicationSecurity()
+		sec.BasicWAFEnabled = true
 		return RenderInput{
 			Settings:       gs,
 			UseIPBlacklist: false,
@@ -211,6 +219,7 @@ func goldenFixture(name string) RenderInput {
 					Profile:       "balanced",
 					CertificateID: "c1",
 					Enabled:       true,
+					Security:      sec,
 				},
 			},
 			Certificates: map[string]config.Certificate{
@@ -219,6 +228,8 @@ func goldenFixture(name string) RenderInput {
 			CRTListPath: "testdata/golden/waf-rules-enabled.crt-list.txt",
 		}
 	case "waf-rules-disabled":
+		sec := config.DefaultApplicationSecurity()
+		sec.BasicWAFEnabled = false
 		return RenderInput{
 			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
 			UseIPBlacklist: false,
@@ -232,6 +243,7 @@ func goldenFixture(name string) RenderInput {
 					Profile:       "balanced",
 					CertificateID: "c1",
 					Enabled:       true,
+					Security:      sec,
 				},
 			},
 			Certificates: map[string]config.Certificate{
@@ -266,6 +278,150 @@ func goldenFixture(name string) RenderInput {
 				"c1": {ID: "c1", BundlePath: certA},
 			},
 			CRTListPath: "testdata/golden/app-with-restricted-path.crt-list.txt",
+		}
+	case "app-full-protection":
+		var sec config.ApplicationSecurity
+		profiles.ApplyMode(&sec, profiles.ModeFull)
+		sec.GeoIPCountryList = []string{"US"}
+		sec.GeoIPPolicy = "allow"
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "full1",
+					Name:          "Full",
+					PublicHost:    "full.example.com",
+					BackendHost:   "10.0.0.1",
+					BackendPort:   8080,
+					Profile:       "strict",
+					CertificateID: "c1",
+					Enabled:       true,
+					Security:      sec,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-full-protection.crt-list.txt",
+		}
+	case "app-balanced":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "bal1",
+					Name:          "Balanced",
+					PublicHost:    "balanced.example.com",
+					BackendHost:   "10.0.0.2",
+					BackendPort:   80,
+					Profile:       "balanced",
+					CertificateID: "c1",
+					Enabled:       true,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-balanced.crt-list.txt",
+		}
+	case "app-trusted-lan":
+		var sec config.ApplicationSecurity
+		profiles.ApplyMode(&sec, profiles.ModeTrustedLAN)
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "tl1",
+					Name:          "Trusted",
+					PublicHost:    "trusted.example.com",
+					BackendHost:   "10.0.0.3",
+					BackendPort:   80,
+					Profile:       "trusted-lan",
+					CertificateID: "c1",
+					Enabled:       true,
+					Security:      sec,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-trusted-lan.crt-list.txt",
+		}
+	case "app-reverse-proxy-only":
+		var sec config.ApplicationSecurity
+		profiles.ApplyMode(&sec, profiles.ModeReverseProxyOnly)
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "dbg1",
+					Name:          "Debug",
+					PublicHost:    "debug.example.com",
+					BackendHost:   "10.0.0.5",
+					BackendPort:   8080,
+					Profile:       "balanced",
+					CertificateID: "c1",
+					Enabled:       true,
+					Security:      sec,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-reverse-proxy-only.crt-list.txt",
+		}
+	case "app-custom-partial":
+		sec := config.ApplicationSecurity{
+			Mode:                 "custom",
+			BasicWAFEnabled:      true,
+			CrowdSecEnabled:      true,
+			GeoIPPolicy:          "allow",
+			GeoIPCountryList:     nil,
+		}
+		config.NormalizeApplicationSecurity(&sec)
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "cust1",
+					Name:          "Custom",
+					PublicHost:    "custom.example.com",
+					BackendHost:   "10.0.0.9",
+					BackendPort:   8080,
+					Profile:       "balanced",
+					CertificateID: "c1",
+					Enabled:       true,
+					Security:      sec,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-custom-partial.crt-list.txt",
+		}
+	case "mixed-apps":
+		secFull := config.DefaultApplicationSecurity()
+		profiles.ApplyMode(&secFull, profiles.ModeFull)
+		secFull.GeoIPEnabled = false
+		secDbg := config.DefaultApplicationSecurity()
+		profiles.ApplyMode(&secDbg, profiles.ModeReverseProxyOnly)
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "m1", Name: "One", PublicHost: "m1.example.com", BackendHost: "10.0.1.1", BackendPort: 80,
+					Profile: "strict", CertificateID: "c1", Enabled: true, Security: secFull,
+				},
+				{
+					ID: "m2", Name: "Two", PublicHost: "m2.example.com", BackendHost: "10.0.1.2", BackendPort: 80,
+					Profile: "balanced", CertificateID: "c2", Enabled: true, Security: secDbg,
+				},
+				{
+					ID: "m3", Name: "Three", PublicHost: "m3.example.com", BackendHost: "10.0.1.3", BackendPort: 80,
+					Profile: "balanced", CertificateID: "c1", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"c1": {ID: "c1", BundlePath: certA},
+				"c2": {ID: "c2", BundlePath: certB},
+			},
+			CRTListPath: "testdata/golden/mixed-apps.crt-list.txt",
 		}
 	default:
 		return RenderInput{}
@@ -344,8 +500,8 @@ func TestGoldenWAFRuleScenarios(t *testing.T) {
 		if in.Settings.SPOEConfigPath == "" {
 			t.Fatal("fixture waf-rules-enabled missing")
 		}
-		if !in.Settings.WAFBasicRulesEnabled {
-			t.Fatal("expected WAFBasicRulesEnabled true")
+		if !in.Applications[0].Security.BasicWAFEnabled {
+			t.Fatal("expected per-app BasicWAFEnabled true")
 		}
 		gotR, err := Render(in)
 		if err != nil {
@@ -353,23 +509,25 @@ func TestGoldenWAFRuleScenarios(t *testing.T) {
 		}
 		cfg := gotR.HAProxyConfig
 		for _, needle := range []string{
-			"acl waf_sqli ",
-			"acl waf_sqli_path",
-			"acl waf_xss ",
-			"acl waf_xss_path",
-			"acl waf_traversal",
-			"http-request deny deny_status 403 if waf_sqli or waf_sqli_path or waf_xss or waf_xss_path or waf_traversal",
+			"acl app_",
+			"_sqli query",
+			"_sqli_path path",
+			"_xss query",
+			"_xss_path path",
+			"_traversal path",
+			"http-request deny deny_status 403 if app_",
+			"_host app_",
+			"_sqli",
 		} {
 			if !strings.Contains(cfg, needle) {
 				t.Fatalf("expected rendered config to contain %q", needle)
 			}
 		}
-		// HAProxy config parsing + Windows `\` in one regex broke haproxy -c (invalid `[\]` in PCRE); Unix `../` only.
 		if strings.Contains(cfg, `|\.\.[\]`) || strings.Contains(cfg, `|\.\.[\\]`) {
 			t.Fatal("waf_traversal must not use a ..\\ branch in one ACL regex (breaks haproxy -c)")
 		}
-		if !strings.Contains(cfg, `acl waf_traversal path -m reg -i \.\./`) {
-			t.Fatal(`expected traversal ACL "acl waf_traversal path -m reg -i \.\./"`)
+		if !strings.Contains(cfg, `_traversal path -m reg -i \.\./`) {
+			t.Fatal(`expected traversal ACL with "\.\./"`)
 		}
 	})
 	t.Run("waf-rules-disabled", func(t *testing.T) {
@@ -377,15 +535,15 @@ func TestGoldenWAFRuleScenarios(t *testing.T) {
 		if in.Settings.SPOEConfigPath == "" {
 			t.Fatal("fixture waf-rules-disabled missing")
 		}
-		if in.Settings.WAFBasicRulesEnabled {
-			t.Fatal("expected WAFBasicRulesEnabled false")
+		if in.Applications[0].Security.BasicWAFEnabled {
+			t.Fatal("expected per-app BasicWAFEnabled false")
 		}
 		gotR, err := Render(in)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(gotR.HAProxyConfig, "acl waf_sqli") {
-			t.Fatal("WAF ACLs must be absent when waf_basic_rules_enabled is false")
+		if strings.Contains(gotR.HAProxyConfig, "_sqli query") {
+			t.Fatal("WAF ACLs must be absent when per-app basic_waf_enabled is false")
 		}
 	})
 }
@@ -405,9 +563,13 @@ func TestGoldenRestrictedPathACLs(t *testing.T) {
 	cfg := gotR.HAProxyConfig
 	for _, needle := range []string{
 		"# Per-app restricted path: Home Assistant /api",
-		"acl rp_0_0_rpath path_beg /api",
-		"acl rp_0_0_rnet src 192.168.0.0/16 10.0.0.0/8",
-		"http-request deny deny_status 403 if host_bk_ha_example_com rp_0_0_rpath !rp_0_0_rnet",
+		"acl app_",
+		"_rp_0_path path_beg /api",
+		"_rp_0_net src 192.168.0.0/16 10.0.0.0/8",
+		"http-request deny deny_status 403 if app_",
+		"_host app_",
+		"_rp_0_path !app_",
+		"_rp_0_net",
 	} {
 		if !strings.Contains(cfg, needle) {
 			t.Fatalf("missing %q in rendered config", needle)

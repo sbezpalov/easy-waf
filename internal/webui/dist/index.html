@@ -107,6 +107,21 @@
       body.nav-open .app-sidebar { transform: translateX(0); }
       .header-logout { font-size: 0.85rem; padding: 0.35rem 0.55rem; }
     }
+
+    .app-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .app-card {
+      border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem 1rem; background: var(--panel);
+      border-left: 4px solid #238636;
+    }
+    .app-card.mode-custom { border-left-color: #9e6a03; }
+    .app-card.mode-rpo { border-left-color: #da3633; }
+    .app-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap; }
+    .app-card-title { font-weight: 600; margin: 0; font-size: 1rem; }
+    .app-card-sub { font-size: 0.82rem; color: var(--muted); margin: 0.35rem 0 0.5rem; }
+    .app-badges { font-size: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0; }
+    .app-badge { background: #21262d; padding: 0.12rem 0.45rem; border-radius: 4px; color: #e6edf3; }
+    .app-card-warn { font-size: 0.78rem; color: #f85149; margin-top: 0.35rem; font-weight: 600; }
+    .dash-sec-warn { background: #2d2710; border: 1px solid #9e6a03; border-radius: 8px; padding: 0.75rem 1rem; margin-top: 1rem; font-size: 0.9rem; }
   </style>
 </head>
 <body>
@@ -170,6 +185,11 @@
           <div class="dash-card"><h3>Active sessions</h3><div class="dash-stat" id="dash-active-sessions">—</div><div class="dash-note">frontends · auto-refresh 10s</div></div>
           <div class="dash-card"><h3>Version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">—</div><div class="dash-note" id="dash-state-dir"></div></div>
         </div>
+        <div id="dash-sec-overview-wrap" class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Application security overview</h3>
+          <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">—</p>
+        </div>
+        <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Current HAProxy revision</h3>
           <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">—</p>
@@ -197,24 +217,33 @@
 
       <div id="tab-apps" class="tab-panel">
         <h2>◇ Applications</h2>
-        <p><small>Each <strong>Save app</strong> adds a published host → backend mapping. Use <a href="#config">Config</a> for <strong>Apply HAProxy</strong>.</small></p>
+        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Use <a href="#config">Config</a> → <strong>Apply HAProxy</strong> after changes.</small></p>
         <div class="row">
-          <button type="button" class="secondary" id="btn-apps-refresh">Refresh list</button>
+          <button type="button" class="secondary" id="btn-apps-refresh">Refresh</button>
         </div>
-        <div id="apps"></div>
-        <h3>Add / update</h3>
+        <div id="apps" class="app-cards"></div>
+        <p id="apps-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+        <h3>Add or update application</h3>
+        <input type="hidden" id="app-edit-id" value="" />
+        <p id="apps-edit-hint" class="dash-note hidden" style="margin-top:0">Editing existing app — <button type="button" class="secondary" id="btn-app-new">New app instead</button></p>
         <div class="row">
           <input id="name" placeholder="name" value="Home Assistant" />
           <input id="host" placeholder="public host" value="ha.home.local" />
           <input id="backend" placeholder="backend IP" value="192.168.1.10" />
           <input id="port" placeholder="port" value="8123" type="number" />
+          <label class="row" style="margin:0"><input id="behttps" type="checkbox" /> Backend HTTPS</label>
           <select id="profile">
             <option value="home-assistant">home-assistant</option>
             <option value="balanced">balanced</option>
             <option value="strict">strict</option>
           </select>
           <label><input id="ws" type="checkbox" checked /> WebSocket</label>
-          <button id="save">Save app</button>
+          <button id="save">Save application</button>
+        </div>
+        <div class="row" style="margin-top:0.5rem">
+          <label>Certificate
+            <select id="app-cert"><option value="">— none —</option></select>
+          </label>
         </div>
         <h4>Restricted paths</h4>
         <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
@@ -530,6 +559,7 @@
       case 'apps':
         loadApps();
         loadProfileSelect();
+        loadCertOptionsForApps();
         break;
       case 'certs':
         void (async () => {
@@ -598,6 +628,12 @@
     if (!box) return;
     box.innerHTML = '';
     addRestrictedPathRow('/api', '192.168.0.0/16\n10.0.0.0/8');
+  }
+
+  function clearRestrictedPathRows() {
+    const box = document.getElementById('restricted-rows');
+    if (!box) return;
+    box.innerHTML = '';
   }
 
   document.getElementById('btn-login').onclick = async () => {
@@ -719,18 +755,147 @@
     el.innerHTML = `<table><thead><tr><th>Profile</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
+  async function loadCertOptionsForApps() {
+    const sel = document.getElementById('app-cert');
+    if (!sel) return;
+    const r = await fetch('/api/v1/certificates', { headers: hdr() });
+    if (!r.ok) return;
+    const list = await r.json().catch(() => []);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— none —</option>' +
+      (Array.isArray(list) ? list.map((c) => `<option value="${esc(c.id)}">${esc(c.primary_domain || c.id)}</option>`).join('') : '');
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+
+  function appModeCardClass(mode) {
+    if (mode === 'reverse-proxy-only') return 'app-card mode-rpo';
+    if (mode === 'custom') return 'app-card mode-custom';
+    return 'app-card';
+  }
+
+  function appSecurityBadges(sec) {
+    if (!sec) return '<span class="app-badge">—</span>';
+    const out = [];
+    if (sec.rate_limit_enabled) out.push('⚡Rate');
+    if (sec.basic_waf_enabled) out.push('🛡WAF');
+    if (sec.crowdsec_enabled) out.push('🤖CS');
+    if (sec.ip_blacklist_enabled) out.push('🔒IPBL');
+    if (cachedSettings && cachedSettings.ipwl_enabled && sec.ip_allowlist_enabled) out.push('✅Allow');
+    if (sec.geoip_enabled) out.push('🌍Geo');
+    if (sec.bot_protection_enabled) out.push('🤖Bot');
+    return out.length ? out.map((x) => `<span class="app-badge">${x}</span>`).join('') : '<span class="app-badge">(layers off)</span>';
+  }
+
+  async function postAppModeChange(id, mode, selEl) {
+    const prev = (appsListCache.find((x) => x.id === id) || {}).security;
+    const prevMode = (prev && prev.mode) || 'balanced';
+    if (mode === 'reverse-proxy-only') {
+      const ok = confirm('⚠ Switch to Reverse Proxy Only?\n\nThis DISABLES all security protections for this application:\n  • Rate limiting\n  • Basic WAF (SQLi/XSS)\n  • CrowdSec\n  • IP blacklist\n  • Bot protection\n  • GeoIP filter\n\nUse ONLY for debugging. Not suitable for production.\n\nContinue?');
+      if (!ok) { selEl.value = prevMode; return; }
+    }
+    const r = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/security/mode', {
+      method: 'POST', headers: hdr(), body: JSON.stringify({ mode })
+    });
+    if (!r.ok) {
+      alert(await r.text());
+      selEl.value = prevMode;
+      return;
+    }
+    await loadApps();
+  }
+
+  function fillAppFormFromApp(id) {
+    const a = appsListCache.find((x) => x.id === id);
+    if (!a) return;
+    document.getElementById('app-edit-id').value = a.id;
+    document.getElementById('apps-edit-hint').classList.remove('hidden');
+    document.getElementById('name').value = a.name || '';
+    document.getElementById('host').value = a.public_host || '';
+    document.getElementById('backend').value = a.backend_host || '';
+    document.getElementById('port').value = String(a.backend_port != null ? a.backend_port : 80);
+    document.getElementById('behttps').checked = !!a.backend_https;
+    document.getElementById('ws').checked = !!a.websocket;
+    document.getElementById('profile').value = a.profile || 'balanced';
+    document.getElementById('app-cert').value = a.certificate_id || '';
+    clearRestrictedPathRows();
+    (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
+    if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
+    window.location.hash = '#apps';
+  }
+
+  document.getElementById('btn-app-new').onclick = () => {
+    document.getElementById('app-edit-id').value = '';
+    document.getElementById('apps-edit-hint').classList.add('hidden');
+    document.getElementById('name').value = '';
+    document.getElementById('host').value = '';
+    document.getElementById('backend').value = '';
+    document.getElementById('port').value = '80';
+    document.getElementById('behttps').checked = false;
+    document.getElementById('ws').checked = false;
+    document.getElementById('profile').value = 'balanced';
+    document.getElementById('app-cert').value = '';
+    initRestrictedPathRows();
+  };
+
   async function loadApps() {
+    const msg = document.getElementById('apps-msg');
+    if (msg) msg.textContent = '';
     const r = await fetch('/api/v1/applications', { headers: hdr() });
     const j = await r.json();
     if (r.status === 403 && j.must_change_password) { refreshSession(); return; }
-    if (!r.ok) { document.getElementById('apps').textContent = JSON.stringify(j); return; }
-    const rows = j.map(a => `<tr><td>${esc(a.name)}</td><td>${esc(a.public_host)}</td><td>${esc(a.backend_host)}:${a.backend_port}</td><td>${esc(a.profile)}</td></tr>`).join('');
-    document.getElementById('apps').innerHTML = `<table><thead><tr><th>Name</th><th>Host</th><th>Backend</th><th>Profile</th></tr></thead><tbody>${rows}</tbody></table>`;
+    if (!r.ok) {
+      if (msg) msg.textContent = typeof j === 'object' ? JSON.stringify(j) : await r.text();
+      return;
+    }
+    if (!cachedSettings) await loadSettingsPanel();
+    appsListCache = Array.isArray(j) ? j : [];
+    const box = document.getElementById('apps');
+    if (!appsListCache.length) {
+      box.innerHTML = '<p class="dash-note">No applications yet.</p>';
+      return;
+    }
+    box.innerHTML = appsListCache.map((a) => {
+      const sec = a.security || {};
+      const mode = sec.mode || 'balanced';
+      const ws = a.websocket ? ' <span class="app-badge">WS</span>' : '';
+      const rpoWarn = mode === 'reverse-proxy-only' ? '<div class="app-card-warn">⚠ DEBUG MODE — no WAF protections</div>' : '';
+      return `<div class="${appModeCardClass(mode)}">
+  <div class="app-card-head">
+    <div>
+      <p class="app-card-title">${esc(a.name)}</p>
+      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${ws}</p>
+    </div>
+    <div class="row" style="margin:0;gap:0.35rem">
+      <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
+    </div>
+  </div>
+  <div class="row" style="margin:0;align-items:center;gap:0.5rem">
+    <label style="font-size:0.82rem;color:var(--muted)">Mode
+      <select class="app-mode-sel" data-id="${esc(a.id)}" style="font-size:0.85rem">
+        <option value="full" ${mode === 'full' ? 'selected' : ''}>Full</option>
+        <option value="balanced" ${mode === 'balanced' ? 'selected' : ''}>Balanced</option>
+        <option value="trusted-lan" ${mode === 'trusted-lan' ? 'selected' : ''}>Trusted LAN</option>
+        <option value="reverse-proxy-only" ${mode === 'reverse-proxy-only' ? 'selected' : ''}>Reverse proxy only</option>
+        <option value="custom" ${mode === 'custom' ? 'selected' : ''}>Custom</option>
+      </select>
+    </label>
+  </div>
+  <div class="app-badges">${appSecurityBadges(sec)}</div>
+  ${rpoWarn}
+</div>`;
+    }).join('');
+    box.querySelectorAll('.btn-app-edit').forEach((btn) => {
+      btn.onclick = () => fillAppFormFromApp(btn.getAttribute('data-id'));
+    });
+    box.querySelectorAll('.app-mode-sel').forEach((sel) => {
+      sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));
+    });
   }
 
   document.getElementById('btn-apps-refresh').onclick = async () => {
     await loadApps();
     await loadProfileSelect();
+    await loadCertOptionsForApps();
   };
 
   document.getElementById('apply').onclick = async () => {
@@ -797,6 +962,7 @@
   document.getElementById('btn-revisions-refresh').onclick = () => loadRevisions();
 
   let cachedSettings = null;
+  let appsListCache = [];
 
   function parseCountryListText(s) {
     return String(s || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
@@ -1170,6 +1336,32 @@
     if (!Array.isArray(apps)) apps = [];
     const en = apps.filter((a) => a.enabled).length;
     document.getElementById('dash-apps-stat').textContent = `${en} / ${apps.length}`;
+    let prot = 0;
+    let cust = 0;
+    let rpo = 0;
+    const rpoNames = [];
+    for (const a of apps) {
+      const m = (a.security && a.security.mode) || 'balanced';
+      if (m === 'reverse-proxy-only') {
+        rpo++;
+        rpoNames.push(a.name || a.public_host || a.id);
+      } else if (m === 'custom') cust++;
+      else prot++;
+    }
+    const dsec = document.getElementById('dash-sec-line');
+    if (dsec) {
+      dsec.textContent = `Applications: ${apps.length} total · 🟢 Protected presets: ${prot} · 🟡 Custom: ${cust} · 🔴 Reverse proxy only: ${rpo}`;
+    }
+    const dsw = document.getElementById('dash-sec-warn');
+    if (dsw) {
+      if (rpo > 0) {
+        dsw.classList.remove('hidden');
+        dsw.innerHTML = '⚠️ ' + rpo + ' application(s) running without protections: <strong>' + esc(rpoNames.join(', ')) + '</strong>. Review security mode before production.';
+      } else {
+        dsw.classList.add('hidden');
+        dsw.textContent = '';
+      }
+    }
 
     let certSum = null;
     try {
@@ -1570,19 +1762,30 @@
   };
 
   document.getElementById('save').onclick = async () => {
+    const editId = document.getElementById('app-edit-id').value.trim();
     const body = {
       name: document.getElementById('name').value,
       public_host: document.getElementById('host').value,
       backend_host: document.getElementById('backend').value,
       backend_port: parseInt(document.getElementById('port').value, 10),
-      backend_https: false,
+      backend_https: document.getElementById('behttps').checked,
       websocket: document.getElementById('ws').checked,
       profile: document.getElementById('profile').value,
+      certificate_id: document.getElementById('app-cert').value.trim(),
       enabled: true,
       restricted_paths: collectRestrictedPaths()
     };
+    if (editId) {
+      body.id = editId;
+      const prev = appsListCache.find((x) => x.id === editId);
+      if (prev && prev.security) body.security = prev.security;
+    }
     const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
     alert(await r.text());
+    if (r.ok) {
+      document.getElementById('app-edit-id').value = '';
+      document.getElementById('apps-edit-hint').classList.add('hidden');
+    }
     loadApps();
   };
 
