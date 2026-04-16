@@ -99,3 +99,15 @@ sudo systemctl enable --now fail2ban
 ## SELinux denials
 
 - `ausearch -m avc -ts recent` and adjust fcontext or booleans as documented in SECURITY.md.
+
+## Collecting diagnostics (support)
+
+1. **From the UI (fast):** Dashboard → **Download diagnostics** — confirms that system info and logs are collected with **masked secrets**, then downloads a `.tar.gz` built by the API (user `easy-waf`). Some host probes may be incomplete without root; see [DIAGNOSTICS.md](DIAGNOSTICS.md).
+2. **From the API:** `POST /api/v1/diagnostics/bundle` (authenticated session) — same archive as the button; response is `application/gzip` with `Content-Disposition: attachment`.
+3. **Full bundle on the appliance (recommended for support):** run as **root**:
+   - After install: `sudo /usr/sbin/easy-waf-diagnostics`
+   - From repo: `sudo bash scripts/diagnostics.sh`
+   - Output by default: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz`
+
+Details, layout, and what is **not** included: [DIAGNOSTICS.md](DIAGNOSTICS.md).
+

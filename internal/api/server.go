@@ -117,6 +117,8 @@ func (s *Server) Router() chi.Router {
 				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 
 				r.Get("/audit", s.listAudit)
+
+				r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 			})
 		})
 	})

@@ -367,6 +367,10 @@ install_binaries() {
     log "Installed $ADMIN_BIN (emergency: management-config, reset-control-panel-access, reset-appliance, factory-reset)"
     found=1
   fi
+  if [[ -f "${REPO_ROOT}/scripts/diagnostics.sh" ]]; then
+    install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" "/usr/sbin/easy-waf-diagnostics"
+    log "Installed /usr/sbin/easy-waf-diagnostics (support bundle — run as root, see docs/DIAGNOSTICS.md)"
+  fi
   if [[ "$found" -eq 0 ]]; then
     cat >&2 <<EOF
 
