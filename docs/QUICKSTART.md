@@ -2,7 +2,7 @@
 
 **Target:** AlmaLinux 10 / RHEL-family, or **Debian / Ubuntu** (server install), **root** on the appliance.
 
-**Версия поставки:** см. корневой [`VERSION`](../VERSION) в репозитории (MVP **1.0.0-rc1**); `scripts/install.sh` использует его для попытки скачать готовые бинарники с GitHub Releases.
+**Версия поставки:** см. корневой [`VERSION`](../VERSION) в репозитории (**1.0.0**); `scripts/install.sh` использует его для попытки скачать готовые бинарники с GitHub Releases (см. [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
 ## One-command install
 

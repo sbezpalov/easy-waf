@@ -1,7 +1,7 @@
 .PHONY: build test lint check-linux verify verify. shellcheck-sh test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
 
 DIST=dist
-# Keep in sync with .github/workflows/ci.yml (install.sh … vX.Y.Z).
+# Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
 GOLANGCI_LINT_VER ?= v1.62.2
 
 install-help:

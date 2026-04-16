@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Документ соответствует ветке релиза **1.0.0-rc1** (см. [`VERSION`](../VERSION)).
+Документ соответствует ветке релиза **1.0.0** (см. [`VERSION`](../VERSION)).
 
 ## `systemctl`: нет юнита `crowdsec.service` / `crowdsec-haproxy-spoa-bouncer.service`
 

@@ -1,12 +1,13 @@
 # Easy Home WAF
 
 [![CI](https://github.com/easy-waf/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/easy-waf/easy-waf/actions/workflows/ci.yml)
+[![Release](https://github.com/easy-waf/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/easy-waf/easy-waf/actions/workflows/release.yml)
 
 Self-hosted **secure reverse proxy / home WAF appliance** for publishing local services (Home Assistant, Frigate, Nextcloud, …) through a single HAProxy edge with ACME, CrowdSec (SPOE), Fail2Ban, and a local management UI.
 
 **Target platform:** AlmaLinux 10 or **Debian/Ubuntu** (22.04+ / 12+), HAProxy 3.x (distro build), systemd, firewalld; **SELinux Enforcing** on RHEL-family images.
 
-**Release / installer:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub release и документов; для MVP зафиксировано **1.0.0-rc1** (см. [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) §9).
+**Release / installer:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub release и документов; релизы собирает workflow [`release.yml`](.github/workflows/release.yml) (тег `v*`, см. [`CHANGELOG.md`](CHANGELOG.md)).
 
 ## Documentation
 

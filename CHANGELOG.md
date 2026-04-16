@@ -1,0 +1,35 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-04-16
+
+### Added
+
+- Per-application security layer toggles with mode presets (full/balanced/trusted-lan/reverse-proxy-only/custom)
+- CI pipeline: AlmaLinux 10 + Ubuntu 24.04, golangci-lint, golden tests, haproxy -c integration
+- HAProxy stats socket metrics (Dashboard, GET /api/v1/stats/*)
+- GeoIP batch enforcement (ipinfo.io provider + LRU cache)
+- IP Allowlist (whitelist) + IP Blacklist with external feeds
+- Basic WAF rules (SQLi/XSS/traversal) per-app toggle
+- UA bot blocking (empty UA + pattern map)
+- CrowdSec non-interactive install (EASY_WAF_INSTALL_CROWDSEC + AUTO_START)
+- Audit log with UI (filter, pagination, auto-refresh)
+- Certificate dashboard (summary, expiring/expired counts)
+- Backup/restore with E2E test
+- Rollback via UI (revision list + one-click rollback)
+- Debian/Ubuntu support (apt) alongside AlmaLinux (dnf)
+- Management TLS (self-signed bootstrap + hot-reload replacement)
+- Dual listener HTTP 8000 + HTTPS 8443
+
+### Fixed
+
+- CRLF auto-cleanup in install.sh (Windows → Linux)
+- systemd: no `${VAR:-default}` in ExecStart
+- pg_hba.conf scram-sha-256 before ident on AlmaLinux
+- db-password.sh regex group escape

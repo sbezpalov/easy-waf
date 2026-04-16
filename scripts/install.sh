@@ -290,6 +290,13 @@ acquire_dist_binaries() {
     log "Trying GitHub release download: $url"
     if curl -fsSL -o /tmp/easy-waf-rel.tgz "$url" 2>/dev/null; then
       tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" 2>/dev/null || tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" --strip-components=1 2>/dev/null || true
+      # GitHub release tarball layout: dist/<binaries> (see .github/workflows/release.yml)
+      if [[ -f "${DIST_DIR}/dist/easy-waf-api" ]]; then
+        for b in easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
+          [[ -f "${DIST_DIR}/dist/${b}" ]] && mv -f "${DIST_DIR}/dist/${b}" "${DIST_DIR}/"
+        done
+        rmdir "${DIST_DIR}/dist" 2>/dev/null || true
+      fi
       rm -f /tmp/easy-waf-rel.tgz
       if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
         log "Downloaded release v${ver} → $DIST_DIR"
@@ -375,8 +382,8 @@ Then install (binaries are in dist/):
 
 Plug-and-play (default): re-run install — it installs golang via dnf/apt (or go.dev tarball on older Debian) and builds.
 
-Release tarball: extract so dist/ contains easy-waf-api, then:
-  sudo EASY_WAF_DIST_DIR=/path/to/extract/dist bash $REPO_ROOT/scripts/install.sh
+GitHub Release tarball (see .github/workflows/release.yml): nested dist/<binaries> is flattened into repo/dist/ automatically. Manual path: EASY_WAF_DIST_DIR must contain easy-waf-api at top level:
+  sudo EASY_WAF_DIST_DIR=/path/to/dist bash $REPO_ROOT/scripts/install.sh
 
 EOF
     exit 1

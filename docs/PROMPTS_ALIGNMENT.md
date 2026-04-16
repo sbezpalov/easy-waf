@@ -1,7 +1,7 @@
 # Соответствие `prompts.md` (Easy Home WAF)
 
 **Последнее обновление:** 2026-04-16  
-**Текущий VERSION:** 1.1.0-rc1 (см. корневой файл `VERSION`)  
+**Текущий VERSION:** 1.0.0 (см. корневой файл `VERSION`)  
 **Сводка по строкам таблиц §2–§3:** Done — **17**, Partial — **3**, Missing — **1**, N/A — **0**
 
 Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
@@ -111,7 +111,7 @@
 
 ## Roadmap (после MVP)
 
-1. **Release pipeline:** GitHub Actions → артефакт (tarball/install bundle) для выкладки без ручной сборки на пилоте.
+1. **Release pipeline (базово сделано):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push тега `v*`, `make build`, tarball + `SHA256SUMS`, GitHub Release с текстом из `CHANGELOG.md`. Далее: подпись артефактов, pre-release/nightly.
 2. **MaxMind MMDB provider:** полноценный путь к `.mmdb` и выбор провайдера (сейчас заглушка `maxmind.go`).
 3. **CrowdSec в UI:** unblock / ban / delete decision через LAPI (см. также §7.5).
 4. **Prometheus:** экспорт метрик на `/metrics` (рядом с существующим API stats).

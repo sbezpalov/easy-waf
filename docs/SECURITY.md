@@ -1,6 +1,6 @@
 # Security Guide
 
-Актуально для релиза из корневого [`VERSION`](../VERSION) (**1.0.0-rc1**, MVP). Критерии приёмки по SELinux / ACL: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
+Актуально для релиза из корневого [`VERSION`](../VERSION) (**1.0.0**). Критерии приёмки по SELinux / ACL: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
 
 ## Principles
 

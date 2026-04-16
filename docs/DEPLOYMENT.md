@@ -1,6 +1,6 @@
 # Deployment: AlmaLinux / Debian-family, OVF/OVA, distribution
 
-**Версия:** корневой [`VERSION`](../VERSION) (**1.0.0-rc1** для текущего MVP); инсталлятор подставляет его при загрузке релизных артефактов.
+**Версия:** корневой [`VERSION`](../VERSION) (**1.0.0** для текущего релиза); инсталлятор подставляет его при загрузке релизных артефактов.
 
 ## Development (Windows) vs deployment (Linux)
 
@@ -83,19 +83,20 @@ See [packaging/ovf/README.md](../packaging/ovf/README.md) for a minimal checklis
 
 ## Release artifacts (for `download-release.sh`)
 
-Publish a tarball layout:
+Автоматическая сборка и публикация GitHub Release: workflow **[`.github/workflows/release.yml`](../.github/workflows/release.yml)** (триггер — push тега `v*`: `make build`, tarball, `SHA256SUMS`, текст релиза из секции [`CHANGELOG.md`](../CHANGELOG.md) для этой версии).
+
+Архив `easy-waf_<version>_linux_amd64.tar.gz` содержит:
 
 ```
-easy-waf_<version>_linux_amd64.tar.gz
-  easy-waf-api
-  easy-waf-acmed
-  easy-wafd
-  easy-waf-admin
-  packaging/systemd/*.service
-  configs/defaults/easy-waf.env.example
+dist/easy-waf-api
+dist/easy-waf-acmed
+dist/easy-wafd
+dist/easy-waf-admin
+packaging/systemd/*.service
+configs/defaults/easy-waf.env.example
 ```
 
-CI should run `make build` and pack the above so `scripts/install.sh` can run from extracted tree.
+При распаковке в `repo/dist/` скрипты **`scripts/install.sh`** и **`scripts/download-release.sh`** поднимают бинарники из вложенной папки `dist/` в корень целевого `dist/`, чтобы пути совпадали с `make build`.
 
 ## Upgrades
 

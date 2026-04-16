@@ -1,0 +1,67 @@
+name: Release
+
+# Push tag v* → сборка linux/amd64, tarball + SHA256SUMS, GitHub Release с заметками из CHANGELOG.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GOFLAGS: -buildvcs=false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: make build
+        run: make build
+
+      - name: Create tarball and SHA256SUMS
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="$(mktemp -d)"
+          trap 'rm -rf "$STAGE"' EXIT
+          mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults"
+          cp -a dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin "${STAGE}/dist/"
+          cp -a packaging/systemd/*.service "${STAGE}/packaging/systemd/"
+          cp -a configs/defaults/easy-waf.env.example "${STAGE}/configs/defaults/"
+          NAME="easy-waf_${VERSION}_linux_amd64.tar.gz"
+          tar -czf "${NAME}" -C "${STAGE}" .
+          sha256sum "${NAME}" > SHA256SUMS
+
+      - name: Release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" {flag=1; next}
+            /^## \[/ && flag {exit}
+            flag
+          ' CHANGELOG.md > release_notes.md
+          if ! [[ -s release_notes.md ]]; then
+            echo "CHANGELOG.md: no section ## [${VERSION}]" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            easy-waf_*_linux_amd64.tar.gz
+            SHA256SUMS
+          body_path: release_notes.md
+          fail_on_unmatched_files: true

@@ -1,6 +1,6 @@
 # 🚀 Project Prompt — Easy Home WAF (HAProxy + CrowdSec)
 
-**Состояние реализации относительно этого файла:** [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) — таблица **AC-01 … AC-10** (ТЗ v1.1) в §9; релизная метка в корневом **`VERSION`** (текущий релиз: **1.1.0-rc1**).
+**Состояние реализации относительно этого файла:** [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) — таблица **AC-01 … AC-10** (ТЗ v1.1) в §9; релизная метка в корневом **`VERSION`** (текущий релиз: **1.0.0**).
 
 ## 1. Context
 
