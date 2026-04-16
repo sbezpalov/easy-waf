@@ -12,17 +12,20 @@ func TestRenderProfileWiring(t *testing.T) {
 		Settings: config.DefaultSettings("/tmp/state"),
 		Applications: []config.Application{
 			{
-				ID:          "a1",
-				Name:        "Test",
-				PublicHost:  "app.example.com",
-				BackendHost: "10.0.0.1",
-				BackendPort: 8080,
-				Profile:     "balanced",
-				Enabled:     true,
+				ID:            "a1",
+				Name:          "Test",
+				PublicHost:    "app.example.com",
+				BackendHost:   "10.0.0.1",
+				BackendPort:   8080,
+				Profile:       "balanced",
+				CertificateID: "c1",
+				Enabled:       true,
 			},
 		},
-		Certificates: map[string]config.Certificate{},
-		CRTListPath:  "/tmp/state/haproxy/crt-list.txt",
+		Certificates: map[string]config.Certificate{
+			"c1": {ID: "c1", BundlePath: "/tmp/state/certs/app.pem"},
+		},
+		CRTListPath: "/tmp/state/haproxy/crt-list.txt",
 	}
 	r, err := Render(in)
 	if err != nil {

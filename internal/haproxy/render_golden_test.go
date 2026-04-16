@@ -27,6 +27,9 @@ var goldenScenarioNames = []string{
 	"app-reverse-proxy-only",
 	"app-custom-partial",
 	"mixed-apps",
+	"http-only-app",
+	"mixed-listen-modes",
+	"http-only-reverse-proxy",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -422,6 +425,58 @@ func goldenFixture(name string) RenderInput {
 				"c2": {ID: "c2", BundlePath: certB},
 			},
 			CRTListPath: "testdata/golden/mixed-apps.crt-list.txt",
+		}
+	case "http-only-app":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "ho1", Name: "Plain", PublicHost: "plain.example.local", BackendHost: "192.168.1.50", BackendPort: 80,
+					Profile: "balanced", CertificateID: "", ListenMode: "http_only", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{},
+			CRTListPath:  "testdata/golden/http-only-app.crt-list.txt",
+		}
+	case "mixed-listen-modes":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "x1", Name: "HTTPS", PublicHost: "app-https.test", BackendHost: "10.0.2.1", BackendPort: 443, BackendHTTPS: true,
+					Profile: "balanced", CertificateID: "cA", ListenMode: "https_only", Enabled: true,
+				},
+				{
+					ID: "x2", Name: "HTTP", PublicHost: "app-http.test", BackendHost: "10.0.2.2", BackendPort: 80,
+					Profile: "balanced", CertificateID: "", ListenMode: "http_only", Enabled: true,
+				},
+				{
+					ID: "x3", Name: "Both", PublicHost: "app-both.test", BackendHost: "10.0.2.3", BackendPort: 8080,
+					Profile: "balanced", CertificateID: "cB", ListenMode: "http_and_https", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"cA": {ID: "cA", BundlePath: certA},
+				"cB": {ID: "cB", BundlePath: certB},
+			},
+			CRTListPath: "testdata/golden/mixed-listen-modes.crt-list.txt",
+		}
+	case "http-only-reverse-proxy":
+		var sec config.ApplicationSecurity
+		profiles.ApplyMode(&sec, profiles.ModeReverseProxyOnly)
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "ior1", Name: "IoT", PublicHost: "iot.lan", BackendHost: "192.168.55.1", BackendPort: 80,
+					Profile: "balanced", CertificateID: "", ListenMode: "http_only", Enabled: true, Security: sec,
+				},
+			},
+			Certificates: map[string]config.Certificate{},
+			CRTListPath:  "testdata/golden/http-only-reverse-proxy.crt-list.txt",
 		}
 	default:
 		return RenderInput{}

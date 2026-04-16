@@ -90,8 +90,10 @@ type Application struct {
 	RestrictedPaths []RestrictedPath    `json:"restricted_paths,omitempty"`
 	Profile         string              `json:"profile"`
 	CertificateID   string              `json:"certificate_id,omitempty"`
-	Enabled         bool                `json:"enabled"`
-	Security        ApplicationSecurity `json:"security"`
+	// ListenMode controls publishing on fe_http / fe_https: https_only (default), http_only, http_and_https, redirect_to_https.
+	ListenMode string              `json:"listen_mode,omitempty"`
+	Enabled      bool               `json:"enabled"`
+	Security     ApplicationSecurity `json:"security"`
 	CreatedAt       time.Time           `json:"created_at"`
 	UpdatedAt       time.Time           `json:"updated_at"`
 }

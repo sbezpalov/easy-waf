@@ -49,6 +49,9 @@ var migration010SQL string
 //go:embed migrations/011_prometheus.sql
 var migration011SQL string
 
+//go:embed migrations/012_listen_mode.sql
+var migration012SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -74,7 +77,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL, migration011SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL, migration011SQL, migration012SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {
@@ -113,7 +116,7 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 	var hp, pp sql.NullString
 	var rpJSON, secJSON []byte
 	if err := scan(&a.ID, &a.Name, &a.PublicHost, &a.BackendHost, &a.BackendPort,
-		&a.BackendHTTPS, &a.WebSocket, &hp, &pp, &rpJSON, &a.Profile, &certID, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.BackendHTTPS, &a.WebSocket, &hp, &pp, &rpJSON, &a.Profile, &certID, &a.ListenMode, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return a, err
 	}
 	if certID.Valid {
@@ -132,6 +135,7 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 		_ = json.Unmarshal(secJSON, &a.Security)
 	}
 	config.NormalizeApplicationSecurity(&a.Security)
+	config.NormalizeListenMode(&a)
 	return a, nil
 }
 
@@ -139,7 +143,7 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 func (s *Store) ListApplications(ctx context.Context) ([]config.Application, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, public_host, backend_host, backend_port, backend_https, websocket,
-		       health_path, path_prefix, restricted_paths, profile, certificate_id, enabled, security, created_at, updated_at
+		       health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications ORDER BY public_host`)
 	if err != nil {
 		return nil, err
@@ -160,7 +164,7 @@ func (s *Store) ListApplications(ctx context.Context) ([]config.Application, err
 func (s *Store) GetApplication(ctx context.Context, id string) (config.Application, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, public_host, backend_host, backend_port, backend_https, websocket,
-		       health_path, path_prefix, restricted_paths, profile, certificate_id, enabled, security, created_at, updated_at
+		       health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications WHERE id = $1`, id)
 	a, err := scanApplicationFromRow(row.Scan)
 	if err != nil {
@@ -192,6 +196,7 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 		return err
 	}
 	config.NormalizeApplicationSecurity(&a.Security)
+	config.NormalizeListenMode(a)
 	secJSON, err := json.Marshal(a.Security)
 	if err != nil {
 		return err
@@ -199,8 +204,8 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO applications (
 			id, name, public_host, backend_host, backend_port, backend_https, websocket,
-			health_path, path_prefix, restricted_paths, profile, certificate_id, enabled, security, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			public_host = EXCLUDED.public_host,
@@ -213,11 +218,12 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 			restricted_paths = EXCLUDED.restricted_paths,
 			profile = EXCLUDED.profile,
 			certificate_id = EXCLUDED.certificate_id,
+			listen_mode = EXCLUDED.listen_mode,
 			enabled = EXCLUDED.enabled,
 			security = EXCLUDED.security,
 			updated_at = EXCLUDED.updated_at
 	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS, a.WebSocket,
-		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, a.Profile, nullStrPtr(a.CertificateID), a.Enabled, secJSON, a.CreatedAt, a.UpdatedAt)
+		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, a.Profile, nullStrPtr(a.CertificateID), a.ListenMode, a.Enabled, secJSON, a.CreatedAt, a.UpdatedAt)
 	return err
 }
 

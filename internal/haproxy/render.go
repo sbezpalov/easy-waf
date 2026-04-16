@@ -29,7 +29,11 @@ type AppRender struct {
 type RenderInput struct {
 	Settings                 config.GlobalSettings
 	Applications             []config.Application
-	Apps                     []AppRender                   `json:"-"` // filled by Render(); enabled apps + resolved profiles
+	BackendApps              []AppRender                   `json:"-"` // every enabled app (backend definitions)
+	HTTPSApps                []AppRender                   `json:"-"` // fe_https: TLS edge (https_only, redirect_to_https, http_and_https)
+	HTTPApps                 []AppRender                   `json:"-"` // fe_http: plain routing (http_only, http_and_https)
+	RedirectApps             []AppRender                   `json:"-"` // fe_http: per-host redirect to HTTPS
+	HasHTTPSFrontend         bool                          `json:"-"` // false when no :443 TLS vhosts (crt-list may still list unused PEMs)
 	Certificates             map[string]config.Certificate // id -> cert
 	CRTListPath              string                        // absolute path to generated crt-list file on disk
 	IPBlacklistMapPath       string
@@ -47,6 +51,8 @@ type Rendered struct {
 	HAProxyConfig string
 	CRTList       string
 	SHA256        string
+	// RequiresTLS is false when no fe_https listener is generated (HTTP-only edge); Apply may allow an empty crt-list.
+	RequiresTLS bool
 }
 
 // Render generates HAProxy configuration and crt-list body.
@@ -79,6 +85,7 @@ func Render(in RenderInput) (Rendered, error) {
 		if !app.Enabled {
 			continue
 		}
+		config.NormalizeListenMode(&app)
 		config.NormalizeApplicationSecurity(&app.Security)
 		p, err := profiles.Resolve(app.Profile)
 		if err != nil {
@@ -105,7 +112,29 @@ func Render(in RenderInput) (Rendered, error) {
 			RateLimitBurst:    burst,
 		})
 	}
-	in.Apps = apps
+	var httpsApps, httpApps, redirectApps []AppRender
+	for _, a := range apps {
+		switch a.Application.ListenMode {
+		case "http_only":
+			httpApps = append(httpApps, a)
+		case "http_and_https":
+			httpApps = append(httpApps, a)
+			httpsApps = append(httpsApps, a)
+		default: // https_only, redirect_to_https
+			httpsApps = append(httpsApps, a)
+			redirectApps = append(redirectApps, a)
+		}
+	}
+	in.BackendApps = apps
+	in.HTTPSApps = httpsApps
+	in.HTTPApps = httpApps
+	in.RedirectApps = redirectApps
+
+	crtLines := buildCRTList(in)
+	in.HasHTTPSFrontend = len(httpsApps) > 0 && len(crtLines) > 0
+	if !in.HasHTTPSFrontend {
+		in.UseCrowdSecFilter = false
+	}
 
 	tmpl, err := template.New("haproxy").Funcs(template.FuncMap{
 		"backendName": sanitizeBackendName,
@@ -118,7 +147,6 @@ func Render(in RenderInput) (Rendered, error) {
 		return Rendered{}, err
 	}
 
-	crtLines := buildCRTList(in)
 	var crtBuf strings.Builder
 	for _, line := range crtLines {
 		crtBuf.WriteString(line)
@@ -140,6 +168,7 @@ func Render(in RenderInput) (Rendered, error) {
 		HAProxyConfig: cfg,
 		CRTList:       crtBuf.String(),
 		SHA256:        hex.EncodeToString(sum[:]),
+		RequiresTLS:   in.HasHTTPSFrontend,
 	}, nil
 }
 
@@ -150,6 +179,7 @@ func buildCRTList(in RenderInput) []string {
 		if !app.Enabled || app.CertificateID == "" {
 			continue
 		}
+		config.NormalizeListenMode(&app)
 		c, ok := in.Certificates[app.CertificateID]
 		if !ok {
 			continue
@@ -255,19 +285,31 @@ defaults
 	timeout server  50s
 	timeout tunnel  3600s
 
-# HTTP — ACME HTTP-01 + HTTPS redirect
+# HTTP — ACME HTTP-01, per-app plain HTTP, per-host HTTPS redirects, default redirect
 frontend fe_http
 	bind *:80
 	mode http
 	acl acme path_beg /.well-known/acme-challenge/
 	use_backend bk_acme if acme
-	http-request redirect scheme https code 301 unless acme
+{{range $a := .HTTPApps}}
+	# HTTP app: {{$a.Application.Name}} ({{$a.Application.PublicHost}})
+	acl http_app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
+	use_backend {{backendName $a.Application.PublicHost}} if http_app_{{$a.ACLTag}}_host
+{{end}}
+{{range $a := .RedirectApps}}
+	acl redir_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
+{{end}}
+{{if .RedirectApps}}
+	http-request redirect scheme https code 301 if {{range $i, $a := .RedirectApps}}{{if $i}} || {{end}}redir_{{$a.ACLTag}}_host{{end}}
+{{end}}
+	http-request redirect scheme https code 301
 
 # ACME challenges served by easy-wafd local listener (see scripts / docs)
 backend bk_acme
 	mode http
 	server acme 127.0.0.1:8089 check
 
+{{if .HasHTTPSFrontend}}
 # HTTPS edge — one bind, many PEMs in crt-list → SNI picks cert; Host header routes to backends (single WAN IP).
 frontend fe_https
 	bind *:443 ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
@@ -275,7 +317,7 @@ frontend fe_https
 	option forwardfor
 	http-request set-header X-Forwarded-Proto https
 	http-response set-header Strict-Transport-Security "max-age=15552000; includeSubDomains" if { ssl_fc }
-{{if .UseCrowdSecFilter}}
+{{if and $.UseCrowdSecFilter $.HasHTTPSFrontend}}
 	# CrowdSec SPOE — engine id must match spoe-agent section name in {{.Settings.SPOEConfigPath}}
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
 {{end}}
@@ -285,7 +327,7 @@ frontend fe_https
 	http-request deny deny_status 403 if p_git || p_env
 	acl bad_method method TRACE CONNECT
 	http-request deny deny_status 405 if bad_method
-{{range $i, $a := .Apps}}
+{{range $i, $a := .HTTPSApps}}
 	# === Application: {{$a.Application.Name}} ({{$a.Application.PublicHost}}) ===
 	acl app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
 {{- if and $.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
@@ -348,7 +390,7 @@ frontend fe_https
 	http-request send-spoe-group {{$.Settings.CrowdSecEngineName}} crowdsec-req if app_{{$a.ACLTag}}_host
 {{- end}}
 {{end}}
-{{range $a := .Apps}}
+{{range $a := .HTTPSApps}}
 	use_backend {{backendName $a.Application.PublicHost}} if app_{{$a.ACLTag}}_host
 {{end}}
 	default_backend bk_not_found
@@ -356,8 +398,9 @@ frontend fe_https
 backend bk_not_found
 	mode http
 	http-request deny deny_status 404
+{{end}}
 
-{{range $i, $a := .Apps}}
+{{range $i, $a := .BackendApps}}
 backend {{backendName $a.Application.PublicHost}}
 	mode http
 	timeout connect {{haDur $a.Profile.ConnectTimeout}}

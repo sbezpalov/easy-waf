@@ -134,6 +134,8 @@ Homelab setups usually expose **one WAN IP** to many **DNS names** (Home Assista
 
 Operational note: if a hostname is routed to an app but **no matching PEM** is in the crt-list (missing bundle or wrong `certificate_id`), the client may see the **wrong** default cert or a browser warning — keep each public hostname covered by a cert whose SAN includes that name.
 
+**HTTP-only publishing:** each application has `listen_mode` (`https_only` by default). With **`http_only`**, the hostname is matched on **`fe_http` (:80)** and routed to the backend **without** a `fe_https` stanza for that app — useful for LAN-only or TLS-incapable clients. **`http_and_https`** serves the same host on both :80 (plain) and :443 (TLS) without forcing an HTTP→HTTPS redirect. When **no** application needs TLS, the engine may omit the :443 listener and ship an **empty crt-list** (ACME challenges still work on :80). See `internal/haproxy/render.go` and `docs/APPLICATION_SECURITY.md`.
+
 ## Certificate lifecycle
 
 1. User creates a **certificate** record (ACME HTTP-01 / DNS-01, or manual paths) and links it from each **application** via `certificate_id`.

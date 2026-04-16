@@ -270,7 +270,7 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(r.CRTList) == "" {
+	if strings.TrimSpace(r.CRTList) == "" && r.RequiresTLS {
 		return fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
 	}
 	_, cfgPath, crtListPath := haproxy.Paths(e.StateDir)

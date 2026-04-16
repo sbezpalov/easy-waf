@@ -1,6 +1,23 @@
 # Per-application security
 
-Each published application carries a `security` object (see `internal/config/types.go`) with a **mode preset** (`full`, `balanced`, `trusted-lan`, `reverse-proxy-only`, `custom`) and **per-layer toggles**. HAProxy rules are emitted **per application** in `fe_https` in a fixed order (see below).
+Each published application carries a `security` object (see `internal/config/types.go`) with a **mode preset** (`full`, `balanced`, `trusted-lan`, `reverse-proxy-only`, `custom`) and **per-layer toggles**. It also has **`listen_mode`** (see below) for **where** traffic is accepted (`fe_http` / `fe_https`). HAProxy ACL stacks for protection layers are emitted **per application** on `fe_https` when the app is TLS-published; plain HTTP apps use a reduced edge on `:80` today (rate limit and restricted paths in backend — see `internal/haproxy/render.go`).
+
+## Listen mode (protocol)
+
+`listen_mode` is **orthogonal** to `security.mode`: one controls **protocol / publishing**, the other **which protections are on** for that hostname.
+
+| `listen_mode` | `fe_http` (:80) | `fe_https` (:443) | Certificate |
+|---------------|-----------------|-------------------|-------------|
+| `https_only` (default) | Per-host redirect to HTTPS | Served (TLS) | Required |
+| `redirect_to_https` | Same as `https_only` (explicit naming) | Served (TLS) | Required |
+| `http_only` | Plain HTTP to backend | Not published | Optional (unused if set) |
+| `http_and_https` | Plain HTTP to backend | Served (TLS) | Required |
+
+Notes:
+
+- **`http_only`** means traffic to that host on port 80 is **not encrypted** at the edge — suitable for **LAN**, **IoT**, or **debugging**, not for untrusted networks.
+- **`http_only` + `full`** (or `balanced`) is valid: you can still get **rate limiting**, **WAF**, **IPBL**, etc. where those layers are wired for that path (see template; HTTP edge may lag HTTPS feature parity).
+- For **internet-facing** services, prefer **`https_only`** (or `redirect_to_https`).
 
 ## Rule order on `fe_https` (per app)
 

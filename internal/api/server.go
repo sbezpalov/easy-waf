@@ -183,11 +183,42 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	config.NormalizeListenMode(&a)
 	config.NormalizeApplicationSecurity(&a.Security)
 	a.Security.Mode = string(profiles.DetectMode(a.Security))
+	if config.ListenModeRequiresCertificate(a.ListenMode) && strings.TrimSpace(a.CertificateID) == "" {
+		http.Error(w, "certificate_id is required for listen_mode "+a.ListenMode, http.StatusBadRequest)
+		return
+	}
+
+	var old config.Application
+	haveOld := false
+	if strings.TrimSpace(a.ID) != "" {
+		prev, err := s.Eng.Store.GetApplication(r.Context(), a.ID)
+		if err == nil {
+			old = prev
+			haveOld = true
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if haveOld && old.ListenMode != a.ListenMode {
+		detail := map[string]any{
+			"app_id":   a.ID,
+			"app_name": a.Name,
+			"from":     old.ListenMode,
+			"to":       a.ListenMode,
+		}
+		if a.ListenMode == "http_only" || old.ListenMode == "http_only" {
+			detail["severity"] = "warn"
+		}
+		_ = s.Eng.Store.AppendAudit(r.Context(), "app_listen_mode_changed", detail)
 	}
 	writeJSON(w, http.StatusOK, a)
 }

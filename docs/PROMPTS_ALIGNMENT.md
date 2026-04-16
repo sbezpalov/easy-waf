@@ -66,7 +66,7 @@
 
 ## §7 Features
 
-### 7.1 App publishing — **Done** (CRUD API + UI, профили, restricted paths, health path в модели)
+### 7.1 App publishing — **Done** (CRUD API + UI, профили, restricted paths, health path в модели; **HTTP publishing**: per-app `listen_mode`, `fe_http` маршрутизация / per-host redirect, миграция `012_listen_mode.sql`, golden `http-only-app` / `mixed-listen-modes` / `http-only-reverse-proxy`, audit `app_listen_mode_changed`)
 
 ### 7.1a Per-application security — **Done** (миграция `009_application_security.sql`, `Application.security`, пресеты `internal/profiles/modes.go`, HAProxy per-host ACL порядок, per-app GeoIP maps `geoip_app_*.map`, API `GET/PUT/PATCH /applications/{id}/security`, `POST …/security/mode`, `GET /security/modes`, audit `app_security_mode_changed`, UI карточки + Dashboard overview, golden `app-*` / `mixed-apps`, `docs/APPLICATION_SECURITY.md`)
 

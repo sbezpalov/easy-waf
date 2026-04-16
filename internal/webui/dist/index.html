@@ -120,6 +120,8 @@
     .app-card-sub { font-size: 0.82rem; color: var(--muted); margin: 0.35rem 0 0.5rem; }
     .app-badges { font-size: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0; }
     .app-badge { background: #21262d; padding: 0.12rem 0.45rem; border-radius: 4px; color: #e6edf3; }
+    .app-badge-ok { background: #1a3326; color: #56d364; }
+    .app-badge-warn { background: #3d2a1a; color: #e3b341; }
     .app-card-warn { font-size: 0.78rem; color: #f85149; margin-top: 0.35rem; font-weight: 600; }
     .dash-sec-warn { background: #2d2710; border: 1px solid #9e6a03; border-radius: 8px; padding: 0.75rem 1rem; margin-top: 1rem; font-size: 0.9rem; }
   </style>
@@ -188,8 +190,10 @@
         <div id="dash-sec-overview-wrap" class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Application security overview</h3>
           <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">—</p>
+          <p id="dash-http-line" class="dash-note" style="color:#e6edf3;margin-top:0.35rem">—</p>
         </div>
         <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
+        <div id="dash-http-warn" class="dash-sec-warn hidden"></div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Current HAProxy revision</h3>
           <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">—</p>
@@ -248,8 +252,20 @@
           <label><input id="ws" type="checkbox" checked /> WebSocket</label>
           <button id="save">Save application</button>
         </div>
+        <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>Listen mode
+            <select id="listen-mode">
+              <option value="https_only">HTTPS only (HTTP → redirect)</option>
+              <option value="http_only">HTTP only (no TLS)</option>
+              <option value="http_and_https">HTTP + HTTPS (both)</option>
+              <option value="redirect_to_https">HTTPS + redirect (explicit)</option>
+            </select>
+          </label>
+        </div>
+        <p id="listen-mode-hint" class="dash-note" style="margin-top:0.25rem;max-width:44rem">—</p>
+        <p id="listen-mode-warn" class="warn hidden" style="margin-top:0.25rem;max-width:44rem">⚠ Traffic will NOT be encrypted. Use only for LAN services or debugging.</p>
         <div class="row" style="margin-top:0.5rem">
-          <label>Certificate
+          <label id="app-cert-label">Certificate
             <select id="app-cert"><option value="">— none —</option></select>
           </label>
         </div>
@@ -609,7 +625,8 @@
       case 'apps':
         loadApps();
         loadProfileSelect();
-        loadCertOptionsForApps();
+        void loadCertOptionsForApps().then(() => syncListenModeUI());
+        syncListenModeUI();
         break;
       case 'certs':
         void (async () => {
@@ -876,6 +893,38 @@
     return 'app-card';
   }
 
+  function listenModeBadge(mode) {
+    const m = String(mode || 'https_only').toLowerCase();
+    switch (m) {
+    case 'http_only':
+      return '<span class="app-badge app-badge-warn" title="No TLS">HTTP</span>';
+    case 'http_and_https':
+      return '<span class="app-badge" title="Both protocols">HTTP+S</span>';
+    default:
+      return '<span class="app-badge app-badge-ok" title="TLS + redirect">HTTPS</span>';
+    }
+  }
+
+  function syncListenModeUI() {
+    const sel = document.getElementById('listen-mode');
+    const hint = document.getElementById('listen-mode-hint');
+    const warn = document.getElementById('listen-mode-warn');
+    if (!sel || !hint || !warn) return;
+    const mode = sel.value;
+    if (mode === 'http_only') {
+      hint.textContent = 'Certificate not needed for HTTP-only apps. Plain HTTP on port 80 only.';
+      warn.classList.remove('hidden');
+    } else if (mode === 'http_and_https') {
+      hint.textContent = 'App accessible on both HTTP (:80) and HTTPS (:443). No automatic redirect. Certificate required.';
+      warn.classList.add('hidden');
+    } else {
+      hint.textContent = (mode === 'redirect_to_https')
+        ? 'Same as HTTPS only: certificate required; HTTP requests for this host redirect to HTTPS.'
+        : 'Recommended for public services. Certificate required; HTTP requests redirect to HTTPS automatically.';
+      warn.classList.add('hidden');
+    }
+  }
+
   function appSecurityBadges(sec) {
     if (!sec) return '<span class="app-badge">—</span>';
     const out = [];
@@ -919,6 +968,13 @@
     document.getElementById('behttps').checked = !!a.backend_https;
     document.getElementById('ws').checked = !!a.websocket;
     document.getElementById('profile').value = a.profile || 'balanced';
+    const lmSel = document.getElementById('listen-mode');
+    if (lmSel) {
+      const lm = (a.listen_mode || 'https_only').toLowerCase();
+      const allowed = new Set(['https_only', 'http_only', 'http_and_https', 'redirect_to_https']);
+      lmSel.value = allowed.has(lm) ? lm : 'https_only';
+    }
+    syncListenModeUI();
     document.getElementById('app-cert').value = a.certificate_id || '';
     clearRestrictedPathRows();
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
@@ -937,6 +993,9 @@
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
     document.getElementById('app-cert').value = '';
+    const nlm = document.getElementById('listen-mode');
+    if (nlm) nlm.value = 'https_only';
+    syncListenModeUI();
     initRestrictedPathRows();
   };
 
@@ -961,12 +1020,13 @@
       const sec = a.security || {};
       const mode = sec.mode || 'balanced';
       const ws = a.websocket ? ' <span class="app-badge">WS</span>' : '';
+      const lmb = ' ' + listenModeBadge(a.listen_mode);
       const rpoWarn = mode === 'reverse-proxy-only' ? '<div class="app-card-warn">⚠ DEBUG MODE — no WAF protections</div>' : '';
       return `<div class="${appModeCardClass(mode)}">
   <div class="app-card-head">
     <div>
       <p class="app-card-title">${esc(a.name)}</p>
-      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${ws}</p>
+      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${ws}${lmb}</p>
     </div>
     <div class="row" style="margin:0;gap:0.35rem">
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
@@ -1495,6 +1555,32 @@
       } else {
         dsw.classList.add('hidden');
         dsw.textContent = '';
+      }
+    }
+
+    let httpOnly = 0;
+    const httpOnlyNames = [];
+    for (const a of apps) {
+      const lm = String(a.listen_mode || 'https_only').toLowerCase();
+      if (lm === 'http_only') {
+        httpOnly++;
+        httpOnlyNames.push(a.name || a.public_host || a.id);
+      }
+    }
+    const dhLine = document.getElementById('dash-http-line');
+    if (dhLine) {
+      dhLine.textContent = httpOnly > 0
+        ? ('HTTP-only apps: ' + httpOnly + ' ⚠ — review before production')
+        : ('HTTP-only apps: ' + httpOnly);
+    }
+    const dhw = document.getElementById('dash-http-warn');
+    if (dhw) {
+      if (httpOnly > 0) {
+        dhw.classList.remove('hidden');
+        dhw.innerHTML = '⚠️ ' + httpOnly + ' application(s) publish plain HTTP (no TLS at the edge): <strong>' + esc(httpOnlyNames.join(', ')) + '</strong>. Intended for LAN, IoT, or debugging — not for untrusted networks.';
+      } else {
+        dhw.classList.add('hidden');
+        dhw.textContent = '';
       }
     }
 
@@ -2064,8 +2150,17 @@
     loadBlockedUATable();
   };
 
+  const listenModeEl = document.getElementById('listen-mode');
+  if (listenModeEl) listenModeEl.addEventListener('change', syncListenModeUI);
+
   document.getElementById('save').onclick = async () => {
     const editId = document.getElementById('app-edit-id').value.trim();
+    const listenMode = (document.getElementById('listen-mode') || {}).value || 'https_only';
+    const certTrim = document.getElementById('app-cert').value.trim();
+    if (listenMode !== 'http_only' && !certTrim) {
+      alert('Certificate is required for listen mode: ' + listenMode);
+      return;
+    }
     const body = {
       name: document.getElementById('name').value,
       public_host: document.getElementById('host').value,
@@ -2074,7 +2169,8 @@
       backend_https: document.getElementById('behttps').checked,
       websocket: document.getElementById('ws').checked,
       profile: document.getElementById('profile').value,
-      certificate_id: document.getElementById('app-cert').value.trim(),
+      listen_mode: listenMode,
+      certificate_id: certTrim,
       enabled: true,
       restricted_paths: collectRestrictedPaths()
     };
