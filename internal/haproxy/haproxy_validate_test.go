@@ -90,7 +90,9 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	}
 
 	// SPOE agent file format depends on CrowdSec/haproxy integration; CI validates the rest of the template.
-	cfgBody := strings.Replace(r.HAProxyConfig, "\n\tfilter spoe ", "\n\t# filter spoe ", 1)
+	// HAProxy 3.x rejects send-spoe-group when the filter/engine is not loaded — comment both.
+	cfgBody := strings.ReplaceAll(r.HAProxyConfig, "\n\thttp-request send-spoe-group ", "\n\t# http-request send-spoe-group ")
+	cfgBody = strings.Replace(cfgBody, "\n\tfilter spoe ", "\n\t# filter spoe ", 1)
 	if cfgBody == r.HAProxyConfig && strings.Contains(r.HAProxyConfig, "filter spoe") {
 		t.Fatal("could not comment SPOE filter line — update haproxy_validate_test.go if template indentation changed")
 	}

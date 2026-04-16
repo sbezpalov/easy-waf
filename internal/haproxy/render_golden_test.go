@@ -368,11 +368,11 @@ func goldenFixture(name string) RenderInput {
 		}
 	case "app-custom-partial":
 		sec := config.ApplicationSecurity{
-			Mode:                 "custom",
-			BasicWAFEnabled:      true,
-			CrowdSecEnabled:      true,
-			GeoIPPolicy:          "allow",
-			GeoIPCountryList:     nil,
+			Mode:             "custom",
+			BasicWAFEnabled:  true,
+			CrowdSecEnabled:  true,
+			GeoIPPolicy:      "allow",
+			GeoIPCountryList: nil,
 		}
 		config.NormalizeApplicationSecurity(&sec)
 		return RenderInput{

@@ -16,9 +16,9 @@ import (
 // EnforceMapPath returns the path for the HAProxy src map listing CIDRs to deny for GeoIP batch MVP.
 func EnforceMapPath(g config.GlobalSettings, stateDir string) string {
 	if g.GeoIPEnforceMapPath != "" {
-		return g.GeoIPEnforceMapPath
+		return filepath.ToSlash(g.GeoIPEnforceMapPath)
 	}
-	return filepath.Join(stateDir, "haproxy", "geoip_enforce.map")
+	return filepath.ToSlash(filepath.Join(stateDir, "haproxy", "geoip_enforce.map"))
 }
 
 // AppEnforceMapPath is the HAProxy src map path for one application's GeoIP policy.
@@ -36,7 +36,7 @@ func AppEnforceMapPath(stateDir, appID string) string {
 	if strings.TrimSpace(id) == "" {
 		id = "app"
 	}
-	return filepath.Join(stateDir, "haproxy", "geoip_app_"+id+".map")
+	return filepath.ToSlash(filepath.Join(stateDir, "haproxy", "geoip_app_"+id+".map"))
 }
 
 // WriteEnforceMap resolves each blacklist CIDR to a country (first address of the network),
