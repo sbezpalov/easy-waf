@@ -186,6 +186,9 @@ type GlobalSettings struct {
 	// ManagementAllowedCIDRs restricts who can reach the API and UI (not /health).
 	// Stored in DB; defaults are RFC1918 + loopback — narrow in Settings for stricter policy.
 	ManagementAllowedCIDRs []string `json:"management_allowed_cidrs,omitempty"`
+	// PrometheusEnabled exposes GET /metrics (Prometheus text format) for scrapers on the management listener.
+	// Protected by management_allowed_cidrs only (no JWT). Default off.
+	PrometheusEnabled bool `json:"prometheus_enabled"`
 }
 
 // DefaultManagementCIDRs is the bootstrap allowlist for the control plane (LAN + loopback).
@@ -225,5 +228,6 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		BlockedUserAgentsMapPath: stateDir + "/haproxy/blocked_ua.map",
 		BlockedUserAgentsEnabled: false,
 		ManagementAllowedCIDRs:   DefaultManagementCIDRs(),
+		PrometheusEnabled:        false,
 	}
 }

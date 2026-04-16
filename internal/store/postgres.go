@@ -46,6 +46,9 @@ var migration009SQL string
 //go:embed migrations/010_geoip_mmdb.sql
 var migration010SQL string
 
+//go:embed migrations/011_prometheus.sql
+var migration011SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -71,7 +74,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL} {
+	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL, migration011SQL} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {

@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"io/fs"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/api"
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/metrics"
@@ -120,7 +122,12 @@ func RunAPI() {
 		rejectUnexpandedSystemdArg("HTTPS listen (-listen-https or EASY_WAF_LISTEN_HTTPS)", httpsAddr)
 	}
 
-	srv := &api.Server{Eng: eng, JWTSecret: jwtSecret, HAProxyMetrics: metrics.NewHAProxyCollector()}
+	prom := metrics.NewPrometheusExporter()
+	srv := &api.Server{Eng: eng, JWTSecret: jwtSecret, HAProxyMetrics: metrics.NewHAProxyCollector(), Prom: prom}
+	ctxRefresh, stopPromRefresh := context.WithCancel(context.Background())
+	defer stopPromRefresh()
+	go prometheusRefreshLoop(ctxRefresh, srv, stateDir)
+
 	r := srv.Router()
 
 	sub, err := fs.Sub(webui.Assets, "dist")
@@ -183,10 +190,81 @@ func RunAPI() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
+	stopPromRefresh()
 	ctx2, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx2)
 	if httpsSrv != nil {
 		_ = httpsSrv.Shutdown(ctx2)
 	}
+}
+
+func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	refresh := func() {
+		if srv.Prom == nil || !srv.Eng.Settings.PrometheusEnabled {
+			return
+		}
+		bg := context.Background()
+		sock := metrics.StatsSocketPath(srv.Eng.Settings, stateDir)
+		if rep, _ := srv.HAProxyMetrics.Fetch(sock); rep != nil {
+			srv.Prom.UpdateFromHAProxyReport(rep)
+		}
+		if certs, err := srv.Eng.Store.ListCertificates(bg); err == nil {
+			summary := api.BuildCertificateSummaryResponse(certs, time.Now().UTC())
+			srv.Prom.UpdateFromCertSummary(summary)
+		}
+		if apps, err := srv.Eng.Store.ListApplications(bg); err == nil {
+			srv.Prom.UpdateFromAppStats(apps)
+		}
+		cs := crowdsec.Client{BaseURL: srv.Eng.Settings.CrowdSecLAPIURL, APIKey: srv.Eng.Settings.CrowdSecLAPIKey}
+		raw, err := cs.DecisionsSample(bg)
+		n := 0
+		if err == nil {
+			var arr []json.RawMessage
+			if json.Unmarshal(raw, &arr) == nil {
+				n = len(arr)
+			}
+		}
+		srv.Prom.SetCrowdSecDecisionSampleSize(n)
+		localRows, err1 := srv.Eng.Store.ListIPBLLocal(bg)
+		extSrc, err2 := srv.Eng.Store.ListIPBLExternalSources(bg)
+		if err1 == nil && err2 == nil {
+			srv.Prom.SetIPBLEntries(countEnabledIPBLLocal(localRows), countEnabledIPBLFeeds(extSrc))
+		}
+	}
+	refresh()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refresh()
+		}
+	}
+}
+
+func countEnabledIPBLLocal(rows []config.IPBLLocalEntry) int {
+	n := 0
+	for _, e := range rows {
+		if !e.Enabled {
+			continue
+		}
+		if strings.TrimSpace(e.CIDR) == "" {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+func countEnabledIPBLFeeds(srcs []config.IPBLExternalSource) int {
+	n := 0
+	for _, s := range srcs {
+		if s.Enabled {
+			n++
+		}
+	}
+	return n
 }

@@ -480,6 +480,17 @@
         <div class="row">
           <button type="button" id="btn-settings-load">Load from server</button>
         </div>
+        <div class="panel" style="max-width:42rem;margin-top:0.75rem">
+          <h3>Monitoring</h3>
+          <p class="dash-note" style="margin-top:0">When enabled, Prometheus can scrape <code>GET /metrics</code> on this management service. Access is restricted by <strong>management_allowed_cidrs</strong> only (no JWT). See <code>docs/MONITORING.md</code>.</p>
+          <label style="display:flex;align-items:center;gap:0.5rem;margin:0.5rem 0">
+            <input type="checkbox" id="prometheus-enabled" />
+            Enable Prometheus <code>/metrics</code>
+          </label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-prometheus-save">Save monitoring toggle</button>
+          </div>
+        </div>
         <p id="settings-msg" class="warn"></p>
       </div>
 
@@ -1080,6 +1091,8 @@
       : 'Machine bouncer key (cscli bouncers add -o raw)';
     document.getElementById('cs-spoe-path').value = cachedSettings.spoe_config_path || '';
     document.getElementById('cs-engine-name').value = cachedSettings.crowdsec_engine_name || 'crowdsec';
+    const promEl = document.getElementById('prometheus-enabled');
+    if (promEl) promEl.checked = !!cachedSettings.prometheus_enabled;
     if (sm) {
       sm.textContent = 'Loaded from server.';
       sm.className = 'ok';
@@ -1547,6 +1560,33 @@
   }
 
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
+
+  const btnPromSave = document.getElementById('btn-prometheus-save');
+  if (btnPromSave) {
+    btnPromSave.onclick = async () => {
+      const sm = document.getElementById('settings-msg');
+      if (sm) {
+        sm.textContent = '';
+        sm.className = 'warn';
+      }
+      if (!cachedSettings) await loadSettingsPanel();
+      if (!cachedSettings) {
+        if (sm) sm.textContent = 'Use Load from server first.';
+        return;
+      }
+      const patch = { prometheus_enabled: !!document.getElementById('prometheus-enabled').checked };
+      const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+      if (!r.ok) {
+        if (sm) sm.textContent = await r.text();
+        return;
+      }
+      cachedSettings = await r.json();
+      if (sm) {
+        sm.textContent = 'Monitoring toggle saved.';
+        sm.className = 'ok';
+      }
+    };
+  }
 
   document.getElementById('btn-acme-settings-save').onclick = async () => {
     const msg = document.getElementById('certs-settings-msg');

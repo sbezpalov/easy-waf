@@ -90,6 +90,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.BlockedUserAgentsEnabled)
 	case "management_allowed_cidrs":
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
+	case "prometheus_enabled":
+		return json.Unmarshal(raw, &out.PrometheusEnabled)
 	default:
 		return nil
 	}

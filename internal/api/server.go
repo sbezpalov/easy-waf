@@ -36,6 +36,7 @@ type Server struct {
 	MgmtTLSCertPath string
 	MgmtTLSKeyPath  string
 	HAProxyMetrics  *metrics.HAProxyCollector
+	Prom            *metrics.PrometheusExporter
 }
 
 func (s *Server) Router() chi.Router {
@@ -50,6 +51,7 @@ func (s *Server) Router() chi.Router {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	r.Handle("/metrics", s.metricsHandler())
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", s.handleLogin)
@@ -119,6 +121,20 @@ func (s *Server) Router() chi.Router {
 		})
 	})
 	return r
+}
+
+func (s *Server) metricsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.Eng.Settings.PrometheusEnabled || s.Prom == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.Prom.Handler().ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -245,8 +261,14 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if err := s.Eng.Apply(r.Context(), body.Label); err != nil {
+		if s.Prom != nil {
+			s.Prom.IncApplyError()
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if s.Prom != nil {
+		s.Prom.IncApply()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }

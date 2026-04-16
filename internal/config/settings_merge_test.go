@@ -85,3 +85,24 @@ func TestApplySettingsJSONPatch_trailingDataRejected(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestApplySettingsJSONPatch_prometheusEnabled(t *testing.T) {
+	base := DefaultSettings("/x")
+	if base.PrometheusEnabled {
+		t.Fatal("default should be off")
+	}
+	out, err := ApplySettingsJSONPatch(base, []byte(`{"prometheus_enabled":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.PrometheusEnabled {
+		t.Fatal("expected prometheus on")
+	}
+	out2, err := ApplySettingsJSONPatch(out, []byte(`{"prometheus_enabled":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out2.PrometheusEnabled {
+		t.Fatal("expected prometheus off")
+	}
+}
