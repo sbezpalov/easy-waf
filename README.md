@@ -52,7 +52,7 @@ Do **not** commit Windows `.exe` / `.dll` artifacts. After code changes run **`m
 
 **Shell scripts:** must use **Unix (LF)** line endings. Bash on Linux fails on CRLF (`$'\r': command not found`). The repo sets `scripts/**/*.sh text eol=lf` in `.gitattributes`; on Windows use `git config core.autocrlf input` or your editor’s “LF” mode.
 
-**Appliance install (Alma/RHEL or Debian/Ubuntu VM):** `sudo bash scripts/install.sh` — installs HAProxy stack, **PostgreSQL** (local DB by default), **firewalld** rules so the UI (**`http://<LAN-IP>:8443`**, bind `0.0.0.0:8443`) is reachable only from **RFC1918 + loopback**, provisions DB, starts **`easy-waf-api`** / **`easy-waf-acmed`**. External DB only: `EASY_WAF_INSTALL_POSTGRES=0`. See [QUICKSTART.md](docs/QUICKSTART.md).
+**Appliance install (Alma/RHEL or Debian/Ubuntu VM):** `sudo bash scripts/install.sh` — installs HAProxy stack, **PostgreSQL** (local DB by default), **firewalld**: **80/tcp + 443/tcp** (services `http`/`https`) on the default zone for the WAF edge, and **8000/8443** for the UI only from **RFC1918 + loopback** (when `EASY_WAF_FIREWALLD_MGMT_LAN=1`), provisions DB, starts **`easy-waf-api`** / **`easy-waf-acmed`**. External DB only: `EASY_WAF_INSTALL_POSTGRES=0`. See [QUICKSTART.md](docs/QUICKSTART.md).
 
 After clone, run **`go mod tidy`** (generates `go.sum`) then **`make build`**. Management UI: sign in as **`admin` / `admin`** on first install and change the password when prompted.
 

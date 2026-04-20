@@ -19,6 +19,9 @@
 #   EASY_WAF_FIREWALLD_MGMT_LAN=0     — skip rich rules: TCP management port only from RFC1918 + 127.0.0.0/8 (default: 1 with OS packages)
 #   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443" — TCP ports for LAN-only rich rules (management UI)
 #   EASY_WAF_FIREWALLD_ZONE=public    EASY_WAF_EXTRA_LAN_CIDR= — optional VPN CIDR for firewalld
+#   EASY_WAF_FIREWALLD_EDGE=1         — open HAProxy edge: firewalld services http+https (80/443) on FIREWALLD_ZONE (default 1)
+#   EASY_WAF_FIREWALLD_EDGE=0         — skip edge rules (e.g. only cloud SG / another firewall opens 80/443)
+#   EASY_WAF_FIREWALLD_EDGE_SERVICES="http https" — override service names passed to firewall-cmd
 #   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA RPM/DEB packages (default 1 on dnf/apt; set 0 to skip)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 0)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
@@ -124,6 +127,28 @@ install_env_file() {
     log "Keeping existing $CFG_DIR/easy-waf.env"
   fi
   chown root:easy-waf "$CFG_DIR/easy-waf.env" 2>/dev/null || chmod 0640 "$CFG_DIR/easy-waf.env"
+}
+
+# When FIREWALLD_* were not exported for this install run, take the last matching line from easy-waf.env
+# (so re-running install.sh after editing the file applies zone / edge / mgmt flags without manual export).
+easy_waf_load_firewalld_env_from_file_if_unset() {
+  local f="$CFG_DIR/easy-waf.env"
+  [[ -f "$f" ]] || return 0
+  local key line val
+  for key in EASY_WAF_FIREWALLD_ZONE EASY_WAF_FIREWALLD_EDGE EASY_WAF_FIREWALLD_EDGE_SERVICES EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS EASY_WAF_EXTRA_LAN_CIDR; do
+    if printenv "$key" &>/dev/null; then
+      continue
+    fi
+    line="$(grep -E "^${key}=" "$f" 2>/dev/null | tail -n1)" || true
+    [[ -z "$line" ]] && continue
+    val="${line#*=}"
+    val="${val%$'\r'}"
+    if [[ ${#val} -ge 2 && "${val:0:1}" == '"' && "${val: -1}" == '"' ]]; then
+      val="${val:1:${#val}-2}"
+    fi
+    # declare -g handles values with spaces (e.g. EDGE_SERVICES="http https")
+    declare -gx "${key}=${val}"
+  done
 }
 
 # Upsert KEY=value in /etc/easy-waf/easy-waf.env (file must exist).
@@ -602,9 +627,26 @@ configure_firewalld_management_lan() {
     "${EASY_WAF_EXTRA_LAN_CIDR:-}"
 }
 
-firewall_hint() {
-  log "firewalld: add http/https for edge when ready — firewall-cmd --permanent --add-service=http --add-service=https"
-  log "Management UI: EASY_WAF_LISTEN_HTTP=0.0.0.0:8000 EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 + LAN-only firewalld (see EASY_WAF_FIREWALLD_MGMT_LAN)"
+# HAProxy binds :80 / :443 on the edge; open them on the default zone (independent of EASY_WAF_FIREWALLD_MGMT_LAN).
+configure_firewalld_edge() {
+  if [[ "${EASY_WAF_FIREWALLD_EDGE:-1}" == "0" ]]; then
+    log "Skipping firewalld HAProxy edge (EASY_WAF_FIREWALLD_EDGE=0)"
+    return 0
+  fi
+  command -v firewall-cmd &>/dev/null || {
+    log "firewalld: firewall-cmd not found; skip edge http/https"
+    return 0
+  }
+  systemctl start firewalld 2>/dev/null || true
+  if ! systemctl is-active --quiet firewalld 2>/dev/null; then
+    log "WARNING: firewalld not active — tcp/80+443 not opened; run: sudo systemctl start firewalld && sudo bash scripts/fix-firewalld-edge.sh"
+    return 0
+  fi
+  # shellcheck source=lib/firewalld-management-api.sh
+  source "${SCRIPT_DIR}/lib/firewalld-management-api.sh"
+  easy_waf_firewalld_allow_edge_http_https \
+    "${EASY_WAF_FIREWALLD_ZONE:-public}" \
+    "${EASY_WAF_FIREWALLD_EDGE_SERVICES:-http https}"
 }
 
 # HAProxy is the public edge; ensure it is enabled at boot even when OS packages were skipped.
@@ -644,8 +686,9 @@ main() {
   install_polkit_rules
   selinux_restore
   easy_waf_integrate_haproxy_edge
+  easy_waf_load_firewalld_env_from_file_if_unset
   configure_firewalld_management_lan
-  firewall_hint
+  configure_firewalld_edge
 
   if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" == "1" ]] && [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]]; then
     if systemctl enable --now easy-waf-api.service easy-waf-acmed.service; then
@@ -662,7 +705,8 @@ main() {
   if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" != "1" ]]; then
     log "Using external DB — ensure $CFG_DIR/easy-waf.env DATABASE_URL is correct"
   fi
-  log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; firewalld: RFC1918 + 127.0.0.0/8 on 8000+8443)"
+  log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; firewalld: RFC1918 + 127.0.0.0/8 on 8000+8443 when MGMT_LAN=1)"
+  log "HAProxy edge: tcp 80+443 on firewalld zone ${EASY_WAF_FIREWALLD_ZONE:-public} (disable with EASY_WAF_FIREWALLD_EDGE=0)"
 }
 
 main "$@"

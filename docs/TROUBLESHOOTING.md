@@ -134,6 +134,12 @@ curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
 
 Then **Apply** from the UI (or **`easy-waf-admin apply-edge`**) to regenerate **`haproxy.cfg`**.
 
+## HAProxy: port 80 / 443 not reachable (firewalld)
+
+HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haproxy`** but clients time out, check **`sudo firewall-cmd --list-services`** (and **`--list-ports`**) on zone **public** (or your **`EASY_WAF_FIREWALLD_ZONE`**).
+
+**Fix:** from the repo on the appliance, **`sudo bash scripts/fix-firewalld-edge.sh`** (adds **`http`** + **`https`** permanently and reloads). New installs run this automatically via **`scripts/install.sh`** unless **`EASY_WAF_FIREWALLD_EDGE=0`**.
+
 ## HAProxy: `bk_acme` / `127.0.0.1:8089` DOWN (connection refused)
 
 `fe_http` routes `/.well-known/acme-challenge/` to **`bk_acme`**, which uses **`server … 127.0.0.1:8089 check`**. **`easy-waf-api`** must be running: it listens on that loopback address by default and serves token files from the ACME webroot (same tree **Lego** uses for HTTP-01). If the API is stopped or the binary predates that listener, HAProxy reports **connection refused** and **`backend bk_acme has no server available`**.

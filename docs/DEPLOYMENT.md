@@ -29,6 +29,7 @@ Pilot SSH host alias **`waf-dev`** (dev/test): see **[DEV_HOST.md](DEV_HOST.md)*
 7. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
 8. **CrowdSec + SPOA bouncer (default on dnf/apt):** installs packages from packagecloud so units exist; **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** (or **`scripts/crowdsec-bootstrap-lapi.sh`**) starts LAPI, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)). Set **`EASY_WAF_INSTALL_CROWDSEC=0`** to skip packages entirely.
 9. Runs **restorecon** on state/config paths when SELinux tools are present (typically Alma/RHEL only).
+10. **firewalld:** with OS packages, opens **management** ports (**8000/8443**) from RFC1918 + loopback only (when **`EASY_WAF_FIREWALLD_MGMT_LAN=1`**) and **HAProxy edge** (**`http` + `https`** → **80/tcp** + **443/tcp** on **`EASY_WAF_FIREWALLD_ZONE`**, default **public**) when **`EASY_WAF_FIREWALLD_EDGE=1`** (default). Already-deployed hosts: **`sudo bash scripts/fix-firewalld-edge.sh`**.
 
 CrowdSec is part of the default appliance install; see [CROWDSEC.md](CROWDSEC.md) for **`EASY_WAF_INSTALL_CROWDSEC`**, **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL`**, and **`scripts/crowdsec-bootstrap-lapi.sh`**.
 
