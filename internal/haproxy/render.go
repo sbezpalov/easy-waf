@@ -302,12 +302,28 @@ frontend fe_http
 {{if .RedirectApps}}
 	http-request redirect scheme https code 301 if {{range $i, $a := .RedirectApps}}{{if $i}} || {{end}}redir_{{$a.ACLTag}}_host{{end}}
 {{end}}
+{{- if .HasHTTPSFrontend}}
+{{- if .HTTPApps}}
+	acl fe_http_keeps_plain hdr(host) -i {{range $i, $a := .HTTPApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
+	http-request redirect scheme https code 301 unless fe_http_keeps_plain
+{{- else}}
 	http-request redirect scheme https code 301
+{{- end}}
+{{- else}}
+	default_backend bk_http_default
+{{- end}}
 
 # ACME challenges served by easy-wafd local listener (see scripts / docs)
 backend bk_acme
 	mode http
 	server acme 127.0.0.1:8089 check
+{{if not .HasHTTPSFrontend}}
+
+# :80 catch-all when there is no fe_https (plain HTTP edge only)
+backend bk_http_default
+	mode http
+	http-request deny deny_status 404
+{{end}}
 
 {{if .HasHTTPSFrontend}}
 # HTTPS edge — one bind, many PEMs in crt-list → SNI picks cert; Host header routes to backends (single WAN IP).
