@@ -66,4 +66,8 @@ func TestStatsSocketPath(t *testing.T) {
 	if p := StatsSocketPath(gs2, "/st"); p != "/run/haproxy/easy-waf-admin.sock" {
 		t.Fatal(p)
 	}
+	gs3 := config.GlobalSettings{HAProxyStatsSocketPath: "/var/lib/easy-waf/haproxy/admin.sock"}
+	if p := StatsSocketPath(gs3, "/var/lib/easy-waf"); p != "/run/haproxy/easy-waf-admin.sock" {
+		t.Fatalf("legacy state socket migrates to /run: got %q", p)
+	}
 }

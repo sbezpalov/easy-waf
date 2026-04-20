@@ -18,6 +18,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
+	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/pemutil"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -189,8 +190,10 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	}
 	useWL := ipwl.UseInRender(e.Settings.IPWLEnabled, wlPath)
 	useBadUA := blockedua.UseInRender(e.Settings.BlockedUserAgentsEnabled, uaMapPath)
+	renderSettings := e.Settings
+	renderSettings.HAProxyStatsSocketPath = metrics.StatsSocketPath(e.Settings, e.StateDir)
 	ri := haproxy.RenderInput{
-		Settings:                 e.Settings,
+		Settings:                 renderSettings,
 		Applications:             apps,
 		Certificates:             cm,
 		CRTListPath:              crtListPath,

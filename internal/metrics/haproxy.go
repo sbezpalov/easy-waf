@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,11 +22,18 @@ const MinHAProxyStatsRefresh = 5 * time.Second
 const defaultHAProxyStatsSocketPath = "/run/haproxy/easy-waf-admin.sock"
 
 // StatsSocketPath returns the configured stats socket path or the product default.
-func StatsSocketPath(gs config.GlobalSettings, _ string) string {
-	if p := strings.TrimSpace(gs.HAProxyStatsSocketPath); p != "" {
-		return p
+// Legacy installs stored <stateDir>/haproxy/admin.sock — that path breaks under SELinux
+// (haproxy_t + var_lib_t); treat it as the default /run/haproxy socket without requiring a DB edit.
+func StatsSocketPath(gs config.GlobalSettings, stateDir string) string {
+	p := strings.TrimSpace(gs.HAProxyStatsSocketPath)
+	if p == "" {
+		return defaultHAProxyStatsSocketPath
 	}
-	return defaultHAProxyStatsSocketPath
+	legacy := filepath.Join(stateDir, "haproxy", "admin.sock")
+	if filepath.Clean(p) == filepath.Clean(legacy) {
+		return defaultHAProxyStatsSocketPath
+	}
+	return p
 }
 
 // FrontendStat is one HAProxy frontend aggregate row (svname=FRONTEND).

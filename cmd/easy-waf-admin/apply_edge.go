@@ -33,5 +33,9 @@ func applyEdgeCLI() {
 	if err := eng.Apply(ctx, *label); err != nil {
 		log.Fatalf("apply: %v", err)
 	}
+	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
+		log.Print("apply-edge: HAProxy config written from database (reload skipped; EASY_WAF_SKIP_RELOAD set)")
+		return
+	}
 	log.Print("apply-edge: HAProxy config written from database and service reloaded")
 }

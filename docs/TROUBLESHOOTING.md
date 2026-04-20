@@ -122,7 +122,7 @@ sudo systemctl restart haproxy
 
 ## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
 
-The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`** (under **`/run/haproxy`**, **`haproxy_var_run_t`** on RHEL/Alma). If settings still point at **`/var/lib/easy-waf/haproxy/admin.sock`**, update and Apply:
+The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`** (under **`/run/haproxy`**, **`haproxy_var_run_t`** on RHEL/Alma). If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply:
 
 ```bash
 curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
