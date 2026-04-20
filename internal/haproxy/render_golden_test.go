@@ -37,7 +37,7 @@ func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
 		ACMEStaging:              true,
 		SPOEConfigPath:           spoePath,
 		HAProxyConfigPath:        "testdata/golden/state/haproxy/haproxy.cfg",
-		HAProxyStatsSocketPath:   "testdata/golden/state/haproxy/admin.sock",
+		HAProxyStatsSocketPath:   "/run/haproxy/easy-waf-admin.sock",
 		HAProxyBinary:            "/usr/sbin/haproxy",
 		CrowdSecEngineName:       engine,
 		GeoIPCacheTTL:            config.Duration(24 * time.Hour),

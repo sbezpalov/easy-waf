@@ -1,46 +1,47 @@
-# shellcheck shell=bash
-# Optional: sourced by install.sh and fix-haproxy-easy-waf-dropin.sh when present.
-# SELinux (RHEL/Alma): haproxy_t may read/write only paths labeled for HAProxy under /var/lib.
+#!/usr/bin/env bash
+# SELinux file contexts so HAProxy (haproxy_t) can read easy-waf generated configs.
+# Idempotent; run as root after install or restorecon.
+# Env: EASY_WAF_STATE_DIR (default /var/lib/easy-waf)
+set -euo pipefail
 
-easy_waf_selinux_label_haproxy_dir() {
-  local state_dir="${1:?state dir}"
-  local hp certs sock
-  hp="${state_dir}/haproxy"
-  certs="${state_dir}/certs"
-  sock="${hp}/admin.sock"
+log() { echo "[easy-waf-selinux] $*"; }
 
-  if [[ ! -d "$hp" ]]; then
-    return 0
-  fi
+if ! command -v semanage &>/dev/null; then
+  log "semanage not found — skip (install policycoreutils-python-utils)"
+  exit 0
+fi
 
-  if command -v semanage &>/dev/null; then
-    if semanage fcontext -a -t haproxy_var_lib_t "${hp}(/.*)?" 2>/dev/null; then
-      :
-    else
-      semanage fcontext -m -t haproxy_var_lib_t "${hp}(/.*)?" 2>/dev/null || true
-    fi
-    if [[ -d "$certs" ]]; then
-      if semanage fcontext -a -t haproxy_var_lib_t "${certs}(/.*)?" 2>/dev/null; then
-        :
-      else
-        semanage fcontext -m -t haproxy_var_lib_t "${certs}(/.*)?" 2>/dev/null || true
-      fi
-    fi
-    if semanage fcontext -a -t haproxy_var_run_t "${sock}" 2>/dev/null; then
-      :
-    else
-      semanage fcontext -m -t haproxy_var_run_t "${sock}" 2>/dev/null || true
-    fi
-  fi
+if ! command -v getenforce &>/dev/null || [[ "$(getenforce 2>/dev/null)" == "Disabled" ]]; then
+  log "SELinux disabled or getenforce unavailable — skip"
+  exit 0
+fi
 
-  if command -v restorecon &>/dev/null; then
-    restorecon -Rv "$hp" 2>/dev/null || true
-    if [[ -d "$certs" ]]; then
-      restorecon -Rv "$certs" 2>/dev/null || true
-    fi
-  fi
+STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 
-  if command -v setsebool &>/dev/null; then
-    setsebool -P haproxy_connect_any 1 2>/dev/null || true
-  fi
-}
+# HAProxy config + crt-list + maps → haproxy_var_lib_t (readable by haproxy_t)
+semanage fcontext -a -t haproxy_var_lib_t "${STATE}/haproxy(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t haproxy_var_lib_t "${STATE}/haproxy(/.*)?" 2>/dev/null \
+  || true
+
+# TLS bundles (certs dir) → haproxy_var_lib_t
+semanage fcontext -a -t haproxy_var_lib_t "${STATE}/certs(/.*)?" 2>/dev/null \
+  || semanage fcontext -m -t haproxy_var_lib_t "${STATE}/certs(/.*)?" 2>/dev/null \
+  || true
+
+# Stats socket lives under /run/haproxy (standard haproxy_var_run_t)
+if [[ -d /run/haproxy ]]; then
+  restorecon -Rv /run/haproxy 2>/dev/null || true
+fi
+
+# Apply contexts
+if command -v restorecon &>/dev/null; then
+  restorecon -Rv "${STATE}/haproxy" 2>/dev/null || true
+  restorecon -Rv "${STATE}/certs" 2>/dev/null || true
+fi
+
+# Boolean: allow HAProxy to connect to arbitrary backend ports
+if command -v setsebool &>/dev/null; then
+  setsebool -P haproxy_connect_any 1 2>/dev/null || true
+fi
+
+log "SELinux contexts applied (haproxy_var_lib_t for ${STATE}/haproxy, ${STATE}/certs)"

@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -64,7 +63,7 @@ func TestStatsSocketPath(t *testing.T) {
 		t.Fatal(p)
 	}
 	gs2 := config.GlobalSettings{}
-	if p := StatsSocketPath(gs2, "/st"); p != filepath.Join("/st", "haproxy", "admin.sock") {
+	if p := StatsSocketPath(gs2, "/st"); p != "/run/haproxy/easy-waf-admin.sock" {
 		t.Fatal(p)
 	}
 }

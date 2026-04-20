@@ -93,6 +93,11 @@ if command -v restorecon &>/dev/null; then
   restorecon -RF "$CFG" 2>/dev/null || true
 fi
 
+REST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
+  EASY_WAF_STATE_DIR="$STATE" bash "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
+fi
+
 # Re-read env from disk (restored tokens / URLs)
 # shellcheck disable=SC1090
 set -a

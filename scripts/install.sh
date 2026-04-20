@@ -82,11 +82,34 @@ create_user_and_layout() {
   chmod 0700 "$SECRETS_DIR" || true
   chmod 0755 "$ACME_WEBROOT" || true
   chown -R easy-waf:easy-waf "$STATE_DIR" || true
-  if [[ -f "${SCRIPT_DIR}/lib/haproxy-state-perms.sh" ]]; then
-    # shellcheck source=lib/haproxy-state-perms.sh
-    source "${SCRIPT_DIR}/lib/haproxy-state-perms.sh"
-    easy_waf_haproxy_join_group_and_chmod_state "$STATE_DIR"
+  chmod 0750 "${STATE_DIR}/haproxy" "${STATE_DIR}/certs" "${STATE_DIR}/revisions" 2>/dev/null || true
+  if id haproxy &>/dev/null; then
+    if ! id -nG haproxy | grep -qw easy-waf; then
+      usermod -aG easy-waf haproxy
+      log "Added haproxy to easy-waf group (read config + certs)"
+    fi
   fi
+  if id easy-waf &>/dev/null && id haproxy &>/dev/null; then
+    if ! id -nG easy-waf | grep -qw haproxy; then
+      usermod -aG haproxy easy-waf
+      log "Added easy-waf to haproxy group (stats socket under /run/haproxy)"
+    fi
+  fi
+}
+
+# /run/haproxy is tmpfs; persist mode/owner via systemd-tmpfiles.
+ensure_haproxy_run_dir() {
+  local tmpfiles_conf="/etc/tmpfiles.d/easy-waf-haproxy.conf"
+  if [[ ! -f "$tmpfiles_conf" ]]; then
+    cat >"$tmpfiles_conf" <<'EOF'
+# easy-waf: HAProxy stats socket directory (systemd-tmpfiles)
+d /run/haproxy 0755 haproxy haproxy -
+EOF
+    log "Created $tmpfiles_conf for /run/haproxy on boot"
+  fi
+  mkdir -p /run/haproxy
+  chown haproxy:haproxy /run/haproxy 2>/dev/null || true
+  chmod 0755 /run/haproxy 2>/dev/null || true
 }
 
 install_env_file() {
@@ -437,12 +460,31 @@ selinux_restore() {
   fi
 }
 
-easy_waf_selinux_label_haproxy_paths() {
+# HAProxy ↔ easy-waf: /run/haproxy, SELinux fcontexts, systemd drop-in (when haproxy binary exists).
+easy_waf_integrate_haproxy_edge() {
+  if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
+    return 0
+  fi
+  if ! command -v haproxy &>/dev/null; then
+    return 0
+  fi
+  ensure_haproxy_run_dir
   if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
-    # shellcheck source=lib/selinux-easy-waf-haproxy.sh
-    source "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
-    easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
-    log "SELinux: labeled HAProxy state under ${STATE_DIR} (haproxy_var_lib_t)"
+    if ! EASY_WAF_STATE_DIR="$STATE_DIR" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"; then
+      log "WARNING: SELinux haproxy script had issues"
+    fi
+  fi
+  if [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]]; then
+    log "Skipping HAProxy drop-in (EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1)"
+    return 0
+  fi
+  if [[ -f "${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh" ]]; then
+    sed -i 's/\r$//' "${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh" 2>/dev/null || true
+    if ! EASY_WAF_STATE_DIR="$STATE_DIR" EASY_WAF_REPO_ROOT="$REPO_ROOT" bash "${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh"; then
+      log "WARNING: HAProxy drop-in script had issues — sudo EASY_WAF_REPO_ROOT=$REPO_ROOT bash ${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh"
+    fi
+  else
+    log "WARNING: missing ${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh"
   fi
 }
 
@@ -580,25 +622,6 @@ ensure_haproxy_systemd_enabled() {
   fi
 }
 
-# Make haproxy.service load only ${STATE_DIR}/haproxy/haproxy.cfg (stock Alma unit uses /etc + conf.d otherwise).
-install_haproxy_points_at_state_cfg() {
-  if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]] || [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]]; then
-    [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]] && log "Skipping HAProxy systemd drop-in (EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1)"
-    return 0
-  fi
-  local fix="${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh"
-  if [[ ! -f "$fix" ]]; then
-    log "WARNING: missing $fix — HAProxy may still use stock /etc/haproxy/haproxy.cfg"
-    return 0
-  fi
-  sed -i 's/\r$//' "$fix" 2>/dev/null || true
-  if EASY_WAF_STATE_DIR="$STATE_DIR" EASY_WAF_REPO_ROOT="$REPO_ROOT" bash "$fix"; then
-    log "HAProxy unit now loads ${STATE_DIR}/haproxy/haproxy.cfg (see haproxy.service.d/50-easy-waf.conf)"
-  else
-    log "WARNING: HAProxy drop-in/restart failed — fix manually: sudo EASY_WAF_REPO_ROOT=$REPO_ROOT bash $fix"
-  fi
-}
-
 main() {
   require_root
   detect_os
@@ -610,6 +633,7 @@ main() {
   install_os_packages
   ensure_haproxy_systemd_enabled
   create_user_and_layout
+  ensure_haproxy_run_dir
   install_env_file
   easy_waf_install_crowdsec_packages
   easy_waf_bootstrap_crowdsec_lapi
@@ -619,8 +643,7 @@ main() {
   install_systemd_units
   install_polkit_rules
   selinux_restore
-  easy_waf_selinux_label_haproxy_paths
-  install_haproxy_points_at_state_cfg
+  easy_waf_integrate_haproxy_edge
   configure_firewalld_management_lan
   firewall_hint
 

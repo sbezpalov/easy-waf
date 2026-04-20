@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,12 +17,15 @@ import (
 // MinHAProxyStatsRefresh is the minimum interval between socket reads (cache TTL).
 const MinHAProxyStatsRefresh = 5 * time.Second
 
-// StatsSocketPath returns the configured stats socket path or the default under stateDir.
-func StatsSocketPath(gs config.GlobalSettings, stateDir string) string {
+// defaultHAProxyStatsSocketPath matches config.DefaultSettings (under /run/haproxy for SELinux).
+const defaultHAProxyStatsSocketPath = "/run/haproxy/easy-waf-admin.sock"
+
+// StatsSocketPath returns the configured stats socket path or the product default.
+func StatsSocketPath(gs config.GlobalSettings, _ string) string {
 	if p := strings.TrimSpace(gs.HAProxyStatsSocketPath); p != "" {
 		return p
 	}
-	return filepath.Join(stateDir, "haproxy", "admin.sock")
+	return defaultHAProxyStatsSocketPath
 }
 
 // FrontendStat is one HAProxy frontend aggregate row (svname=FRONTEND).

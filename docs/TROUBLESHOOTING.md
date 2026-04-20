@@ -78,26 +78,47 @@ sudo systemctl enable --now fail2ban
 - Your client IP is outside **`management_allowed_cidrs`** (see `GET /api/v1/settings` from an allowed host, or fix DB/settings).
 - Emergency: **`easy-waf-admin reset-control-panel-access`** or **`EASY_WAF_BYPASS_MGMT_ACL=1`** — see [ADMIN-CLI.md](ADMIN-CLI.md).
 
-## HAProxy: `Permission denied` on `/var/lib/easy-waf/haproxy/haproxy.cfg` or `admin.sock`
+## HAProxy: `Permission denied` on `/var/lib/easy-waf/haproxy/haproxy.cfg`
 
-Typical causes: **SELinux** (`haproxy_t` cannot read `var_lib_t` / wrong type on state files) and/or **Unix permissions** (user `haproxy` must read the config and create the stats socket next to files owned by `easy-waf`).
+HAProxy runs as user `haproxy`; easy-waf files are owned by `easy-waf:easy-waf` (mode `0750` on state subdirs). The `haproxy` user must be in the **`easy-waf`** group to read the live config and cert trees.
 
-**Fix (appliance, as root), from your easy-waf checkout (`$PWD` = repo root):**
+**Quick fix (from repo root, as root):**
 
 ```bash
-cd /path/to/easy-waf
-
-# 1) Drop-in + haproxy ∈ group easy-waf + chmod 0770 on .../haproxy + SELinux fcontexts (idempotent)
-sudo EASY_WAF_REPO_ROOT="$PWD" bash scripts/fix-haproxy-easy-waf-dropin.sh
-
-# 2) If you only need SELinux relabel without touching systemd:
-sudo bash -c "source $PWD/scripts/lib/selinux-easy-waf-haproxy.sh && easy_waf_selinux_label_haproxy_dir /var/lib/easy-waf"
-
-# 3) After usermod, restart haproxy so the new supplementary group is visible to the process:
-sudo systemctl restart haproxy
+sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 ```
 
-Then: `sudo ausearch -m avc -ts recent` — there should be no new denials on `/var/lib/easy-waf/haproxy/*`. See also `scripts/lib/selinux-easy-waf-haproxy.sh` (fcontext `haproxy_var_lib_t`, `haproxy_connect_any`).
+This script:
+
+1. Adds `haproxy` to the `easy-waf` group (`usermod -aG`) when needed  
+2. Writes **`/etc/systemd/system/haproxy.service.d/easy-waf.conf`** so HAProxy loads only the generated **`haproxy.cfg`**  
+3. Ensures **`/run/haproxy/`** exists (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** for reboots)  
+4. Applies SELinux file contexts (**`haproxy_var_lib_t`**) via **`scripts/lib/selinux-easy-waf-haproxy.sh`**  
+5. Runs **`systemctl daemon-reload`**
+
+After the script: **`sudo systemctl restart haproxy`** (needed so `haproxy` picks up the new supplementary group).
+
+**Manual SELinux fix (if `ausearch` shows `denied`):**
+
+```bash
+sudo EASY_WAF_STATE_DIR=/var/lib/easy-waf bash scripts/lib/selinux-easy-waf-haproxy.sh
+```
+
+**Full reinstall** also runs the above when the `haproxy` binary is present: **`sudo bash scripts/install.sh`**.
+
+## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
+
+The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`** (under **`/run/haproxy`**, **`haproxy_var_run_t`** on RHEL/Alma). If settings still point at **`/var/lib/easy-waf/haproxy/admin.sock`**, update and Apply:
+
+```bash
+curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
+  -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
+  -d '{"haproxy_stats_socket_path":"/run/haproxy/easy-waf-admin.sock"}'
+```
+
+Then **Apply** from the UI (or **`easy-waf-admin apply-edge`**) to regenerate **`haproxy.cfg`**.
 
 ## HAProxy fails to reload
 

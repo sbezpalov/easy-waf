@@ -28,6 +28,7 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 
 ## Edge (HAProxy / CrowdSec)
 
+- **SELinux file contexts:** easy-waf generated configs under **`/var/lib/easy-waf/haproxy/`** (and TLS material under **`/var/lib/easy-waf/certs/`**) must be labeled **`haproxy_var_lib_t`**, not default **`var_lib_t`**. The installer (**`scripts/install.sh`**) and **`scripts/lib/selinux-easy-waf-haproxy.sh`** apply **`semanage fcontext`** and **`restorecon`** automatically. After manual file copies or restores, run **`sudo EASY_WAF_STATE_DIR=/var/lib/easy-waf bash scripts/lib/selinux-easy-waf-haproxy.sh`** (or re-run **`scripts/fix-haproxy-easy-waf-dropin.sh`**).
 - When an **NGFW** (MikroTik, FortiGate, …) sits in front of the appliance, use **IPS** and **application control** on the firewall; the WAF handles hostname routing, TLS, CrowdSec, and IPBL — see **Reference topology: NGFW → WAF** in [ARCHITECTURE.md](ARCHITECTURE.md).
 - Only **80/443** (and SSH management) should be reachable from untrusted networks; use **firewalld** zones.
 - **CrowdSec** + **SPOE bouncer**: keep engine names aligned between `haproxy.cfg` and SPOE file; rotate LAPI keys on compromise.
