@@ -410,6 +410,20 @@ install_systemd_units() {
   log "Run: systemctl enable --now easy-waf-api.service easy-waf-acmed.service"
 }
 
+install_polkit_rules() {
+  if command -v pkaction >/dev/null 2>&1 || [[ -d /etc/polkit-1/rules.d ]]; then
+    local polkit_src="${REPO_ROOT}/packaging/polkit"
+    if [[ -d "$polkit_src" ]]; then
+      mkdir -p /etc/polkit-1/rules.d
+      install -m 0644 "${polkit_src}/99-easy-waf-haproxy.rules" "/etc/polkit-1/rules.d/"
+      log "Installed /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules"
+    fi
+  else
+    log "Polkit not found on system — assuming root execution or manual systemctl manage"
+  fi
+}
+
+
 selinux_restore() {
   if command -v restorecon &>/dev/null; then
     restorecon -RFv "$STATE_DIR" 2>/dev/null || true
@@ -569,6 +583,7 @@ main() {
   acquire_dist_binaries
   install_binaries
   install_systemd_units
+  install_polkit_rules
   selinux_restore
   configure_firewalld_management_lan
   firewall_hint

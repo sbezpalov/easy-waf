@@ -1,0 +1,8 @@
+// Allow user easy-waf to manage haproxy.service via systemd
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "haproxy.service" &&
+        subject.user == "easy-waf") {
+        return polkit.Result.YES;
+    }
+});
