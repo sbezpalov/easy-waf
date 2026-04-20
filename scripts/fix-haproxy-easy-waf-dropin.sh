@@ -4,7 +4,8 @@
 # On SELinux (Alma/RHEL), labels state/haproxy like /etc/haproxy so haproxy_t can read the config.
 #
 # Usage: sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
-# Env: EASY_WAF_STATE_DIR=/var/lib/easy-waf  EASY_WAF_REPO_ROOT=/path/to/easy-waf
+# Env: EASY_WAF_STATE_DIR=/var/lib/easy-waf  EASY_WAF_REPO_ROOT=/path/to/easy-waf  EASY_WAF_ENV_FILE=/etc/easy-waf/easy-waf.env
+# Re-renders haproxy.cfg from PostgreSQL via easy-waf-admin apply-edge when available (install new binary from repo if missing).
 
 set -euo pipefail
 
@@ -52,6 +53,29 @@ if [[ -f "$SELINUX_LIB" ]]; then
   source "$SELINUX_LIB"
   easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
   echo "[easy-waf] SELinux: labeled ${STATE_DIR}/haproxy (if semanage/restorecon available)"
+fi
+
+ENVF="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
+ADMIN=""
+for cand in /usr/sbin/easy-waf-admin /usr/bin/easy-waf-admin "${REPO_ROOT}/dist/easy-waf-admin"; do
+  if [[ -x "$cand" ]]; then
+    ADMIN="$cand"
+    break
+  fi
+done
+if [[ -n "$ADMIN" ]]; then
+  set +e
+  ae_out="$("$ADMIN" apply-edge -env-file "$ENVF" -state-dir "$STATE_DIR" 2>&1)"
+  ae_ec=$?
+  set -e
+  if [[ $ae_ec -eq 0 ]]; then
+    echo "[easy-waf] $ae_out"
+  else
+    echo "[easy-waf] WARNING: apply-edge failed (exit $ae_ec). Install current easy-waf-admin (make build && sudo install -m0755 dist/easy-waf-admin /usr/sbin/) or apply from UI." >&2
+    echo "$ae_out" >&2
+  fi
+else
+  echo "[easy-waf] WARNING: easy-waf-admin not found — update haproxy.cfg from UI (Apply) or install the binary." >&2
 fi
 
 if ! /usr/sbin/haproxy -c -f "$CFG" 2>&1; then

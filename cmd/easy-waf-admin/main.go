@@ -34,6 +34,8 @@ func main() {
 		resetAppliance()
 	case "factory-reset":
 		factoryReset()
+	case "apply-edge":
+		applyEdgeCLI()
 	default:
 		usage()
 		os.Exit(2)
@@ -53,6 +55,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "      -bootstrap-credentials (root): new random 19-char DB password + EASY_WAF_ADMIN_TOKEN, updates env file, then wipes; GUI stays admin/admin after API start.")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin apply-edge [-env-file path] [-state-dir path] [-database-url URL] [-label text]")
+	fmt.Fprintln(os.Stderr, "      Re-render HAProxy config from PostgreSQL and reload haproxy (root; same as API POST /apply).")
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 

@@ -1,0 +1,37 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"os"
+
+	"github.com/easy-waf/easy-waf/internal/engine"
+)
+
+// applyEdgeCLI re-renders HAProxy config from the database and reloads haproxy (same path as POST /api/v1/apply).
+// Run as root on the appliance after template upgrades or before first haproxy start with the state-dir drop-in.
+func applyEdgeCLI() {
+	fs := flag.NewFlagSet("apply-edge", flag.ExitOnError)
+	envFile := fs.String("env-file", "/etc/easy-waf/easy-waf.env", "path to easy-waf.env (DATABASE_URL)")
+	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory (EASY_WAF_STATE_DIR)")
+	databaseURL := fs.String("database-url", "", "optional: postgres DSN (overrides DATABASE_URL from env file / environment)")
+	label := fs.String("label", "easy-waf-admin-apply-edge", "revision label stored in config_revisions")
+	_ = fs.Parse(os.Args[2:])
+
+	ctx := context.Background()
+	st, err := openStoreFromEnvFile(*envFile, *databaseURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer st.Close()
+
+	eng := &engine.Engine{StateDir: *stateDir, Store: st}
+	if err := eng.LoadSettings(ctx); err != nil {
+		log.Fatalf("load settings: %v", err)
+	}
+	if err := eng.Apply(ctx, *label); err != nil {
+		log.Fatalf("apply: %v", err)
+	}
+	log.Print("apply-edge: HAProxy config written from database and service reloaded")
+}
