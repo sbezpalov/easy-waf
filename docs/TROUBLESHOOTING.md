@@ -106,6 +106,20 @@ sudo EASY_WAF_STATE_DIR=/var/lib/easy-waf bash scripts/lib/selinux-easy-waf-hapr
 
 **Full reinstall** also runs the above when the `haproxy` binary is present: **`sudo bash scripts/install.sh`**.
 
+## HAProxy: `Binding … haproxy.cfg:5` for frontend `GLOBAL` / start exits 1
+
+Line **5** in the generated config is usually **`stats socket /run/haproxy/easy-waf-admin.sock`**. **`haproxy -c`** does not create that Unix socket, so the check can pass while **`ExecStart`** fails if **`/run/haproxy`** is missing, not owned by **`haproxy`**, or a stale **`easy-waf-admin.sock`** is left behind.
+
+**Fix:** run a current **`scripts/fix-haproxy-easy-waf-dropin.sh`** from the repo (it writes **`easy-waf.conf`** with **`ExecStartPre=/bin/mkdir …`** and removes legacy **`50-easy-waf.conf`**), then **`sudo systemctl daemon-reload && sudo systemctl restart haproxy`**.
+
+Manual one-off:
+
+```bash
+sudo install -d -o haproxy -g haproxy -m 0755 /run/haproxy
+sudo rm -f /run/haproxy/easy-waf-admin.sock
+sudo systemctl restart haproxy
+```
+
 ## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
 
 The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`** (under **`/run/haproxy`**, **`haproxy_var_run_t`** on RHEL/Alma). If settings still point at **`/var/lib/easy-waf/haproxy/admin.sock`**, update and Apply:
