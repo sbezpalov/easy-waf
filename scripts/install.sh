@@ -23,6 +23,7 @@
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 0)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
 #   EASY_WAF_FAIL2BAN_AUTO_START=0|1 — after fail2ban package install: systemctl start (default 0; only enable at boot otherwise)
+#   EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1 — do not install haproxy.service.d drop-in (stock /etc config stays in use)
 
 set -euo pipefail
 
@@ -565,6 +566,25 @@ ensure_haproxy_systemd_enabled() {
   fi
 }
 
+# Make haproxy.service load only ${STATE_DIR}/haproxy/haproxy.cfg (stock Alma unit uses /etc + conf.d otherwise).
+install_haproxy_points_at_state_cfg() {
+  if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]] || [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]]; then
+    [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]] && log "Skipping HAProxy systemd drop-in (EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1)"
+    return 0
+  fi
+  local fix="${SCRIPT_DIR}/fix-haproxy-easy-waf-dropin.sh"
+  if [[ ! -f "$fix" ]]; then
+    log "WARNING: missing $fix — HAProxy may still use stock /etc/haproxy/haproxy.cfg"
+    return 0
+  fi
+  sed -i 's/\r$//' "$fix" 2>/dev/null || true
+  if EASY_WAF_STATE_DIR="$STATE_DIR" EASY_WAF_REPO_ROOT="$REPO_ROOT" bash "$fix"; then
+    log "HAProxy unit now loads ${STATE_DIR}/haproxy/haproxy.cfg (see haproxy.service.d/50-easy-waf.conf)"
+  else
+    log "WARNING: HAProxy drop-in/restart failed — fix manually: sudo EASY_WAF_REPO_ROOT=$REPO_ROOT bash $fix"
+  fi
+}
+
 main() {
   require_root
   detect_os
@@ -576,6 +596,7 @@ main() {
   install_os_packages
   ensure_haproxy_systemd_enabled
   create_user_and_layout
+  install_haproxy_points_at_state_cfg
   install_env_file
   easy_waf_install_crowdsec_packages
   easy_waf_bootstrap_crowdsec_lapi
