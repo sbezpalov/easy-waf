@@ -286,30 +286,32 @@ defaults
 	timeout tunnel  3600s
 
 # HTTP — ACME HTTP-01, per-app plain HTTP, per-host HTTPS redirects, default redirect
+# Rule order: all ACLs and http-request rules first, then use_backend (avoids HAProxy 3.0.x -c warnings / non-zero exit).
 frontend fe_http
 	bind *:80
 	mode http
 	acl acme path_beg /.well-known/acme-challenge/
-	use_backend bk_acme if acme
 {{range $a := .HTTPApps}}
 	# HTTP app: {{$a.Application.Name}} ({{$a.Application.PublicHost}})
 	acl http_app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
-	use_backend {{backendName $a.Application.PublicHost}} if http_app_{{$a.ACLTag}}_host
 {{end}}
-{{range $a := .RedirectApps}}
-	acl redir_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
-{{end}}
-{{if .RedirectApps}}
-	http-request redirect scheme https code 301 if {{range $i, $a := .RedirectApps}}{{if $i}} || {{end}}redir_{{$a.ACLTag}}_host{{end}}
-{{end}}
+{{- if .RedirectApps}}
+	acl redir_fe_any_host hdr(host) -i {{range $i, $a := .RedirectApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
+	http-request redirect scheme https code 301 if redir_fe_any_host !acme
+{{- end}}
 {{- if .HasHTTPSFrontend}}
 {{- if .HTTPApps}}
 	acl fe_http_keeps_plain hdr(host) -i {{range $i, $a := .HTTPApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
-	http-request redirect scheme https code 301 unless fe_http_keeps_plain
+	http-request redirect scheme https code 301 if !acme !fe_http_keeps_plain
 {{- else}}
-	http-request redirect scheme https code 301
+	http-request redirect scheme https code 301 if !acme
 {{- end}}
-{{- else}}
+{{- end}}
+	use_backend bk_acme if acme
+{{range $a := .HTTPApps}}
+	use_backend {{backendName $a.Application.PublicHost}} if http_app_{{$a.ACLTag}}_host
+{{end}}
+{{- if not .HasHTTPSFrontend}}
 	default_backend bk_http_default
 {{- end}}
 
