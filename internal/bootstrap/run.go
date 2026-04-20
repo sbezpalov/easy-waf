@@ -173,6 +173,25 @@ func RunAPI() {
 		}
 	}()
 
+	var acmeInternalSrv *http.Server
+	if acAddr := acmeInternalListenAddr(); acAddr != "" {
+		wr, err := acmeWebrootPath(stateDir, eng.Settings.ACMEWebrootPath)
+		if err != nil {
+			log.Fatalf("ACME webroot: %v", err)
+		}
+		acmeInternalSrv = &http.Server{
+			Addr:              acAddr,
+			Handler:           acmeChallengeHandler(wr),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func(srv *http.Server) {
+			log.Printf("easy-waf-api ACME HTTP-01 loopback on %s (webroot %s)", acAddr, wr)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("ACME HTTP-01 loopback: %v", err)
+			}
+		}(acmeInternalSrv)
+	}
+
 	var httpsSrv *http.Server
 	if !httpsDisabled {
 		tlsConf := &tls.Config{
@@ -202,6 +221,9 @@ func RunAPI() {
 	_ = httpSrv.Shutdown(ctx2)
 	if httpsSrv != nil {
 		_ = httpsSrv.Shutdown(ctx2)
+	}
+	if acmeInternalSrv != nil {
+		_ = acmeInternalSrv.Shutdown(ctx2)
 	}
 }
 

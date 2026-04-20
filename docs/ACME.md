@@ -7,7 +7,9 @@
 
 ## HTTP-01
 
-Requires HAProxy (or NGINX) to serve ACME challenges on port 80. The daemon writes challenge responses to the state directory and injects HAProxy frontend ACLs for `/.well-known/acme-challenge/`.
+Requires HAProxy on port **80** with a frontend rule for `/.well-known/acme-challenge/`. **Lego** writes token files under **`${ACMEWebrootPath}/.well-known/acme-challenge/`** (default `${EASY_WAF_STATE_DIR}/acme/webroot/...`).
+
+The generated HAProxy config routes those URLs to **`bk_acme` → `127.0.0.1:8089`**. **`easy-waf-api`** listens on that loopback address by default and serves files from the webroot so HAProxy health checks succeed. Override or disable with **`EASY_WAF_ACME_INTERNAL_HTTP`** (see `configs/defaults/easy-waf.env.example`): unset = `127.0.0.1:8089`; `0` / `off` / `false` = disabled.
 
 ## DNS-01
 

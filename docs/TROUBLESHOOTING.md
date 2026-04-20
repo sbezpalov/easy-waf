@@ -134,6 +134,12 @@ curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
 
 Then **Apply** from the UI (or **`easy-waf-admin apply-edge`**) to regenerate **`haproxy.cfg`**.
 
+## HAProxy: `bk_acme` / `127.0.0.1:8089` DOWN (connection refused)
+
+`fe_http` routes `/.well-known/acme-challenge/` to **`bk_acme`**, which uses **`server … 127.0.0.1:8089 check`**. **`easy-waf-api`** must be running: it listens on that loopback address by default and serves token files from the ACME webroot (same tree **Lego** uses for HTTP-01). If the API is stopped or the binary predates that listener, HAProxy reports **connection refused** and **`backend bk_acme has no server available`**.
+
+**Fix:** `sudo systemctl start easy-waf-api` (or `restart`) after upgrading. To disable the helper (only if you serve challenges another way), set **`EASY_WAF_ACME_INTERNAL_HTTP=0`** in **`/etc/easy-waf/easy-waf.env`** and restart **`easy-waf-api`**. See [ACME.md](ACME.md).
+
 ## HAProxy fails to reload
 
 1. `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`
