@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Point haproxy.service at the EasyWAF-generated config under EASY_WAF_STATE_DIR (default /var/lib/easy-waf).
 # Fixes appliances where HAProxy still loads the stock /etc/haproxy/haproxy.cfg (e.g. port 5000 example).
+# On SELinux (Alma/RHEL), labels state/haproxy like /etc/haproxy so haproxy_t can read the config.
 #
 # Usage: sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 # Env: EASY_WAF_STATE_DIR=/var/lib/easy-waf  EASY_WAF_REPO_ROOT=/path/to/easy-waf
@@ -15,6 +16,9 @@ if [[ "$(id -u)" != "0" ]]; then
   echo "Run as root: sudo bash $0" >&2
   exit 1
 fi
+
+mkdir -p "${STATE_DIR}/haproxy"
+chown easy-waf:easy-waf "${STATE_DIR}/haproxy" 2>/dev/null || true
 
 mkdir -p /etc/systemd/system/haproxy.service.d
 CFG="${STATE_DIR}/haproxy/haproxy.cfg"
@@ -42,12 +46,25 @@ sed "s|__EASY_WAF_STATE__|${STATE_DIR}|g" "$DROP_SRC" >/etc/systemd/system/hapro
 chmod 0644 /etc/systemd/system/haproxy.service.d/50-easy-waf.conf
 echo "[easy-waf] wrote /etc/systemd/system/haproxy.service.d/50-easy-waf.conf"
 
+SELINUX_LIB="${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
+if [[ -f "$SELINUX_LIB" ]]; then
+  # shellcheck source=lib/selinux-easy-waf-haproxy.sh
+  source "$SELINUX_LIB"
+  easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
+  echo "[easy-waf] SELinux: labeled ${STATE_DIR}/haproxy (if semanage/restorecon available)"
+fi
+
+if ! /usr/sbin/haproxy -c -f "$CFG" 2>&1; then
+  echo "[easy-waf] ERROR: haproxy -c -f $CFG failed (fix config or AVC: ausearch -m avc -ts recent)" >&2
+  exit 1
+fi
+
 systemctl daemon-reload
 if systemctl cat haproxy.service >/dev/null 2>&1; then
-  if systemctl try-restart haproxy.service; then
+  if systemctl restart haproxy.service; then
     echo "[easy-waf] haproxy.service restarted"
   else
-    echo "[easy-waf] ERROR: haproxy restart failed — journalctl -u haproxy -n 50 --no-pager" >&2
+    echo "[easy-waf] ERROR: haproxy restart failed — journalctl -u haproxy -n 80 --no-pager" >&2
     exit 1
   fi
 else

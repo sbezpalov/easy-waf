@@ -430,6 +430,11 @@ selinux_restore() {
     restorecon -RFv "$STATE_DIR" 2>/dev/null || true
     restorecon -Rv "$CFG_DIR" 2>/dev/null || true
   fi
+  if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
+    # shellcheck source=lib/selinux-easy-waf-haproxy.sh
+    source "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
+    easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
+  fi
 }
 
 install_os_packages() {
@@ -596,7 +601,6 @@ main() {
   install_os_packages
   ensure_haproxy_systemd_enabled
   create_user_and_layout
-  install_haproxy_points_at_state_cfg
   install_env_file
   easy_waf_install_crowdsec_packages
   easy_waf_bootstrap_crowdsec_lapi
@@ -606,6 +610,7 @@ main() {
   install_systemd_units
   install_polkit_rules
   selinux_restore
+  install_haproxy_points_at_state_cfg
   configure_firewalld_management_lan
   firewall_hint
 

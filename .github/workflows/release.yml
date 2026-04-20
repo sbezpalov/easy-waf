@@ -35,11 +35,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           STAGE="$(mktemp -d)"
           trap 'rm -rf "$STAGE"' EXIT
-          mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults" "${STAGE}/scripts"
+          mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults" "${STAGE}/scripts/lib"
           cp -a dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin "${STAGE}/dist/"
           cp -a packaging/systemd/*.service packaging/systemd/haproxy-easy-waf-dropin.conf "${STAGE}/packaging/systemd/"
           cp -a configs/defaults/easy-waf.env.example configs/defaults/haproxy-bootstrap.cfg "${STAGE}/configs/defaults/"
           cp -a scripts/fix-haproxy-easy-waf-dropin.sh "${STAGE}/scripts/"
+          cp -a scripts/lib/selinux-easy-waf-haproxy.sh "${STAGE}/scripts/lib/"
           NAME="easy-waf_${VERSION}_linux_amd64.tar.gz"
           tar -czf "${NAME}" -C "${STAGE}" .
           sha256sum "${NAME}" > SHA256SUMS
