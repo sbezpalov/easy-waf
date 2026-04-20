@@ -48,6 +48,10 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := s.maybeAutoApply(r.Context(), "api-application-security"); err != nil {
+		http.Error(w, "security saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 	writeJSON(w, http.StatusOK, a.Security)
 }
 
@@ -76,6 +80,10 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.maybeAutoApply(r.Context(), "api-application-security"); err != nil {
+		http.Error(w, "security saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, a.Security)
@@ -110,6 +118,10 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.maybeAutoApply(r.Context(), "api-application-security-mode"); err != nil {
+		http.Error(w, "security mode saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	detail := map[string]any{

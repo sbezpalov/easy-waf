@@ -243,8 +243,7 @@ func sha256HexFile(path string) (string, error) {
 
 // LiveHAProxySHA256 returns the sha256 hex digest of the current live haproxy.cfg.
 func (e *Engine) LiveHAProxySHA256() (string, error) {
-	_, cfgPath, _ := haproxy.Paths(e.StateDir)
-	return sha256HexFile(cfgPath)
+	return sha256HexFile(haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath))
 }
 
 func (e *Engine) reloadAppendRevisionAndAudit(ctx context.Context, label, sha256Hex, cfgPath, auditAction string, auditDetail map[string]any) error {
@@ -273,7 +272,8 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 	if strings.TrimSpace(r.CRTList) == "" && r.RequiresTLS {
 		return fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
 	}
-	_, cfgPath, crtListPath := haproxy.Paths(e.StateDir)
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
+	_, _, crtListPath := haproxy.Paths(e.StateDir)
 	staging := cfgPath + ".staging"
 	if err := apply.WriteAtomic(staging, []byte(r.HAProxyConfig), 0o640); err != nil {
 		return err
@@ -316,7 +316,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) error {
 	if got != rev.HAProxySHA256 {
 		return fmt.Errorf("revision snapshot corrupt: sha256 mismatch")
 	}
-	_, cfgPath, _ := haproxy.Paths(e.StateDir)
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
 	if curSHA, err := sha256HexFile(cfgPath); err == nil && curSHA == got {
 		return fmt.Errorf("already using this configuration")
 	}

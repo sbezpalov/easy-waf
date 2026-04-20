@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -208,6 +209,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := s.maybeAutoApply(r.Context(), "api-application"); err != nil {
+		http.Error(w, "application saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 	if haveOld && old.ListenMode != a.ListenMode {
 		detail := map[string]any{
 			"app_id":   a.ID,
@@ -227,6 +232,10 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Eng.Store.DeleteApplication(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.maybeAutoApply(r.Context(), "api-application-delete"); err != nil {
+		http.Error(w, "application deleted but edge apply failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -419,6 +428,24 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// maybeAutoApply renders and reloads HAProxy after API mutations so the edge matches the database.
+// Set EASY_WAF_NO_AUTO_APPLY=1 to skip (e.g. DB-only tooling); use POST /api/v1/apply manually instead.
+func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
+	if strings.TrimSpace(os.Getenv("EASY_WAF_NO_AUTO_APPLY")) != "" {
+		return nil
+	}
+	if err := s.Eng.Apply(ctx, label); err != nil {
+		if s.Prom != nil {
+			s.Prom.IncApplyError()
+		}
+		return err
+	}
+	if s.Prom != nil {
+		s.Prom.IncApply()
+	}
+	return nil
 }
 
 func (s *Server) listIPBLLocal(w http.ResponseWriter, r *http.Request) {

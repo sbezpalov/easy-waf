@@ -442,3 +442,15 @@ func Paths(stateDir string) (haproxyDir, cfgPath, crtListPath string) {
 	crtListPath = filepath.Join(haproxyDir, "crt-list.txt")
 	return
 }
+
+// LiveCfgPath returns the filesystem path for the active HAProxy config.
+// When settingsHAProxyConfigPath is non-empty it is returned cleaned; otherwise
+// the default under stateDir (same as Paths) is used. Engine.Apply must write
+// here so reload picks up the same file referenced in GlobalSettings.
+func LiveCfgPath(stateDir, settingsHAProxyConfigPath string) string {
+	if p := strings.TrimSpace(settingsHAProxyConfigPath); p != "" {
+		return filepath.Clean(p)
+	}
+	_, cfg, _ := Paths(stateDir)
+	return cfg
+}
