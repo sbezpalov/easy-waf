@@ -26,7 +26,7 @@ check-linux:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		cd scripts && shellcheck -x install.sh install-interactive.sh test-backup-restore.sh update-geoip-db.sh; \
+		cd scripts && shellcheck -x install.sh install-interactive.sh test-backup-restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh lib/haproxy-state-perms.sh lib/selinux-easy-waf-haproxy.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. dnf install epel-release 'ShellCheck' || apt install shellcheck)"; \
 	fi

@@ -78,6 +78,27 @@ sudo systemctl enable --now fail2ban
 - Your client IP is outside **`management_allowed_cidrs`** (see `GET /api/v1/settings` from an allowed host, or fix DB/settings).
 - Emergency: **`easy-waf-admin reset-control-panel-access`** or **`EASY_WAF_BYPASS_MGMT_ACL=1`** — see [ADMIN-CLI.md](ADMIN-CLI.md).
 
+## HAProxy: `Permission denied` on `/var/lib/easy-waf/haproxy/haproxy.cfg` or `admin.sock`
+
+Typical causes: **SELinux** (`haproxy_t` cannot read `var_lib_t` / wrong type on state files) and/or **Unix permissions** (user `haproxy` must read the config and create the stats socket next to files owned by `easy-waf`).
+
+**Fix (appliance, as root), from your easy-waf checkout (`$PWD` = repo root):**
+
+```bash
+cd /path/to/easy-waf
+
+# 1) Drop-in + haproxy ∈ group easy-waf + chmod 0770 on .../haproxy + SELinux fcontexts (idempotent)
+sudo EASY_WAF_REPO_ROOT="$PWD" bash scripts/fix-haproxy-easy-waf-dropin.sh
+
+# 2) If you only need SELinux relabel without touching systemd:
+sudo bash -c "source $PWD/scripts/lib/selinux-easy-waf-haproxy.sh && easy_waf_selinux_label_haproxy_dir /var/lib/easy-waf"
+
+# 3) After usermod, restart haproxy so the new supplementary group is visible to the process:
+sudo systemctl restart haproxy
+```
+
+Then: `sudo ausearch -m avc -ts recent` — there should be no new denials on `/var/lib/easy-waf/haproxy/*`. See also `scripts/lib/selinux-easy-waf-haproxy.sh` (fcontext `haproxy_var_lib_t`, `haproxy_connect_any`).
+
 ## HAProxy fails to reload
 
 1. `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`

@@ -18,8 +18,13 @@ if [[ "$(id -u)" != "0" ]]; then
   exit 1
 fi
 
-mkdir -p "${STATE_DIR}/haproxy"
-chown easy-waf:easy-waf "${STATE_DIR}/haproxy" 2>/dev/null || true
+mkdir -p "${STATE_DIR}/haproxy" "${STATE_DIR}/revisions" "${STATE_DIR}/certs"
+chown -R easy-waf:easy-waf "${STATE_DIR}" 2>/dev/null || true
+if [[ -f "${SCRIPT_DIR}/lib/haproxy-state-perms.sh" ]]; then
+  # shellcheck source=lib/haproxy-state-perms.sh
+  source "${SCRIPT_DIR}/lib/haproxy-state-perms.sh"
+  easy_waf_haproxy_join_group_and_chmod_state "$STATE_DIR"
+fi
 
 mkdir -p /etc/systemd/system/haproxy.service.d
 CFG="${STATE_DIR}/haproxy/haproxy.cfg"
@@ -53,7 +58,7 @@ if [[ -f "$SELINUX_LIB" ]]; then
   # shellcheck source=lib/selinux-easy-waf-haproxy.sh
   source "$SELINUX_LIB"
   easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
-  echo "[easy-waf] SELinux: labeled ${STATE_DIR}/haproxy (if semanage/restorecon available)"
+  echo "[easy-waf] SELinux: labeled ${STATE_DIR}/haproxy and ${STATE_DIR}/certs (haproxy_var_lib_t)"
 fi
 
 ENVF="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
@@ -84,7 +89,7 @@ if [[ -f "$SELINUX_LIB" ]]; then
   # shellcheck source=lib/selinux-easy-waf-haproxy.sh
   source "$SELINUX_LIB"
   easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
-  echo "[easy-waf] SELinux: relabeled ${STATE_DIR}/haproxy after apply-edge (if chcon available)"
+  echo "[easy-waf] SELinux: relabeled ${STATE_DIR}/haproxy after apply-edge"
 fi
 
 if ! /usr/sbin/haproxy -c -f "$CFG" 2>&1; then

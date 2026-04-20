@@ -271,7 +271,7 @@ global
 	maxconn 50000
 	stats socket {{.Settings.HAProxyStatsSocketPath}} mode 660 level admin
 	stats timeout 30s
-	pidfile /run/haproxy.pid
+	# pidfile omitted: systemd supplies -p /run/haproxy.pid (see haproxy.service.d drop-in).
 
 defaults
 	log	global
@@ -286,7 +286,7 @@ defaults
 	timeout tunnel  3600s
 
 # HTTP — ACME HTTP-01, per-app plain HTTP, per-host HTTPS redirects, default redirect
-# Rule order: all ACLs and http-request rules first, then use_backend (avoids HAProxy 3.0.x -c warnings / non-zero exit).
+# Rule order: ACLs → all http-request → use_backend (avoids HAProxy 3.x "http-request after use_backend" warnings).
 frontend fe_http
 	bind *:80
 	mode http
@@ -297,15 +297,17 @@ frontend fe_http
 {{end}}
 {{- if .RedirectApps}}
 	acl redir_fe_any_host hdr(host) -i {{range $i, $a := .RedirectApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
+{{- end}}
+{{- if and .HasHTTPSFrontend .HTTPApps}}
+	acl fe_http_keeps_plain hdr(host) -i {{range $i, $a := .HTTPApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
+{{- end}}
+{{- if .RedirectApps}}
 	http-request redirect scheme https code 301 if redir_fe_any_host !acme
 {{- end}}
-{{- if .HasHTTPSFrontend}}
-{{- if .HTTPApps}}
-	acl fe_http_keeps_plain hdr(host) -i {{range $i, $a := .HTTPApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
+{{- if and .HasHTTPSFrontend .HTTPApps}}
 	http-request redirect scheme https code 301 if !acme !fe_http_keeps_plain
-{{- else}}
+{{- else if .HasHTTPSFrontend}}
 	http-request redirect scheme https code 301 if !acme
-{{- end}}
 {{- end}}
 	use_backend bk_acme if acme
 {{range $a := .HTTPApps}}

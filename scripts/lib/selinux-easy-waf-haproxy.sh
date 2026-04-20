@@ -1,35 +1,46 @@
 # shellcheck shell=bash
 # Optional: sourced by install.sh and fix-haproxy-easy-waf-dropin.sh when present.
-# Makes HAProxy able to read generated config/maps under $STATE_DIR/haproxy (SELinux on RHEL/Alma).
+# SELinux (RHEL/Alma): haproxy_t may read/write only paths labeled for HAProxy under /var/lib.
 
 easy_waf_selinux_label_haproxy_dir() {
   local state_dir="${1:?state dir}"
-  local hp
+  local hp certs sock
   hp="${state_dir}/haproxy"
+  certs="${state_dir}/certs"
+  sock="${hp}/admin.sock"
+
   if [[ ! -d "$hp" ]]; then
     return 0
   fi
+
   if command -v semanage &>/dev/null; then
-    local pat="${hp}(/.*)?"
-    # Same contexts as the distro HAProxy config tree (package policy).
-    if semanage fcontext -a -e /etc/haproxy "$pat" 2>/dev/null; then
+    if semanage fcontext -a -t haproxy_var_lib_t "${hp}(/.*)?" 2>/dev/null; then
       :
     else
-      semanage fcontext -m -e /etc/haproxy "$pat" 2>/dev/null || true
+      semanage fcontext -m -t haproxy_var_lib_t "${hp}(/.*)?" 2>/dev/null || true
+    fi
+    if [[ -d "$certs" ]]; then
+      if semanage fcontext -a -t haproxy_var_lib_t "${certs}(/.*)?" 2>/dev/null; then
+        :
+      else
+        semanage fcontext -m -t haproxy_var_lib_t "${certs}(/.*)?" 2>/dev/null || true
+      fi
+    fi
+    if semanage fcontext -a -t haproxy_var_run_t "${sock}" 2>/dev/null; then
+      :
+    else
+      semanage fcontext -m -t haproxy_var_run_t "${sock}" 2>/dev/null || true
     fi
   fi
-  # Do not run restorecon -RFv on $hp: on Alma/RHEL it often relabels files from etc_t to var_lib_t
-  # even when an equivalence rule exists, which breaks haproxy_t reading the live config.
 
-  # Match the live distro HAProxy tree (works when equivalence / restorecon do not).
-  local ref=/etc/haproxy/haproxy.cfg
-  if [[ -f "$ref" ]] && command -v chcon &>/dev/null; then
-    if [[ -d /etc/haproxy ]]; then
-      chcon --reference=/etc/haproxy "$hp" 2>/dev/null || true
+  if command -v restorecon &>/dev/null; then
+    restorecon -Rv "$hp" 2>/dev/null || true
+    if [[ -d "$certs" ]]; then
+      restorecon -Rv "$certs" 2>/dev/null || true
     fi
-    find "$hp" -maxdepth 1 ! -type d -print0 2>/dev/null |
-      while IFS= read -r -d '' f; do
-        chcon --reference="$ref" "$f" 2>/dev/null || true
-      done
+  fi
+
+  if command -v setsebool &>/dev/null; then
+    setsebool -P haproxy_connect_any 1 2>/dev/null || true
   fi
 }

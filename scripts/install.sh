@@ -82,6 +82,11 @@ create_user_and_layout() {
   chmod 0700 "$SECRETS_DIR" || true
   chmod 0755 "$ACME_WEBROOT" || true
   chown -R easy-waf:easy-waf "$STATE_DIR" || true
+  if [[ -f "${SCRIPT_DIR}/lib/haproxy-state-perms.sh" ]]; then
+    # shellcheck source=lib/haproxy-state-perms.sh
+    source "${SCRIPT_DIR}/lib/haproxy-state-perms.sh"
+    easy_waf_haproxy_join_group_and_chmod_state "$STATE_DIR"
+  fi
 }
 
 install_env_file() {
@@ -430,10 +435,14 @@ selinux_restore() {
     restorecon -RFv "$STATE_DIR" 2>/dev/null || true
     restorecon -Rv "$CFG_DIR" 2>/dev/null || true
   fi
+}
+
+easy_waf_selinux_label_haproxy_paths() {
   if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
     # shellcheck source=lib/selinux-easy-waf-haproxy.sh
     source "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
     easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
+    log "SELinux: labeled HAProxy state under ${STATE_DIR} (haproxy_var_lib_t)"
   fi
 }
 
@@ -610,6 +619,7 @@ main() {
   install_systemd_units
   install_polkit_rules
   selinux_restore
+  easy_waf_selinux_label_haproxy_paths
   install_haproxy_points_at_state_cfg
   configure_firewalld_management_lan
   firewall_hint
