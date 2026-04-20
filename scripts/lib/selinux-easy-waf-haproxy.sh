@@ -9,7 +9,7 @@ easy_waf_selinux_label_haproxy_dir() {
   if [[ ! -d "$hp" ]]; then
     return 0
   fi
-  if command -v semanage &>/dev/null && command -v restorecon &>/dev/null; then
+  if command -v semanage &>/dev/null; then
     local pat="${hp}(/.*)?"
     # Same contexts as the distro HAProxy config tree (package policy).
     if semanage fcontext -a -e /etc/haproxy "$pat" 2>/dev/null; then
@@ -17,13 +17,17 @@ easy_waf_selinux_label_haproxy_dir() {
     else
       semanage fcontext -m -e /etc/haproxy "$pat" 2>/dev/null || true
     fi
-    restorecon -RFv "$hp" 2>/dev/null || true
   fi
+  # Do not run restorecon -RFv on $hp: on Alma/RHEL it often relabels files from etc_t to var_lib_t
+  # even when an equivalence rule exists, which breaks haproxy_t reading the live config.
 
-  # If equivalence rules did not apply (policy mismatch), match the live distro config label.
+  # Match the live distro HAProxy tree (works when equivalence / restorecon do not).
   local ref=/etc/haproxy/haproxy.cfg
   if [[ -f "$ref" ]] && command -v chcon &>/dev/null; then
-    find "$hp" -maxdepth 1 -type f \( -name '*.cfg' -o -name '*.txt' -o -name '*.map' \) -print0 2>/dev/null |
+    if [[ -d /etc/haproxy ]]; then
+      chcon --reference=/etc/haproxy "$hp" 2>/dev/null || true
+    fi
+    find "$hp" -maxdepth 1 ! -type d -print0 2>/dev/null |
       while IFS= read -r -d '' f; do
         chcon --reference="$ref" "$f" 2>/dev/null || true
       done

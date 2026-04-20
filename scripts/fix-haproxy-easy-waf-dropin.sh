@@ -46,6 +46,7 @@ fi
 sed "s|__EASY_WAF_STATE__|${STATE_DIR}|g" "$DROP_SRC" >/etc/systemd/system/haproxy.service.d/50-easy-waf.conf
 chmod 0644 /etc/systemd/system/haproxy.service.d/50-easy-waf.conf
 echo "[easy-waf] wrote /etc/systemd/system/haproxy.service.d/50-easy-waf.conf"
+systemctl daemon-reload
 
 SELINUX_LIB="${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
 if [[ -f "$SELINUX_LIB" ]]; then
@@ -78,12 +79,19 @@ else
   echo "[easy-waf] WARNING: easy-waf-admin not found — update haproxy.cfg from UI (Apply) or install the binary." >&2
 fi
 
+# apply-edge rewrites cfg/maps via atomic rename; new inodes may get var_lib_t — re-apply chcon like /etc/haproxy.
+if [[ -f "$SELINUX_LIB" ]]; then
+  # shellcheck source=lib/selinux-easy-waf-haproxy.sh
+  source "$SELINUX_LIB"
+  easy_waf_selinux_label_haproxy_dir "$STATE_DIR"
+  echo "[easy-waf] SELinux: relabeled ${STATE_DIR}/haproxy after apply-edge (if chcon available)"
+fi
+
 if ! /usr/sbin/haproxy -c -f "$CFG" 2>&1; then
   echo "[easy-waf] ERROR: haproxy -c -f $CFG failed (fix config or AVC: ausearch -m avc -ts recent)" >&2
   exit 1
 fi
 
-systemctl daemon-reload
 if systemctl cat haproxy.service >/dev/null 2>&1; then
   if systemctl restart haproxy.service; then
     echo "[easy-waf] haproxy.service restarted"

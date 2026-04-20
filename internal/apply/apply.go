@@ -31,13 +31,15 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmp, path)
 }
 
-// ReloadHAProxy runs `systemctl reload haproxy` when available.
+// ReloadHAProxy reloads HAProxy if it is already running, otherwise starts it.
+// Plain `systemctl reload` fails with "cannot reload" when the unit is inactive,
+// which breaks apply-edge / API Apply on a cold edge after a template upgrade.
 func ReloadHAProxy() error {
-	cmd := exec.Command("systemctl", "reload", "haproxy")
+	cmd := exec.Command("systemctl", "reload-or-restart", "haproxy")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("systemctl reload haproxy: %w", err)
+		return fmt.Errorf("systemctl reload-or-restart haproxy: %w", err)
 	}
 	return nil
 }

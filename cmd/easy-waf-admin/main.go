@@ -56,7 +56,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin apply-edge [-env-file path] [-state-dir path] [-database-url URL] [-label text]")
-	fmt.Fprintln(os.Stderr, "      Re-render HAProxy config from PostgreSQL and reload haproxy (root; same as API POST /apply).")
+	fmt.Fprintln(os.Stderr, "      Re-render HAProxy config from PostgreSQL and reload-or-start haproxy (root; same as API POST /apply).")
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 
