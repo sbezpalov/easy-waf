@@ -114,7 +114,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 - Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated.
 - Secrets in `/etc/easy-waf/secrets/` with `0600` and SELinux file contexts (documented in Security Guide).
-- UI: session auth + CSRF for state-changing routes; default bind **all interfaces** on **8443** with **firewalld** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
+- UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **firewalld** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
 - Subprocess: no shell; explicit argv; timeouts.
 - Audit: append-only audit log for admin actions.
 

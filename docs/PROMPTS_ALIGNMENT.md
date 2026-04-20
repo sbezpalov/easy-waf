@@ -1,12 +1,20 @@
 # Соответствие `prompts.md` (Easy Home WAF)
 
-**Последнее обновление:** 2026-04-16  
+**Последнее обновление:** 2026-04-20  
 **Текущий VERSION:** 1.0.0 (см. корневой файл `VERSION`)  
 **Сводка по строкам таблиц §2–§3:** Done — **18**, Partial — **3**, Missing — **0**, N/A — **0**
 
 Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
 
 Источник истины по реализации — **§7 Features** и проверка приёмки — **§9 Acceptance criteria**. Ниже в §2–§3 только компактный указатель со статусом и ссылкой `см. §7.*` / при необходимости на §9.
+
+## Security hardening (audit follow-up)
+
+| Item | Status | Where |
+|------|--------|-------|
+| **CSRF** | **Done** | JWT Bearer in `Authorization` (not cookies) + **`X-Requested-With: XMLHttpRequest`** on POST/PUT/PATCH/DELETE via `internal/api/csrf.go` (`RequireXHR`), UI `hdr()` in `internal/webui/dist/index.html`, docs `docs/ARCHITECTURE.md` / `docs/SECURITY.md`; curl scripts set the header (`scripts/restore.sh`, `scripts/test-backup-restore.sh`, `scripts/update-geoip-db.sh`) |
+| **Login rate limit** | **Done** | Per-IP sliding window **10 attempts / 5 min**, lockout **15 min**; `internal/api/ratelimit.go`, `handleLogin` in `internal/api/auth_handlers.go`, `LoginRL` wired in `internal/bootstrap/run.go` |
+| **Hostname validation** | **Done** | `validateAppHostnames` on `POST /api/v1/applications` — `internal/api/validate_application.go` |
 
 ## §2 Goals — Core
 

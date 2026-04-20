@@ -51,7 +51,7 @@ api_get() {
 }
 
 api_post() {
-  curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" -H "Content-Type: application/json" -X POST "$1" -d "$2"
+  curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" -X POST "$1" -d "$2"
 }
 
 echo "[e2e] prepare PEM under $STATE/certs/_e2e/"

@@ -32,6 +32,8 @@ import (
 type Server struct {
 	Eng       *engine.Engine
 	JWTSecret []byte
+	// LoginRL optional per-IP login rate limiter (nil skips limiting).
+	LoginRL *LoginRateLimiter
 	// MgmtTLS optional: when set, PUT /settings/management-tls replaces cert on disk and in-memory (HTTPS listener).
 	MgmtTLS         *mgmttls.Manager
 	MgmtTLSCertPath string
@@ -46,6 +48,7 @@ func (s *Server) Router() chi.Router {
 	// True-Client-IP → X-Real-IP → X-Forwarded-For (left); trust only behind a trusted reverse proxy (see docs/SECURITY.md).
 	r.Use(middleware.RealIP)
 	r.Use(s.managementACL)
+	r.Use(RequireXHR)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +192,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	a.Security.Mode = string(profiles.DetectMode(a.Security))
 	if config.ListenModeRequiresCertificate(a.ListenMode) && strings.TrimSpace(a.CertificateID) == "" {
 		http.Error(w, "certificate_id is required for listen_mode "+a.ListenMode, http.StatusBadRequest)
+		return
+	}
+	if err := validateAppHostnames(&a); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

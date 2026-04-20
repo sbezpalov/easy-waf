@@ -42,6 +42,7 @@ if [[ -n "${EASY_WAF_ADMIN_TOKEN:-}" ]]; then
   curl -fsS -X POST "$API/api/v1/geoip/reload" \
     -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
+    -H "X-Requested-With: XMLHttpRequest" \
     -d "{\"mmdb_path\":\"$DEST/GeoLite2-Country.mmdb\"}" || {
     echo "[update-geoip-db] WARNING: reload request failed (API down or token invalid?)" >&2
   }

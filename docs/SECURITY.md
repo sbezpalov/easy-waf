@@ -18,6 +18,14 @@
 - Management HTTPS is served by **easy-waf-api** on **8443** (bootstrap self-signed; replace in UI). Optional extra reverse proxy (NGINX / HAProxy) remains possible — see `configs/nginx/admin-ui.conf.example`.
 - Plan for **MFA** at the reverse proxy (e.g. OAuth2 proxy) if the UI must be reachable beyond strict LAN.
 
+## CSRF Protection
+
+The management API uses **JWT Bearer tokens** in the `Authorization` header, stored in `sessionStorage` (not cookies). Browsers do not attach custom headers automatically on cross-origin form submissions or link navigations, which makes traditional CSRF attacks ineffective against this API.
+
+As an additional defense-in-depth measure, the API requires a **`X-Requested-With: XMLHttpRequest`** header on all state-changing requests (POST, PUT, PATCH, DELETE). Requests without this header receive **403 Forbidden**. This reduces risk from contexts where custom headers cannot be set (e.g. `<form>` submissions, `<img>` tags, basic redirects).
+
+The `/health` endpoint and `GET` requests are exempt from this check.
+
 ## Edge (HAProxy / CrowdSec)
 
 - When an **NGFW** (MikroTik, FortiGate, …) sits in front of the appliance, use **IPS** and **application control** on the firewall; the WAF handles hostname routing, TLS, CrowdSec, and IPBL — see **Reference topology: NGFW → WAF** in [ARCHITECTURE.md](ARCHITECTURE.md).

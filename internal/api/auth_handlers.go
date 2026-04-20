@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,24 @@ type changePasswordRequest struct {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	ip, ipOK := clientIP(r)
+	ipStr := ""
+	if ipOK && ip.IsValid() {
+		ipStr = ip.String()
+	}
+	if s.LoginRL != nil && ipStr != "" {
+		allowed, retryAfter := s.LoginRL.Allow(ipStr)
+		if !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			_ = s.Eng.Store.AppendAudit(r.Context(), "login_rate_limited", map[string]any{
+				"source_ip":   ipStr,
+				"retry_after": retryAfter,
+			})
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts, try again later"})
+			return
+		}
+	}
+
 	var body loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -44,10 +63,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
 	if err != nil || u == nil {
+		_ = s.Eng.Store.AppendAudit(r.Context(), "login_failed", map[string]any{
+			"source_ip": ipStr,
+			"username":  user,
+		})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)) != nil {
+		_ = s.Eng.Store.AppendAudit(r.Context(), "login_failed", map[string]any{
+			"source_ip": ipStr,
+			"username":  user,
+		})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -55,6 +82,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.LoginRL != nil && ipStr != "" {
+		s.LoginRL.RecordSuccess(ipStr)
 	}
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,

@@ -567,7 +567,10 @@
 
   const hdr = () => {
     const t = getTok();
-    const h = { 'Content-Type': 'application/json' };
+    const h = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
     if (t) h['Authorization'] = 'Bearer ' + t;
     return h;
   };
@@ -715,7 +718,13 @@
       username: document.getElementById('login-user').value.trim(),
       password: document.getElementById('login-pass').value
     };
-    const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    if (r.status === 429) {
+      const retryAfter = r.headers.get('Retry-After') || '?';
+      document.getElementById('login-err').textContent =
+        'Too many login attempts. Try again in ' + retryAfter + ' seconds.';
+      return;
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { document.getElementById('login-err').textContent = j.error || r.statusText; return; }
     setTok(j.token);

@@ -123,7 +123,13 @@ func RunAPI() {
 	}
 
 	prom := metrics.NewPrometheusExporter()
-	srv := &api.Server{Eng: eng, JWTSecret: jwtSecret, HAProxyMetrics: metrics.NewHAProxyCollector(), Prom: prom}
+	srv := &api.Server{
+		Eng:            eng,
+		JWTSecret:      jwtSecret,
+		HAProxyMetrics: metrics.NewHAProxyCollector(),
+		Prom:           prom,
+		LoginRL:        api.NewLoginRateLimiter(5*time.Minute, 10, 15*time.Minute),
+	}
 	ctxRefresh, stopPromRefresh := context.WithCancel(context.Background())
 	defer stopPromRefresh()
 	go prometheusRefreshLoop(ctxRefresh, srv, stateDir)

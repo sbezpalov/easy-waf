@@ -118,6 +118,7 @@ else
   if curl -fsS -o /dev/null -X POST "${API_BASE%/}/api/v1/apply" \
     -H "Authorization: Bearer ${TOK}" \
     -H "Content-Type: application/json" \
+    -H "X-Requested-With: XMLHttpRequest" \
     -d '{"label":"restore"}' 2>/dev/null; then
     echo "[easy-waf-restore] apply OK"
   else
