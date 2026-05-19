@@ -157,10 +157,14 @@ func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error 
 	if decType == "" {
 		decType = "ban"
 	}
-	dur := mapAddDecisionDuration(strings.TrimSpace(req.Duration))
+	dur := mapAddDecisionDuration(strings.TrimSpace(req.Duration), decType)
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
-		reason = "manual ban from UI"
+		if strings.EqualFold(decType, "whitelist") {
+			reason = "manual allowlist from UI"
+		} else {
+			reason = "manual ban from UI"
+		}
 	}
 	payload := []lapiDecisionPost{{
 		Scope:    "Ip",
@@ -200,7 +204,15 @@ func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error 
 	return nil
 }
 
-func mapAddDecisionDuration(d string) string {
+func mapAddDecisionDuration(d, decType string) string {
+	if strings.EqualFold(strings.TrimSpace(decType), "whitelist") {
+		switch strings.ToLower(strings.TrimSpace(d)) {
+		case "", "permanent", "876000h":
+			return "876000h"
+		default:
+			return d
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(d)) {
 	case "", "24h":
 		return "24h"

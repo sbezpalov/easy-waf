@@ -4,11 +4,11 @@
 
 ## 1. SSH: `~/.ssh/config`
 
-На **Windows** (OpenSSH) и **Linux** добавьте блок (подставьте свой **`HostName`**: пилот часто **`192.0.2.11`**, иначе LAN IP) и пользователя:
+На **Windows** (OpenSSH) и **Linux** добавьте блок (подставьте свой **`HostName`**: пилот **`192.0.2.10`**, DNS **`waf-dev.home.bezpalov.com`**) и пользователя:
 
 ```ssh-config
 Host waf-dev
-    HostName 192.0.2.11
+    HostName 192.0.2.10
     User youruser
     IdentityFile ~/.ssh/id_ed25519
     ServerAliveInterval 30
@@ -19,6 +19,8 @@ Host waf-dev
 ```bash
 ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 ```
+
+**DNS (LAN):** `waf-dev.home.bezpalov.com` → `192.0.2.10` (если в `~/.ssh/config` указан IP, DNS не обязателен).
 
 ## 2. Cursor / VS Code — Remote SSH
 

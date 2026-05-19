@@ -58,6 +58,8 @@ func auditHTTPRouteCategory(path string) string {
 		return "blocked-ua"
 	case strings.Contains(path, "/integrations/crowdsec"):
 		return "crowdsec"
+	case strings.Contains(path, "/integrations/fail2ban"):
+		return "fail2ban"
 	case strings.Contains(path, "/diagnostics"):
 		return "diagnostics"
 	case strings.Contains(path, "/auth/change-password"):

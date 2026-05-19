@@ -464,6 +464,31 @@ install_systemd_units() {
   log "Run: systemctl enable --now easy-waf-api.service easy-waf-acmed.service"
 }
 
+# Allow easy-waf-api (user easy-waf) to read fail2ban status and unban IPs (management UI).
+install_fail2ban_sudoers() {
+  if ! id easy-waf &>/dev/null; then
+    return 0
+  fi
+  if ! command -v fail2ban-client &>/dev/null; then
+    return 0
+  fi
+  local f="/etc/sudoers.d/easy-waf-fail2ban"
+  cat >"$f" <<'EOF'
+# Easy Home WAF — management API may read status and unban via fail2ban-client.
+Cmnd_Alias EASY_WAF_FAIL2BAN = /usr/bin/fail2ban-client status, /usr/bin/fail2ban-client status *, /usr/bin/fail2ban-client set * unbanip *
+easy-waf ALL=(root) NOPASSWD: EASY_WAF_FAIL2BAN
+EOF
+  chmod 0440 "$f"
+  if command -v visudo &>/dev/null; then
+    if ! visudo -cf "$f" 2>/dev/null; then
+      rm -f "$f"
+      log "WARNING: invalid easy-waf-fail2ban sudoers — skipped"
+      return 0
+    fi
+  fi
+  log "Installed $f (fail2ban status/unban for easy-waf user)"
+}
+
 install_polkit_rules() {
   if command -v pkaction >/dev/null 2>&1 || [[ -d /etc/polkit-1/rules.d ]]; then
     local polkit_src="${REPO_ROOT}/packaging/polkit"
@@ -684,6 +709,7 @@ main() {
   install_binaries
   install_systemd_units
   install_polkit_rules
+  install_fail2ban_sudoers
   selinux_restore
   easy_waf_integrate_haproxy_edge
   easy_waf_load_firewalld_env_from_file_if_unset

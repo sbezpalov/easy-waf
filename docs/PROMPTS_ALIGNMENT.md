@@ -2,7 +2,7 @@
 
 **Последнее обновление:** 2026-04-20  
 **Текущий VERSION:** 1.0.0 (см. корневой файл `VERSION`)  
-**Сводка по строкам таблиц §2–§3:** Done — **18**, Partial — **3**, Missing — **0**, N/A — **0**
+**Сводка по строкам таблиц §2–§3:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
 
 Этот документ **привязывает** требования из [prompts.md](../prompts.md) к коду и докам репозитория. Статусы: **Done** | **Partial** | **Missing** | **N/A** (вне MVP / перенесено).
 
@@ -32,9 +32,9 @@
 |------------|--------|-----|
 | Rate limit (stick-tables), per-app | **Done** | см. **§7.1a** |
 | Базовый WAF (ACL), per-app | **Done** | см. **§7.1a** |
-| CrowdSec + решения (LAPI, decisions в UI) | **Partial** | см. **§7.5** (нет unblock/ban в UI) |
+| CrowdSec + решения (LAPI, decisions в UI) | **Done** | см. **§7.5** (ban/unban/whitelist в UI) |
 | SPOE bouncer | **Done** | см. **§7.3**; шаблон `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
-| Fail2Ban | **Partial** | установка в `install.sh`; оркестрация через API — нет |
+| Fail2Ban | **Done** | `install.sh` + `GET/POST /api/v1/integrations/fail2ban/*`, UI вкладка Fail2Ban, `docs/FAIL2BAN.md` |
 | GeoIP + кэш (ipinfo, batch map, ACL) | **Done** | см. **§7.6** |
 
 ## §2 UX / Observability
@@ -52,7 +52,7 @@
 | Alma 10, systemd, firewalld, SELinux | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md` |
 | `haproxy -c` до reload | **Done** | см. **§7.3**; `internal/apply`, `internal/engine` |
 | SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | см. **§7.3** |
-| CrowdSec LAPI не через Lua | **Partial** | доки + SPOA пакет; см. **§7.5** |
+| CrowdSec LAPI не через Lua | **Done** | Go LAPI client + SPOA пакет; см. **§7.5**, `docs/CROWDSEC.md` |
 | Генератор конфига, валидация, атомарный apply, rollback | **Done** | см. **§7.3**; **§9** AC-06 |
 | GeoIP API + batch map + ACL | **Done** | см. **§7.6** |
 | MaxMind MMDB как провайдер | **Done** | `geoip_mmdb_path`, `internal/geoip/maxmind.go`, `GET/POST /api/v1/geoip/*`, `docs/GEOIP.md`, `scripts/update-geoip-db.sh` |
@@ -86,7 +86,7 @@
 
 ### 7.4 Security profiles — **Done** (имена из prompts: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
 
-### 7.5 CrowdSec — **Partial** (ping LAPI, decisions в UI, **Unban** + ручной **Ban IP** через LAPI; whitelist и прочие операции `cscli` — вне UI)
+### 7.5 CrowdSec — **Done** (ping LAPI, decisions в UI, **Unban** / **Ban IP** / **Allow IP (whitelist)** через LAPI; операции `cscli` вне UI — по докам)
 
 ### 7.6 GeoIP — **Done** (`internal/geoip` — ipinfo + **MaxMind GeoLite2-Country.mmdb**, `GET /api/v1/geoip/lookup|stats|providers`, `POST /api/v1/geoip/reload`, настройки `geoip_*` / `geoip_mmdb_path`, миграции `007`+`010`, batch `geoip_enforce.map` + ACL в `render.go`, секция в UI, `docs/GEOIP.md`)
 
@@ -121,9 +121,9 @@
 
 1. **Release pipeline (базово сделано):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push тега `v*`, `make build`, tarball + `SHA256SUMS`, GitHub Release с текстом из `CHANGELOG.md`. Далее: подпись артефактов, pre-release/nightly.
 2. **MaxMind MMDB (done):** см. **`docs/GEOIP.md`**, **`scripts/update-geoip-db.sh`**. Далее: подпись MMDB, метрики размера/epoch файла.
-3. **CrowdSec в UI:** unblock / ban / delete decision через LAPI (см. также §7.5).
-4. **Prometheus:** экспорт метрик на `/metrics` (рядом с существующим API stats).
-5. **Diagnostics bundle:** скрипт `scripts/diagnostics.sh` (логи, версии, конфиг-снимок, проверки сокетов) для поддержки.
+3. ~~**CrowdSec в UI**~~ — done (ban/unban/whitelist).
+4. ~~**Prometheus `/metrics`**~~ — done (`docs/MONITORING.md`).
+5. ~~**Diagnostics bundle**~~ — done (`scripts/diagnostics.sh`, API bundle, `docs/DIAGNOSTICS.md`).
 6. **OVA/OVF appliance template** для быстрого развёртывания ВМ.
 7. **Smoke test checklist** (ручной/полуавтоматический прогон после установки).
 8. **Тесты:** расширенные e2e / дерево `tests/` против compose PostgreSQL.

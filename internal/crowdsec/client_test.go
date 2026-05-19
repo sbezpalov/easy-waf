@@ -74,6 +74,29 @@ func TestAddDecision_Success(t *testing.T) {
 	}
 }
 
+func TestAddDecision_Whitelist(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(b), `"type":"whitelist"`) {
+			t.Fatalf("body: %s", b)
+		}
+		if !strings.Contains(string(b), `"duration":"876000h"`) {
+			t.Fatalf("body: %s", b)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := Client{BaseURL: srv.URL, APIKey: "k"}
+	err := c.AddDecision(context.Background(), AddDecisionRequest{
+		IP:   "203.0.113.2",
+		Type: "whitelist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAddDecision_InvalidIP(t *testing.T) {
 	c := Client{BaseURL: "http://127.0.0.1:9", APIKey: "k"}
 	err := c.AddDecision(context.Background(), AddDecisionRequest{

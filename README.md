@@ -22,6 +22,7 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 | [docs/ACME.md](docs/ACME.md) | Certificates and DNS providers |
 | [docs/DNS01.md](docs/DNS01.md) | DNS-01: Cloudflare, CloudNS (default), Route53, webhook |
 | [docs/CROWDSEC.md](docs/CROWDSEC.md) | SPOE, bouncer, logs |
+| [docs/FAIL2BAN.md](docs/FAIL2BAN.md) | Fail2Ban status and unban via API/UI |
 | [docs/IPBL.md](docs/IPBL.md) | IP blacklist: local + external feeds → HAProxy map |
 | [docs/GEOIP.md](docs/GEOIP.md) | GeoIP: ipinfo vs MaxMind MMDB, updates, batch vs lookup API |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common failures |

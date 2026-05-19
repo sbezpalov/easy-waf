@@ -167,6 +167,7 @@
         <a href="#certs" class="nav-link" data-tab="certs"><span>▤</span> Certificates</a>
         <a href="#security" class="nav-link" data-tab="security"><span>◎</span> Security</a>
         <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span>⚑</span> CrowdSec</a>
+        <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span>⛔</span> Fail2Ban</a>
         <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config</a>
         <a href="#settings" class="nav-link" data-tab="settings"><span>✎</span> Settings</a>
         <a href="#logs" class="nav-link" data-tab="logs"><span>◈</span> Logs / Audit</a>
@@ -453,6 +454,14 @@
           <h3>Active decisions</h3>
           <p id="cs-decisions-msg" class="warn" style="min-height:1rem"></p>
           <div id="cs-decisions-table-wrap"></div>
+          <h3 style="margin-top:1.25rem">Allow IP (LAPI whitelist)</h3>
+          <p class="dash-note" style="margin-top:0">Adds a <code>whitelist</code> decision in CrowdSec LAPI (long duration). Use for trusted IPs that should bypass bouncer blocks.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-top:0.35rem">
+            <label>IP <input id="cs-allow-ip" type="text" placeholder="203.0.113.50" autocomplete="off" style="min-width:10rem" /></label>
+            <label style="flex:1;min-width:14rem">Reason<br /><textarea id="cs-allow-reason" rows="2" style="width:100%;min-width:14rem" placeholder="manual allowlist from UI"></textarea></label>
+            <button type="button" id="btn-cs-allow">Allow IP</button>
+          </div>
+          <p id="cs-allow-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
           <h3 style="margin-top:1.25rem">Manual ban</h3>
           <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-top:0.35rem">
             <label>IP <input id="cs-ban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
@@ -478,6 +487,27 @@
             <button type="button" class="secondary" id="btn-cs-dec">Refresh decisions table</button>
           </div>
           <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;margin-top:0.75rem"></pre>
+        </div>
+      </div>
+
+      <div id="tab-fail2ban" class="tab-panel">
+        <h2>⛔ Fail2Ban</h2>
+        <p class="dash-note" style="margin-top:0">SSH and optional jails installed with the appliance. Status is read via <code>fail2ban-client</code> (sudoers drop-in from <code>install.sh</code> when fail2ban is present).</p>
+        <div class="panel" style="max-width:100%">
+          <div class="row">
+            <button type="button" class="secondary" id="btn-f2b-refresh">Refresh jails</button>
+          </div>
+          <p id="f2b-status-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <div id="f2b-jails-wrap"></div>
+          <h3 style="margin-top:1.25rem">Unban IP</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end">
+            <label>Jail
+              <select id="f2b-unban-jail" style="min-width:10rem"><option value="">(refresh jails first)</option></select>
+            </label>
+            <label>IP <input id="f2b-unban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
+            <button type="button" id="btn-f2b-unban">Unban</button>
+          </div>
+          <p id="f2b-unban-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
       </div>
 
@@ -535,6 +565,7 @@
             <option value="blocked-ua">blocked-ua</option>
             <option value="change-password">change-password</option>
             <option value="crowdsec">crowdsec (decisions / LAPI)</option>
+            <option value="fail2ban">fail2ban (unban)</option>
             <option value="diagnostics">diagnostics (support bundle)</option>
           </select>
           </label>
@@ -581,6 +612,7 @@
     '#certs': 'certs',
     '#security': 'security',
     '#crowdsec': 'crowdsec',
+    '#fail2ban': 'fail2ban',
     '#config': 'config',
     '#settings': 'settings',
     '#logs': 'logs'
@@ -650,6 +682,9 @@
           await loadSettingsPanel();
           await loadCrowdsecDecisionsTable();
         })();
+        break;
+      case 'fail2ban':
+        void loadFail2banOverview();
         break;
       case 'config':
         loadRevisions();
@@ -1930,13 +1965,16 @@
       const id = d.id != null ? String(d.id) : '';
       const ip = d.value != null ? String(d.value) : '';
       const typ = esc(d.type || '');
+      const typRaw = (d.type || '').toLowerCase();
+      const isWL = typRaw === 'whitelist';
+      const btnLabel = isWL ? 'Remove' : 'Unban';
       const scen = esc(d.scenario || '');
       const dur = esc(d.duration || d.decision || '');
       const exp = esc(d.expires_at || d.until || '');
       return (
         '<tr><td><code>' + esc(id) + '</code></td><td><code>' + esc(ip) + '</code></td><td>' + typ + '</td><td>' + scen +
         '</td><td>' + dur + '</td><td>' + exp + '</td><td><button type="button" class="secondary cs-unban" data-id="' +
-        esc(id) + '" data-ip="' + esc(ip) + '">Unban</button></td></tr>'
+        esc(id) + '" data-ip="' + esc(ip) + '" data-wl="' + (isWL ? '1' : '0') + '">' + btnLabel + '</button></td></tr>'
       );
     }).join('');
     wrap.innerHTML =
@@ -1944,6 +1982,120 @@
       rows +
       '</tbody></table>';
   }
+
+  async function loadFail2banOverview() {
+    const msg = document.getElementById('f2b-status-msg');
+    const wrap = document.getElementById('f2b-jails-wrap');
+    const jailSel = document.getElementById('f2b-unban-jail');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    const r = await fetch('/api/v1/integrations/fail2ban', { headers: hdr() });
+    const txt = await r.text();
+    if (r.status === 401 || r.status === 403) {
+      if (r.status === 401) setTok('');
+      refreshSession();
+      return;
+    }
+    let j = {};
+    try { j = JSON.parse(txt); } catch (_) {
+      if (msg) msg.textContent = 'Invalid JSON';
+      return;
+    }
+    const st = j.status || {};
+    if (!r.ok) {
+      if (msg) msg.textContent = j.error || txt || ('HTTP ' + r.status);
+      if (wrap) wrap.innerHTML = '';
+      return;
+    }
+    if (msg) {
+      if (st.running) {
+        msg.textContent = 'Daemon: running (' + (st.message || 'pong') + ')';
+        msg.className = 'ok';
+      } else {
+        msg.textContent = 'Daemon: ' + (st.message || 'not running');
+        msg.className = 'warn';
+      }
+    }
+    const jails = Array.isArray(j.jails) ? j.jails : [];
+    if (jailSel) {
+      jailSel.innerHTML = jails.length
+        ? jails.map((x) => '<option value="' + esc(x.name) + '">' + esc(x.name) + '</option>').join('')
+        : '<option value="">(no jails)</option>';
+    }
+    if (!wrap) return;
+    if (!jails.length) {
+      wrap.innerHTML = '<p class="dash-note">No jails or fail2ban not running.</p>';
+      return;
+    }
+    const rows = jails.map((jail) => {
+      const ips = Array.isArray(jail.banned_ips) ? jail.banned_ips : [];
+      const ipCells = ips.length
+        ? ips.map((ip) =>
+            '<code>' + esc(ip) + '</code> <button type="button" class="secondary f2b-unban-row" data-jail="' +
+            esc(jail.name) + '" data-ip="' + esc(ip) + '">Unban</button>'
+          ).join('<br />')
+        : '<span class="dash-note">none</span>';
+      return '<tr><td><code>' + esc(jail.name) + '</code></td><td>' + ips.length + '</td><td>' + ipCells + '</td></tr>';
+    }).join('');
+    wrap.innerHTML =
+      '<table><thead><tr><th>Jail</th><th>Banned</th><th>IPs</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  document.getElementById('btn-f2b-refresh').onclick = () => { void loadFail2banOverview(); };
+
+  (function bindFail2banUnban() {
+    const wrap = document.getElementById('f2b-jails-wrap');
+    if (wrap) {
+      wrap.addEventListener('click', async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest('button.f2b-unban-row');
+        if (!btn) return;
+        const jail = btn.getAttribute('data-jail');
+        const ip = btn.getAttribute('data-ip');
+        if (!jail || !ip) return;
+        if (!confirm('Unban ' + ip + ' from jail ' + jail + '?')) return;
+        await postFail2banUnban(jail, ip);
+      });
+    }
+  })();
+
+  async function postFail2banUnban(jail, ip) {
+    const msg = document.getElementById('f2b-unban-msg');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    const r = await fetch('/api/v1/integrations/fail2ban/unban', {
+      method: 'POST',
+      headers: hdr(),
+      body: JSON.stringify({ jail: jail, ip: ip })
+    });
+    if (!r.ok) {
+      if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+      return;
+    }
+    if (msg) {
+      msg.textContent = 'Unban OK.';
+      msg.className = 'ok';
+    }
+    await loadFail2banOverview();
+  }
+
+  document.getElementById('btn-f2b-unban').onclick = async () => {
+    const jailEl = document.getElementById('f2b-unban-jail');
+    const ipEl = document.getElementById('f2b-unban-ip');
+    const jail = jailEl ? jailEl.value : '';
+    const ip = ipEl && ipEl.value ? ipEl.value.trim() : '';
+    if (!jail || !ip) {
+      const msg = document.getElementById('f2b-unban-msg');
+      if (msg) msg.textContent = 'Select jail and enter IP.';
+      return;
+    }
+    if (!confirm('Unban ' + ip + ' from jail ' + jail + '?')) return;
+    await postFail2banUnban(jail, ip);
+    if (ipEl) ipEl.value = '';
+  };
 
   document.getElementById('btn-cs-ping').onclick = async () => {
     const r = await fetch('/api/v1/integrations/crowdsec', { headers: hdr() });
@@ -1962,7 +2114,9 @@
       const id = btn.getAttribute('data-id');
       const ip = btn.getAttribute('data-ip') || '';
       if (!id) return;
-      if (!confirm('Remove ban for ' + ip + '? Decision ID: ' + id)) return;
+      const isWL = btn.getAttribute('data-wl') === '1';
+      const verb = isWL ? 'whitelist entry' : 'ban';
+      if (!confirm('Remove ' + verb + ' for ' + ip + '? Decision ID: ' + id)) return;
       const msg = document.getElementById('cs-decisions-msg');
       if (msg) {
         msg.textContent = '';
@@ -1979,6 +2133,39 @@
       await loadCrowdsecDecisionsTable();
     });
   })();
+
+  document.getElementById('btn-cs-allow').onclick = async () => {
+    const msg = document.getElementById('cs-allow-msg');
+    const ipEl = document.getElementById('cs-allow-ip');
+    const reasonEl = document.getElementById('cs-allow-reason');
+    if (msg) {
+      msg.textContent = '';
+      msg.className = 'warn';
+    }
+    const ip = ipEl && ipEl.value ? ipEl.value.trim() : '';
+    if (!ip) {
+      if (msg) msg.textContent = 'Enter an IP address.';
+      return;
+    }
+    const reason = reasonEl && reasonEl.value.trim() ? reasonEl.value.trim() : 'manual allowlist from UI';
+    const body = { ip: ip, type: 'whitelist', duration: 'permanent', reason: reason };
+    const r = await fetch('/api/v1/integrations/crowdsec/decisions', {
+      method: 'POST',
+      headers: hdr(),
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+      return;
+    }
+    if (msg) {
+      msg.textContent = 'Whitelist submitted.';
+      msg.className = 'ok';
+    }
+    if (ipEl) ipEl.value = '';
+    if (reasonEl) reasonEl.value = '';
+    await loadCrowdsecDecisionsTable();
+  };
 
   document.getElementById('btn-cs-ban').onclick = async () => {
     const msg = document.getElementById('cs-ban-msg');
