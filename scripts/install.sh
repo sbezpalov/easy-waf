@@ -23,9 +23,9 @@
 #   EASY_WAF_FIREWALLD_EDGE=0         — skip edge rules (e.g. only cloud SG / another firewall opens 80/443)
 #   EASY_WAF_FIREWALLD_EDGE_SERVICES="http https" — override service names passed to firewall-cmd
 #   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA RPM/DEB packages (default 1 on dnf/apt; set 0 to skip)
-#   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 0)
+#   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 1 = full appliance)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
-#   EASY_WAF_FAIL2BAN_AUTO_START=0|1 — after fail2ban package install: systemctl start (default 0; only enable at boot otherwise)
+#   EASY_WAF_FAIL2BAN_AUTO_START=0|1 — after fail2ban package install: systemctl start (default 1)
 #   EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1 — do not install haproxy.service.d drop-in (stock /etc config stays in use)
 
 set -euo pipefail
@@ -195,12 +195,13 @@ easy_waf_install_crowdsec_packages() {
   source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
 
   if ! crowdsec_add_packagecloud_repo; then
-    log "WARNING: CrowdSec packagecloud repo setup failed — skip CrowdSec packages (see docs/CROWDSEC.md)"
+    log "ERROR: CrowdSec packagecloud repo setup failed — appliance stack incomplete (need outbound HTTPS; see docs/CROWDSEC.md)"
+    log "ERROR: re-run: sudo bash scripts/install.sh  OR  sudo bash scripts/crowdsec-bootstrap-lapi.sh after fixing network"
     return 0
   fi
 
   if ! crowdsec_install_agent_package; then
-    log "WARNING: CrowdSec agent package install failed — skip CrowdSec"
+    log "ERROR: CrowdSec agent package install failed — appliance stack incomplete (see docs/CROWDSEC.md)"
     return 0
   fi
 
@@ -209,10 +210,12 @@ easy_waf_install_crowdsec_packages() {
   fi
 
   if [[ "$had_crowdsec_agent" -eq 0 ]]; then
-    crowdsec_leave_stopped_disabled
-    log "CrowdSec packages installed; units disabled/stopped. When ready: sudo systemctl enable --now crowdsec.service"
-    log "Then register LAPI keys for easy-waf: sudo EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh"
-    log "Or: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
+    if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]]; then
+      crowdsec_leave_stopped_disabled
+      log "CrowdSec packages installed; units disabled/stopped (AUTO_START=0). Run: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
+    else
+      log "CrowdSec packages installed; LAPI bootstrap will enable services (AUTO_START=1)"
+    fi
   else
     log "CrowdSec packages present (agent was already installed) — left systemd state unchanged"
   fi
@@ -220,7 +223,7 @@ easy_waf_install_crowdsec_packages() {
 
 # Start LAPI, register bouncers, inject SPOA key, enable SPOA bouncer, write CROWDSEC_* (non-fatal warnings on failure).
 easy_waf_bootstrap_crowdsec_lapi() {
-  if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-0}" != "1" ]]; then
+  if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]]; then
     return 0
   fi
   if [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" != "1" ]]; then
@@ -584,7 +587,7 @@ install_os_packages() {
       systemctl enable haproxy 2>/dev/null || true
       if easy_waf_pkg_installed fail2ban; then
         systemctl enable fail2ban 2>/dev/null || true
-        if [[ "${EASY_WAF_FAIL2BAN_AUTO_START:-0}" == "1" ]]; then
+        if [[ "${EASY_WAF_FAIL2BAN_AUTO_START:-1}" == "1" ]]; then
           systemctl start fail2ban 2>/dev/null || true
         fi
       fi
@@ -622,7 +625,7 @@ install_os_packages() {
       systemctl enable haproxy 2>/dev/null || true
       if easy_waf_pkg_installed fail2ban; then
         systemctl enable fail2ban 2>/dev/null || true
-        if [[ "${EASY_WAF_FAIL2BAN_AUTO_START:-0}" == "1" ]]; then
+        if [[ "${EASY_WAF_FAIL2BAN_AUTO_START:-1}" == "1" ]]; then
           systemctl start fail2ban 2>/dev/null || true
         fi
       fi
@@ -716,6 +719,10 @@ main() {
   configure_firewalld_management_lan
   configure_firewalld_edge
 
+  # shellcheck source=lib/management-listen.sh
+  source "${SCRIPT_DIR}/lib/management-listen.sh"
+  easy_waf_fixup_management_listen_addrs "$CFG_DIR/easy-waf.env"
+
   if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" == "1" ]] && [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]]; then
     if systemctl enable --now easy-waf-api.service easy-waf-acmed.service; then
       log "Enabled and started easy-waf-api and easy-waf-acmed"
@@ -731,8 +738,31 @@ main() {
   if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" != "1" ]]; then
     log "Using external DB — ensure $CFG_DIR/easy-waf.env DATABASE_URL is correct"
   fi
+  easy_waf_post_install_summary
   log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; firewalld: RFC1918 + 127.0.0.0/8 on 8000+8443 when MGMT_LAN=1)"
   log "HAProxy edge: tcp 80+443 on firewalld zone ${EASY_WAF_FIREWALLD_ZONE:-public} (disable with EASY_WAF_FIREWALLD_EDGE=0)"
+}
+
+# Print appliance health after install (non-fatal; guides operator).
+easy_waf_post_install_summary() {
+  log "=== Post-install summary ==="
+  local u
+  for u in easy-waf-api easy-waf-acmed haproxy postgresql firewalld; do
+    if systemctl list-unit-files "${u}.service" &>/dev/null; then
+      log "  ${u}: $(systemctl is-active "${u}.service" 2>/dev/null || echo unknown)"
+    fi
+  done
+  if [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]]; then
+    if command -v cscli &>/dev/null; then
+      log "  crowdsec: $(systemctl is-active crowdsec.service 2>/dev/null || echo unknown)"
+      log "  crowdsec-spoa: $(systemctl is-active crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || echo unknown)"
+    else
+      log "  ERROR: CrowdSec not installed — re-run: sudo bash scripts/install.sh (need packagecloud + dnf)"
+    fi
+  fi
+  if command -v fail2ban-client &>/dev/null; then
+    log "  fail2ban: $(systemctl is-active fail2ban.service 2>/dev/null || echo unknown)"
+  fi
 }
 
 main "$@"

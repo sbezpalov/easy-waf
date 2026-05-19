@@ -21,9 +21,9 @@ Easy WAF treats CrowdSec as part of the **appliance**: on **dnf** / **apt**, **`
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `EASY_WAF_INSTALL_CROWDSEC` | `1` | Set to **`0`** to skip CrowdSec/SPOA packages entirely (e.g. air-gapped hosts). |
-| `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL` | `0` | Set to **`1`** in the same `install.sh` run to **start** `crowdsec`, wait for LAPI, register bouncers **`easy-waf-spoa`** / **`easy-waf-api`**, inject the SPOA key, **`enable --now`** the SPOA bouncer, and write **`CROWDSEC_LAPI_*`** into **`/etc/easy-waf/easy-waf.env`**. |
+| `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL` | **`1`** | Set to **`0`** for staged install (packages only, units stopped until `scripts/crowdsec-bootstrap-lapi.sh`). When **`1`**, `install.sh` **starts** `crowdsec`, registers bouncers **`easy-waf-spoa`** / **`easy-waf-api`**, injects the SPOA key, **`enable --now`** the SPOA bouncer, and writes **`CROWDSEC_LAPI_*`** into **`/etc/easy-waf/easy-waf.env`**. |
 | `EASY_WAF_CROWDSEC_CONSOLE_TOKEN` | *(empty)* | If set, runs `cscli console enroll <token>` during the bootstrap step (when `AUTO_START_AFTER_INSTALL=1`). |
-| `EASY_WAF_FAIL2BAN_AUTO_START` | `0` | Set to **`1`** to **`systemctl start fail2ban`** immediately after package install (otherwise only **`enable`** at boot, like CrowdSec’s staged model). |
+| `EASY_WAF_FAIL2BAN_AUTO_START` | **`1`** | Set to **`0`** to only **`enable`** fail2ban at boot without immediate **`start`**. |
 
 **Phase 1 — packages (default every run when `INSTALL_CROWDSEC=1`):** add CrowdSec **packagecloud** repo, `dnf`/`apt` install **`crowdsec`** + **`crowdsec-haproxy-spoa-bouncer`**. On the **first** install of the `crowdsec` package, run **`systemctl stop` + `disable`** for both units so the host stays quiet until you bootstrap.
 

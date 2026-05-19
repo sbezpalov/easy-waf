@@ -141,11 +141,11 @@ main() {
     export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0
   elif [[ -z "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-}" ]] && [[ -t 0 ]]; then
     local cs_now
-    cs_now="$(prompt "Start CrowdSec LAPI now and register bouncer keys (writes CROWDSEC_LAPI_KEY; y/n)" "n")"
+    cs_now="$(prompt "Start CrowdSec LAPI now and register bouncer keys (writes CROWDSEC_LAPI_KEY; y/n)" "y")"
     cs_now="${cs_now,,}"
     case "$cs_now" in y|yes|1|true) export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 ;; *) export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0 ;; esac
   fi
-  export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL="${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-0}"
+  export EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL="${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}"
 
   export EASY_WAF_INSTALL_OS_PACKAGES="${EASY_WAF_INSTALL_OS_PACKAGES:-1}"
   if [[ -t 0 ]] && [[ -z "${EASY_WAF_INSTALL_POSTGRES+x}" ]]; then

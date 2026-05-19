@@ -12,11 +12,11 @@ From the repo root on the VM:
 sudo bash scripts/install.sh
 ```
 
-This **by default**:
+This **by default** (full appliance — no extra flags):
 
-1. Installs **HAProxy, firewalld, nginx**, and **PostgreSQL** (optional **fail2ban**; on Alma/RHEL also **EPEL** when needed for fail2ban).
-2. Creates `/etc/easy-waf/easy-waf.env`, **creates** the `easywaf` DB user and `easywaf` database, and **rotates** weak default passwords in `DATABASE_URL` when possible.
-3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api` and `easy-waf-acmed`.
+1. Installs **HAProxy, firewalld, nginx**, **PostgreSQL**, **fail2ban** (starts if installed), and **CrowdSec + HAProxy SPOA bouncer** (LAPI bootstrap, bouncer keys in `easy-waf.env`).
+2. Creates `/etc/easy-waf/easy-waf.env` with **`0.0.0.0:8000` / `0.0.0.0:8443`**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0`.
+3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-haproxy-spoa-bouncer** when packages install successfully.
 
 **External PostgreSQL only** (no local `postgresql` package):
 
@@ -32,15 +32,16 @@ Then set `DATABASE_URL` in `/etc/easy-waf/easy-waf.env` before starting services
 sudo EASY_WAF_ENABLE_SYSTEMD_UNITS=0 bash scripts/install.sh
 ```
 
-**CrowdSec + HAProxy SPOA bouncer** — installed by default on `dnf`/`apt` with `install.sh` (units stopped until you bootstrap LAPI). See [CROWDSEC.md](CROWDSEC.md):
+**CrowdSec** is **on by default** (`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`). See [CROWDSEC.md](CROWDSEC.md).
+
+Staged / air-gapped (packages only, LAPI later):
 
 ```bash
-sudo EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh
+sudo EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0 bash scripts/install.sh
+sudo bash scripts/crowdsec-bootstrap-lapi.sh   # when online
 ```
 
-**Later:** `sudo bash scripts/crowdsec-bootstrap-lapi.sh` — same bootstrap without a full reinstall.
-
-Skip CrowdSec packages (air-gapped): `sudo EASY_WAF_INSTALL_CROWDSEC=0 bash scripts/install.sh`
+Skip CrowdSec entirely: `sudo EASY_WAF_INSTALL_CROWDSEC=0 bash scripts/install.sh`
 
 Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` during a run with **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`**.
 
