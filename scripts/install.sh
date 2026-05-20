@@ -592,9 +592,9 @@ install_os_packages() {
         netplan.io \
         iputils-ping \
         traceroute \
-        tracepath \
+        iputils-tracepath \
         systemd \
-        polkit \
+        policykit-1 \
         sudo \
         || die "apt install failed (haproxy/nftables/nginx)"
 

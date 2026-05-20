@@ -20,6 +20,19 @@ Host waf-dev
 ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 ```
 
+### После переустановки VM (Alma → Ubuntu и т.п.)
+
+У новой ОС **другой SSH host key**. OpenSSH откажется в подключении с `REMOTE HOST IDENTIFICATION HAS CHANGED`. Это нормально, не MITM — удалите старую запись и примите новый ключ:
+
+```bash
+# Windows (PowerShell) или Linux/macOS
+ssh-keygen -R 192.0.2.10
+# при первом входе: ssh с опцией -o StrictHostKeyChecking=accept-new
+ssh -o StrictHostKeyChecking=accept-new waf-dev 'uname -a'
+```
+
+Если сменился **IP** или **DNS** — обновите `HostName` в `~/.ssh/config` и при необходимости строку с IP в этом файле.
+
 **DNS (LAN):** `waf-dev.home.bezpalov.com` → `192.0.2.10` (если в `~/.ssh/config` указан IP, DNS не обязателен).
 
 ## 2. Cursor / VS Code — Remote SSH
