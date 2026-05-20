@@ -28,12 +28,11 @@ func ValidateManagementCIDRs(cidrs []string) error {
 	return nil
 }
 
-// clientIP returns the client address used for management ACL.
+// clientIP returns the client address used for management ACL and login rate limiting.
 //
-// With github.com/go-chi/chi/v5/middleware.RealIP (see order: True-Client-IP,
-// X-Real-IP, then leftmost X-Forwarded-For), RemoteAddr is replaced with an IP
-// string only — no ":port". Direct TCP connections use "host:port" (IPv6
-// bracketed). Both forms must parse here.
+// After TrustedRealIP, RemoteAddr is either the direct TCP peer or a header-derived
+// client IP (IP only, no ":port") when the peer is a trusted reverse proxy.
+// Direct TCP connections use "host:port" (IPv6 bracketed). Both forms must parse here.
 func clientIP(r *http.Request) (netip.Addr, bool) {
 	addr := strings.TrimSpace(r.RemoteAddr)
 	if addr == "" {

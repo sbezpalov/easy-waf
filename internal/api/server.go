@@ -45,8 +45,8 @@ type Server struct {
 func (s *Server) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	// True-Client-IP → X-Real-IP → X-Forwarded-For (left); trust only behind a trusted reverse proxy (see docs/SECURITY.md).
-	r.Use(middleware.RealIP)
+	// Forwarding headers apply only when the TCP peer is a trusted proxy (loopback by default); see docs/SECURITY.md.
+	r.Use(TrustedRealIP(TrustedProxyCIDRs()))
 	r.Use(s.managementACL)
 	r.Use(RequireXHR)
 	r.Use(middleware.Logger)
