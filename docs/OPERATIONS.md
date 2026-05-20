@@ -66,6 +66,7 @@ sudo systemctl restart easy-waf-api.service
    ```bash
    curl -sS -X POST "http://127.0.0.1:8000/api/v1/auth/login" \
      -H "Content-Type: application/json" \
+     -H "X-Requested-With: XMLHttpRequest" \
      -d '{"username":"ВАШ_ЛОГИН","password":"ВАШ_ПАРОЛЬ"}'
    ```
    Скопируйте `token` из JSON, затем:

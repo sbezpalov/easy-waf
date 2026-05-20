@@ -72,6 +72,7 @@ sudo systemctl restart easy-waf-api easy-waf-acmed
 curl -fsS -X POST http://127.0.0.1:8000/api/v1/apply \
   -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
+  -H "X-Requested-With: XMLHttpRequest" \
   -d '{"label":"restore-manual"}'
 ```
 

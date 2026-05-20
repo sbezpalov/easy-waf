@@ -15,7 +15,7 @@ func TestClientIP_DirectTCPWithPort(t *testing.T) {
 }
 
 func TestClientIP_ChiRealIPNoPort(t *testing.T) {
-	// middleware.RealIP sets RemoteAddr to the header-derived IP only.
+	// TrustedRealIP (from a trusted proxy) may set RemoteAddr to the header-derived IP only.
 	r := &http.Request{RemoteAddr: "192.0.2.20"}
 	ip, ok := clientIP(r)
 	if !ok || ip.String() != "192.0.2.20" {

@@ -47,9 +47,12 @@ else
   echo "SKIP (gofmt not in PATH)"
 fi
 
-echo "== Scanning configs for backslash path separators (Windows style) =="
-if grep -R '\\[^\\]' --include='*.example' --include='*.md' --include='*.service' --include='*.sh' \
-  configs packaging scripts docs 2>/dev/null | grep -v '\\\\' | grep -E ':[\\]|"[A-Za-z]:\\' || true; then
-  echo "WARNING: possible Windows paths in docs/configs — verify Linux paths." >&2
+echo "== Scanning docs/configs for Windows drive-letter paths (C:\\...) =="
+# Do not scan scripts/*.sh: JSON \" escapes and regex \\s false-positive here.
+if grep -RE '[A-Za-z]:\\' --include='*.example' --include='*.md' --include='*.service' \
+  configs packaging docs 2>/dev/null; then
+  echo "WARNING: possible Windows paths in docs/configs — use forward slashes for Linux." >&2
+else
+  echo "OK (no Windows drive-letter paths in docs/configs)"
 fi
 echo "Done."
