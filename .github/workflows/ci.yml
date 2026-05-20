@@ -110,6 +110,7 @@ jobs:
           bash -n scripts/install-interactive.sh
           bash -n scripts/crowdsec-bootstrap-lapi.sh
           bash -n scripts/lib/os-pkg.sh
+          bash -n scripts/lib/nftables-easy-waf.sh
           bash -n scripts/host/privileged.sh
           bash -n scripts/diagnostics.sh
 

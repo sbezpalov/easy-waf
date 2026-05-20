@@ -1,7 +1,7 @@
 # Easy Home WAF
 
-[![CI](https://github.com/easy-waf/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/easy-waf/easy-waf/actions/workflows/ci.yml)
-[![Release](https://github.com/easy-waf/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/easy-waf/easy-waf/actions/workflows/release.yml)
+[![CI](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml)
+[![Release](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml)
 
 Self-hosted **secure reverse proxy / home WAF appliance** for publishing local services (Home Assistant, Frigate, Nextcloud, …) through a single HAProxy edge with ACME, CrowdSec (SPOE), Fail2Ban, and a local management UI.
 

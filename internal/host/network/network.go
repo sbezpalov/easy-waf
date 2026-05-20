@@ -13,13 +13,13 @@ import (
 
 // Overview is host network state for the API.
 type Overview struct {
-	Links    []json.RawMessage `json:"links"`
+	Links     []json.RawMessage `json:"links"`
 	Addresses []json.RawMessage `json:"addresses"`
-	Routes   []json.RawMessage `json:"routes,omitempty"`
-	Hostname string            `json:"hostname"`
-	DNS      []string          `json:"dns,omitempty"`
-	NTP      string            `json:"ntp_synced,omitempty"`
-	Netplan  []NetplanFile     `json:"netplan_files,omitempty"`
+	Routes    []json.RawMessage `json:"routes,omitempty"`
+	Hostname  string            `json:"hostname"`
+	DNS       []string          `json:"dns,omitempty"`
+	NTP       string            `json:"ntp_synced,omitempty"`
+	Netplan   []NetplanFile     `json:"netplan_files,omitempty"`
 }
 
 type NetplanFile struct {

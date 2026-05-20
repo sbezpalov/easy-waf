@@ -10,10 +10,10 @@ import (
 
 // Query parameters for journalctl.
 type Query struct {
-	Unit   string
-	Lines  int
-	Since  string
-	Until  string
+	Unit     string
+	Lines    int
+	Since    string
+	Until    string
 	Priority string
 }
 
