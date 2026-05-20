@@ -327,13 +327,30 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
+// crowdsecLAPIClient uses /etc/easy-waf/easy-waf.env (systemd EnvironmentFile) when set,
+// so a stale DB key after install/bootstrap does not cause 403 until settings are re-saved.
+func (s *Server) crowdsecLAPIClient() crowdsec.Client {
+	url := strings.TrimSpace(s.Eng.Settings.CrowdSecLAPIURL)
+	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
+		url = v
+	}
+	if url == "" {
+		url = "http://127.0.0.1:8080/"
+	}
+	key := strings.TrimSpace(s.Eng.Settings.CrowdSecLAPIKey)
+	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
+		key = v
+	}
+	return crowdsec.Client{BaseURL: url, APIKey: key}
+}
+
 func (s *Server) crowdsecStatus(w http.ResponseWriter, r *http.Request) {
-	c := crowdsec.Client{BaseURL: s.Eng.Settings.CrowdSecLAPIURL, APIKey: s.Eng.Settings.CrowdSecLAPIKey}
+	c := s.crowdsecLAPIClient()
 	writeJSON(w, http.StatusOK, c.Ping(r.Context()))
 }
 
 func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
-	c := crowdsec.Client{BaseURL: s.Eng.Settings.CrowdSecLAPIURL, APIKey: s.Eng.Settings.CrowdSecLAPIKey}
+	c := s.crowdsecLAPIClient()
 	raw, err := c.DecisionsSample(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

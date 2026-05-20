@@ -16,7 +16,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing decision id"})
 		return
 	}
-	c := crowdsec.Client{BaseURL: s.Eng.Settings.CrowdSecLAPIURL, APIKey: s.Eng.Settings.CrowdSecLAPIKey}
+	c := s.crowdsecLAPIClient()
 	if err := c.DeleteDecision(r.Context(), id); err != nil {
 		switch {
 		case errors.Is(err, crowdsec.ErrDecisionNotFound):
@@ -38,7 +38,7 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	c := crowdsec.Client{BaseURL: s.Eng.Settings.CrowdSecLAPIURL, APIKey: s.Eng.Settings.CrowdSecLAPIKey}
+	c := s.crowdsecLAPIClient()
 	if err := c.AddDecision(r.Context(), body); err != nil {
 		switch {
 		case errors.Is(err, crowdsec.ErrInvalidDecisionIP):

@@ -486,7 +486,7 @@
 
       <div id="tab-crowdsec" class="tab-panel">
         <h2>⚑ CrowdSec</h2>
-        <p class="dash-note" style="margin-top:0">LAPI + HAProxy SPOE (<code>filter spoe</code>). The bouncer API key is stored server-side and <strong>never</strong> returned in JSON — use <a href="#settings">Settings</a> → <strong>Load from server</strong> before rotating.</p>
+        <p class="dash-note" style="margin-top:0">LAPI + HAProxy SPOE (<code>filter spoe</code>). The bouncer API key is stored server-side and <strong>never</strong> returned in JSON. After <code>install.sh</code> keys are configured automatically; use <a href="#settings">Settings</a> → <strong>Load from server</strong> only to review or rotate.</p>
 
         <div class="panel" style="max-width:100%">
           <h3>Connection &amp; SPOE</h3>
@@ -705,9 +705,20 @@
     const txt = await r.text().catch(() => r.statusText || 'Request failed');
     try {
       const j = JSON.parse(txt);
-      if (j && typeof j === 'object') return j.error || j.message || txt;
+      if (j && typeof j === 'object') return humanizeCrowdSecErr(j.error || j.message || txt);
     } catch (_) { /* plain text */ }
-    return txt || ('HTTP ' + r.status);
+    return humanizeCrowdSecErr(txt || ('HTTP ' + r.status));
+  }
+
+  function humanizeCrowdSecErr(msg) {
+    const s = String(msg || '');
+    if (/http 403|access forbidden/i.test(s)) {
+      return 'CrowdSec LAPI access denied (403). The API key in settings does not match LAPI. Re-run on the host: sudo bash scripts/crowdsec-bootstrap-lapi.sh && sudo systemctl restart easy-waf-api';
+    }
+    if (/lapi url not configured/i.test(s)) {
+      return 'CrowdSec LAPI URL is not configured. Use Settings → Load from server, or re-run install/bootstrap.';
+    }
+    return s;
   }
 
   function confirmDialog(message, opts) {
@@ -1941,9 +1952,9 @@
       let decErr = 'decisions unavailable';
       try {
         const ej = JSON.parse(decTxt);
-        if (ej && (ej.error || ej.message)) decErr = String(ej.error || ej.message);
+        if (ej && (ej.error || ej.message)) decErr = humanizeCrowdSecErr(ej.error || ej.message);
       } catch (_) {
-        if (decTxt && decTxt.trim()) decErr = decTxt.trim().slice(0, 120);
+        if (decTxt && decTxt.trim()) decErr = humanizeCrowdSecErr(decTxt.trim().slice(0, 200));
       }
       document.getElementById('dash-cs-sub').textContent =
         (document.getElementById('dash-cs-sub').textContent || '') + ' · ' + decErr;
