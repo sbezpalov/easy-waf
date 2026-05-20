@@ -1,6 +1,6 @@
 # Пилот-хост `waf-dev` (разработка и тест EasyWAF)
 
-Короткий алиас **`waf-dev`** — целевой Linux-хост для пилота EasyWAF (Alma/RHEL‑семейство). Код правится локально (часто Windows), сборка и проверки — на этом хосте или в CI.
+Короткий алиас **`waf-dev`** — целевой Linux-хост для пилота EasyWAF (**Ubuntu 24.04 LTS**). Код правится локально (часто Windows), сборка и проверки — на этом хосте или в CI.
 
 ## 1. SSH: `~/.ssh/config`
 
@@ -36,4 +36,4 @@ ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 
 ## 4. Согласованность с CI
 
-Эталон проверок — **AlmaLinux 10** (`make ci` на пилоте и **GitHub Actions**: контейнер `almalinux:10`) плюс зеркальный job на **Ubuntu 24.04** (`deb-family-ci` в `.github/workflows/ci.yml`). На Windows перед пушем имеет смысл прогнать те же шаги из **Git Bash / WSL** (см. `.cursor/rules/easy-waf-verify-after-edits.mdc`).
+Эталон проверок — **Ubuntu 24.04** (`make ci` на пилоте и **GitHub Actions**: контейнер `ubuntu:24.04` во всех job). На Windows перед пушем имеет смысл прогнать те же шаги из **Git Bash / WSL** (см. `.cursor/rules/easy-waf-verify-after-edits.mdc`).

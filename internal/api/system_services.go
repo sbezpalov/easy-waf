@@ -19,7 +19,7 @@ var coreSystemdUnits = []struct {
 	{"haproxy", "haproxy.service", "Edge TLS / routing"},
 	{"crowdsec", "crowdsec.service", "CrowdSec engine + LAPI"},
 	{"crowdsec_spoa", "crowdsec-haproxy-spoa-bouncer.service", "HAProxy SPOA bouncer"},
-	{"firewalld", "firewalld.service", "Firewall (firewalld)"},
+	{"nftables", "nftables.service", "Host firewall (nftables)"},
 	{"fail2ban", "fail2ban.service", "Fail2ban"},
 	{"postgresql", "postgresql.service", "PostgreSQL (local default unit name)"},
 }

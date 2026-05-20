@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Easy Home WAF — interactive appliance setup (Alma/RHEL or Debian/Ubuntu).
+# Easy Home WAF — interactive appliance setup (Ubuntu).
 # Run as root: sudo bash scripts/install-interactive.sh
 #
-# Collects: management bind policy (loopback vs LAN-only + firewalld), optional CrowdSec + SPOA,
+# Collects: management bind policy (loopback vs LAN-only + nftables), optional CrowdSec + SPOA,
 # optional CrowdSec Console enrollment key, then runs scripts/install.sh.
 #
 # Non-interactive overrides (optional):
@@ -30,8 +30,8 @@ for _ew_lib in "${SCRIPT_DIR}/lib"/*.sh; do
   sed -i 's/\r$//' "$_ew_lib" 2>/dev/null || true
 done
 
-# shellcheck source=lib/firewalld-management-api.sh
-source "${SCRIPT_DIR}/lib/firewalld-management-api.sh"
+# shellcheck source=lib/nftables-easy-waf.sh
+source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
 # shellcheck source=lib/db-password.sh
 source "${SCRIPT_DIR}/lib/db-password.sh"
 
@@ -96,7 +96,7 @@ main() {
   local fw_ports="${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}"
 
   if [[ -z "$mgmt_mode" ]]; then
-    mgmt_mode="$(prompt "Management UI bind: loopback (127.0.0.1:8000+8443) or lan_rfc1918 (0.0.0.0 + firewalld on 8000/8443)" "loopback")"
+    mgmt_mode="$(prompt "Management UI bind: loopback (127.0.0.1:8000+8443) or lan_rfc1918 (0.0.0.0 + nftables on 8000/8443)" "loopback")"
   fi
   mgmt_mode="${mgmt_mode,,}"
 
@@ -163,13 +163,12 @@ main() {
 
   case "$mgmt_mode" in
     lan_rfc1918|lan)
-      easy_waf_firewalld_allow_management_from_private_nets "$fw_ports" "${EASY_WAF_FIREWALLD_ZONE:-public}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
+      export EASY_WAF_NFT_MGMT_LAN=1
+      easy_waf_nft_configure_appliance 1 "$fw_ports" "${EASY_WAF_NFT_EDGE:-1}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
       ;;
     *)
-      local p
-      for p in $fw_ports; do
-        easy_waf_firewalld_remove_broad_management_port "$p" "${EASY_WAF_FIREWALLD_ZONE:-public}"
-      done
+      export EASY_WAF_NFT_MGMT_LAN=0
+      easy_waf_nft_configure_appliance 0 "$fw_ports" "${EASY_WAF_NFT_EDGE:-1}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
       log "Management: loopback-only — UI on 127.0.0.1:8000 (http) and :8443 (https); use SSH port-forward if needed."
       ;;
   esac

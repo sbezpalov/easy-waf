@@ -107,7 +107,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	_ = run("system/getenforce.txt", 3*time.Second, "getenforce")
 	_ = run("system/getsebool-haproxy_connect_any.txt", 5*time.Second, "getsebool", "haproxy_connect_any")
 
-	units := []string{"easy-waf-api", "easy-waf-acmed", "haproxy", "crowdsec", "fail2ban", "firewalld"}
+	units := []string{"easy-waf-api", "easy-waf-acmed", "haproxy", "crowdsec", "fail2ban", "nftables"}
 	for _, u := range units {
 		safe := strings.ReplaceAll(u, "/", "-")
 		_ = run(fmt.Sprintf("systemctl/status-%s.txt", safe), 20*time.Second, "systemctl", "status", u, "--no-pager", "-l")

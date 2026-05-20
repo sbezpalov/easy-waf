@@ -5,7 +5,7 @@ DIST=dist
 GOLANGCI_LINT_VER ?= v1.62.2
 
 install-help:
-	@echo "Production install (Alma/RHEL or Debian/Ubuntu, as root) — plug-and-play:"
+	@echo "Production install (Ubuntu 24.04 LTS, as root) — plug-and-play:"
 	@echo "  sudo bash scripts/install.sh"
 	@echo "  (HAProxy stack + local PostgreSQL by default, DB user/db, start api+acmed)"
 	@echo "  External DB only: EASY_WAF_INSTALL_POSTGRES=0"

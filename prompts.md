@@ -14,7 +14,7 @@ Typical use cases:
 
 Environment:
 
-* OS: AlmaLinux 10
+* OS: Ubuntu 24.04 LTS
 * Reverse proxy: HAProxy 3.x
 * Security: CrowdSec + HAProxy SPOA/SPOE bouncer + Fail2Ban
 * TLS: ACME / Let's Encrypt
@@ -68,10 +68,10 @@ Build an **installable, production-ready MVP** that:
 
 ### Platform
 
-* AlmaLinux 10 ONLY (first-class support)
+* Ubuntu 24.04 LTS ONLY (appliance OS)
 * systemd-native
-* firewalld-compatible
-* SELinux must remain **Enforcing**
+* Host firewall: **nftables** (managed ruleset under `/etc/nftables/easy-waf.nft`)
+* Host management via GUI/API: network (netplan), services, journal, apt, users/SSH keys
 
 ### HAProxy
 

@@ -1,0 +1,279 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/easy-waf/easy-waf/internal/host/apt"
+	"github.com/easy-waf/easy-waf/internal/host/diag"
+	"github.com/easy-waf/easy-waf/internal/host/journal"
+	"github.com/easy-waf/easy-waf/internal/host/network"
+	"github.com/easy-waf/easy-waf/internal/host/nft"
+	"github.com/easy-waf/easy-waf/internal/host/runner"
+	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
+	"github.com/easy-waf/easy-waf/internal/host/users"
+)
+
+func (s *Server) mountHostRoutes(r chi.Router) {
+	r.Route("/host", func(r chi.Router) {
+		r.Get("/network", s.hostGetNetwork)
+		r.Put("/network/netplan", s.hostPutNetplan)
+
+		r.Get("/firewall", s.hostGetFirewall)
+		r.Put("/firewall/ruleset", s.hostPutFirewall)
+		r.Post("/firewall/apply", s.hostApplyFirewall)
+
+		r.Get("/services", s.hostListServices)
+		r.Post("/services/{unit}/{action}", s.hostServiceAction)
+
+		r.Get("/journal", s.hostGetJournal)
+
+		r.Get("/updates", s.hostGetUpdates)
+		r.Post("/updates/update", s.hostAptUpdate)
+		r.Post("/updates/upgrade", s.hostAptUpgrade)
+
+		r.Post("/power/reboot", s.hostReboot)
+		r.Post("/power/shutdown", s.hostPoweroff)
+
+		r.Get("/users", s.hostListUsers)
+		r.Post("/users", s.hostCreateUser)
+		r.Delete("/users/{name}", s.hostDeleteUser)
+		r.Put("/users/{name}/ssh-keys", s.hostPutSSHKeys)
+
+		r.Post("/diagnostics/ping", s.hostPing)
+		r.Post("/diagnostics/trace", s.hostTrace)
+	})
+}
+
+func (s *Server) hostGetNetwork(w http.ResponseWriter, r *http.Request) {
+	ov, err := network.GetOverview(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, ov)
+}
+
+func (s *Server) hostPutNetplan(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		YAML string `json:"yaml"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if err := network.ApplyNetplan(r.Context(), body.YAML); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
+func (s *Server) hostGetFirewall(w http.ResponseWriter, r *http.Request) {
+	st, err := nft.GetStatus(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostPutFirewall(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ruleset string `json:"ruleset"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if err := nft.PutRuleset(r.Context(), body.Ruleset); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
+func (s *Server) hostApplyFirewall(w http.ResponseWriter, r *http.Request) {
+	if err := nft.Apply(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
+func (s *Server) hostListServices(w http.ResponseWriter, r *http.Request) {
+	list, err := hostsystemd.List(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"services": list})
+}
+
+func (s *Server) hostServiceAction(w http.ResponseWriter, r *http.Request) {
+	unit := chi.URLParam(r, "unit")
+	action := chi.URLParam(r, "action")
+	if !strings.HasSuffix(unit, ".service") {
+		unit += ".service"
+	}
+	if err := hostsystemd.Action(r.Context(), action, unit); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "unit": unit, "action": action})
+}
+
+func (s *Server) hostGetJournal(w http.ResponseWriter, r *http.Request) {
+	q := journal.Query{
+		Unit:     r.URL.Query().Get("unit"),
+		Since:    r.URL.Query().Get("since"),
+		Until:    r.URL.Query().Get("until"),
+		Priority: r.URL.Query().Get("priority"),
+	}
+	if n := r.URL.Query().Get("lines"); n != "" {
+		if lines, err := strconv.Atoi(n); err == nil {
+			q.Lines = lines
+		}
+	}
+	out, err := journal.Read(r.Context(), q)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"log": out})
+}
+
+func (s *Server) hostGetUpdates(w http.ResponseWriter, r *http.Request) {
+	st, err := apt.ListUpgradable(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostAptUpdate(w http.ResponseWriter, r *http.Request) {
+	st, err := apt.Update(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
+	st, err := apt.Upgrade(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {
+	if err := hostPower(r.Context(), "reboot"); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rebooting"})
+}
+
+func (s *Server) hostPoweroff(w http.ResponseWriter, r *http.Request) {
+	if err := hostPower(r.Context(), "poweroff"); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
+}
+
+func hostPower(ctx context.Context, action string) error {
+	_, err := runner.Privileged(ctx, action)
+	return err
+}
+
+func (s *Server) hostListUsers(w http.ResponseWriter, r *http.Request) {
+	list, err := users.List()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": list})
+}
+
+func (s *Server) hostCreateUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if err := users.CreateUser(r.Context(), body.Username); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"username": body.Username})
+}
+
+func (s *Server) hostDeleteUser(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if err := users.DeleteUser(r.Context(), name); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	var body struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if err := users.SetSSHKeys(r.Context(), name, body.Keys); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) hostPing(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Host  string `json:"host"`
+		Count int    `json:"count"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	out, err := diag.Ping(r.Context(), body.Host, body.Count)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"output": out})
+}
+
+func (s *Server) hostTrace(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Host string `json:"host"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	out, err := diag.Trace(r.Context(), body.Host)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"output": out})
+}

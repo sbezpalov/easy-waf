@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED — use scripts/lib/nftables-easy-waf.sh (Ubuntu nftables only).
 # Firewalld helpers:
 #   - Management API (8000/8443): RFC1918 + loopback only (not WAN-wide).
 #   - HAProxy edge: http + https services (80/443) on the chosen zone (default public).

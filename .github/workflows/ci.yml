@@ -1,18 +1,7 @@
 name: CI
 
-# Prod и dev: AlmaLinux 10 (dnf) — основной эталон HAProxy/OS. Дополнительно job
-# deb-family-ci в Ubuntu 24.04 (apt) проверяет те же ворота на DEB‑семействе.
-# Поле runs-on — лишь тип ВМ GitHub (хост); среда job — container image.
-#
-# Пакеты ставятся ПЕРВЫМ шагом (до checkout): в контейнере JS-actions (checkout, setup-go)
-# требуют git + Node в PATH. golangci-lint запускаем shell-шагом внутри контейнера (без
-# golangci-lint-action: у него бывают сбои docker exec / prepare на не-Ubuntu образах).
-#
-# Три блока «dnf» ниже держите синхронными по смыслу (общий базовый набор + профиль job).
-# Alma minimal: образ с coreutils-single — перед остальными пакетами выполнить
-# dnf swap coreutils-single coreutils (надёжнее, чем только install --allowerasing).
-# Дальше dnf install --allowerasing … для gcc/nodejs и т.д.
-# Блок apt в deb-family-ci держите эквивалентным по смыслу (инструменты сборки + HAProxy).
+# Ubuntu 24.04 LTS is the only supported appliance OS (apt, nftables, netplan).
+# runs-on is the GitHub-hosted VM; job environment is container: ubuntu:24.04.
 
 on:
   push:
@@ -23,220 +12,12 @@ on:
 permissions:
   contents: read
 
-# Use Node.js 24 for GitHub-hosted JavaScript actions (checkout, setup-go).
-# See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Shallow/git в контейнере → "error obtaining VCS status: exit status 128" при -buildvcs=true
   GOFLAGS: -buildvcs=false
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
-    container:
-      image: almalinux:10
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: "Alma10 deps: swap coreutils-single → coreutils, then dnf --allowerasing"
-        run: |
-          set -euo pipefail
-          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
-          dnf -y install ca-certificates curl dnf-plugins-core
-          # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            dnf -y swap coreutils-single coreutils
-          fi
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
-            rpm -qa 'coreutils*' | sort >&2 || true
-            exit 1
-          fi
-          dnf -y install --allowerasing \
-            bash \
-            bzip2 \
-            diffutils \
-            file \
-            findutils \
-            gcc \
-            gcc-c++ \
-            git \
-            glibc-devel \
-            grep \
-            gzip \
-            make \
-            openssl \
-            procps-ng \
-            sed \
-            tar \
-            tzdata \
-            unzip \
-            which \
-            zlib-devel
-          # Node.js — для checkout / setup-go (JS actions)
-          if ! dnf -y install --allowerasing nodejs npm; then
-            dnf config-manager --enable crb 2>/dev/null || true
-            dnf -y module reset nodejs 2>/dev/null || true
-            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install --allowerasing nodejs npm
-          fi
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.x"
-          cache: true
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: golangci-lint
-        run: |
-          set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-            | sh -s -- -b /usr/local/bin v1.62.2
-          golangci-lint --version
-          golangci-lint run ./... --timeout=5m
-
-      - name: HAProxy render golden fixtures
-        run: go test ./internal/haproxy/... -run Golden -count=1
-
-      - name: go test (race)
-        run: go test -race -count=1 -skip '^TestGoldenRender$' ./...
-
-  verify:
-    runs-on: ubuntu-latest
-    container:
-      image: almalinux:10
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: "Alma10 deps: swap coreutils-single → coreutils, then dnf --allowerasing"
-        run: |
-          set -euo pipefail
-          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
-          dnf -y install ca-certificates curl dnf-plugins-core
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            dnf -y swap coreutils-single coreutils
-          fi
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
-            rpm -qa 'coreutils*' | sort >&2 || true
-            exit 1
-          fi
-          dnf -y install --allowerasing \
-            bash \
-            bzip2 \
-            diffutils \
-            findutils \
-            git \
-            grep \
-            gzip \
-            openssl \
-            procps-ng \
-            sed \
-            tar \
-            tzdata \
-            unzip \
-            which
-          if ! dnf -y install --allowerasing nodejs npm; then
-            dnf config-manager --enable crb 2>/dev/null || true
-            dnf -y module reset nodejs 2>/dev/null || true
-            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install --allowerasing nodejs npm
-          fi
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.x"
-          cache: true
-
-      - name: Linux artifact + shell LF checks
-        run: bash scripts/check-linux-artifacts.sh
-
-      - name: Assert scripts/**/*.sh use LF only
-        run: |
-          set -euo pipefail
-          bad=0
-          while IFS= read -r -d '' f; do
-            if grep -q $'\r' "$f" 2>/dev/null; then
-              echo "ERROR: CRLF in $f" >&2
-              bad=1
-            fi
-          done < <(find scripts -name '*.sh' -type f -print0)
-          exit "$bad"
-
-  haproxy-config-test:
-    runs-on: ubuntu-latest
-    container:
-      image: almalinux:10
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: "Alma10 deps + HAProxy: swap coreutils-single → coreutils, then dnf --allowerasing"
-        run: |
-          set -euo pipefail
-          echo '::notice::easy-waf-ci alma-bootstrap=2026-04-15 (must NOT list explicit coreutils RPM before swap)'
-          dnf -y install ca-certificates curl dnf-plugins-core
-          # coreutils-single (minimal images) conflicts with deps that need full coreutils RPM.
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            dnf -y swap coreutils-single coreutils
-          fi
-          if rpm -qa | grep -qE '^coreutils-single-'; then
-            echo 'ERROR: coreutils-single still installed after dnf swap (fix workflow or image).' >&2
-            rpm -qa 'coreutils*' | sort >&2 || true
-            exit 1
-          fi
-          dnf -y install --allowerasing \
-            bash \
-            bzip2 \
-            diffutils \
-            file \
-            findutils \
-            gcc \
-            gcc-c++ \
-            git \
-            glibc-devel \
-            grep \
-            gzip \
-            haproxy \
-            make \
-            openssl \
-            procps-ng \
-            sed \
-            tar \
-            tzdata \
-            unzip \
-            which \
-            zlib-devel
-          if ! dnf -y install --allowerasing nodejs npm; then
-            dnf config-manager --enable crb 2>/dev/null || true
-            dnf -y module reset nodejs 2>/dev/null || true
-            dnf -y module enable nodejs:22 2>/dev/null || dnf -y module enable nodejs:20 2>/dev/null || true
-            dnf -y install --allowerasing nodejs npm
-          fi
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.x"
-          cache: true
-
-      - name: go test internal/haproxy (includes haproxy -c validation)
-        run: go test ./internal/haproxy/... -v -count=1
-
-      - name: go test internal/haproxy integration (golden haproxy -c)
-        run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1
-
-  # Same gates as AlmaLinux jobs above, but on Ubuntu 24.04 (apt) for Debian-family parity.
-  deb-family-ci:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04
@@ -244,7 +25,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install OS packages (Ubuntu 24.04 / apt, before checkout)
+      - name: Install OS packages (before checkout)
         run: |
           set -euo pipefail
           apt-get update -qq
@@ -282,6 +63,31 @@ jobs:
       - name: go test (race)
         run: go test -race -count=1 -skip '^TestGoldenRender$' ./...
 
+  verify:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install OS packages (before checkout)
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl \
+            bash bzip2 coreutils diffutils findutils \
+            git grep gzip openssl procps sed tar tzdata unzip \
+            nodejs npm debianutils
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
       - name: Linux artifact + shell LF checks
         run: bash scripts/check-linux-artifacts.sh
 
@@ -297,12 +103,6 @@ jobs:
           done < <(find scripts -name '*.sh' -type f -print0)
           exit "$bad"
 
-      - name: go test internal/haproxy (includes haproxy -c validation)
-        run: go test ./internal/haproxy/... -v -count=1
-
-      - name: go test internal/haproxy integration (golden haproxy -c)
-        run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1
-
       - name: Installer scripts syntax (bash -n)
         run: |
           set -euo pipefail
@@ -310,4 +110,40 @@ jobs:
           bash -n scripts/install-interactive.sh
           bash -n scripts/crowdsec-bootstrap-lapi.sh
           bash -n scripts/lib/os-pkg.sh
+          bash -n scripts/host/privileged.sh
           bash -n scripts/diagnostics.sh
+
+  haproxy-config-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install OS packages + HAProxy (before checkout)
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl \
+            bash bzip2 coreutils diffutils file findutils \
+            gcc g++ libc6-dev make \
+            git grep gzip openssl procps sed tar tzdata unzip \
+            zlib1g-dev \
+            nodejs npm \
+            haproxy \
+            debianutils
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: go test internal/haproxy (includes haproxy -c validation)
+        run: go test ./internal/haproxy/... -v -count=1
+
+      - name: go test internal/haproxy integration (golden haproxy -c)
+        run: go test ./internal/haproxy/... -tags=integration -run TestGoldenConfigsPassHaproxyCheck -count=1

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Package manager helpers: Alma/RHEL (dnf) and Debian/Ubuntu (apt).
+# Package manager helpers: Ubuntu (apt) only.
 # Sourced by scripts/install.sh after SCRIPT_DIR is known.
 
 easy_waf_detect_pkg_mgr() {
-  if command -v dnf &>/dev/null; then
-    export EASY_WAF_PKG_MGR=dnf
-  elif command -v apt-get &>/dev/null; then
+  if command -v apt-get &>/dev/null; then
     export EASY_WAF_PKG_MGR=apt
   else
     export EASY_WAF_PKG_MGR=
@@ -15,7 +13,6 @@ easy_waf_detect_pkg_mgr() {
 easy_waf_pkg_installed() {
   local p="$1"
   case "${EASY_WAF_PKG_MGR:-}" in
-    dnf) rpm -q "$p" &>/dev/null ;;
     apt) dpkg -s "$p" &>/dev/null 2>&1 ;;
     *) return 1 ;;
   esac

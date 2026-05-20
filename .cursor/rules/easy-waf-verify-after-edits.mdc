@@ -5,10 +5,10 @@ alwaysApply: true
 
 # После правок в этом репозитории (easy-waf)
 
-## Среда: Windows → AlmaLinux
+## Среда: Windows → Ubuntu
 
-- **Разработка** обычно на **Windows 11** (PowerShell, IDE); **проверки CI и развёртывание** — на **AlmaLinux** (и родственные RHEL‑семейства).
-- Считай эталоном то, что проходит на Linux: **`make ci`** / те же шаги из **Git Bash**, **WSL** или с Alma/VM — не только `go test` в Windows без bash.
+- **Разработка** обычно на **Windows 11** (PowerShell, IDE); **проверки CI и развёртывание** — на **Ubuntu 24.04 LTS** (appliance OS).
+- Считай эталоном то, что проходит на Linux: **`make ci`** / те же шаги из **Git Bash**, **WSL** или Ubuntu VM — не только `go test` в Windows без bash.
 - В репозитории — **LF** в `scripts/**/*.sh`, пути и артефакты под Linux; не коммить Windows‑сборки в `dist/` (см. ниже).
 - **Пилот Linux по SSH:** алиас **`waf-dev`** — см. **`docs/DEV_HOST.md`** и **`.vscode/settings.json`** (`remote.SSH.remotePlatform`).
 - **Эталонные проверки** (HAProxy в PATH, `make`, Linux как в проде): по возможности выполняй на **`waf-dev`**, а не только на Windows. После `git push` — на пилоте `git pull` в `~/easy-waf`, иначе там останется старый код и тесты дадут ложные падения.

@@ -191,8 +191,8 @@ func resetControlPanelAccess() {
 	_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 	log.Printf("set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000 EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443 in %s", *envFile)
 	log.Print("next: systemctl restart easy-waf-api.service")
-	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTP/HTTPS to 0.0.0.0:8000 / 0.0.0.0:8443 (LAN) then restart easy-waf-api; align firewalld")
-	log.Print("optional: review firewalld — remove broad 8000/8443/tcp on public zone if present")
+	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTP/HTTPS to 0.0.0.0:8000 / 0.0.0.0:8443 (LAN) then restart easy-waf-api; align nftables (EASY_WAF_NFT_MGMT_LAN)")
+	log.Print("optional: review nftables ruleset at /etc/nftables/easy-waf.nft if management ports are too open")
 }
 
 const resetConfirmToken = "RESET"

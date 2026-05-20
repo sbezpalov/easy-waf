@@ -5,7 +5,7 @@
 
 Self-hosted **secure reverse proxy / home WAF appliance** for publishing local services (Home Assistant, Frigate, Nextcloud, …) through a single HAProxy edge with ACME, CrowdSec (SPOE), Fail2Ban, and a local management UI.
 
-**Target platform:** AlmaLinux 10 or **Debian/Ubuntu** (22.04+ / 12+), HAProxy 3.x (distro build), systemd, firewalld; **SELinux Enforcing** on RHEL-family images.
+**Target platform:** **Ubuntu 24.04 LTS** only, HAProxy 3.x (distro build), systemd, **nftables** host firewall; netplan for networking.
 
 **Release / installer:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub release и документов; релизы собирает workflow [`release.yml`](.github/workflows/release.yml) (тег `v*`, см. [`CHANGELOG.md`](CHANGELOG.md)).
 
@@ -17,7 +17,8 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 | [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) | Требования [prompts.md](prompts.md) ↔ код (MVP gap matrix) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, config lifecycle, risks |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install and first application |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Installer (dnf/apt), OVF/OVA, releases |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Installer (apt), OVF/OVA, releases |
+| [docs/HOST-API.md](docs/HOST-API.md) | Host management API (network, nftables, apt, …) |
 | [docs/SECURITY.md](docs/SECURITY.md) | Hardening, SELinux, secrets, checklist |
 | [docs/ACME.md](docs/ACME.md) | Certificates and DNS providers |
 | [docs/DNS01.md](docs/DNS01.md) | DNS-01: Cloudflare, CloudNS (default), Route53, webhook |

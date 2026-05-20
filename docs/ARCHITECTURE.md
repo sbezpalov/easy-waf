@@ -21,8 +21,8 @@ flowchart TB
   subgraph Edge["Edge (Internet)"]
     C[Clients]
   end
-  subgraph Host["AlmaLinux 10 host"]
-    FW[firewalld 80/443]
+  subgraph Host["Ubuntu 24.04 host"]
+    FW[nftables 80/443 + mgmt]
     HA[HAProxy 3.x TLS + routing + ACL + SPOE]
     CS[CrowdSec Agent + LAPI]
     SP[SPOE / CrowdSec bouncer]

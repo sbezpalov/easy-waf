@@ -126,6 +126,8 @@ func (s *Server) Router() chi.Router {
 				r.Get("/audit", s.listAudit)
 
 				r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
+
+				s.mountHostRoutes(r)
 			})
 		})
 	})

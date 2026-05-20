@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Easy Home WAF — appliance installer (Alma/RHEL via dnf; Debian/Ubuntu via apt).
+# Easy Home WAF — appliance installer (Ubuntu via apt).
 # Run as root: sudo bash scripts/install.sh
 #
 # CrowdSec + HAProxy SPOA bouncer: installed by default on dnf/apt (see docs/CROWDSEC.md).
@@ -7,7 +7,7 @@
 #
 # Environment (optional):
 #   EASY_WAF_STATE_DIR=/var/lib/easy-waf
-#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip OS base packages (default: 1 = HAProxy, firewalld, fail2ban, nginx, curl)
+#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip OS base packages (default: 1 = HAProxy, nftables, fail2ban, nginx, curl)
 #   EASY_WAF_INSTALL_POSTGRES=0       — skip local PostgreSQL (default: 1 = install server + init + create DB/user; use 0 with external DATABASE_URL)
 #   EASY_WAF_ENABLE_SYSTEMD_UNITS=0   — after install, do not systemctl enable --now api+acmed (default: 1)
 #   EASY_WAF_DIST_DIR=/path          — pre-built binaries (if set and non-empty, used as-is; else auto-fetch/build → repo dist/)
@@ -15,14 +15,13 @@
 #   EASY_WAF_REPO_ROOT=/path         — root of git checkout (default: parent of scripts/)
 #   EASY_WAF_RELEASE_VERSION=x.y.z   — try GitHub release before building (overrides VERSION file)
 #   EASY_WAF_SKIP_BINARY_FETCH=1     — do not download or build; require EASY_WAF_DIST_DIR with binaries
-#   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via dnf/apt before source build
-#   EASY_WAF_FIREWALLD_MGMT_LAN=0     — skip rich rules: TCP management port only from RFC1918 + 127.0.0.0/8 (default: 1 with OS packages)
-#   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443" — TCP ports for LAN-only rich rules (management UI)
-#   EASY_WAF_FIREWALLD_ZONE=public    EASY_WAF_EXTRA_LAN_CIDR= — optional VPN CIDR for firewalld
-#   EASY_WAF_FIREWALLD_EDGE=1         — open HAProxy edge: firewalld services http+https (80/443) on FIREWALLD_ZONE (default 1)
-#   EASY_WAF_FIREWALLD_EDGE=0         — skip edge rules (e.g. only cloud SG / another firewall opens 80/443)
-#   EASY_WAF_FIREWALLD_EDGE_SERVICES="http https" — override service names passed to firewall-cmd
-#   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA RPM/DEB packages (default 1 on dnf/apt; set 0 to skip)
+#   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via apt before source build
+#   EASY_WAF_NFT_MGMT_LAN=0         — skip nftables rules for management ports from RFC1918 (default: 1)
+#   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
+#   EASY_WAF_EXTRA_LAN_CIDR=         — optional extra source CIDR for management ports
+#   EASY_WAF_NFT_EDGE=1             — open HAProxy edge tcp/80+443 (default 1)
+#   EASY_WAF_NFT_EDGE=0             — skip edge rules in nftables
+#   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA DEB packages (default 1; set 0 to skip)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 1 = full appliance)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
 #   EASY_WAF_FAIL2BAN_AUTO_START=0|1 — after fail2ban package install: systemctl start (default 1)
@@ -129,13 +128,13 @@ install_env_file() {
   chown root:easy-waf "$CFG_DIR/easy-waf.env" 2>/dev/null || chmod 0640 "$CFG_DIR/easy-waf.env"
 }
 
-# When FIREWALLD_* were not exported for this install run, take the last matching line from easy-waf.env
-# (so re-running install.sh after editing the file applies zone / edge / mgmt flags without manual export).
-easy_waf_load_firewalld_env_from_file_if_unset() {
+# When NFT_* (or legacy FIREWALLD_*) were not exported, read from easy-waf.env.
+easy_waf_load_nft_env_from_file_if_unset() {
   local f="$CFG_DIR/easy-waf.env"
   [[ -f "$f" ]] || return 0
   local key line val
-  for key in EASY_WAF_FIREWALLD_ZONE EASY_WAF_FIREWALLD_EDGE EASY_WAF_FIREWALLD_EDGE_SERVICES EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS EASY_WAF_EXTRA_LAN_CIDR; do
+  for key in EASY_WAF_NFT_EDGE EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_EXTRA_LAN_CIDR \
+    EASY_WAF_FIREWALLD_EDGE EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS; do
     if printenv "$key" &>/dev/null; then
       continue
     fi
@@ -181,9 +180,9 @@ easy_waf_install_crowdsec_packages() {
     return 0
   fi
   case "${EASY_WAF_PKG_MGR:-}" in
-    dnf | apt) ;;
+    apt) ;;
     *)
-      log "WARNING: CrowdSec packages skipped — package manager is not dnf/apt (set EASY_WAF_INSTALL_CROWDSEC=0 to silence)"
+      log "WARNING: CrowdSec packages skipped — apt not available (set EASY_WAF_INSTALL_CROWDSEC=0 to silence)"
       return 0
       ;;
   esac
@@ -230,7 +229,7 @@ easy_waf_bootstrap_crowdsec_lapi() {
     return 0
   fi
   case "${EASY_WAF_PKG_MGR:-}" in
-    dnf | apt) ;;
+    apt) ;;
     *) return 0 ;;
   esac
 
@@ -497,12 +496,43 @@ install_polkit_rules() {
     local polkit_src="${REPO_ROOT}/packaging/polkit"
     if [[ -d "$polkit_src" ]]; then
       mkdir -p /etc/polkit-1/rules.d
-      install -m 0644 "${polkit_src}/99-easy-waf-haproxy.rules" "/etc/polkit-1/rules.d/"
-      log "Installed /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules"
+      for f in 99-easy-waf-haproxy.rules 99-easy-waf-host.rules; do
+        if [[ -f "${polkit_src}/${f}" ]]; then
+          install -m 0644 "${polkit_src}/${f}" "/etc/polkit-1/rules.d/"
+          log "Installed /etc/polkit-1/rules.d/${f}"
+        fi
+      done
     fi
   else
-    log "Polkit not found on system — assuming root execution or manual systemctl manage"
+    log "Polkit not found on system — host management may require manual sudoers"
   fi
+}
+
+install_host_privileged_helper() {
+  local dest="/usr/lib/easy-waf/host-privileged.sh"
+  mkdir -p /usr/lib/easy-waf
+  install -m 0750 "${SCRIPT_DIR}/host/privileged.sh" "$dest"
+  log "Installed $dest"
+}
+
+install_host_sudoers() {
+  if ! id easy-waf &>/dev/null; then
+    return 0
+  fi
+  local f="/etc/sudoers.d/easy-waf-host"
+  cat >"$f" <<'EOF'
+# Easy Home WAF — host management API (NOPASSWD helper only).
+easy-waf ALL=(root) NOPASSWD: /usr/lib/easy-waf/host-privileged.sh *
+EOF
+  chmod 0440 "$f"
+  if command -v visudo &>/dev/null; then
+    if ! visudo -cf "$f" 2>/dev/null; then
+      rm -f "$f"
+      log "WARNING: invalid easy-waf-host sudoers — skipped"
+      return 0
+    fi
+  fi
+  log "Installed $f (host management for easy-waf user)"
 }
 
 
@@ -548,61 +578,24 @@ install_os_packages() {
   fi
 
   case "${EASY_WAF_PKG_MGR:-}" in
-    dnf)
-      log "Installing base OS packages via dnf..."
-      dnf install -y \
-        haproxy \
-        firewalld \
-        nginx \
-        ca-certificates \
-        curl \
-        || die "dnf install failed (haproxy/firewalld/nginx)"
-
-      if easy_waf_pkg_installed fail2ban; then
-        log "fail2ban already installed"
-      elif dnf install -y fail2ban 2>/dev/null; then
-        :
-      else
-        log "fail2ban not in default repos — trying epel-release..."
-        dnf install -y epel-release 2>/dev/null || true
-        if dnf install -y fail2ban fail2ban-firewalld 2>/dev/null; then
-          log "Installed fail2ban from EPEL"
-        else
-          log "warning: fail2ban unavailable (optional). Install later: dnf install epel-release && dnf install fail2ban"
-        fi
-      fi
-
-      if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" == "1" ]]; then
-        dnf install -y postgresql-server postgresql || die "postgresql install failed"
-        if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
-          postgresql-setup --initdb || true
-        fi
-        systemctl enable --now postgresql || true
-        log "PostgreSQL enabled — next steps create /etc/easy-waf/easy-waf.env and provision DB user/database"
-      else
-        log "PostgreSQL server not installed (EASY_WAF_INSTALL_POSTGRES=0) — set DATABASE_URL to your external instance"
-      fi
-
-      systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
-      systemctl enable haproxy 2>/dev/null || true
-      if easy_waf_pkg_installed fail2ban; then
-        systemctl enable fail2ban 2>/dev/null || true
-        if [[ "${EASY_WAF_FAIL2BAN_AUTO_START:-1}" == "1" ]]; then
-          systemctl start fail2ban 2>/dev/null || true
-        fi
-      fi
-      log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
-      ;;
     apt)
       easy_waf_apt_get_update
-      log "Installing base OS packages via apt..."
+      log "Installing base OS packages via apt (Ubuntu)..."
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         haproxy \
-        firewalld \
+        nftables \
         nginx \
         ca-certificates \
         curl \
-        || die "apt install failed (haproxy/firewalld/nginx)"
+        iproute2 \
+        netplan.io \
+        iputils-ping \
+        traceroute \
+        tracepath \
+        systemd \
+        polkit \
+        sudo \
+        || die "apt install failed (haproxy/nftables/nginx)"
 
       if easy_waf_pkg_installed fail2ban; then
         log "fail2ban already installed"
@@ -616,12 +609,12 @@ install_os_packages() {
         DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib \
           || die "postgresql install failed"
         systemctl enable --now postgresql || true
-        log "PostgreSQL enabled (Debian/Ubuntu layout) — ensure /etc/easy-waf/easy-waf.env DATABASE_URL matches your cluster"
+        log "PostgreSQL enabled — ensure /etc/easy-waf/easy-waf.env DATABASE_URL matches your cluster"
       else
         log "PostgreSQL server not installed (EASY_WAF_INSTALL_POSTGRES=0) — set DATABASE_URL to your external instance"
       fi
 
-      systemctl enable --now firewalld 2>/dev/null || systemctl enable firewalld 2>/dev/null || true
+      systemctl enable nftables 2>/dev/null || true
       systemctl enable haproxy 2>/dev/null || true
       if easy_waf_pkg_installed fail2ban; then
         systemctl enable fail2ban 2>/dev/null || true
@@ -629,52 +622,25 @@ install_os_packages() {
           systemctl start fail2ban 2>/dev/null || true
         fi
       fi
-      log "Enabled haproxy, firewalld (fail2ban if installed); firewalld started if possible"
+      log "Enabled haproxy, nftables (fail2ban if installed)"
       ;;
     *)
-      die "no dnf or apt-get — install haproxy/firewalld/nginx manually or set EASY_WAF_INSTALL_OS_PACKAGES=0 (see docs/DEPLOYMENT.md)"
+      die "Ubuntu with apt-get required — set EASY_WAF_INSTALL_OS_PACKAGES=0 only if you install deps manually (see docs/DEPLOYMENT.md)"
       ;;
   esac
 }
 
-# Rich rules: management HTTP+HTTPS (8000, 8443) only from LAN (RFC1918) + loopback.
-configure_firewalld_management_lan() {
+# nftables: management + edge rules (see scripts/lib/nftables-easy-waf.sh).
+configure_nftables_appliance() {
   if [[ "${EASY_WAF_INSTALL_OS_PACKAGES:-1}" != "1" ]]; then
     return 0
   fi
-  if [[ "${EASY_WAF_FIREWALLD_MGMT_LAN:-1}" != "1" ]]; then
-    log "Skipping firewalld management rules (EASY_WAF_FIREWALLD_MGMT_LAN=0)"
-    return 0
-  fi
-  systemctl start firewalld 2>/dev/null || true
-  # shellcheck source=lib/firewalld-management-api.sh
-  source "${SCRIPT_DIR}/lib/firewalld-management-api.sh"
-  easy_waf_firewalld_allow_management_from_private_nets \
-    "${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}" \
-    "${EASY_WAF_FIREWALLD_ZONE:-public}" \
-    "${EASY_WAF_EXTRA_LAN_CIDR:-}"
-}
-
-# HAProxy binds :80 / :443 on the edge; open them on the default zone (independent of EASY_WAF_FIREWALLD_MGMT_LAN).
-configure_firewalld_edge() {
-  if [[ "${EASY_WAF_FIREWALLD_EDGE:-1}" == "0" ]]; then
-    log "Skipping firewalld HAProxy edge (EASY_WAF_FIREWALLD_EDGE=0)"
-    return 0
-  fi
-  command -v firewall-cmd &>/dev/null || {
-    log "firewalld: firewall-cmd not found; skip edge http/https"
-    return 0
-  }
-  systemctl start firewalld 2>/dev/null || true
-  if ! systemctl is-active --quiet firewalld 2>/dev/null; then
-    log "WARNING: firewalld not active — tcp/80+443 not opened; run: sudo systemctl start firewalld && sudo bash scripts/fix-firewalld-edge.sh"
-    return 0
-  fi
-  # shellcheck source=lib/firewalld-management-api.sh
-  source "${SCRIPT_DIR}/lib/firewalld-management-api.sh"
-  easy_waf_firewalld_allow_edge_http_https \
-    "${EASY_WAF_FIREWALLD_ZONE:-public}" \
-    "${EASY_WAF_FIREWALLD_EDGE_SERVICES:-http https}"
+  local mgmt_lan="${EASY_WAF_NFT_MGMT_LAN:-${EASY_WAF_FIREWALLD_MGMT_LAN:-1}}"
+  local mgmt_ports="${EASY_WAF_NFT_MGMT_PORTS:-${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}}"
+  local edge="${EASY_WAF_NFT_EDGE:-${EASY_WAF_FIREWALLD_EDGE:-1}}"
+  # shellcheck source=lib/nftables-easy-waf.sh
+  source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
+  easy_waf_nft_configure_appliance "$mgmt_lan" "$mgmt_ports" "$edge" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
 }
 
 # HAProxy is the public edge; ensure it is enabled at boot even when OS packages were skipped.
@@ -713,11 +679,12 @@ main() {
   install_systemd_units
   install_polkit_rules
   install_fail2ban_sudoers
+  install_host_privileged_helper
+  install_host_sudoers
   selinux_restore
   easy_waf_integrate_haproxy_edge
-  easy_waf_load_firewalld_env_from_file_if_unset
-  configure_firewalld_management_lan
-  configure_firewalld_edge
+  easy_waf_load_nft_env_from_file_if_unset
+  configure_nftables_appliance
 
   # shellcheck source=lib/management-listen.sh
   source "${SCRIPT_DIR}/lib/management-listen.sh"
@@ -739,15 +706,15 @@ main() {
     log "Using external DB — ensure $CFG_DIR/easy-waf.env DATABASE_URL is correct"
   fi
   easy_waf_post_install_summary
-  log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; firewalld: RFC1918 + 127.0.0.0/8 on 8000+8443 when MGMT_LAN=1)"
-  log "HAProxy edge: tcp 80+443 on firewalld zone ${EASY_WAF_FIREWALLD_ZONE:-public} (disable with EASY_WAF_FIREWALLD_EDGE=0)"
+  log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; nftables: RFC1918 on mgmt ports when NFT_MGMT_LAN=1)"
+  log "HAProxy edge: tcp 80+443 via nftables (disable with EASY_WAF_NFT_EDGE=0)"
 }
 
 # Print appliance health after install (non-fatal; guides operator).
 easy_waf_post_install_summary() {
   log "=== Post-install summary ==="
   local u
-  for u in easy-waf-api easy-waf-acmed haproxy postgresql firewalld; do
+  for u in easy-waf-api easy-waf-acmed haproxy postgresql nftables; do
     if systemctl list-unit-files "${u}.service" &>/dev/null; then
       log "  ${u}: $(systemctl is-active "${u}.service" 2>/dev/null || echo unknown)"
     fi
@@ -757,7 +724,7 @@ easy_waf_post_install_summary() {
       log "  crowdsec: $(systemctl is-active crowdsec.service 2>/dev/null || echo unknown)"
       log "  crowdsec-spoa: $(systemctl is-active crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || echo unknown)"
     else
-      log "  ERROR: CrowdSec not installed — re-run: sudo bash scripts/install.sh (need packagecloud + dnf)"
+      log "  ERROR: CrowdSec not installed — re-run: sudo bash scripts/install.sh (need packagecloud + apt)"
     fi
   fi
   if command -v fail2ban-client &>/dev/null; then
