@@ -553,13 +553,12 @@ easy_waf_fail2ban_fix_socket_permissions() {
     [[ -d "$dir" ]] || continue
     chgrp fail2ban "$dir" 2>/dev/null || true
     chmod 710 "$dir" 2>/dev/null || true
-    for sock in "${dir}/fail2ban.sock"; do
-      if [[ -S "$sock" ]]; then
-        chgrp fail2ban "$sock" 2>/dev/null || true
-        chmod 660 "$sock" 2>/dev/null || true
-        log "fail2ban socket: $sock (group fail2ban, mode 660)"
-      fi
-    done
+    sock="${dir}/fail2ban.sock"
+    if [[ -S "$sock" ]]; then
+      chgrp fail2ban "$sock" 2>/dev/null || true
+      chmod 660 "$sock" 2>/dev/null || true
+      log "fail2ban socket: $sock (group fail2ban, mode 660)"
+    fi
   done
 }
 
