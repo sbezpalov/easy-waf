@@ -1928,9 +1928,9 @@
     document.getElementById('dash-cs-sub').textContent = cs.last_message || '';
 
     let decN = null;
+    const decTxt = await decR.text();
     if (decR.ok) {
-      const t = await decR.text();
-      decN = decisionsCount(t);
+      decN = decisionsCount(decTxt);
     }
     if (decN != null) {
       document.getElementById('dash-cs-sub').textContent =
@@ -1938,8 +1938,15 @@
         (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') +
         `decisions (sample): ${decN}`;
     } else if (decR && !decR.ok) {
+      let decErr = 'decisions unavailable';
+      try {
+        const ej = JSON.parse(decTxt);
+        if (ej && (ej.error || ej.message)) decErr = String(ej.error || ej.message);
+      } catch (_) {
+        if (decTxt && decTxt.trim()) decErr = decTxt.trim().slice(0, 120);
+      }
       document.getElementById('dash-cs-sub').textContent =
-        (document.getElementById('dash-cs-sub').textContent || '') + ' · decisions: unavailable';
+        (document.getElementById('dash-cs-sub').textContent || '') + ' · ' + decErr;
     }
 
     let revs = [];
