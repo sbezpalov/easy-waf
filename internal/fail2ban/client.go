@@ -166,8 +166,10 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 	if err == nil {
 		return out, nil
 	}
+	// Auto-sudo is not used: easy-waf-api runs with NoNewPrivileges (sudo cannot elevate).
+	// Appliance access is via fail2ban group + socket permissions (install_fail2ban_api_access).
 	low := strings.ToLower(string(out) + err.Error())
-	if c.UseSudo || needsSudo(low) {
+	if c.UseSudo && needsSudo(low) && !sudoBlockedByNoNewPrivileges(low) {
 		sudoOut, sudoErr := run(ctx, "/usr/bin/sudo", append([]string{"-n", bin}, args...)...)
 		if sudoErr == nil {
 			return sudoOut, nil
@@ -178,6 +180,11 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 		err = sudoErr
 	}
 	return out, err
+}
+
+// sudoBlockedByNoNewPrivileges detects systemd NoNewPrivileges (easy-waf-api cannot use sudo).
+func sudoBlockedByNoNewPrivileges(msg string) bool {
+	return strings.Contains(msg, "no new privileges")
 }
 
 func needsSudo(msg string) bool {

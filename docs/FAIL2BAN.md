@@ -16,15 +16,35 @@ Audit: explicit `fail2ban.unban` plus HTTP audit category **fail2ban**.
 
 ## Permissions
 
-`easy-waf-api` runs as user **`easy-waf`**. Reading status and unbanning requires **`fail2ban-client`**, which is usually root-only.
+`easy-waf-api` runs as user **`easy-waf`** with **`NoNewPrivileges=true`** (see `packaging/systemd/easy-waf-api.service`). That means **`sudo` cannot elevate** to root even with NOPASSWD sudoers — the UI would show *"no new privileges"* errors.
 
-On install, `scripts/install.sh` writes **`/etc/sudoers.d/easy-waf-fail2ban`** (validated with `visudo -c`) allowing:
+The supported path is **group access to the fail2ban Unix socket** (no sudo):
 
-- `fail2ban-client status`
-- `fail2ban-client status <jail>`
-- `fail2ban-client set <jail> unbanip <ip>`
+1. User **`easy-waf`** is in group **`fail2ban`** (`usermod` + `easy-waf-api.service.d/fail2ban.conf` with `SupplementaryGroups=fail2ban`).
+2. Drop-in **`fail2ban.service.d/easy-waf-socket.conf`** sets the socket to group **`fail2ban`**, mode **660**, and the runtime directory to **710**.
 
-The API client retries with **`sudo -n`** when the direct call returns permission denied. Optional: set **`EASY_WAF_FAIL2BAN_USE_SUDO=1`** in `/etc/easy-waf/easy-waf.env` to always use sudo.
+`scripts/install.sh` runs **`install_fail2ban_api_access`** when the fail2ban package is present.
+
+### Repair on an existing host
+
+```bash
+cd ~/easy-waf   # or your clone path
+sudo bash scripts/install.sh   # re-applies fail2ban access + restarts units if enabled
+# Or minimal:
+sudo systemctl daemon-reload
+sudo systemctl restart fail2ban easy-waf-api
+```
+
+Verify as the API user:
+
+```bash
+sudo -u easy-waf fail2ban-client ping
+sudo -u easy-waf fail2ban-client status
+```
+
+### Optional sudo (non-appliance only)
+
+Set **`EASY_WAF_FAIL2BAN_USE_SUDO=1`** only if the API process runs **without** `NoNewPrivileges` and `/etc/sudoers.d/easy-waf-fail2ban` is present. Stock **`easy-waf-api`** does not set this; it relies on group socket access instead.
 
 ## UI
 
@@ -42,6 +62,7 @@ If fail2ban is not installed or not running, the status line explains the daemon
 sudo fail2ban-client status
 sudo fail2ban-client status sshd
 systemctl status fail2ban
+ls -la /var/run/fail2ban/fail2ban.sock /run/fail2ban/fail2ban.sock 2>/dev/null
 ```
 
 From another host (with API token): `GET /api/v1/integrations/fail2ban` on the management listener (LAN CIDR only).

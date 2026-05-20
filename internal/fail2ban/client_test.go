@@ -40,6 +40,25 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 	}
 }
 
+func TestClient_run_skipsSudoWhenNoNewPrivileges(t *testing.T) {
+	c := &Client{
+		Bin: "/usr/bin/fail2ban-client",
+		Run: func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+			if bin == "/usr/bin/sudo" {
+				t.Fatal("sudo must not be called when NoNewPrivileges blocks it")
+			}
+			return []byte("Permission denied to socket"), errors.New("exit status 255")
+		},
+	}
+	_, err := c.run(context.Background(), "ping")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "sudo") {
+		t.Fatalf("unexpected sudo in error: %v", err)
+	}
+}
+
 func TestClient_UnbanIP_validation(t *testing.T) {
 	c := &Client{Bin: "/bin/fail2ban-client", Run: execRunner}
 	err := c.UnbanIP(context.Background(), "../evil", "1.2.3.4")

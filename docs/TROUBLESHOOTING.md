@@ -82,7 +82,21 @@ sudo apt-get install -y fail2ban
 sudo systemctl enable --now fail2ban
 ```
 
-Re-run **`sudo bash scripts/install.sh`** to install the sudoers fragment for the management UI.
+Re-run **`sudo bash scripts/install.sh`** to configure API access (fail2ban group + socket permissions).
+
+## Fail2Ban UI: “no new privileges” / permission denied on socket
+
+`easy-waf-api` uses **`NoNewPrivileges=true`**, so **`sudo fail2ban-client` does not work** even with `/etc/sudoers.d/easy-waf-fail2ban`.
+
+Fix (from repo root):
+
+```bash
+sudo bash scripts/install.sh   # runs install_fail2ban_api_access
+sudo systemctl restart fail2ban easy-waf-api
+sudo -u easy-waf fail2ban-client ping   # expect: pong
+```
+
+See [FAIL2BAN.md](FAIL2BAN.md).
 
 ## Management UI returns 403 / “management access denied”
 

@@ -511,7 +511,59 @@ install_systemd_units() {
   log "Run: systemctl enable --now easy-waf-api.service easy-waf-acmed.service"
 }
 
-# Allow easy-waf-api (user easy-waf) to read fail2ban status and unban IPs (management UI).
+# Fix fail2ban socket permissions and grant easy-waf-api access without sudo.
+# Required: easy-waf-api.service sets NoNewPrivileges=true (sudo cannot elevate).
+install_fail2ban_api_access() {
+  if ! command -v fail2ban-client &>/dev/null; then
+    return 0
+  fi
+  if ! getent group fail2ban &>/dev/null; then
+    log "WARNING: fail2ban group missing — install fail2ban package, then re-run install.sh"
+    return 0
+  fi
+  if id easy-waf &>/dev/null; then
+    if ! id -nG easy-waf | grep -qw fail2ban; then
+      usermod -aG fail2ban easy-waf 2>/dev/null || true
+      log "Added easy-waf to fail2ban group"
+    fi
+  fi
+  local f2b_dropin="${REPO_ROOT}/packaging/systemd/fail2ban-easy-waf-socket.conf"
+  if [[ -f "$f2b_dropin" ]]; then
+    mkdir -p /etc/systemd/system/fail2ban.service.d
+    install -m 0644 "$f2b_dropin" /etc/systemd/system/fail2ban.service.d/easy-waf-socket.conf
+    log "Installed fail2ban.service.d/easy-waf-socket.conf"
+  fi
+  local api_dropin="${REPO_ROOT}/packaging/systemd/easy-waf-api-fail2ban.conf"
+  if [[ -f "$api_dropin" ]] && [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]]; then
+    mkdir -p /etc/systemd/system/easy-waf-api.service.d
+    install -m 0644 "$api_dropin" /etc/systemd/system/easy-waf-api.service.d/fail2ban.conf
+    log "Installed easy-waf-api.service.d/fail2ban.conf (SupplementaryGroups=fail2ban)"
+  fi
+  easy_waf_fail2ban_fix_socket_permissions
+  if command -v systemctl &>/dev/null && systemctl is-active fail2ban.service &>/dev/null; then
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl try-reload-or-restart fail2ban.service 2>/dev/null || systemctl restart fail2ban.service 2>/dev/null || true
+    easy_waf_fail2ban_fix_socket_permissions
+  fi
+}
+
+easy_waf_fail2ban_fix_socket_permissions() {
+  local sock dir
+  for dir in /var/run/fail2ban /run/fail2ban; do
+    [[ -d "$dir" ]] || continue
+    chgrp fail2ban "$dir" 2>/dev/null || true
+    chmod 710 "$dir" 2>/dev/null || true
+    for sock in "${dir}/fail2ban.sock"; do
+      if [[ -S "$sock" ]]; then
+        chgrp fail2ban "$sock" 2>/dev/null || true
+        chmod 660 "$sock" 2>/dev/null || true
+        log "fail2ban socket: $sock (group fail2ban, mode 660)"
+      fi
+    done
+  done
+}
+
+# Legacy fallback when NoNewPrivileges=false. Ignored by easy-waf-api with stock unit.
 install_fail2ban_sudoers() {
   if ! id easy-waf &>/dev/null; then
     return 0
@@ -725,6 +777,7 @@ main() {
   easy_waf_sync_settings_to_db
   install_systemd_units
   install_polkit_rules
+  install_fail2ban_api_access
   install_fail2ban_sudoers
   install_host_privileged_helper
   install_host_sudoers
