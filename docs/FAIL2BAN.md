@@ -23,17 +23,16 @@ The supported path is **group access to the fail2ban Unix socket** (no sudo):
 1. User **`easy-waf`** is in group **`fail2ban`** (`usermod` + `easy-waf-api.service.d/fail2ban.conf` with `SupplementaryGroups=fail2ban`).
 2. Drop-in **`fail2ban.service.d/easy-waf-socket.conf`** sets the socket to group **`fail2ban`**, mode **660**, and the runtime directory to **710**.
 
-`scripts/install.sh` runs **`install_fail2ban_api_access`** when the fail2ban package is present.
+`scripts/install.sh` runs **`install_fail2ban_api_access`** when the fail2ban package is present. On **Ubuntu**, the `fail2ban` apt package often does **not** create a `fail2ban` group — the installer **creates** it and sets socket mode **660**.
 
 ### Repair on an existing host
 
 ```bash
-cd ~/easy-waf   # or your clone path
-sudo bash scripts/install.sh   # re-applies fail2ban access + restarts units if enabled
-# Or minimal:
-sudo systemctl daemon-reload
-sudo systemctl restart fail2ban easy-waf-api
+cd ~/easy-waf
+sudo bash scripts/fix-fail2ban-api-access.sh
 ```
+
+Or full install: `sudo bash scripts/install.sh`
 
 Verify as the API user:
 
