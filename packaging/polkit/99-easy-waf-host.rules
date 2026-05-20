@@ -13,8 +13,7 @@ polkit.addRule(function(action, subject) {
             "crowdsec-haproxy-spoa-bouncer.service",
             "fail2ban.service",
             "nftables.service",
-            "postgresql.service",
-            "nginx.service"
+            "postgresql.service"
         ];
         if (allowed.indexOf(unit) >= 0) {
             return polkit.Result.YES;

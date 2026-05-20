@@ -7,7 +7,7 @@
 #
 # Environment (optional):
 #   EASY_WAF_STATE_DIR=/var/lib/easy-waf
-#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip OS base packages (default: 1 = HAProxy, nftables, fail2ban, nginx, curl)
+#   EASY_WAF_INSTALL_OS_PACKAGES=0   — skip OS base packages (default: 1 = HAProxy, nftables, fail2ban, curl)
 #   EASY_WAF_INSTALL_POSTGRES=0       — skip local PostgreSQL (default: 1 = install server + init + create DB/user; use 0 with external DATABASE_URL)
 #   EASY_WAF_ENABLE_SYSTEMD_UNITS=0   — after install, do not systemctl enable --now api+acmed (default: 1)
 #   EASY_WAF_DIST_DIR=/path          — pre-built binaries (if set and non-empty, used as-is; else auto-fetch/build → repo dist/)
@@ -582,21 +582,22 @@ install_os_packages() {
     apt)
       easy_waf_apt_get_update
       log "Installing base OS packages via apt (Ubuntu)..."
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        haproxy \
-        nftables \
-        nginx \
-        ca-certificates \
-        curl \
-        iproute2 \
-        netplan.io \
-        iputils-ping \
-        traceroute \
-        iputils-tracepath \
-        systemd \
-        policykit-1 \
-        sudo \
-        || die "apt install failed (haproxy/nftables/nginx)"
+      local -a base_pkgs=(
+        haproxy
+        nftables
+        ca-certificates
+        curl
+        iproute2
+        netplan.io
+        iputils-ping
+        traceroute
+        iputils-tracepath
+        systemd
+        policykit-1
+        sudo
+      )
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${base_pkgs[@]}" \
+        || die "apt install failed (haproxy/nftables/base packages)"
 
       if easy_waf_pkg_installed fail2ban; then
         log "fail2ban already installed"
@@ -623,8 +624,6 @@ install_os_packages() {
           systemctl start fail2ban 2>/dev/null || true
         fi
       fi
-      # Edge traffic belongs to HAProxy. nginx is optional and should not occupy :80/:443 by default.
-      systemctl disable --now nginx 2>/dev/null || true
       log "Enabled haproxy, nftables (fail2ban if installed)"
       ;;
     *)

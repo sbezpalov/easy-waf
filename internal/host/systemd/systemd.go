@@ -18,7 +18,6 @@ var AllowedUnits = []string{
 	"fail2ban.service",
 	"nftables.service",
 	"postgresql.service",
-	"nginx.service",
 }
 
 func unitAllowed(unit string) bool {

@@ -1,6 +1,6 @@
 # Virtual machine sizing (ESXi / QEMU–KVM)
 
-These numbers are **planning guidelines** for a single appliance running the full stack: **Ubuntu 24.04 LTS**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, optional **nginx**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **nftables**.
+These numbers are **planning guidelines** for a single appliance running the full stack: **Ubuntu 24.04 LTS**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **nftables**.
 
 ## Rough memory budget (why these sizes)
 

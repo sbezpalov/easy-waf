@@ -69,7 +69,7 @@ cmd/easy-wafd/       # Alias entrypoint → same as easy-waf-api
 internal/            # store (PostgreSQL), haproxy, acme, api, ipbl, …
 internal/store/migrations/  # SQL schema
 internal/webui/dist/ # Embedded static UI
-configs/             # Sample defaults (haproxy, nginx optional, crowdsec snippets)
+configs/             # Sample defaults (haproxy, crowdsec snippets)
 scripts/             # install, upgrade, backup, restore, check-linux-artifacts
 packaging/           # systemd units for api + acmed
 docs/                # Architecture and guides
