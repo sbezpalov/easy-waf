@@ -188,6 +188,18 @@ Older installers retried **`apt-get -f install`** in a loop while LAPI was alrea
 
 If it still fails: `systemctl status crowdsec`, `journalctl -u crowdsec -n 80`, `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/`, then `sudo bash scripts/crowdsec-bootstrap-lapi.sh`.
 
+## CrowdSec UI: 502 on decisions / install “LAPI decisions check failed”
+
+LAPI bouncers authenticate with **`X-Api-Key: <key>`** ([CrowdSec docs](https://doc.crowdsec.net/docs/local_api/bouncers/)). Wrong header → **403** → UI **502** or install error even when `CROWDSEC_LAPI_KEY` in `easy-waf.env` is correct.
+
+```bash
+KEY=$(sudo grep '^CROWDSEC_LAPI_KEY=' /etc/easy-waf/easy-waf.env | cut -d= -f2-)
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-Api-Key: $KEY" 'http://127.0.0.1:8080/v1/decisions?limit=1'
+# expect 200
+```
+
+After `git pull` + `make build`: reinstall API binary and `sudo systemctl restart easy-waf-api`, or re-run `sudo bash scripts/install.sh` (bootstrap check now uses `X-Api-Key`).
+
 ## CrowdSec / SPOE errors
 
 - Validate SPOE file path in `haproxy.cfg`.

@@ -20,6 +20,13 @@ type Client struct {
 	HTTP    *http.Client
 }
 
+// setLAPIAuth sets the bouncer API key header (CrowdSec LAPI uses X-Api-Key, not Bearer JWT).
+func setLAPIAuth(req *http.Request, apiKey string) {
+	if k := strings.TrimSpace(apiKey); k != "" {
+		req.Header.Set("X-Api-Key", k)
+	}
+}
+
 // Status holds a lightweight integration snapshot for the UI.
 type Status struct {
 	Reachable   bool   `json:"reachable"`
@@ -39,9 +46,7 @@ func (c *Client) Ping(ctx context.Context) Status {
 	if err != nil {
 		return Status{Reachable: false, LastMessage: err.Error()}
 	}
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
+	setLAPIAuth(req, c.APIKey)
 	resp, err := client.Do(req)
 	if err != nil {
 		return Status{Reachable: false, LastMessage: err.Error()}
@@ -67,9 +72,7 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
+	setLAPIAuth(req, c.APIKey)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -122,9 +125,7 @@ func (c *Client) DeleteDecision(ctx context.Context, decisionID string) error {
 	if err != nil {
 		return err
 	}
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
+	setLAPIAuth(req, c.APIKey)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -189,9 +190,7 @@ func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error 
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
+	setLAPIAuth(httpReq, c.APIKey)
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return err

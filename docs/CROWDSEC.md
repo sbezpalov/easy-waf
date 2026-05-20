@@ -69,7 +69,7 @@ For advanced behaviour (CAPTCHA, ban pages, AppSec), follow upstream docs: addit
 
 ## Variables
 
-- **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in `/etc/easy-waf/easy-waf.env` — used by **easy-waf-api** to reach LAPI (management bouncer key).
+- **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in `/etc/easy-waf/easy-waf.env` — used by **easy-waf-api** to reach LAPI (bouncer key from `cscli bouncers add -o raw`). LAPI expects header **`X-Api-Key`**, not `Authorization: Bearer`.
 
 ## Management API (UI)
 

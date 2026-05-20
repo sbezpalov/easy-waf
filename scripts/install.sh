@@ -174,6 +174,23 @@ easy_waf_env_upsert_kv() {
   chown root:easy-waf "$env_file" 2>/dev/null || true
 }
 
+# GET /v1/decisions with bouncer key (CrowdSec expects X-Api-Key, not Bearer).
+easy_waf_crowdsec_decisions_check() {
+  local api_key="$1" attempt code lapi_url="http://127.0.0.1:8080"
+  api_key="$(printf '%s' "$api_key" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$api_key" ]] || return 1
+  for attempt in 1 2 3 4 5; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+      -H "X-Api-Key: ${api_key}" "${lapi_url}/v1/decisions?limit=1" 2>/dev/null || echo 000)"
+    if [[ "$code" == "200" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  log "WARNING: LAPI decisions HTTP ${code} (expected 200); journalctl -u crowdsec -n 40"
+  return 1
+}
+
 # Delete CrowdSec bouncer if present, then add; print raw API key (one line).
 easy_waf_cscli_bouncer_recreate_raw() {
   local name="$1"
@@ -305,9 +322,8 @@ easy_waf_bootstrap_crowdsec_lapi() {
   easy_waf_env_upsert_kv "CROWDSEC_LAPI_KEY" "$api_key" || true
   log "Wrote CROWDSEC_LAPI_* to $CFG_DIR/easy-waf.env (bouncer easy-waf-api for UI; no manual cscli needed)"
 
-  local lapi_url="http://127.0.0.1:8080"
-  if ! curl -sf --max-time 5 -H "Authorization: Bearer ${api_key}" "${lapi_url}/v1/decisions?limit=1" >/dev/null; then
-    log "ERROR: LAPI decisions check failed after bootstrap (GET /v1/decisions with easy-waf-api key)"
+  if ! easy_waf_crowdsec_decisions_check "$api_key"; then
+    log "ERROR: LAPI decisions check failed after bootstrap (GET /v1/decisions with easy-waf-api key; need X-Api-Key)"
     return 1
   fi
   log "CrowdSec LAPI decisions API OK (out-of-box check passed)"

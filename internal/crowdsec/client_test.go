@@ -15,8 +15,8 @@ func TestDeleteDecision_Success(t *testing.T) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/v1/decisions/42" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer k" {
-			t.Fatalf("missing auth")
+		if r.Header.Get("X-Api-Key") != "k" {
+			t.Fatalf("missing X-Api-Key auth, got %q", r.Header.Get("X-Api-Key"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -94,6 +94,27 @@ func TestAddDecision_Whitelist(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDecisionsSample_XApiKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "secret" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	c := Client{BaseURL: srv.URL, APIKey: "secret"}
+	raw, err := c.DecisionsSample(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "[]" {
+		t.Fatalf("got %s", raw)
 	}
 }
 
