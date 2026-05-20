@@ -206,6 +206,12 @@ easy_waf_install_crowdsec_packages() {
     return 1
   fi
 
+  if [[ "$had_crowdsec_agent" -eq 1 ]]; then
+    export EASY_WAF_CROWDSEC_AGENT_ALREADY_INSTALLED=1
+  else
+    unset EASY_WAF_CROWDSEC_AGENT_ALREADY_INSTALLED || true
+  fi
+
   if ! crowdsec_install_agent_package; then
     log "ERROR: CrowdSec agent package install failed — appliance stack incomplete (see docs/CROWDSEC.md)"
     return 1

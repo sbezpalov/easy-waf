@@ -20,50 +20,73 @@ crowdsec_add_packagecloud_repo() {
   fi
 }
 
-# Quick check: unit active and LAPI responds (used right after apt install).
+# True when crowdsec.service is active and LAPI accepts HTTP on :8080.
+# Do not use curl -f: LAPI often returns 401/405/404 while healthy; -f treats that as down.
+crowdsec_lapi_reachable() {
+  systemctl is-active --quiet crowdsec.service 2>/dev/null || return 1
+  if command -v cscli &>/dev/null; then
+    if cscli lapi status &>/dev/null; then
+      return 0
+    fi
+  fi
+  local url code
+  for url in "http://127.0.0.1:8080/" "http://127.0.0.1:8080/v1/watchers/login"; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 3 "$url" 2>/dev/null || echo 000)"
+    if [[ "$code" != "000" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Wait up to max seconds for LAPI (used right after apt install).
 crowdsec_apt_probe_healthy() {
   local max="${1:-45}" inner
   for inner in $(seq 1 "$max"); do
-    if systemctl is-active --quiet crowdsec.service 2>/dev/null; then
-      if curl -sf --max-time 2 "http://127.0.0.1:8080/" >/dev/null 2>&1 ||
-        curl -sf --max-time 2 "http://127.0.0.1:8080/v1/watchers/login" >/dev/null 2>&1; then
-        return 0
-      fi
+    if crowdsec_lapi_reachable; then
+      return 0
+    fi
+    if (( inner % 10 == 0 )); then
+      echo "[easy-waf] CrowdSec: waiting for LAPI (${inner}/${max})..." >&2
     fi
     sleep 1
   done
   return 1
 }
 
-# Debian postinst starts crowdsec immediately; LAPI can briefly return "Internal server error"
-# for watcher auth (SQLite / first hub sync). One-shot apt then succeeds on retry — automate that.
-crowdsec_apt_recover_crowdsec_until_healthy() {
-  local outer inner
-  for outer in $(seq 1 8); do
-    DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>/dev/null || true
-    dpkg --configure -a 2>/dev/null || true
-
+# Restart crowdsec and wait for LAPI (no apt — for re-runs when the package is already installed).
+crowdsec_systemd_recover_until_healthy() {
+  local outer inner max_inner=30
+  for outer in $(seq 1 4); do
+    echo "[easy-waf] CrowdSec: systemd recovery attempt ${outer}/4..." >&2
     systemctl stop crowdsec.service 2>/dev/null || true
     sleep 2
     systemctl reset-failed crowdsec.service 2>/dev/null || true
     systemctl enable crowdsec.service 2>/dev/null || true
     systemctl start crowdsec.service 2>/dev/null || true
 
-    for inner in $(seq 1 35); do
-      if systemctl is-active --quiet crowdsec.service 2>/dev/null; then
-        if curl -sf --max-time 2 "http://127.0.0.1:8080/" >/dev/null 2>&1 ||
-          curl -sf --max-time 2 "http://127.0.0.1:8080/v1/watchers/login" >/dev/null 2>&1; then
-          return 0
-        fi
+    for inner in $(seq 1 "$max_inner"); do
+      if crowdsec_lapi_reachable; then
+        return 0
+      fi
+      if (( inner % 10 == 0 )); then
+        echo "[easy-waf] CrowdSec: waiting for LAPI (${inner}/${max_inner}, attempt ${outer}/4)..." >&2
       fi
       sleep 1
     done
-
-    systemctl stop crowdsec.service 2>/dev/null || true
     sleep "$((outer + 1))"
   done
-  echo "[easy-waf] CrowdSec: agent did not become healthy after apt/dpkg recovery (see journalctl -u crowdsec)" >&2
+  echo "[easy-waf] CrowdSec: agent did not become healthy after systemd recovery (see journalctl -u crowdsec)" >&2
   return 1
+}
+
+# Debian postinst starts crowdsec immediately; LAPI can briefly error while SQLite/hub settle.
+# Run apt/dpkg once, then controlled restarts (fresh install only — re-runs use systemd recovery).
+crowdsec_apt_recover_crowdsec_until_healthy() {
+  echo "[easy-waf] CrowdSec: finishing dpkg configuration (one apt pass)..." >&2
+  DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>/dev/null || true
+  dpkg --configure -a 2>/dev/null || true
+  crowdsec_systemd_recover_until_healthy
 }
 
 crowdsec_install_agent_package() {
@@ -80,8 +103,13 @@ crowdsec_install_agent_package() {
     if crowdsec_apt_probe_healthy 50; then
       return 0
     fi
-    echo "[easy-waf] CrowdSec: LAPI not ready after install — running dpkg/systemd recovery" >&2
-    crowdsec_apt_recover_crowdsec_until_healthy
+    if [[ "${EASY_WAF_CROWDSEC_AGENT_ALREADY_INSTALLED:-0}" == "1" ]]; then
+      echo "[easy-waf] CrowdSec: LAPI not ready — running systemd recovery (agent already installed)" >&2
+      crowdsec_systemd_recover_until_healthy
+    else
+      echo "[easy-waf] CrowdSec: LAPI not ready after install — running dpkg/systemd recovery" >&2
+      crowdsec_apt_recover_crowdsec_until_healthy
+    fi
   else
     echo "[easy-waf] CrowdSec: dnf or apt-get not found" >&2
     return 1
@@ -104,11 +132,11 @@ crowdsec_install_spoa_bouncer_package() {
 crowdsec_wait_lapi() {
   local i
   for i in $(seq 1 45); do
-    if command -v cscli &>/dev/null && cscli version &>/dev/null; then
-      if curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:8080/" 2>/dev/null || \
-         curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null; then
-        return 0
-      fi
+    if crowdsec_lapi_reachable; then
+      return 0
+    fi
+    if (( i % 10 == 0 )); then
+      echo "[easy-waf] CrowdSec: waiting for LAPI (${i}/45)..." >&2
     fi
     sleep 1
   done

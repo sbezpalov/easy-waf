@@ -16,7 +16,7 @@ sudo bash scripts/install-interactive.sh
 
 ### Non-interactive install (`install.sh`)
 
-Easy WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default. The Debian **`crowdsec`** postinst starts **`crowdsec.service`** once; on a fresh VM the local API can briefly return errors while SQLite and hub data settle. The installer **waits for LAPI** and, if needed, runs **`apt-get -f install` / `dpkg --configure`** with controlled restarts so a **single** `sudo bash scripts/install.sh` run completes without manual CrowdSec steps.
+Easy WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default. The Debian **`crowdsec`** postinst starts **`crowdsec.service`** once; on a fresh VM the local API can briefly return errors while SQLite and hub data settle. The installer **waits for LAPI** (any HTTP response on `127.0.0.1:8080`, not only `curl -f` success) and, on **first** agent install only, runs **`apt-get -f install` / `dpkg --configure` once** plus controlled restarts. **Re-runs** when `crowdsec` is already installed use **systemd-only** recovery (no repeated `apt-get` spam).
 
 | Variable | Default | Meaning |
 |----------|---------|--------|

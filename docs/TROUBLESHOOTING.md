@@ -178,6 +178,16 @@ HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haprox
 - For DNS-01, verify provider credentials and API reachability.
 - Use staging mode first.
 
+## `install.sh` seems stuck after “LAPI not ready” / many `apt-get` lines
+
+Older installers retried **`apt-get -f install`** in a loop while LAPI was already up but **`curl -f`** treated **401/405** as failure. Current **`scripts/lib/crowdsec-install.sh`**:
+
+- Detects LAPI with **`crowdsec_lapi_reachable`** (HTTP status or **`cscli lapi status`**).
+- **Re-runs** (`crowdsec` already installed): **systemd-only** recovery, ~2 minutes max, with **`waiting for LAPI (n/m)...`** log lines.
+- **Fresh install**: one **`apt-get -f`** pass, then the same systemd recovery.
+
+If it still fails: `systemctl status crowdsec`, `journalctl -u crowdsec -n 80`, `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/`, then `sudo bash scripts/crowdsec-bootstrap-lapi.sh`.
+
 ## CrowdSec / SPOE errors
 
 - Validate SPOE file path in `haproxy.cfg`.
