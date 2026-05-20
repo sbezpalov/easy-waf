@@ -623,6 +623,8 @@ install_os_packages() {
           systemctl start fail2ban 2>/dev/null || true
         fi
       fi
+      # Edge traffic belongs to HAProxy. nginx is optional and should not occupy :80/:443 by default.
+      systemctl disable --now nginx 2>/dev/null || true
       log "Enabled haproxy, nftables (fail2ban if installed)"
       ;;
     *)
