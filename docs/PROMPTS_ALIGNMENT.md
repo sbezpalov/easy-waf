@@ -105,7 +105,7 @@
 
 | ID | Критерий | Статус | Проверка в репозитории |
 |----|----------|--------|-------------------------|
-| **AC-01** | Установка через `install.sh` на Ubuntu 24.04 LTS (полный цикл: пакеты, layout, env, PostgreSQL опционально, бинарники, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-api.service easy-waf-acmed.service` (флаг `EASY_WAF_ENABLE_SYSTEMD_UNITS`), юниты `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
+| **AC-01** | Установка через `install.sh` на Ubuntu 24.04 LTS (полный цикл: пакеты, layout, env, PostgreSQL опционально, бинарники, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-api.service easy-waf-acmed.service` (флаг `EASY_WAF_ENABLE_SYSTEMD_UNITS`), юниты `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Добавление app через UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS-сертификат автоматически (ACME) | **Partial** | `cmd/easy-waf-acmed` — выдача/renew, после успеха `eng.Apply(ctx,"acme")`; нужны `ACME_EMAIL`, DNS/HTTP-01, worker запущен (`docs/ACME.md`) |
 | **AC-04** | Доступ извне к опубликованному приложению | **Partial** | Рендер `fe_http`/`fe_https`, SNI, бэкенды по Host — **Done** в коде; маршрутизация WAN/NAT/port-forward — вне репозитория |

@@ -203,31 +203,33 @@ easy_waf_install_crowdsec_packages() {
   if ! crowdsec_add_packagecloud_repo; then
     log "ERROR: CrowdSec packagecloud repo setup failed — appliance stack incomplete (need outbound HTTPS; see docs/CROWDSEC.md)"
     log "ERROR: re-run: sudo bash scripts/install.sh  OR  sudo bash scripts/crowdsec-bootstrap-lapi.sh after fixing network"
-    return 0
+    return 1
   fi
 
   if ! crowdsec_install_agent_package; then
     log "ERROR: CrowdSec agent package install failed — appliance stack incomplete (see docs/CROWDSEC.md)"
-    return 0
+    return 1
   fi
 
   if ! crowdsec_install_spoa_bouncer_package; then
+    if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" == "1" ]]; then
+      log "ERROR: crowdsec-haproxy-spoa-bouncer package install failed (required for appliance SPOE; see docs/CROWDSEC.md)"
+      return 1
+    fi
     log "WARNING: crowdsec-haproxy-spoa-bouncer package install failed (CrowdSec agent is installed)"
   fi
 
-  if [[ "$had_crowdsec_agent" -eq 0 ]]; then
-    if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]]; then
-      crowdsec_leave_stopped_disabled
-      log "CrowdSec packages installed; units disabled/stopped (AUTO_START=0). Run: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
-    else
-      log "CrowdSec packages installed; LAPI bootstrap will enable services (AUTO_START=1)"
-    fi
+  if [[ "$had_crowdsec_agent" -eq 0 ]] && [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]]; then
+    crowdsec_leave_stopped_disabled
+    log "CrowdSec packages installed; units disabled/stopped (AUTO_START=0). Run: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
   else
-    log "CrowdSec packages present (agent was already installed) — left systemd state unchanged"
+    log "CrowdSec packages ready; bootstrap will register bouncers and start LAPI/SPOA (AUTO_START=${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1})"
   fi
+  return 0
 }
 
-# Start LAPI, register bouncers, inject SPOA key, enable SPOA bouncer, write CROWDSEC_* (non-fatal warnings on failure).
+# Start LAPI, register bouncers, inject SPOA key, enable SPOA bouncer, write CROWDSEC_*.
+# Returns 0 on success; 1 when AUTO_START=1 and appliance CrowdSec integration is incomplete.
 easy_waf_bootstrap_crowdsec_lapi() {
   if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]]; then
     return 0
@@ -244,15 +246,15 @@ easy_waf_bootstrap_crowdsec_lapi() {
   source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
 
   if ! command -v cscli &>/dev/null; then
-    log "WARNING: CrowdSec bootstrap skipped — cscli missing (install CrowdSec packages first)"
-    return 0
+    log "ERROR: CrowdSec bootstrap failed — cscli missing (install crowdsec package)"
+    return 1
   fi
 
   crowdsec_start_agent
 
   if ! crowdsec_wait_lapi; then
-    log "WARNING: CrowdSec LAPI not ready — skip bouncer registration (check: systemctl status crowdsec; then re-run bootstrap)"
-    return 0
+    log "ERROR: CrowdSec LAPI not ready — check: systemctl status crowdsec; journalctl -u crowdsec"
+    return 1
   fi
 
   local enroll="${EASY_WAF_CROWDSEC_CONSOLE_TOKEN:-}"
@@ -260,31 +262,67 @@ easy_waf_bootstrap_crowdsec_lapi() {
     crowdsec_console_enroll "$enroll" || log "WARNING: cscli console enroll failed (optional)"
   fi
 
+  if [[ ! -f /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml ]]; then
+    log "CrowdSec: SPOA yaml missing — installing crowdsec-haproxy-spoa-bouncer package"
+    if ! crowdsec_install_spoa_bouncer_package; then
+      log "ERROR: crowdsec-haproxy-spoa-bouncer package required for SPOE (see docs/CROWDSEC.md)"
+      return 1
+    fi
+  fi
+
   local spoa_key api_key
   spoa_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-spoa | tr -d '\r\n')" || spoa_key=""
   api_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-api | tr -d '\r\n')" || api_key=""
-  if [[ -z "$spoa_key" ]] || [[ -z "$api_key" ]]; then
-    log "WARNING: bouncer registration incomplete (easy-waf-spoa / easy-waf-api) — check: cscli bouncers list"
+  if [[ -z "$api_key" ]]; then
+    log "ERROR: could not register CrowdSec bouncer easy-waf-api (UI LAPI / decisions need this key)"
+    return 1
+  fi
+  if [[ -z "$spoa_key" ]]; then
+    log "ERROR: could not register CrowdSec bouncer easy-waf-spoa (HAProxy SPOE)"
+    return 1
   fi
 
-  if [[ -f /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml ]]; then
-    if [[ -n "$spoa_key" ]] && ! crowdsec_inject_spoa_api_key "$spoa_key"; then
-      log "WARNING: could not inject SPOA api_key into bouncer yaml"
-    fi
+  if ! crowdsec_inject_spoa_api_key "$spoa_key"; then
+    log "ERROR: could not inject SPOA api_key into /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
+    return 1
+  fi
+
+  local spoa_unit
+  spoa_unit="$(crowdsec_spoa_bouncer_unit)"
+  if ! systemctl enable --now "$spoa_unit" 2>/dev/null; then
+    log "ERROR: could not enable $spoa_unit (package crowdsec-haproxy-spoa-bouncer)"
+    return 1
+  fi
+  systemctl restart "$spoa_unit" 2>/dev/null || true
+
+  easy_waf_env_upsert_kv "CROWDSEC_LAPI_URL" "http://127.0.0.1:8080/" || true
+  easy_waf_env_upsert_kv "CROWDSEC_LAPI_KEY" "$api_key" || true
+  log "Wrote CROWDSEC_LAPI_* to $CFG_DIR/easy-waf.env (bouncer easy-waf-api for UI; no manual cscli needed)"
+
+  local lapi_url="http://127.0.0.1:8080"
+  if ! curl -sf --max-time 5 -H "Authorization: Bearer ${api_key}" "${lapi_url}/v1/decisions?limit=1" >/dev/null; then
+    log "ERROR: LAPI decisions check failed after bootstrap (GET /v1/decisions with easy-waf-api key)"
+    return 1
+  fi
+  log "CrowdSec LAPI decisions API OK (out-of-box check passed)"
+  return 0
+}
+
+# Merge easy-waf.env (CrowdSec keys, etc.) into PostgreSQL before first systemctl start — UI works without Settings → Load.
+easy_waf_sync_settings_to_db() {
+  local api="$API_BIN"
+  [[ -x "$api" ]] || api="${DIST_DIR}/easy-waf-api"
+  [[ -x "$api" ]] || return 0
+  [[ -f "$CFG_DIR/easy-waf.env" ]] || return 0
+  grep -q '^DATABASE_URL=' "$CFG_DIR/easy-waf.env" 2>/dev/null || return 0
+  set -a
+  # shellcheck source=/dev/null
+  source "$CFG_DIR/easy-waf.env"
+  set +a
+  if DATABASE_URL="$DATABASE_URL" EASY_WAF_STATE_DIR="$STATE_DIR" timeout 25 "$api" -sync-settings-only; then
+    log "Synced settings from $CFG_DIR/easy-waf.env into PostgreSQL (UI ready without manual import)"
   else
-    log "WARNING: SPOA bouncer yaml missing — install crowdsec-haproxy-spoa-bouncer package"
-  fi
-
-  if systemctl enable --now crowdsec-haproxy-spoa-bouncer 2>/dev/null; then
-    systemctl restart crowdsec-haproxy-spoa-bouncer 2>/dev/null || true
-  else
-    log "WARNING: crowdsec-haproxy-spoa-bouncer service not enabled/started"
-  fi
-
-  easy_waf_env_upsert_kv "CROWDSEC_LAPI_URL" "http://127.0.0.1:8080" || true
-  if [[ -n "$api_key" ]]; then
-    easy_waf_env_upsert_kv "CROWDSEC_LAPI_KEY" "$api_key" || true
-    log "Wrote CROWDSEC_LAPI_KEY to $CFG_DIR/easy-waf.env (bouncer easy-waf-api for API / UI health)"
+    log "WARNING: settings DB sync failed — easy-waf-api will merge env on first start"
   fi
 }
 
@@ -673,11 +711,18 @@ main() {
   create_user_and_layout
   ensure_haproxy_run_dir
   install_env_file
-  easy_waf_install_crowdsec_packages
-  easy_waf_bootstrap_crowdsec_lapi
+  if ! easy_waf_install_crowdsec_packages; then
+    if [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]] && [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" == "1" ]]; then
+      exit 1
+    fi
+  fi
+  if ! easy_waf_bootstrap_crowdsec_lapi; then
+    exit 1
+  fi
   setup_local_postgres_database
   acquire_dist_binaries
   install_binaries
+  easy_waf_sync_settings_to_db
   install_systemd_units
   install_polkit_rules
   install_fail2ban_sudoers
@@ -724,7 +769,7 @@ easy_waf_post_install_summary() {
   if [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]]; then
     if command -v cscli &>/dev/null; then
       log "  crowdsec: $(systemctl is-active crowdsec.service 2>/dev/null || echo unknown)"
-      log "  crowdsec-spoa: $(systemctl is-active crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || echo unknown)"
+      log "  crowdsec-spoa: $(systemctl is-active "$(crowdsec_spoa_bouncer_unit)" 2>/dev/null || echo unknown)"
     else
       log "  ERROR: CrowdSec not installed — re-run: sudo bash scripts/install.sh (need packagecloud + apt)"
     fi

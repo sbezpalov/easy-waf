@@ -116,6 +116,22 @@ crowdsec_wait_lapi() {
   return 1
 }
 
+# Debian package crowdsec-haproxy-spoa-bouncer (0.3.x on Ubuntu 24.04) installs
+# crowdsec-spoa-bouncer.service; some RPM/docs use crowdsec-haproxy-spoa-bouncer.service.
+crowdsec_spoa_bouncer_unit() {
+  if [[ -f /usr/lib/systemd/system/crowdsec-spoa-bouncer.service ]] ||
+    [[ -f /etc/systemd/system/crowdsec-spoa-bouncer.service ]]; then
+    printf '%s\n' crowdsec-spoa-bouncer.service
+    return 0
+  fi
+  if [[ -f /usr/lib/systemd/system/crowdsec-haproxy-spoa-bouncer.service ]] ||
+    [[ -f /etc/systemd/system/crowdsec-haproxy-spoa-bouncer.service ]]; then
+    printf '%s\n' crowdsec-haproxy-spoa-bouncer.service
+    return 0
+  fi
+  printf '%s\n' crowdsec-spoa-bouncer.service
+}
+
 crowdsec_inject_spoa_api_key() {
   local key="$1"
   local yaml="/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
@@ -157,9 +173,11 @@ crowdsec_leave_stopped_disabled() {
   if ! command -v systemctl &>/dev/null; then
     return 0
   fi
-  systemctl stop crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || true
+  local spoa_unit
+  spoa_unit="$(crowdsec_spoa_bouncer_unit)"
+  systemctl stop "$spoa_unit" 2>/dev/null || true
   systemctl stop crowdsec.service 2>/dev/null || true
-  systemctl disable crowdsec-haproxy-spoa-bouncer.service 2>/dev/null || true
+  systemctl disable "$spoa_unit" 2>/dev/null || true
   systemctl disable crowdsec.service 2>/dev/null || true
 }
 

@@ -4,7 +4,7 @@
 
 1. **CrowdSec Agent** parses logs (e.g. HAProxy) — configure acquisition under `/etc/crowdsec/`.
 2. **Local API (LAPI)** on `http://127.0.0.1:8080` by default.
-3. **HAProxy SPOA bouncer** (`crowdsec-haproxy-spoa-bouncer`) connects to LAPI and talks to HAProxy via SPOE.
+3. **HAProxy SPOA bouncer** (apt package **`crowdsec-haproxy-spoa-bouncer`**, systemd unit **`crowdsec-spoa-bouncer.service`** on Ubuntu 24.04) connects to LAPI and talks to HAProxy via SPOE.
 
 ## Automated install (recommended)
 
@@ -27,7 +27,7 @@ Easy WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/in
 
 **Phase 1 — packages (default every run when `INSTALL_CROWDSEC=1`):** add CrowdSec **packagecloud** repo, `apt` install **`crowdsec`** + **`crowdsec-haproxy-spoa-bouncer`**, then ensure the agent is **healthy** (LAPI on `127.0.0.1:8080`) before continuing.
 
-**Phase 2 — LAPI bootstrap (only when `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`):** `systemctl enable --now crowdsec` (with retries if needed) → wait for LAPI → optional **`cscli console enroll`** → recreate bouncers → inject SPOA YAML → **`enable --now crowdsec-haproxy-spoa-bouncer`** → **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in **`easy-waf.env`**.
+**Phase 2 — LAPI bootstrap (only when `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`):** `systemctl enable --now crowdsec` (with retries if needed) → wait for LAPI → optional **`cscli console enroll`** → recreate bouncers → inject SPOA YAML → **`enable --now crowdsec-spoa-bouncer`** (or legacy **`crowdsec-haproxy-spoa-bouncer`** on some distros) → **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in **`easy-waf.env`**.
 
 When **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0`**, packages are installed but **`crowdsec_leave_stopped_disabled`** leaves units stopped until **`scripts/crowdsec-bootstrap-lapi.sh`**.
 
@@ -95,7 +95,9 @@ The generic HTTP audit middleware also records mutating calls under category **c
 ## Verification
 
 - UI: **CrowdSec** section — **Ping LAPI** / **Load decisions** when the bouncer key is configured.
-- CLI: `cscli metrics`, `systemctl status crowdsec crowdsec-haproxy-spoa-bouncer`
+- CLI: `cscli metrics`, `systemctl status crowdsec crowdsec-spoa-bouncer.service` (unit name on Ubuntu 24.04; apt package is still `crowdsec-haproxy-spoa-bouncer`)
+
+**Out of the box:** `sudo bash scripts/install.sh` (default `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`) installs both packages, registers bouncers `easy-waf-api` / `easy-waf-spoa`, writes `CROWDSEC_LAPI_*` to `/etc/easy-waf/easy-waf.env`, syncs settings into PostgreSQL, enables `crowdsec-spoa-bouncer.service`, and verifies `GET /v1/decisions`. No manual `cscli` or UI **Load from server** is required for CrowdSec decisions.
 
 ## HAProxy logs and acquisition (align with easy-waf)
 

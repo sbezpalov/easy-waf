@@ -172,8 +172,8 @@ main() {
       ;;
   esac
 
-  if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-0}" != "1" ]] && [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]]; then
-    log "CrowdSec packages are on the host; to start LAPI and keys later: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
+  if [[ "${EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL:-1}" != "1" ]] && [[ "${EASY_WAF_INSTALL_CROWDSEC:-1}" == "1" ]]; then
+    log "CrowdSec: packages only (you chose not to start LAPI now). Later: sudo bash scripts/crowdsec-bootstrap-lapi.sh"
   fi
 
   log "Done. Review $ENV_FILE then: systemctl enable --now easy-waf-api easy-waf-acmed"

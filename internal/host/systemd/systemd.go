@@ -14,6 +14,7 @@ var AllowedUnits = []string{
 	"easy-waf-acmed.service",
 	"haproxy.service",
 	"crowdsec.service",
+	"crowdsec-spoa-bouncer.service",
 	"crowdsec-haproxy-spoa-bouncer.service",
 	"fail2ban.service",
 	"nftables.service",

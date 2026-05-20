@@ -33,14 +33,64 @@ func rejectUnexpandedSystemdArg(label, value string) {
 	}
 }
 
+const defaultCrowdSecLAPIURL = "http://127.0.0.1:8080/"
+
+// mergeEnvIntoSettings applies /etc/easy-waf/easy-waf.env CrowdSec (and defaults) into in-memory settings.
+func mergeEnvIntoSettings(eng *engine.Engine) {
+	if strings.TrimSpace(eng.Settings.CrowdSecLAPIURL) == "" {
+		eng.Settings.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
+	}
+	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
+		eng.Settings.CrowdSecLAPIURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
+		eng.Settings.CrowdSecLAPIKey = v
+	}
+}
+
+// RunSyncSettingsOnly loads settings from PostgreSQL, merges env, saves — used by install.sh before first API start.
+func RunSyncSettingsOnly() {
+	stateDir := strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_STATE_DIR"), "\r", ""))
+	if stateDir == "" {
+		stateDir = "/var/lib/easy-waf"
+	}
+	dsn := strings.TrimSpace(strings.ReplaceAll(os.Getenv("DATABASE_URL"), "\r", ""))
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is required for -sync-settings-only")
+	}
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		log.Fatal(err)
+	}
+	st, err := store.OpenPostgres(dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer st.Close()
+	eng := &engine.Engine{StateDir: stateDir, Store: st}
+	ctx := context.Background()
+	if err := eng.LoadSettings(ctx); err != nil {
+		eng.Settings = config.DefaultSettings(stateDir)
+	}
+	mergeEnvIntoSettings(eng)
+	if err := eng.SaveSettings(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
 // RunAPI starts the management API and embedded UI (architecture C: control-plane service).
 // Listeners: plain HTTP (default :8000) and TLS HTTPS (default :8443, self-signed bootstrap cert under stateDir/secrets/).
 func RunAPI() {
+	syncOnly := flag.Bool("sync-settings-only", false, "merge /etc/easy-waf/easy-waf.env into PostgreSQL settings and exit (install.sh)")
 	listenHTTP := flag.String("listen-http", "", "plain HTTP listen (env EASY_WAF_LISTEN_HTTP; default 0.0.0.0:8000)")
 	listenHTTPS := flag.String("listen-https", "", "HTTPS listen (env EASY_WAF_LISTEN_HTTPS; default 0.0.0.0:8443)")
 	legacyListen := flag.String("listen", "", "deprecated: HTTP listen if -listen-http and EASY_WAF_LISTEN_HTTP are empty")
 	stateDirFlag := flag.String("state-dir", "", "State directory (env EASY_WAF_STATE_DIR; default /var/lib/easy-waf)")
 	flag.Parse()
+
+	if *syncOnly {
+		RunSyncSettingsOnly()
+		return
+	}
 
 	stateDir := strings.TrimSpace(*stateDirFlag)
 	if stateDir == "" {
@@ -72,12 +122,7 @@ func RunAPI() {
 		log.Printf("settings: using defaults: %v", err)
 		eng.Settings = config.DefaultSettings(stateDir)
 	}
-	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
-		eng.Settings.CrowdSecLAPIURL = v
-	}
-	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
-		eng.Settings.CrowdSecLAPIKey = v
-	}
+	mergeEnvIntoSettings(eng)
 	if err := eng.SaveSettings(ctx); err != nil {
 		log.Printf("persist settings: %v", err)
 	}

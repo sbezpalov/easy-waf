@@ -2,11 +2,20 @@
 
 Документ соответствует ветке релиза **1.0.0** (см. [`VERSION`](../VERSION)).
 
-## `systemctl`: нет юнита `crowdsec.service` / `crowdsec-haproxy-spoa-bouncer.service`
+## `systemctl`: нет юнита `crowdsec.service` / SPOA bouncer
 
 Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer через **apt**; см. [CROWDSEC.md](CROWDSEC.md).
 
-После установки пакеты есть, а юниты могут быть **disabled** до явного запуска LAPI: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** или **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`**.
+**Имя systemd-юнита SPOA (важно):** пакет **`crowdsec-haproxy-spoa-bouncer`**, а сервис на Ubuntu 24.04 — **`crowdsec-spoa-bouncer.service`** (не `crowdsec-haproxy-spoa-bouncer.service`). После `apt install`:
+
+```bash
+systemctl enable --now crowdsec-spoa-bouncer.service
+systemctl status crowdsec-spoa-bouncer.service
+```
+
+Конфиг bouncer: `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml`.
+
+После установки пакеты есть, а юниты могут быть **disabled** до явного запуска LAPI: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** или **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** (перерегистрирует bouncers **`easy-waf-api`** / **`easy-waf-spoa`** и ключ в **`/etc/easy-waf/easy-waf.env`**).
 
 ## Dashboard: все сервисы в блоке «Core services» = `unknown`
 

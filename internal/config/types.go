@@ -212,6 +212,7 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		HAProxyConfigPath:        stateDir + "/haproxy/haproxy.cfg",
 		HAProxyStatsSocketPath:   "/run/haproxy/easy-waf-admin.sock",
 		HAProxyBinary:            "/usr/sbin/haproxy",
+		CrowdSecLAPIURL:          "http://127.0.0.1:8080/",
 		CrowdSecEngineName:       "crowdsec",
 		GeoIPCacheTTL:            Duration(24 * time.Hour),
 		GeoIPEnabled:             false,
