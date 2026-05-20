@@ -65,5 +65,10 @@ func itoa(n int) string {
 
 type hostError string
 
-func (e hostError) Error() string { return string(e) }
-func errInvalid(msg string) error { return hostError(msg) }
+func (e hostError) Error() string {
+	return string(e)
+}
+
+func errInvalid(msg string) error {
+	return hostError(msg)
+}

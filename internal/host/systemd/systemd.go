@@ -71,5 +71,10 @@ func Action(ctx context.Context, action, unit string) error {
 
 type simpleError string
 
-func (e simpleError) Error() string { return string(e) }
-func osErr(msg string) error        { return simpleError(msg) }
+func (e simpleError) Error() string {
+	return string(e)
+}
+
+func osErr(msg string) error {
+	return simpleError(msg)
+}
