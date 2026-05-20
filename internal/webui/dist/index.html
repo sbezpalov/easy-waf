@@ -204,13 +204,13 @@
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Core services (systemd)</h3>
           <p class="dash-note" style="margin-bottom:0.35rem">На хосте API, от имени <code>easy-waf</code>: <code>systemctl show -p ActiveState</code>, при пустом ответе — <code>is-active</code>.</p>
-          <p class="dash-note" style="margin-top:0">Если везде <span class="warn">unknown</span>: нет <code>systemctl</code> в стандартных путях; D-Bus к systemd недоступен из процесса API (проверьте юнит: запись в <code>/run</code>, SELinux); либо после обновления не переустановлен юнит / не перезапущен <code>easy-waf-api</code>.</p>
-          <p class="dash-note" style="margin-top:0.5rem;color:#8b949e">Live state on the API host as <code>easy-waf</code>. All <span class="warn">unknown</span>: missing <code>systemctl</code>, D-Bus to systemd blocked (unit needs <code>/run</code> writable, check SELinux), or service not redeployed/restarted after upgrade.</p>
+          <p class="dash-note" style="margin-top:0">Если везде <span class="warn">unknown</span>: нет <code>systemctl</code> в стандартных путях; D-Bus к systemd недоступен из процесса API (проверьте юнит: запись в <code>/run</code>, AppArmor); либо после обновления не переустановлен юнит / не перезапущен <code>easy-waf-api</code>.</p>
+          <p class="dash-note" style="margin-top:0.5rem;color:#8b949e">Live state on the API host as <code>easy-waf</code>. All <span class="warn">unknown</span>: missing <code>systemctl</code>, D-Bus to systemd blocked (unit needs <code>/run</code> writable, check AppArmor), or service not redeployed/restarted after upgrade.</p>
           <div id="dash-services"></div>
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Support diagnostics</h3>
-          <p class="dash-note" style="margin-top:0">Download a gzip tarball the API can build from this host (masked <code>easy-waf.env</code>, HAProxy config snapshot, journals, systemd, firewall — see <code>docs/DIAGNOSTICS.md</code>). For a full root-collected bundle (SELinux, all journals), use <code>sudo /usr/sbin/easy-waf-diagnostics</code> on the appliance.</p>
+          <p class="dash-note" style="margin-top:0">Download a gzip tarball the API can build from this host (masked <code>easy-waf.env</code>, HAProxy config snapshot, journals, systemd, firewall — see <code>docs/DIAGNOSTICS.md</code>). For a full root-collected bundle (AppArmor, all journals), use <code>sudo /usr/sbin/easy-waf-diagnostics</code> on the appliance.</p>
           <p id="dash-diag-msg" class="warn" style="min-height:1rem"></p>
           <div class="row" style="align-items:center;flex-wrap:wrap;gap:0.5rem">
             <button type="button" class="secondary" id="btn-diagnostics-download">Download diagnostics</button>

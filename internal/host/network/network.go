@@ -47,9 +47,7 @@ func GetOverview(ctx context.Context) (Overview, error) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "DNS Servers:") {
 				rest := strings.TrimPrefix(line, "DNS Servers:")
-				for _, s := range strings.Fields(rest) {
-					out.DNS = append(out.DNS, s)
-				}
+				out.DNS = append(out.DNS, strings.Fields(rest)...)
 			}
 		}
 	}

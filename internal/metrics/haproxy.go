@@ -18,11 +18,11 @@ import (
 // MinHAProxyStatsRefresh is the minimum interval between socket reads (cache TTL).
 const MinHAProxyStatsRefresh = 5 * time.Second
 
-// defaultHAProxyStatsSocketPath matches config.DefaultSettings (under /run/haproxy for SELinux).
+// defaultHAProxyStatsSocketPath matches config.DefaultSettings (under /run/haproxy for AppArmor).
 const defaultHAProxyStatsSocketPath = "/run/haproxy/easy-waf-admin.sock"
 
 // StatsSocketPath returns the configured stats socket path or the product default.
-// Legacy installs stored <stateDir>/haproxy/admin.sock — that path breaks under SELinux
+// Legacy installs stored <stateDir>/haproxy/admin.sock — that path may break under AppArmor
 // (haproxy_t + var_lib_t); treat it as the default /run/haproxy socket without requiring a DB edit.
 func StatsSocketPath(gs config.GlobalSettings, stateDir string) string {
 	p := strings.TrimSpace(gs.HAProxyStatsSocketPath)

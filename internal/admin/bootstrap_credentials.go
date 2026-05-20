@@ -125,7 +125,7 @@ func AlterPostgresRolePassword(role, password string) error {
 
 func runPostgresSuperuserSQL(sql string) error {
 	if _, err := exec.LookPath("runuser"); err != nil {
-		return fmt.Errorf("runuser not in PATH (RHEL/Alma install util-linux): %w", err)
+		return fmt.Errorf("runuser not in PATH (install util-linux): %w", err)
 	}
 	cmd := exec.Command("runuser", "-u", "postgres", "--", "psql", "-v", "ON_ERROR_STOP=1", "-c", sql)
 	out, err := cmd.CombinedOutput()

@@ -64,6 +64,13 @@ detect_os() {
     # shellcheck source=/dev/null
     source /etc/os-release
     log "OS: ${NAME:-unknown} ${VERSION_ID:-}"
+    case "${ID:-}" in
+      ubuntu|debian) ;;
+      *)
+        log "WARNING: Easy Home WAF is tested on Ubuntu 24.04 LTS only."
+        log "Other distributions may work but are not officially supported."
+        ;;
+    esac
   fi
 }
 
@@ -303,7 +310,7 @@ setup_local_postgres_database() {
     sleep 1
   done
 
-  # Alma/RHEL default pg_hba often uses "ident" for 127.0.0.1; apps use password (DATABASE_URL) → FATAL Ident authentication failed
+  # Some PostgreSQL installs use peer/ident for 127.0.0.1; apps use password (DATABASE_URL)
   # shellcheck source=lib/pg-hba-easywaf.sh
   source "${SCRIPT_DIR}/lib/pg-hba-easywaf.sh"
   easy_waf_insert_pg_hba_for_easywaf ""
@@ -537,13 +544,12 @@ EOF
 
 
 selinux_restore() {
-  if command -v restorecon &>/dev/null; then
-    restorecon -RFv "$STATE_DIR" 2>/dev/null || true
-    restorecon -Rv "$CFG_DIR" 2>/dev/null || true
-  fi
+  # Ubuntu uses AppArmor, not SELinux. No action needed.
+  # Stock AppArmor profile for HAProxy is sufficient.
+  :
 }
 
-# HAProxy ↔ easy-waf: /run/haproxy, SELinux fcontexts, systemd drop-in (when haproxy binary exists).
+# HAProxy ↔ easy-waf: /run/haproxy, systemd drop-in (when haproxy binary exists).
 easy_waf_integrate_haproxy_edge() {
   if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
     return 0
@@ -552,11 +558,6 @@ easy_waf_integrate_haproxy_edge() {
     return 0
   fi
   ensure_haproxy_run_dir
-  if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
-    if ! EASY_WAF_STATE_DIR="$STATE_DIR" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"; then
-      log "WARNING: SELinux haproxy script had issues"
-    fi
-  fi
   if [[ "${EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN:-0}" == "1" ]]; then
     log "Skipping HAProxy drop-in (EASY_WAF_SKIP_HAPROXY_SYSTEMD_DROPIN=1)"
     return 0

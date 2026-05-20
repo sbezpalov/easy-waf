@@ -51,11 +51,11 @@ free -m >"$ROOT/system/free-m.txt" 2>&1 || true
 df -h >"$ROOT/system/df-h.txt" 2>&1 || true
 uptime >"$ROOT/system/uptime.txt" 2>&1 || true
 ss -tlnp >"$ROOT/system/ss-tlnp.txt" 2>&1 || true
-getenforce >"$ROOT/system/getenforce.txt" 2>&1 || true
-getsebool haproxy_connect_any >"$ROOT/system/getsebool-haproxy_connect_any.txt" 2>&1 || true
+aa-status >"$ROOT/system/aa-status.txt" 2>&1 || true
+aa-status --enabled 2>/dev/null >"$ROOT/system/aa-status-enabled.txt" 2>&1 || true
 
 # --- (b) systemd ---
-units=(easy-waf-api easy-waf-acmed haproxy crowdsec fail2ban firewalld)
+units=(easy-waf-api easy-waf-acmed haproxy crowdsec fail2ban nftables)
 for u in "${units[@]}"; do
   safe="${u//\//-}"
   systemctl status "$u" --no-pager -l >"$ROOT/systemctl/status-${safe}.txt" 2>&1 || true
@@ -137,12 +137,14 @@ else
   echo "psql not installed or env file missing" >"$ROOT/sql/config_revisions.err"
 fi
 
-# --- (g) Firewall ---
-if command -v firewall-cmd &>/dev/null; then
-  firewall-cmd --list-all >"$ROOT/firewall/list-all.txt" 2>&1 || true
-  firewall-cmd --list-rich-rules >"$ROOT/firewall/list-rich-rules.txt" 2>&1 || true
+# --- (g) Host firewall (nftables) ---
+if command -v nft &>/dev/null; then
+  nft list ruleset >"$ROOT/firewall/nft-ruleset.txt" 2>&1 || true
 else
-  echo "firewall-cmd not in PATH" >"$ROOT/firewall/list-all.txt"
+  echo "nft not in PATH" >"$ROOT/firewall/nft-ruleset.txt"
+fi
+if [[ -f /etc/nftables/easy-waf.nft ]]; then
+  cp -a /etc/nftables/easy-waf.nft "$ROOT/firewall/easy-waf.nft"
 fi
 
 mkdir -p "$(dirname "$OUT")"

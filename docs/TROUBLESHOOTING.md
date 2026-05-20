@@ -4,7 +4,7 @@
 
 ## `systemctl`: нет юнита `crowdsec.service` / `crowdsec-haproxy-spoa-bouncer.service`
 
-Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud или не **dnf/apt**). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer на dnf/apt; см. [CROWDSEC.md](CROWDSEC.md).
+Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer через **apt**; см. [CROWDSEC.md](CROWDSEC.md).
 
 После установки пакеты есть, а юниты могут быть **disabled** до явного запуска LAPI: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** или **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`**.
 
@@ -14,7 +14,7 @@ API вызывает **`/usr/bin/systemctl show -p ActiveState`** (и при н�
 
 1. Убедитесь, что на хосте установлен **актуальный** `easy-waf-api` после `git pull` и **`systemctl restart easy-waf-api`** (см. [OPERATIONS.md](OPERATIONS.md) — UI встроен в бинарник).
 2. Проверьте от имени `easy-waf`: `sudo -u easy-waf /usr/bin/systemctl show -p ActiveState --value haproxy.service` — должно вывести `active` или `inactive`, не пусто.
-3. Если команда недоступна: **SELinux** (`ausearch`, контекст сервиса), **отсутствие `/usr/bin/systemctl`**, или ограничения unit (юнит `easy-waf-api.service` уже содержит `ReadWritePaths=/run` для D-Bus).
+3. Если команда недоступна: **AppArmor** / отсутствие **`/usr/bin/systemctl`**, или ограничения unit (юнит `easy-waf-api.service` уже содержит `ReadWritePaths=/run` для D-Bus).
 
 ## `$'\r': command not found` when running a `*.sh` script
 
@@ -28,7 +28,7 @@ Or re-clone / `git pull` after fixing `.gitattributes` and run `git add --renorm
 
 ## PostgreSQL: `FATAL: Ident authentication failed for user "easywaf"`
 
-Default **pg_hba.conf** on some Alma/RHEL images matches **TCP** `127.0.0.1` with **`ident`**, while easy-waf uses **password** in `DATABASE_URL`. First matching rule wins.
+Default **pg_hba.conf** on some PostgreSQL installs matches **TCP** `127.0.0.1` with **`ident`/`peer`**, while easy-waf uses **password** in `DATABASE_URL`. First matching rule wins.
 
 **Fix (from repo root, as root):**
 
@@ -63,15 +63,17 @@ go mod tidy && make build
 
 Or remove and rebuild: `sudo rm -rf dist && make build`. Newer **`install.sh`** runs **`chown` on `dist/`** to `SUDO_USER` after a root build so this should not recur.
 
-## `dnf install` fails on `fail2ban` (AlmaLinux 10 / RHEL 10)
+## fail2ban not installed
 
-**fail2ban** is often only in **EPEL**, not in the default repos. The installer now installs **haproxy, firewalld, nginx** first, then tries **fail2ban**, then **`dnf install epel-release`** and fail2ban again. If it still fails, install manually:
+On **Ubuntu 24.04**, **fail2ban** is in the default repositories:
 
 ```bash
-sudo dnf install -y epel-release
-sudo dnf install -y fail2ban fail2ban-firewalld
+sudo apt-get update
+sudo apt-get install -y fail2ban
 sudo systemctl enable --now fail2ban
 ```
+
+Re-run **`sudo bash scripts/install.sh`** to install the sudoers fragment for the management UI.
 
 ## Management UI returns 403 / “management access denied”
 
@@ -93,18 +95,13 @@ This script:
 1. Adds `haproxy` to the `easy-waf` group (`usermod -aG`) when needed  
 2. Writes **`/etc/systemd/system/haproxy.service.d/easy-waf.conf`** so HAProxy loads only the generated **`haproxy.cfg`**  
 3. Ensures **`/run/haproxy/`** exists (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** for reboots)  
-4. Applies SELinux file contexts (**`haproxy_var_lib_t`**) via **`scripts/lib/selinux-easy-waf-haproxy.sh`**  
-5. Runs **`systemctl daemon-reload`**
+4. Runs **`systemctl daemon-reload`**
 
 After the script: **`sudo systemctl restart haproxy`** (needed so `haproxy` picks up the new supplementary group).
 
-**Manual SELinux fix (if `ausearch` shows `denied`):**
+**AppArmor:** on Ubuntu the stock HAProxy profile is usually sufficient. If you see `DENIED` in `/var/log/syslog`, run **`aa-status`** and review **`/etc/apparmor.d/usr.sbin.haproxy`** if needed.
 
-```bash
-sudo EASY_WAF_STATE_DIR=/var/lib/easy-waf bash scripts/lib/selinux-easy-waf-haproxy.sh
-```
-
-**Full reinstall** also runs the above when the `haproxy` binary is present: **`sudo bash scripts/install.sh`**.
+**Full reinstall** also runs the drop-in when the `haproxy` binary is present: **`sudo bash scripts/install.sh`**.
 
 ## HAProxy: `Binding … haproxy.cfg:5` for frontend `GLOBAL` / start exits 1
 
@@ -122,7 +119,7 @@ sudo systemctl restart haproxy
 
 ## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
 
-The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`** (under **`/run/haproxy`**, **`haproxy_var_run_t`** on RHEL/Alma). If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply:
+The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`**. If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply:
 
 ```bash
 curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
@@ -134,11 +131,11 @@ curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
 
 Then **Apply** from the UI (or **`easy-waf-admin apply-edge`**) to regenerate **`haproxy.cfg`**.
 
-## HAProxy: port 80 / 443 not reachable (firewalld)
+## HAProxy: port 80 / 443 not reachable (nftables)
 
-HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haproxy`** but clients time out, check **`sudo firewall-cmd --list-services`** (and **`--list-ports`**) on zone **public** (or your **`EASY_WAF_FIREWALLD_ZONE`**).
+HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haproxy`** but clients time out, check **`sudo nft list ruleset`** for **`tcp dport { 80, 443 } accept`**.
 
-**Fix:** from the repo on the appliance, **`sudo bash scripts/fix-firewalld-edge.sh`** (adds **`http`** + **`https`** permanently and reloads). New installs run this automatically via **`scripts/install.sh`** unless **`EASY_WAF_FIREWALLD_EDGE=0`**.
+**Fix:** from the repo on the appliance, **`sudo bash scripts/fix-nftables-edge.sh`**. New installs run this automatically via **`scripts/install.sh`** unless **`EASY_WAF_NFT_EDGE=0`**.
 
 ## HAProxy: `bk_acme` / `127.0.0.1:8089` DOWN (connection refused)
 
@@ -164,9 +161,11 @@ HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haprox
 - Confirm engine name matches SPOE agent section.
 - Restart bouncer after LAPI key rotation.
 
-## SELinux denials
+## AppArmor denials (Ubuntu)
 
-- `ausearch -m avc -ts recent` and adjust fcontext or booleans as documented in SECURITY.md.
+- Run **`aa-status`** and inspect **`/var/log/syslog`** for `apparmor="DENIED"` related to **`haproxy`**.
+- Stock Ubuntu profile **`/etc/apparmor.d/usr.sbin.haproxy`** is usually sufficient for reading configs under **`/var/lib/easy-waf`** when **`haproxy`** is in group **`easy-waf`**.
+- Do **not** disable AppArmor globally; adjust the profile locally if you use non-standard paths.
 
 ## Collecting diagnostics (support)
 

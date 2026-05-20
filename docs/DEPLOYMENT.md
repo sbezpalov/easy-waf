@@ -1,4 +1,4 @@
-# Deployment: AlmaLinux / Debian-family, OVF/OVA, distribution
+# Deployment: Ubuntu 24.04 LTS — Deployment, OVF/OVA, Distribution
 
 **Версия:** корневой [`VERSION`](../VERSION) (**1.0.0** для текущего релиза); инсталлятор подставляет его при загрузке релизных артефактов.
 
@@ -9,8 +9,8 @@ Typical workflow for this project:
 | Phase | Environment | Notes |
 |-------|-------------|--------|
 | **Development** | **Windows 11** (local PC, IDE) | Use **Git Bash** or **WSL** to run the same checks as CI (`make ci`, `bash scripts/check-linux-artifacts.sh`). Avoid CRLF in `scripts/**/*.sh`; keep paths Linux-oriented in configs and docs. |
-| **CI / QA** | **GitHub Actions** (hosted Linux runner) | Same Go/lint/shell checks as on Alma; for **HAProxy/OS parity** also run **`make ci`** or integration tests on **AlmaLinux** (e.g. pilot **`waf-dev`**, see [DEV_HOST.md](DEV_HOST.md)). |
-| **Production** | **AlmaLinux / RHEL-family** (`dnf`) or **Debian / Ubuntu** (`apt`) | Same `scripts/install.sh` layout: `/var/lib/easy-waf`, `/etc/easy-waf`, systemd. Package installs follow the detected package manager. |
+| **CI / QA** | **GitHub Actions** (`ubuntu:24.04` container) | Same Go/lint/shell checks as on the pilot host. |
+| **Production** | **Ubuntu 24.04 LTS** (`apt`) | Debian 12+ may work (same `apt` installer) but is **not** tested in CI. Layout: `/var/lib/easy-waf`, `/etc/easy-waf`, systemd. |
 
 The **source of truth** for “will it ship?” is what passes on **Linux**, not only ad-hoc commands in PowerShell without `bash`/`go`.
 
@@ -24,39 +24,28 @@ Pilot SSH host alias **`waf-dev`** (dev/test): see **[DEV_HOST.md](DEV_HOST.md)*
 2. Installs **`easy-waf-api`**, **`easy-waf-acmed`**, optionally **`easy-wafd`** from `dist/` (or `EASY_WAF_DIST_DIR`).
 3. Copies [`configs/defaults/easy-waf.env.example`](../configs/defaults/easy-waf.env.example) to `/etc/easy-waf/easy-waf.env` if missing.
 4. Copies **systemd** units from `packaging/systemd/` to `/etc/systemd/system/` and runs `daemon-reload` (unless `EASY_WAF_SKIP_SYSTEMD=1`).
-5. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs base packages via **dnf** (Alma/RHEL) or **apt** (Debian/Ubuntu): HAProxy, firewalld, fail2ban, nginx, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
-6. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (avoids Alma/RHEL defaults that often use **ident** and break `DATABASE_URL` password auth), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
+5. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs base packages via **apt** (Ubuntu 24.04+): HAProxy, **nftables**, fail2ban, nginx, netplan, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
+6. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (ensures password auth for `DATABASE_URL`), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
 7. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
-8. **CrowdSec + SPOA bouncer (default on dnf/apt):** installs packages from packagecloud so units exist; **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** (or **`scripts/crowdsec-bootstrap-lapi.sh`**) starts LAPI, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)). Set **`EASY_WAF_INSTALL_CROWDSEC=0`** to skip packages entirely.
-9. Runs **restorecon** on state/config paths when SELinux tools are present (typically Alma/RHEL only).
-10. **firewalld:** with OS packages, opens **management** ports (**8000/8443**) from RFC1918 + loopback only (when **`EASY_WAF_FIREWALLD_MGMT_LAN=1`**) and **HAProxy edge** (**`http` + `https`** → **80/tcp** + **443/tcp** on **`EASY_WAF_FIREWALLD_ZONE`**, default **public**) when **`EASY_WAF_FIREWALLD_EDGE=1`** (default). Already-deployed hosts: **`sudo bash scripts/fix-firewalld-edge.sh`**.
+8. **CrowdSec + SPOA bouncer (default on apt):** installs packages from packagecloud so units exist; **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** (or **`scripts/crowdsec-bootstrap-lapi.sh`**) starts LAPI, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)). Set **`EASY_WAF_INSTALL_CROWDSEC=0`** to skip packages entirely.
+9. **AppArmor:** no special profiles needed for HAProxy on Ubuntu (stock policy sufficient). Access to generated configs uses **Unix group membership** (`haproxy` in group `easy-waf`) and file permissions.
+10. **nftables:** with OS packages, writes **`/etc/nftables/easy-waf.nft`**, opens **management** ports (**8000/8443**) from RFC1918 + loopback only (when **`EASY_WAF_NFT_MGMT_LAN=1`**) and **HAProxy edge** (**80/tcp** + **443/tcp**) when **`EASY_WAF_NFT_EDGE=1`** (default). Already-deployed hosts: **`sudo bash scripts/fix-nftables-edge.sh`**.
 
 CrowdSec is part of the default appliance install; see [CROWDSEC.md](CROWDSEC.md) for **`EASY_WAF_INSTALL_CROWDSEC`**, **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL`**, and **`scripts/crowdsec-bootstrap-lapi.sh`**.
 
-## AlmaLinux (bare metal / VM)
+## Ubuntu 24.04 LTS (bare metal / VM)
 
-1. Clone the repo on the target host (or unpack a source tree). Run **`sudo bash scripts/install.sh`** — by default it **installs OS packages** (`EASY_WAF_INSTALL_OS_PACKAGES` defaults to **1**), **acquires binaries** by trying a **GitHub release** matching [`VERSION`](../VERSION) / `EASY_WAF_RELEASE_VERSION`, otherwise installs **Go + make + git** via **dnf** or **apt** (on older Debian, Go **1.22+** may be bootstrapped from **go.dev**), then **`make build`**. Minimal footprint: `EASY_WAF_INSTALL_OS_PACKAGES=0`. Pre-built only: `EASY_WAF_SKIP_BINARY_FETCH=1 EASY_WAF_DIST_DIR=/path/to/dist`. Published releases: [`scripts/download-release.sh`](../scripts/download-release.sh).
+1. Clone the repo on the target host (or unpack a source tree). Run **`sudo bash scripts/install.sh`** — by default it **installs OS packages** (`EASY_WAF_INSTALL_OS_PACKAGES` defaults to **1**), **acquires binaries** by trying a **GitHub release** matching [`VERSION`](../VERSION) / `EASY_WAF_RELEASE_VERSION`, otherwise installs **Go + make + git** via **apt** (Go **1.22+** may be bootstrapped from **go.dev** on older images), then **`make build`**. Minimal footprint: `EASY_WAF_INSTALL_OS_PACKAGES=0`. Pre-built only: `EASY_WAF_SKIP_BINARY_FETCH=1 EASY_WAF_DIST_DIR=/path/to/dist`. Published releases: [`scripts/download-release.sh`](../scripts/download-release.sh).
 2. **Recommended (interactive, LAN-only API + optional CrowdSec):** `sudo bash scripts/install-interactive.sh`  
    **Or minimal:** `sudo bash scripts/install.sh` (same as [QUICKSTART.md](QUICKSTART.md): local PostgreSQL + DB provisioning + start services by default).
 3. **External database only:** `sudo EASY_WAF_INSTALL_POSTGRES=0 bash scripts/install.sh`, edit `/etc/easy-waf/easy-waf.env` (`DATABASE_URL`), then `sudo systemctl enable --now easy-waf-api easy-waf-acmed` (or use `EASY_WAF_ENABLE_SYSTEMD_UNITS=0` on install and start after editing).
 4. If CrowdSec packages were skipped (**`EASY_WAF_INSTALL_CROWDSEC=0`**) or LAPI was not bootstrapped: run **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** or **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** per [CROWDSEC.md](CROWDSEC.md).
 
-## Debian / Ubuntu (bare metal / VM)
-
-Same installer as on Alma: **`sudo bash scripts/install.sh`**. Requirements:
+Requirements:
 
 - **root** (or `sudo`)
-- **`apt-get`** available (Debian, Ubuntu, and derivatives)
-- **systemd** (default on supported releases)
-
-Differences from Alma/RHEL:
-
-- Packages are installed with **`apt-get install`** (see [`scripts/install.sh`](../scripts/install.sh) `apt` branch).
-- **PostgreSQL** uses the Debian/Ubuntu layout (clusters under `/var/lib/postgresql/`); provisioning still uses `sudo -u postgres` and the same **`pg_hba`** helper for password auth on `127.0.0.1`.
-- **SELinux** `restorecon` is skipped when not installed.
-- **CrowdSec** (optional, via `install-interactive.sh`) uses the official **DEB** packagecloud install script.
-
-CI also runs a **Ubuntu 24.04** container job (`.github/workflows/ci.yml`, `deb-family-ci`) alongside **AlmaLinux 10** so tests pass on both families.
+- **`apt-get`** available (Ubuntu 24.04 LTS recommended)
+- **systemd** (default on Ubuntu Server)
 
 ## PostgreSQL password on first install
 
@@ -70,11 +59,11 @@ If you see **`Ident authentication failed for user "easywaf"`**, run **`sudo bas
 
 | Layer | Suggestion |
 |-------|------------|
-| OS | AlmaLinux 10 minimal + updates |
-| Packages | `haproxy`, `nginx`, `firewalld`, `fail2ban`, `postgresql-server` *or* leave DB external |
+| OS | Ubuntu 24.04 LTS (server, minimal) + updates |
+| Packages | `haproxy`, `nginx`, `nftables`, `fail2ban`, `postgresql` *or* leave DB external |
 | Binaries | Pre-place `easy-waf-api`, `easy-waf-acmed` in `/usr/sbin/` from CI build |
-| systemd | Pre-enable `firewalld`, `fail2ban`; **do not** auto-enable `easy-waf-*` until first-boot config |
-| First boot | cloud-init or `rc.local` replacement: write `/etc/easy-waf/easy-waf.env` from metadata, `systemctl enable --now easy-waf-api easy-waf-acmed` |
+| systemd | Pre-enable `nftables`, `fail2ban`; **do not** auto-enable `easy-waf-*` until first-boot config |
+| First boot | cloud-init / autoinstall: write `/etc/easy-waf/easy-waf.env` from metadata, `systemctl enable --now easy-waf-api easy-waf-acmed` |
 | Secrets | **Never** bake real `DATABASE_URL` or `EASY_WAF_ADMIN_TOKEN` into the image — inject at deploy time |
 | Disk | Separate `/var/lib/easy-waf` for certs and generated configs (snapshot-friendly) |
 

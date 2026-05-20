@@ -8,7 +8,7 @@
 
 ## Automated install (recommended)
 
-On **AlmaLinux / RHEL** (`dnf`) or **Debian / Ubuntu** (`apt`), run as **root**:
+On **Ubuntu 24.04+** (`apt`), run as **root**:
 
 ```bash
 sudo bash scripts/install-interactive.sh
@@ -16,16 +16,16 @@ sudo bash scripts/install-interactive.sh
 
 ### Non-interactive install (`install.sh`)
 
-Easy WAF treats CrowdSec as part of the **appliance**: on **dnf** / **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default so **`crowdsec.service`** and **`crowdsec-haproxy-spoa-bouncer.service`** exist on the host. After a **first-time** agent install, both units are left **stopped** and **`systemctl disable`**, so nothing listens on LAPI until you choose to start it (air-gapped / staged rollouts).
+Easy WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default so **`crowdsec.service`** and **`crowdsec-haproxy-spoa-bouncer.service`** exist on the host. After a **first-time** agent install, both units are left **stopped** and **`systemctl disable`**, so nothing listens on LAPI until you choose to start it (staged rollouts).
 
 | Variable | Default | Meaning |
 |----------|---------|--------|
-| `EASY_WAF_INSTALL_CROWDSEC` | `1` | Set to **`0`** to skip CrowdSec/SPOA packages entirely (e.g. air-gapped hosts). |
+| `EASY_WAF_INSTALL_CROWDSEC` | `1` | Set to **`0`** to skip CrowdSec/SPOA packages entirely. |
 | `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL` | **`1`** | Set to **`0`** for staged install (packages only, units stopped until `scripts/crowdsec-bootstrap-lapi.sh`). When **`1`**, `install.sh` **starts** `crowdsec`, registers bouncers **`easy-waf-spoa`** / **`easy-waf-api`**, injects the SPOA key, **`enable --now`** the SPOA bouncer, and writes **`CROWDSEC_LAPI_*`** into **`/etc/easy-waf/easy-waf.env`**. |
 | `EASY_WAF_CROWDSEC_CONSOLE_TOKEN` | *(empty)* | If set, runs `cscli console enroll <token>` during the bootstrap step (when `AUTO_START_AFTER_INSTALL=1`). |
 | `EASY_WAF_FAIL2BAN_AUTO_START` | **`1`** | Set to **`0`** to only **`enable`** fail2ban at boot without immediate **`start`**. |
 
-**Phase 1 — packages (default every run when `INSTALL_CROWDSEC=1`):** add CrowdSec **packagecloud** repo, `dnf`/`apt` install **`crowdsec`** + **`crowdsec-haproxy-spoa-bouncer`**. On the **first** install of the `crowdsec` package, run **`systemctl stop` + `disable`** for both units so the host stays quiet until you bootstrap.
+**Phase 1 — packages (default every run when `INSTALL_CROWDSEC=1`):** add CrowdSec **packagecloud** repo, `apt` install **`crowdsec`** + **`crowdsec-haproxy-spoa-bouncer`**. On the **first** install of the `crowdsec` package, run **`systemctl stop` + `disable`** for both units so the host stays quiet until you bootstrap.
 
 **Phase 2 — LAPI bootstrap (only when `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`):** `systemctl enable --now crowdsec` → wait for LAPI → optional **`cscli console enroll`** → recreate bouncers → inject SPOA YAML → **`enable --now crowdsec-haproxy-spoa-bouncer`** → **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in **`easy-waf.env`**.
 

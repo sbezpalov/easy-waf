@@ -57,13 +57,11 @@ RuntimeDirectory=haproxy
 RuntimeDirectoryMode=0755
 ExecStartPre=
 ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock
-ExecStartPre=+/bin/sh -c '/sbin/restorecon -Rv /run/haproxy 2>/dev/null || /usr/sbin/restorecon -Rv /run/haproxy 2>/dev/null || :'
 ExecStartPre=/usr/sbin/haproxy -f ${CFG} -c
 ExecStart=
 ExecStart=/usr/sbin/haproxy -Ws -f ${CFG} -p /run/haproxy.pid
 ExecReload=
 ExecReload=+/bin/rm -f /run/haproxy/easy-waf-admin.sock
-ExecReload=+/bin/sh -c '/sbin/restorecon -Rv /run/haproxy 2>/dev/null || /usr/sbin/restorecon -Rv /run/haproxy 2>/dev/null || :'
 ExecReload=/usr/sbin/haproxy -f ${CFG} -c
 ExecReload=/bin/kill -USR2 \$MAINPID
 EOF
@@ -81,8 +79,9 @@ EOF
   log "Created /etc/tmpfiles.d/easy-waf-haproxy.conf"
 fi
 
-if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
-  EASY_WAF_STATE_DIR="$STATE_DIR" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
+if command -v aa-status &>/dev/null; then
+  aa-status --enabled 2>/dev/null | head -5 || true
+  log "AppArmor status captured (Ubuntu default for HAProxy)"
 fi
 
 systemctl daemon-reload
@@ -110,10 +109,6 @@ if [[ -n "$ADMIN" ]]; then
   fi
 else
   log "WARNING: easy-waf-admin not found — Apply from UI to refresh haproxy.cfg"
-fi
-
-if [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
-  EASY_WAF_STATE_DIR="$STATE_DIR" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh"
 fi
 
 if [[ ! -s "$CFG" ]]; then

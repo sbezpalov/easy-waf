@@ -11,9 +11,8 @@
 #   EASY_WAF_INSTALL_CROWDSEC=0|1       — skip CrowdSec packages when 0 (default 1 in install.sh on dnf/apt)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — if set, skips prompt; else TTY prompt for LAPI bootstrap
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN=   — optional; passed to: cscli console enroll during bootstrap
-#   EASY_WAF_FIREWALLD_MGMT_PORTS="8000 8443"
-#   EASY_WAF_FIREWALLD_EDGE=1|0       — open HAProxy 80/443 on FIREWALLD_ZONE (default 1; install.sh)
-#   EASY_WAF_FIREWALLD_ZONE=public
+#   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
+#   EASY_WAF_NFT_EDGE=1|0       — open HAProxy 80/443 via nftables (default 1; install.sh)
 #   EASY_WAF_EXTRA_LAN_CIDR=10.5.0.0/16  — optional extra source for rich rules (VPN, etc.)
 #   EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0|1  — when local PostgreSQL was installed, rotate easywaf:secret / easywaf:easywaf (default 1)
 
@@ -93,7 +92,7 @@ main() {
   log "repo root: $REPO_ROOT"
 
   local mgmt_mode="${EASY_WAF_MGMT_MODE:-}"
-  local fw_ports="${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}"
+  local fw_ports="${EASY_WAF_NFT_MGMT_PORTS:-${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}}"
 
   if [[ -z "$mgmt_mode" ]]; then
     mgmt_mode="$(prompt "Management UI bind: loopback (127.0.0.1:8000+8443) or lan_rfc1918 (0.0.0.0 + nftables on 8000/8443)" "loopback")"

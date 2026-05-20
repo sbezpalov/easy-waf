@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Restore from backup produced by scripts/backup.sh (format v1).
-# Run as root. Stops API, restores DB + files, SELinux restorecon, optional Apply + service restart.
+# Run as root. Stops API, restores DB + files, optional Apply + service restart.
 #
 # Usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
 # Env: EASY_WAF_STATE_DIR, EASY_WAF_ENV_FILE (defaults as in backup.sh)
@@ -88,13 +88,13 @@ find "$CFG" -type f -exec chmod 0640 {} + 2>/dev/null || true
 chown -R root:easy-waf "$CFG" 2>/dev/null || true
 
 if command -v restorecon &>/dev/null; then
-  echo "[easy-waf-restore] restorecon (SELinux)…"
+  echo "[easy-waf-restore] restorecon (legacy SELinux hosts only)…"
   restorecon -RF "$STATE" 2>/dev/null || true
   restorecon -RF "$CFG" 2>/dev/null || true
 fi
 
 REST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
+if command -v semanage &>/dev/null && [[ -f "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
   EASY_WAF_STATE_DIR="$STATE" bash "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
 fi
 

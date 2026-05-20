@@ -149,7 +149,7 @@ type GlobalSettings struct {
 	CrowdSecLAPIKey   string `json:"-"` // never serialize to JSON in logs by default
 	SPOEConfigPath    string `json:"spoe_config_path"`
 	HAProxyConfigPath string `json:"haproxy_config_path"`
-	// HAProxyStatsSocketPath is the Unix socket for "show stat" (runtime metrics). Default: /run/haproxy/easy-waf-admin.sock (SELinux-friendly).
+	// HAProxyStatsSocketPath is the Unix socket for "show stat" (runtime metrics). Default: /run/haproxy/easy-waf-admin.sock.
 	HAProxyStatsSocketPath string   `json:"haproxy_stats_socket_path,omitempty"`
 	HAProxyBinary          string   `json:"haproxy_binary"`
 	CrowdSecEngineName     string   `json:"crowdsec_engine_name"`

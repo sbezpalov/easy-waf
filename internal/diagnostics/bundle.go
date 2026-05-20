@@ -104,8 +104,12 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	_ = run("system/df-h.txt", 8*time.Second, "df", "-h")
 	_ = run("system/uptime.txt", 3*time.Second, "uptime")
 	_ = run("system/ss-tlnp.txt", 8*time.Second, "ss", "-tlnp")
-	_ = run("system/getenforce.txt", 3*time.Second, "getenforce")
-	_ = run("system/getsebool-haproxy_connect_any.txt", 5*time.Second, "getsebool", "haproxy_connect_any")
+	_ = run("system/aa-status.txt", 5*time.Second, "aa-status")
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if out, err := exec.CommandContext(ctx2, "aa-status", "--enabled").CombinedOutput(); err == nil {
+		_ = addTarBytes(tw, prefix+"system/aa-status-enabled.txt", out, 0o644)
+	}
+	cancel()
 
 	units := []string{"easy-waf-api", "easy-waf-acmed", "haproxy", "crowdsec", "fail2ban", "nftables"}
 	for _, u := range units {
@@ -183,10 +187,10 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		hb = "haproxy"
 	}
 	_ = run("validation/haproxy-vv.txt", 15*time.Second, hb, "-vv")
-	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
-	out, _ := exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
+	ctx2, cancel = context.WithTimeout(ctx, 30*time.Second)
+	haproxyCheckOut, _ := exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
 	cancel()
-	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", out, 0o644); err != nil {
+	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", haproxyCheckOut, 0o644); err != nil {
 		return err
 	}
 
@@ -206,8 +210,10 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		return err
 	}
 
-	_ = run("firewall/list-all.txt", 15*time.Second, "firewall-cmd", "--list-all")
-	_ = run("firewall/list-rich-rules.txt", 15*time.Second, "firewall-cmd", "--list-rich-rules")
+	_ = run("firewall/nft-ruleset.txt", 20*time.Second, "nft", "list", "ruleset")
+	if raw, err := os.ReadFile("/etc/nftables/easy-waf.nft"); err == nil {
+		_ = addTarBytes(tw, prefix+"firewall/easy-waf.nft", raw, 0o644)
+	}
 
 	return nil
 }

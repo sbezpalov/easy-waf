@@ -1,6 +1,6 @@
 # Fail2Ban integration
 
-Fail2Ban protects **SSH** (and optional jails) on the appliance. Easy WAF installs the package via `scripts/install.sh` when available (EPEL on Alma/RHEL).
+Fail2Ban protects **SSH** (and optional jails) on the appliance. Easy WAF installs the package via `scripts/install.sh` when available (`apt install fail2ban` on Ubuntu 24.04).
 
 ## Management API (UI)
 

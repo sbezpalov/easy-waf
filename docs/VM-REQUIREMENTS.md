@@ -1,6 +1,6 @@
 # Virtual machine sizing (ESXi / QEMU–KVM)
 
-These numbers are **planning guidelines** for a single appliance running the full stack: **AlmaLinux**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, optional **nginx**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **firewalld**.
+These numbers are **planning guidelines** for a single appliance running the full stack: **Ubuntu 24.04 LTS**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, optional **nginx**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **nftables**.
 
 ## Rough memory budget (why these sizes)
 
@@ -24,7 +24,7 @@ These numbers are **planning guidelines** for a single appliance running the ful
 
 | Use | Minimum | Recommended |
 |-----|---------|-------------|
-| OS (AlmaLinux minimal + updates) | ~8–12 GiB | ~16 GiB |
+| OS (Ubuntu 24.04 server + updates) | ~8–12 GiB | ~16 GiB |
 | `/var/lib/easy-waf` (certs, revisions, ACME webroot, IPBL maps) | ~2 GiB | ~8 GiB+ (growth) |
 | PostgreSQL data (local) | ~2 GiB | ~8 GiB+ |
 | Logs, CrowdSec data, package cache | ~2 GiB | ~4 GiB+ |

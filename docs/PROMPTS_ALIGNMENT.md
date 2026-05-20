@@ -49,7 +49,7 @@
 
 | Требование | Статус | Где |
 |------------|--------|-----|
-| Alma 10, systemd, firewalld, SELinux | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md` |
+| Ubuntu 24.04 LTS, systemd, nftables, AppArmor | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md`, `docs/HOST-API.md` |
 | `haproxy -c` до reload | **Done** | см. **§7.3**; `internal/apply`, `internal/engine` |
 | SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | см. **§7.3** |
 | CrowdSec LAPI не через Lua | **Done** | Go LAPI client + SPOA пакет; см. **§7.5**, `docs/CROWDSEC.md` |
@@ -104,7 +104,7 @@
 
 | ID | Критерий | Статус | Проверка в репозитории |
 |----|----------|--------|-------------------------|
-| **AC-01** | Установка через `install.sh` на AlmaLinux 10 (полный цикл: пакеты, layout, env, PostgreSQL опционально, бинарники, systemd) | **Done** | `scripts/install.sh` — `dnf`/`apt`, `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-api.service easy-waf-acmed.service` (флаг `EASY_WAF_ENABLE_SYSTEMD_UNITS`), юниты `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
+| **AC-01** | Установка через `install.sh` на Ubuntu 24.04 LTS (полный цикл: пакеты, layout, env, PostgreSQL опционально, бинарники, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-api.service easy-waf-acmed.service` (флаг `EASY_WAF_ENABLE_SYSTEMD_UNITS`), юниты `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Добавление app через UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS-сертификат автоматически (ACME) | **Partial** | `cmd/easy-waf-acmed` — выдача/renew, после успеха `eng.Apply(ctx,"acme")`; нужны `ACME_EMAIL`, DNS/HTTP-01, worker запущен (`docs/ACME.md`) |
 | **AC-04** | Доступ извне к опубликованному приложению | **Partial** | Рендер `fe_http`/`fe_https`, SNI, бэкенды по Host — **Done** в коде; маршрутизация WAN/NAT/port-forward — вне репозитория |
@@ -115,7 +115,7 @@
 | **AC-09** | WebSocket (например HA) | **Done** | `timeout tunnel` в defaults и для `websocket` в `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
-**SELinux (из §9 prompts):** не отключается скриптом; политика контекстов — в `docs/DEPLOYMENT.md` / `docs/SECURITY.md`. Статус: **Done** при следовании докам (на хосте).
+**AppArmor (из §3 prompts):** Ubuntu использует AppArmor по умолчанию; отдельный профиль easy-waf не требуется. Доступ HAProxy к конфигам — через группу **`easy-waf`**. Статус: **Done** на Ubuntu 24.04.
 
 ## Roadmap (после MVP)
 

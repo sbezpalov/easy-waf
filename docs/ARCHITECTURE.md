@@ -56,7 +56,7 @@ A common homelab/SMB pattern uses a **network firewall / NGFW** (e.g. **MikroTik
 1. **Internet** clients hit the **WAN** of the NGFW (often **80/tcp** and **443/tcp**).
 2. The NGFW applies **destination NAT / virtual IP / port forwarding** to the **WAF appliance** on the internal network (same ports or different — both sides are configurable).
 3. **Easy Home WAF** (HAProxy on the appliance) terminates TLS at the edge, applies host routing, CrowdSec SPOE, IPBL/maps, and forwards to **web** backends (Home Assistant, Synology DSM/UI, 3CX Web, Frigate, Nextcloud, etc.).
-4. **Management** (API/UI: **HTTP 8000**, **HTTPS 8443**) should **not** be forwarded from the WAN; use LAN, VPN, or SSH port-forward — align with `EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS`, `management_allowed_cidrs`, and firewalld.
+4. **Management** (API/UI: **HTTP 8000**, **HTTPS 8443**) should **not** be forwarded from the WAN; use LAN, VPN, or SSH port-forward — align with `EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS`, `management_allowed_cidrs`, and **nftables** (see `/etc/nftables/easy-waf.nft`).
 
 **Typical TLS/HTTP modes** (all first-class web traffic in this product):
 
@@ -113,8 +113,8 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 ## Security model
 
 - Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated.
-- Secrets in `/etc/easy-waf/secrets/` with `0600` and SELinux file contexts (documented in Security Guide).
-- UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **firewalld** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
+- Secrets in `/etc/easy-waf/secrets/` with `0600`. HAProxy reads generated configs via group **`easy-waf`** (AppArmor stock profile on Ubuntu).
+- UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **nftables** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
 - Subprocess: no shell; explicit argv; timeouts.
 - Audit: append-only audit log for admin actions.
 
@@ -167,7 +167,7 @@ sequenceDiagram
 ## Log and metrics flow
 
 - HAProxy → file → CrowdSec acquisition (user enables path in CrowdSec config; we ship samples).
-- **Runtime metrics:** generated `haproxy.cfg` includes a **stats Unix socket** (`stats socket … mode 660 level admin`, `stats timeout 30s`). The default path is **`/run/haproxy/easy-waf-admin.sock`** (SELinux-friendly **`haproxy_var_run_t`** on RHEL family); override via settings **`haproxy_stats_socket_path`** (`internal/config/types.go`). `easy-waf-api` reads **`show stat`** CSV over that socket (cached ~5s) and exposes **`GET /api/v1/stats/haproxy`** and **`GET /api/v1/stats/summary`** (`internal/metrics`, `internal/api/stats_handlers.go`). The Dashboard polls summary + detail every **10s** while the Dashboard tab is open. The **`easy-waf`** user typically needs membership in the **`haproxy`** group so it can open the socket created by the HAProxy service.
+- **Runtime metrics:** generated `haproxy.cfg` includes a **stats Unix socket** (`stats socket … mode 660 level admin`, `stats timeout 30s`). The default path is **`/run/haproxy/easy-waf-admin.sock`**; override via settings **`haproxy_stats_socket_path`** (`internal/config/types.go`). `easy-waf-api` reads **`show stat`** CSV over that socket (cached ~5s) and exposes **`GET /api/v1/stats/haproxy`** and **`GET /api/v1/stats/summary`** (`internal/metrics`, `internal/api/stats_handlers.go`). The Dashboard polls summary + detail every **10s** while the Dashboard tab is open. The **`easy-waf`** user typically needs membership in the **`haproxy`** group so it can open the socket created by the HAProxy service.
 - Optional future: HAProxy Prometheus exporter or persistence of aggregates to PostgreSQL / TSDB for SME dashboards.
 
 ## Local UI flow
@@ -178,7 +178,7 @@ sequenceDiagram
 ## Update / backup / restore
 
 - `backup.sh`: one **`.tar.gz`** (format v1) — `pg_dump -Fc` → `easywaf.dump`, plus `state/` (`/var/lib/easy-waf`) and `etc/` (`/etc/easy-waf`). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
-- `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → `restorecon` → start services → optional **`POST /api/v1/apply`**.
+- `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → start services → optional **`POST /api/v1/apply`**.
 - `upgrade.sh`: replace binary + run migrations + reload daemon only.
 
 ## GeoIP architecture
@@ -197,7 +197,7 @@ sequenceDiagram
 |------|------------|
 | SPOE syntax fragility | Golden tests; `haproxy -c`; version-pinned examples |
 | CrowdSec package drift | Health checks only; document version matrix; optional pin file |
-| SELinux booleans for HAProxy connect | Document `http_connect`, `network_connect` as needed |
+| HAProxy connect to backends | Unix groups + file permissions; AppArmor stock profile |
 | Lego DNS provider credentials | File permissions + optional secret dir outside VCS |
 | PostgreSQL HA | Use managed PG, Patroni, or cloud RDS for SME clusters |
 

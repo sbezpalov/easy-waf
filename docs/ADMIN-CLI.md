@@ -41,7 +41,7 @@ sudo /usr/sbin/easy-waf-admin management-config
 **Examples — write changes** (always **`sudo systemctl restart easy-waf-api.service`** afterwards so a running process reloads env and DB-backed settings):
 
 ```bash
-# Listen on all interfaces (LAN / RFC1918 + firewalld as in install.sh)
+# Listen on all interfaces (LAN / RFC1918 + nftables as in install.sh)
 sudo /usr/sbin/easy-waf-admin management-config -listen-lan
 
 # Loopback only (use SSH port-forward to reach the UI)
@@ -76,7 +76,7 @@ Effects:
 1. Sets **`management_allowed_cidrs`** in the database to the **default** list (loopback + RFC1918 — same as `config.DefaultManagementCIDRs()`).
 2. Writes **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`** and **`EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`** into `/etc/easy-waf/easy-waf.env`, removes deprecated **`EASY_WAF_LISTEN`** (path overridable with `-env-file`).
 
-Review **firewalld** afterwards if you had opened 8443/tcp broadly on the public zone.
+Review **nftables** (`/etc/nftables/easy-waf.nft`) afterwards if management ports are too open.
 
 ## `reset-appliance` (preferred)
 

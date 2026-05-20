@@ -72,10 +72,6 @@ func openStoreFrom(url string) (*store.Store, error) {
 	return store.OpenPostgres(dsn)
 }
 
-func openStore() (*store.Store, error) {
-	return openStoreFrom("")
-}
-
 func resolveDSNForWipe(envFile, databaseURL string) (string, error) {
 	if strings.TrimSpace(databaseURL) != "" {
 		return strings.TrimSpace(databaseURL), nil

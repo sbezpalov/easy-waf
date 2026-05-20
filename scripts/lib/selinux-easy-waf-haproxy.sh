@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# DEPRECATED: Ubuntu 24.04 uses AppArmor, not SELinux.
+# Retained for legacy AlmaLinux/RHEL installations only.
+# On Ubuntu, HAProxy access is controlled via Unix group membership
+# (haproxy in easy-waf group) and file permissions.
+#
 # SELinux file contexts so HAProxy (haproxy_t) can read easy-waf generated configs.
 # Idempotent; run as root after install or restorecon.
 # Env: EASY_WAF_STATE_DIR (default /var/lib/easy-waf)

@@ -49,7 +49,7 @@ Steps:
 3. **`pg_restore --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host).
 4. Restores **`state/`** → `EASY_WAF_STATE_DIR` and **`etc/`** → `/etc/easy-waf` (merged via tar extract).
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`.
-6. **`restorecon`** on state and config when SELinux tools exist.
+6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
 7. Starts **`easy-waf-api`** / **`easy-waf-acmed`**.
 8. **`POST /api/v1/apply`** with **`Authorization: Bearer $EASY_WAF_ADMIN_TOKEN`** (from the shell environment **or** from the restored `easy-waf.env` after it is sourced) to regenerate HAProxy config and reload HAProxy (unless skipped).
 9. Restarts **`easy-waf-api`** and **`easy-waf-acmed`**.
