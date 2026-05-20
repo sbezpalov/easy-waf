@@ -124,6 +124,49 @@
     .app-badge-warn { background: #3d2a1a; color: #e3b341; }
     .app-card-warn { font-size: 0.78rem; color: #f85149; margin-top: 0.35rem; font-weight: 600; }
     .dash-sec-warn { background: #2d2710; border: 1px solid #9e6a03; border-radius: 8px; padding: 0.75rem 1rem; margin-top: 1rem; font-size: 0.9rem; }
+
+    .header-user { color: var(--muted); font-size: 0.9rem; margin-right: 0.5rem; }
+    .nav-link { position: relative; }
+    .pending-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #d29922;
+      margin-left: auto; flex-shrink: 0;
+    }
+    .apps-pending-banner {
+      background: #2d2710; border: 1px solid #9e6a03; border-radius: 8px;
+      padding: 0.65rem 1rem; margin: 0.75rem 0; font-size: 0.9rem;
+    }
+
+    .toast-host {
+      position: fixed; right: 1rem; bottom: 1rem; z-index: 100;
+      display: flex; flex-direction: column; gap: 0.5rem; max-width: min(24rem, 92vw);
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto; display: flex; align-items: flex-start; gap: 0.5rem;
+      padding: 0.65rem 0.75rem; border-radius: 8px; background: var(--panel);
+      border: 1px solid var(--border); border-left-width: 4px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35); font-size: 0.9rem;
+    }
+    .toast-ok { border-left-color: #3fb950; }
+    .toast-err { border-left-color: #f85149; }
+    .toast-info { border-left-color: #58a6ff; }
+    .toast-body { flex: 1; line-height: 1.35; }
+    .toast-close { padding: 0.15rem 0.45rem; font-size: 1.1rem; line-height: 1; min-width: auto; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .modal-box {
+      max-width: 28rem; width: 100%; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem;
+    }
+    .modal-message { margin: 0 0 1rem; white-space: pre-wrap; line-height: 1.4; }
+    .modal-actions { justify-content: flex-end; gap: 0.5rem; }
+    button.modal-ok-danger { background: #da3633; }
+
+    .table-state { margin: 0.5rem 0; font-size: 0.9rem; }
+    .copy-btn { padding: 0.2rem 0.45rem; font-size: 0.85rem; line-height: 1; min-width: auto; }
   </style>
 </head>
 <body>
@@ -156,6 +199,7 @@
   <header class="app-header">
     <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open menu">☰</button>
     <h1 class="app-title">◆ Easy Home WAF</h1>
+    <span class="header-user hidden" id="header-user"></span>
     <button type="button" class="secondary header-logout" id="btn-logout">Sign out</button>
   </header>
   <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
@@ -168,7 +212,7 @@
         <a href="#security" class="nav-link" data-tab="security"><span>◎</span> Security</a>
         <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span>⚑</span> CrowdSec</a>
         <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span>⛔</span> Fail2Ban</a>
-        <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config</a>
+        <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config<span class="pending-dot hidden" id="nav-config-pending" aria-hidden="true"></span></a>
         <a href="#settings" class="nav-link" data-tab="settings"><span>✎</span> Settings</a>
         <a href="#logs" class="nav-link" data-tab="logs"><span>◈</span> Logs / Audit</a>
       </nav>
@@ -231,19 +275,26 @@
       <div id="tab-apps" class="tab-panel">
         <h2>◇ Applications</h2>
         <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Use <a href="#config">Config</a> → <strong>Apply HAProxy</strong> after changes.</small></p>
+        <div id="apps-pending-banner" class="apps-pending-banner hidden" role="status">
+          You have unapplied changes. <a href="#config">Go to Config → Apply HAProxy</a>
+        </div>
         <div class="row">
           <button type="button" class="secondary" id="btn-apps-refresh">Refresh</button>
         </div>
         <div id="apps" class="app-cards"></div>
         <p id="apps-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
-        <h3>Add or update application</h3>
+        <div class="row" style="margin-top:1rem">
+          <button type="button" id="btn-new-app">+ New application</button>
+        </div>
+        <div id="app-form-panel" class="hidden" style="margin-top:0.75rem">
+        <h3 id="app-form-title">Add or update application</h3>
         <input type="hidden" id="app-edit-id" value="" />
-        <p id="apps-edit-hint" class="dash-note hidden" style="margin-top:0">Editing existing app — <button type="button" class="secondary" id="btn-app-new">New app instead</button></p>
+        <p id="apps-edit-hint" class="dash-note hidden" style="margin-top:0">Editing existing app — <button type="button" class="secondary" id="btn-cancel-edit">Cancel edit</button></p>
         <div class="row">
-          <input id="name" placeholder="name" value="Home Assistant" />
-          <input id="host" placeholder="public host" value="ha.home.local" />
-          <input id="backend" placeholder="backend IP" value="192.168.1.10" />
-          <input id="port" placeholder="port" value="8123" type="number" />
+          <input id="name" name="" placeholder="e.g. Home Assistant" value="" />
+          <input id="host" placeholder="ha.example.com" value="" />
+          <input id="backend" placeholder="192.168.1.10" value="" />
+          <input id="port" placeholder="8123" value="" type="number" />
           <label class="row" style="margin:0"><input id="behttps" type="checkbox" /> Backend HTTPS</label>
           <select id="profile">
             <option value="home-assistant">home-assistant</option>
@@ -274,6 +325,7 @@
         <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
         <div id="restricted-rows"></div>
         <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
+        </div>
       </div>
 
       <div id="tab-certs" class="tab-panel">
@@ -620,6 +672,160 @@
 
   function show(el, on) { document.getElementById(el).classList.toggle('hidden', !on); }
 
+  let pendingApply = false;
+
+  function toast(message, kind, timeoutMs) {
+    const host = document.getElementById('toast-host');
+    if (!host) return;
+    const k = kind || 'info';
+    const ms = timeoutMs == null ? 5000 : timeoutMs;
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + k;
+    const body = document.createElement('span');
+    body.className = 'toast-body';
+    body.textContent = String(message);
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close secondary';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    let timer;
+    const dismiss = () => {
+      if (timer) clearTimeout(timer);
+      el.remove();
+    };
+    closeBtn.onclick = dismiss;
+    el.appendChild(body);
+    el.appendChild(closeBtn);
+    host.appendChild(el);
+    if (ms > 0) timer = setTimeout(dismiss, ms);
+  }
+
+  async function apiMessage(r) {
+    const txt = await r.text().catch(() => r.statusText || 'Request failed');
+    try {
+      const j = JSON.parse(txt);
+      if (j && typeof j === 'object') return j.error || j.message || txt;
+    } catch (_) { /* plain text */ }
+    return txt || ('HTTP ' + r.status);
+  }
+
+  function confirmDialog(message, opts) {
+    const o = opts || {};
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const box = document.createElement('div');
+      box.className = 'modal-box';
+      const p = document.createElement('p');
+      p.className = 'modal-message';
+      p.textContent = String(message);
+      const actions = document.createElement('div');
+      actions.className = 'modal-actions row';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'secondary';
+      cancel.textContent = 'Cancel';
+      const ok = document.createElement('button');
+      ok.type = 'button';
+      if (o.danger) ok.className = 'modal-ok-danger';
+      ok.textContent = o.okLabel || 'OK';
+      const close = (val) => {
+        overlay.remove();
+        resolve(val);
+      };
+      cancel.onclick = () => close(false);
+      ok.onclick = () => close(true);
+      overlay.onclick = (e) => { if (e.target === overlay) close(false); };
+      actions.appendChild(cancel);
+      actions.appendChild(ok);
+      box.appendChild(p);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      ok.focus();
+    });
+  }
+
+  async function withBusy(btn, fn) {
+    if (!btn) return fn();
+    const prevDisabled = btn.disabled;
+    const prevText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '… working';
+    try {
+      return await fn();
+    } finally {
+      btn.disabled = prevDisabled;
+      btn.textContent = prevText;
+    }
+  }
+
+  function tableState(box, state, opts) {
+    if (!box) return;
+    const o = opts || {};
+    const msg = o.message || (state === 'loading' ? 'Loading…' : state === 'empty' ? 'No data.' : 'Failed to load.');
+    if (state === 'loading') {
+      box.innerHTML = '<p class="table-state">' + esc(msg) + '</p>';
+    } else if (state === 'empty') {
+      box.innerHTML = '<p class="table-state dash-note">' + esc(msg) + '</p>';
+    } else if (state === 'error') {
+      box.innerHTML = '<p class="table-state warn">' + esc(msg) + '</p>';
+    }
+  }
+
+  function markPendingApply(on) {
+    pendingApply = !!on;
+    const dot = document.getElementById('nav-config-pending');
+    if (dot) dot.classList.toggle('hidden', !on);
+    const banner = document.getElementById('apps-pending-banner');
+    if (banner) banner.classList.toggle('hidden', !on);
+  }
+
+  function copyBtn(value) {
+    return '<button type="button" class="secondary copy-btn" data-copy="' + esc(value) + '" title="Copy to clipboard">⧉</button>';
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('.copy-btn');
+    if (!btn) return;
+    const v = btn.getAttribute('data-copy');
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(
+      () => toast('Copied', 'ok', 2000),
+      () => toast('Copy failed', 'err')
+    );
+  });
+
+  function setAppFormCollapsed(collapsed) {
+    const panel = document.getElementById('app-form-panel');
+    if (panel) panel.classList.toggle('hidden', collapsed);
+  }
+
+  function setAppFormTitle(name) {
+    const title = document.getElementById('app-form-title');
+    if (!title) return;
+    title.textContent = name ? ('Edit: ' + name) : 'Add or update application';
+  }
+
+  function clearAppFormFields() {
+    document.getElementById('app-edit-id').value = '';
+    document.getElementById('apps-edit-hint').classList.add('hidden');
+    document.getElementById('name').value = '';
+    document.getElementById('host').value = '';
+    document.getElementById('backend').value = '';
+    document.getElementById('port').value = '';
+    document.getElementById('behttps').checked = false;
+    document.getElementById('ws').checked = false;
+    document.getElementById('profile').value = 'balanced';
+    document.getElementById('app-cert').value = '';
+    const nlm = document.getElementById('listen-mode');
+    if (nlm) nlm.value = 'https_only';
+    syncListenModeUI();
+    setAppFormTitle('');
+    initRestrictedPathRows();
+  }
+
   function panelFromHash() {
     const raw = (location.hash || '#dashboard').split('?')[0].toLowerCase();
     return HASH_TO_PANEL[raw] || 'dashboard';
@@ -720,10 +926,19 @@
     if (r.status === 401) { setTok(''); refreshSession(); return; }
     const me = await r.json();
     if (!r.ok) { show('view-login', true); return; }
+    const hu = document.getElementById('header-user');
+    if (hu) {
+      hu.textContent = '';
+      hu.classList.add('hidden');
+    }
     if (me.must_change_password) {
       show('view-login', false); show('view-pass', true); show('view-app', false);
     } else {
       show('view-login', false); show('view-pass', false); show('view-app', true);
+      if (hu && me.username) {
+        hu.textContent = String(me.username);
+        hu.classList.remove('hidden');
+      }
       await loadSettingsPanel();
       loadProfileSelect();
       initRestrictedPathRows();
@@ -813,47 +1028,61 @@
   const btnDiag = document.getElementById('btn-diagnostics-download');
   if (btnDiag) {
     btnDiag.onclick = async () => {
-      const ok = window.confirm(
-        'This collects system info and logs from the API host (secrets in easy-waf.env are masked).\n\nShare with support if needed.\n\nContinue?'
+      const ok = await confirmDialog(
+        'This collects system info and logs from the API host (secrets in easy-waf.env are masked).\n\nShare with support if needed.\n\nContinue?',
+        { okLabel: 'Download' }
       );
       if (!ok) return;
-      const msg = document.getElementById('dash-diag-msg');
-      if (msg) {
-        msg.textContent = '';
-        msg.className = 'warn';
-      }
-      try {
-        const r = await fetch('/api/v1/diagnostics/bundle', { method: 'POST', headers: hdr(), body: '{}' });
-        if (r.status === 401) {
-          setTok('');
-          refreshSession();
-          return;
-        }
-        if (!r.ok) {
-          const t = await r.text().catch(() => r.statusText);
-          if (msg) msg.textContent = t || ('HTTP ' + r.status);
-          return;
-        }
-        const blob = await r.blob();
-        const cd = r.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename="([^"]+)"/);
-        const name = m ? m[1] : 'easy-waf-diag-api.tar.gz';
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name;
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+      await withBusy(btnDiag, async () => {
+        const msg = document.getElementById('dash-diag-msg');
         if (msg) {
-          msg.textContent = 'Download started.';
-          msg.className = 'ok';
+          msg.textContent = '';
+          msg.className = 'warn';
         }
-      } catch (e) {
-        if (msg) msg.textContent = e && e.message ? e.message : String(e);
-      }
+        try {
+          const r = await fetch('/api/v1/diagnostics/bundle', { method: 'POST', headers: hdr(), body: '{}' });
+          if (r.status === 401) {
+            setTok('');
+            refreshSession();
+            return;
+          }
+          if (!r.ok) {
+            toast(await apiMessage(r), 'err');
+            return;
+          }
+          const blob = await r.blob();
+          const cd = r.headers.get('Content-Disposition') || '';
+          const m = cd.match(/filename="([^"]+)"/);
+          const name = m ? m[1] : 'easy-waf-diag-api.tar.gz';
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          toast('Download started.', 'ok');
+          if (msg) {
+            msg.textContent = 'Download started.';
+            msg.className = 'ok';
+          }
+        } catch (e) {
+          const errMsg = e && e.message ? e.message : String(e);
+          toast(errMsg, 'err');
+          if (msg) msg.textContent = errMsg;
+        }
+      });
+    };
+  }
+
+  const btnNewApp = document.getElementById('btn-new-app');
+  if (btnNewApp) {
+    btnNewApp.onclick = () => {
+      clearAppFormFields();
+      setAppFormCollapsed(false);
+      document.getElementById('name').focus();
     };
   }
   document.getElementById('audit-auto-refresh').onchange = () => { syncAuditAutoRefresh(); };
@@ -969,6 +1198,16 @@
     }
   }
 
+  const BADGE_TITLES = {
+    '⚡Rate': 'Rate limiting (stick-table)',
+    '🛡WAF': 'Basic WAF: SQLi / XSS / path traversal',
+    '🤖CS': 'CrowdSec SPOE decisions',
+    '🔒IPBL': 'IP blacklist (local + external feeds)',
+    '✅Allow': 'IP allowlist bypass',
+    '🌍Geo': 'GeoIP country filter',
+    '🤖Bot': 'Bot protection (empty / known-bad User-Agent)'
+  };
+
   function appSecurityBadges(sec) {
     if (!sec) return '<span class="app-badge">—</span>';
     const out = [];
@@ -979,30 +1218,38 @@
     if (cachedSettings && cachedSettings.ipwl_enabled && sec.ip_allowlist_enabled) out.push('✅Allow');
     if (sec.geoip_enabled) out.push('🌍Geo');
     if (sec.bot_protection_enabled) out.push('🤖Bot');
-    return out.length ? out.map((x) => `<span class="app-badge">${x}</span>`).join('') : '<span class="app-badge">(layers off)</span>';
+    return out.length
+      ? out.map((x) => '<span class="app-badge" title="' + esc(BADGE_TITLES[x] || x) + '">' + x + '</span>').join('')
+      : '<span class="app-badge">(layers off)</span>';
   }
 
   async function postAppModeChange(id, mode, selEl) {
     const prev = (appsListCache.find((x) => x.id === id) || {}).security;
     const prevMode = (prev && prev.mode) || 'balanced';
     if (mode === 'reverse-proxy-only') {
-      const ok = confirm('⚠ Switch to Reverse Proxy Only?\n\nThis DISABLES all security protections for this application:\n  • Rate limiting\n  • Basic WAF (SQLi/XSS)\n  • CrowdSec\n  • IP blacklist\n  • Bot protection\n  • GeoIP filter\n\nUse ONLY for debugging. Not suitable for production.\n\nContinue?');
+      const ok = await confirmDialog(
+        '⚠ Switch to Reverse Proxy Only?\n\nThis DISABLES all security protections for this application:\n  • Rate limiting\n  • Basic WAF (SQLi/XSS)\n  • CrowdSec\n  • IP blacklist\n  • Bot protection\n  • GeoIP filter\n\nUse ONLY for debugging. Not suitable for production.\n\nContinue?',
+        { danger: true, okLabel: 'Enable debug mode' }
+      );
       if (!ok) { selEl.value = prevMode; return; }
     }
     const r = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/security/mode', {
       method: 'POST', headers: hdr(), body: JSON.stringify({ mode })
     });
     if (!r.ok) {
-      alert(await r.text());
+      toast(await apiMessage(r), 'err');
       selEl.value = prevMode;
       return;
     }
+    markPendingApply(true);
     await loadApps();
   }
 
   function fillAppFormFromApp(id) {
     const a = appsListCache.find((x) => x.id === id);
     if (!a) return;
+    setAppFormCollapsed(false);
+    setAppFormTitle(a.name || '');
     document.getElementById('app-edit-id').value = a.id;
     document.getElementById('apps-edit-hint').classList.remove('hidden');
     document.getElementById('name').value = a.name || '';
@@ -1024,40 +1271,34 @@
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
     if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
     window.location.hash = '#apps';
+    const panel = document.getElementById('app-form-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  document.getElementById('btn-app-new').onclick = () => {
-    document.getElementById('app-edit-id').value = '';
-    document.getElementById('apps-edit-hint').classList.add('hidden');
-    document.getElementById('name').value = '';
-    document.getElementById('host').value = '';
-    document.getElementById('backend').value = '';
-    document.getElementById('port').value = '80';
-    document.getElementById('behttps').checked = false;
-    document.getElementById('ws').checked = false;
-    document.getElementById('profile').value = 'balanced';
-    document.getElementById('app-cert').value = '';
-    const nlm = document.getElementById('listen-mode');
-    if (nlm) nlm.value = 'https_only';
-    syncListenModeUI();
-    initRestrictedPathRows();
+  document.getElementById('btn-cancel-edit').onclick = () => {
+    clearAppFormFields();
+    setAppFormCollapsed(true);
   };
 
   async function loadApps() {
     const msg = document.getElementById('apps-msg');
+    const box = document.getElementById('apps');
     if (msg) msg.textContent = '';
+    tableState(box, 'loading');
     const r = await fetch('/api/v1/applications', { headers: hdr() });
-    const j = await r.json();
+    const txt = await r.text();
+    let j = [];
+    try { j = JSON.parse(txt); } catch (_) { j = {}; }
     if (r.status === 403 && j.must_change_password) { refreshSession(); return; }
     if (!r.ok) {
-      if (msg) msg.textContent = typeof j === 'object' ? JSON.stringify(j) : await r.text();
+      const errMsg = (j && typeof j === 'object' && (j.error || j.message)) || txt || r.statusText;
+      tableState(box, 'error', { message: errMsg });
       return;
     }
     if (!cachedSettings) await loadSettingsPanel();
     appsListCache = Array.isArray(j) ? j : [];
-    const box = document.getElementById('apps');
     if (!appsListCache.length) {
-      box.innerHTML = '<p class="dash-note">No applications yet.</p>';
+      tableState(box, 'empty', { message: 'No applications yet. Use "New application" below.' });
       return;
     }
     box.innerHTML = appsListCache.map((a) => {
@@ -1106,10 +1347,17 @@
   };
 
   document.getElementById('apply').onclick = async () => {
-    const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
-    const txt = await r.text();
-    alert(txt);
-    if (r.ok && panelFromHash() === 'config') loadRevisions();
+    const btn = document.getElementById('apply');
+    await withBusy(btn, async () => {
+      const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
+      if (r.ok) {
+        toast('HAProxy config applied', 'ok');
+        markPendingApply(false);
+        if (panelFromHash() === 'config') loadRevisions();
+      } else {
+        toast(await apiMessage(r), 'err');
+      }
+    });
   };
 
   function shortSha(full) {
@@ -1126,39 +1374,44 @@
     const box = document.getElementById('revisions-table');
     if (!msg || !box) return;
     msg.textContent = '';
+    tableState(box, 'loading');
     const r = await fetch('/api/v1/revisions?limit=50', { headers: hdr() });
     if (r.status === 403) { refreshSession(); return; }
     if (!r.ok) {
-      msg.textContent = await r.text();
+      tableState(box, 'error', { message: await apiMessage(r) });
       return;
     }
     const rows = await r.json();
     if (!Array.isArray(rows) || rows.length === 0) {
-      box.innerHTML = '<p><small>No revisions yet. Run Apply after a successful config.</small></p>';
+      tableState(box, 'empty', { message: 'No revisions yet. Run Apply after adding an application.' });
       return;
     }
-    const head = '<thead><tr><th>SHA (short)</th><th>Created</th><th>Status</th><th>Preview</th><th></th></tr></thead>';
+    const head = '<thead><tr><th>SHA</th><th>Created</th><th>Status</th><th>Preview</th><th></th></tr></thead>';
     const body = rows.map((row) => {
       const st = row.is_current ? 'current' : 'previous';
       const rb = row.is_current ? '' : `<button type="button" class="secondary btn-rollback" data-id="${row.id}" data-sha="${esc(row.sha)}">Rollback</button>`;
       const prev = esc((row.config_snippet_preview || '').slice(0, 120));
       const dt = esc(row.created_at || '');
-      return `<tr><td><code>${esc(shortSha(row.sha))}</code></td><td>${dt}</td><td>${st}</td><td style="font-size:11px;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.config_snippet_preview || '')}">${prev}</td><td>${rb}</td></tr>`;
+      const shaFull = row.sha || '';
+      return `<tr><td><code>${esc(shortSha(shaFull))}</code> ${copyBtn(shaFull)}</td><td>${dt}</td><td>${st}</td><td style="font-size:11px;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.config_snippet_preview || '')}">${prev}</td><td>${rb}</td></tr>`;
     }).join('');
     box.innerHTML = `<table>${head}<tbody>${body}</tbody></table>`;
     box.querySelectorAll('.btn-rollback').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.getAttribute('data-id');
         const sha = btn.getAttribute('data-sha');
-        if (!confirm(`Rollback to revision ${shortSha(sha)}?`)) return;
+        const okRb = await confirmDialog('Rollback to revision ' + shortSha(sha) + '?', { danger: true, okLabel: 'Rollback' });
+        if (!okRb) return;
         msg.textContent = '';
         const rr = await fetch(`/api/v1/revisions/${encodeURIComponent(id)}/rollback`, { method: 'POST', headers: hdr() });
-        const t = await rr.text();
         if (rr.ok) {
+          toast('Rollback succeeded.', 'ok');
+          markPendingApply(true);
           msg.textContent = 'Rollback succeeded.';
           msg.className = '';
         } else {
-          msg.textContent = t || rr.statusText;
+          toast(await apiMessage(rr), 'err');
+          msg.textContent = await rr.text().catch(() => rr.statusText);
           msg.className = 'warn';
         }
         loadRevisions();
@@ -1291,6 +1544,7 @@
     const tbody = document.getElementById('cert-table-body');
     if (!msg || !tbody) return;
     msg.textContent = '';
+    tbody.innerHTML = '<tr><td colspan="6" class="dash-note">Loading…</td></tr>';
     const r = await fetch('/api/v1/certificates/summary', { headers: hdr() });
     if (r.status === 401) {
       setTok('');
@@ -1299,7 +1553,7 @@
     }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      msg.textContent = j.error || (typeof j === 'string' ? j : JSON.stringify(j));
+      tbody.innerHTML = '<tr><td colspan="6" class="warn">' + esc(j.error || (typeof j === 'string' ? j : JSON.stringify(j))) + '</td></tr>';
       return;
     }
     document.getElementById('cert-sum-total').textContent = String(j.total ?? '—');
@@ -1337,33 +1591,42 @@
     });
     tbody.querySelectorAll('[data-cert-issue]').forEach((btn) => {
       btn.onclick = async () => {
-        msg.textContent = '';
-        const cid = btn.getAttribute('data-cert-issue');
-        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-        if (!rr.ok) { msg.textContent = await rr.text(); return; }
-        msg.textContent = 'Issue queued (pending). Ensure acmed is running and ACME email is set.';
-        msg.className = 'ok';
-        loadCertDashboard();
+        await withBusy(btn, async () => {
+          msg.textContent = '';
+          const cid = btn.getAttribute('data-cert-issue');
+          const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
+          if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); return; }
+          toast('Issue queued (pending).', 'ok');
+          msg.textContent = 'Issue queued (pending). Ensure acmed is running and ACME email is set.';
+          msg.className = 'ok';
+          loadCertDashboard();
+        });
       };
     });
     tbody.querySelectorAll('[data-cert-renew]').forEach((btn) => {
       btn.onclick = async () => {
-        msg.textContent = '';
-        const cid = btn.getAttribute('data-cert-renew');
-        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-        if (!rr.ok) { msg.textContent = await rr.text(); return; }
-        msg.textContent = 'Renew queued (pending).';
-        msg.className = 'ok';
-        loadCertDashboard();
+        await withBusy(btn, async () => {
+          msg.textContent = '';
+          const cid = btn.getAttribute('data-cert-renew');
+          const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
+          if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); return; }
+          toast('Renew queued (pending).', 'ok');
+          msg.textContent = 'Renew queued (pending).';
+          msg.className = 'ok';
+          loadCertDashboard();
+        });
       };
     });
     tbody.querySelectorAll('[data-cert-del]').forEach((btn) => {
       btn.onclick = async () => {
         const cid = btn.getAttribute('data-cert-del');
-        if (!cid || !confirm('Delete certificate for ' + cid + '?')) return;
+        if (!cid) return;
+        const okDel = await confirmDialog('Delete certificate for ' + cid + '?', { danger: true, okLabel: 'Delete' });
+        if (!okDel) return;
         msg.textContent = '';
         const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid), { method: 'DELETE', headers: hdr() });
-        if (!rr.ok) { msg.textContent = await rr.text(); msg.className = 'warn'; return; }
+        if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); msg.className = 'warn'; return; }
+        toast('Certificate deleted.', 'ok');
         msg.textContent = 'Deleted.';
         msg.className = 'ok';
         loadCertDashboard();
@@ -1450,7 +1713,7 @@
     const off = reset ? 0 : auditOffset;
     if (reset) {
       auditOffset = 0;
-      tbody.innerHTML = '';
+      tbody.innerHTML = '<tr><td colspan="5" class="dash-note">Loading…</td></tr>';
     }
 
     errEl.textContent = '';
@@ -1464,12 +1727,22 @@
       return;
     }
     if (!r.ok) {
-      errEl.textContent = await r.text().catch(() => r.statusText);
+      if (reset) tbody.innerHTML = '';
+      errEl.textContent = await apiMessage(r);
       return;
     }
     const data = await r.json().catch(() => ({}));
     const entries = Array.isArray(data.entries) ? data.entries : [];
     auditTotal = typeof data.total === 'number' ? data.total : 0;
+
+    if (reset && entries.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="dash-note">No audit entries yet.</td></tr>';
+      auditOffset = 0;
+      if (shownEl) shownEl.textContent = 'Showing 0 of 0';
+      if (moreBtn) moreBtn.disabled = true;
+      return;
+    }
+    if (reset) tbody.innerHTML = '';
 
     for (const e of entries) {
       const tr = document.createElement('tr');
@@ -1846,6 +2119,7 @@
       cachedSettings = await r.json();
       msg.textContent = 'WAF toggle saved.';
       msg.className = 'ok';
+      markPendingApply(true);
     } else {
       msg.textContent = await r.text();
       msg.className = 'warn';
@@ -1872,6 +2146,7 @@
     if (r.ok) {
       cachedSettings = await r.json();
       loadGeoIPFromSettings();
+      markPendingApply(true);
       if (geoMsg) {
         geoMsg.textContent = 'GeoIP settings saved.';
         geoMsg.className = 'ok';
@@ -1935,6 +2210,7 @@
       msg.textContent = '';
       msg.className = 'warn';
     }
+    tableState(wrap, 'loading');
     const r = await fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() });
     const txt = await r.text();
     if (r.status === 401 || r.status === 403) {
@@ -1943,8 +2219,12 @@
       return;
     }
     if (!r.ok) {
-      if (msg) msg.textContent = txt || 'HTTP ' + r.status;
-      wrap.innerHTML = '';
+      let errMsg = txt;
+      try {
+        const ej = JSON.parse(txt);
+        if (ej && (ej.error || ej.message)) errMsg = ej.error || ej.message;
+      } catch (_) { /* plain text */ }
+      tableState(wrap, 'error', { message: errMsg || ('HTTP ' + r.status) });
       return;
     }
     let arr = [];
@@ -1953,12 +2233,11 @@
       if (Array.isArray(j)) arr = j;
       else if (j && Array.isArray(j.data)) arr = j.data;
     } catch (_) {
-      if (msg) msg.textContent = 'Invalid JSON from decisions API';
-      wrap.innerHTML = '';
+      tableState(wrap, 'error', { message: 'Invalid JSON from decisions API' });
       return;
     }
     if (!arr.length) {
-      wrap.innerHTML = '<p class="dash-note">No active decisions in sample (limit 100).</p>';
+      tableState(wrap, 'empty', { message: 'No active decisions (or LAPI not connected).' });
       return;
     }
     const rows = arr.map((d) => {
@@ -1991,6 +2270,7 @@
       msg.textContent = '';
       msg.className = 'warn';
     }
+    if (wrap) tableState(wrap, 'loading');
     const r = await fetch('/api/v1/integrations/fail2ban', { headers: hdr() });
     const txt = await r.text();
     if (r.status === 401 || r.status === 403) {
@@ -2000,13 +2280,14 @@
     }
     let j = {};
     try { j = JSON.parse(txt); } catch (_) {
+      if (wrap) tableState(wrap, 'error', { message: 'Invalid JSON from fail2ban API' });
       if (msg) msg.textContent = 'Invalid JSON';
       return;
     }
     const st = j.status || {};
     if (!r.ok) {
       if (msg) msg.textContent = j.error || txt || ('HTTP ' + r.status);
-      if (wrap) wrap.innerHTML = '';
+      if (wrap) tableState(wrap, 'error', { message: j.error || txt || ('HTTP ' + r.status) });
       return;
     }
     if (msg) {
@@ -2026,7 +2307,7 @@
     }
     if (!wrap) return;
     if (!jails.length) {
-      wrap.innerHTML = '<p class="dash-note">No jails or fail2ban not running.</p>';
+      tableState(wrap, 'empty', { message: 'No jails or fail2ban not running.' });
       return;
     }
     const rows = jails.map((jail) => {
@@ -2054,8 +2335,9 @@
         const jail = btn.getAttribute('data-jail');
         const ip = btn.getAttribute('data-ip');
         if (!jail || !ip) return;
-        if (!confirm('Unban ' + ip + ' from jail ' + jail + '?')) return;
-        await postFail2banUnban(jail, ip);
+        const okUnban = await confirmDialog('Unban ' + ip + ' from jail ' + jail + '?', { okLabel: 'Unban' });
+        if (!okUnban) return;
+        await withBusy(btn, () => postFail2banUnban(jail, ip));
       });
     }
   })();
@@ -2092,8 +2374,9 @@
       if (msg) msg.textContent = 'Select jail and enter IP.';
       return;
     }
-    if (!confirm('Unban ' + ip + ' from jail ' + jail + '?')) return;
-    await postFail2banUnban(jail, ip);
+    const okUnban = await confirmDialog('Unban ' + ip + ' from jail ' + jail + '?', { okLabel: 'Unban' });
+    if (!okUnban) return;
+    await withBusy(document.getElementById('btn-f2b-unban'), () => postFail2banUnban(jail, ip));
     if (ipEl) ipEl.value = '';
   };
 
@@ -2116,21 +2399,26 @@
       if (!id) return;
       const isWL = btn.getAttribute('data-wl') === '1';
       const verb = isWL ? 'whitelist entry' : 'ban';
-      if (!confirm('Remove ' + verb + ' for ' + ip + '? Decision ID: ' + id)) return;
+      const okRm = await confirmDialog('Remove ' + verb + ' for ' + ip + '? Decision ID: ' + id, { danger: true, okLabel: 'Remove' });
+      if (!okRm) return;
       const msg = document.getElementById('cs-decisions-msg');
       if (msg) {
         msg.textContent = '';
         msg.className = 'warn';
       }
-      const r = await fetch('/api/v1/integrations/crowdsec/decisions/' + encodeURIComponent(id), {
-        method: 'DELETE',
-        headers: hdr()
+      await withBusy(btn, async () => {
+        const r = await fetch('/api/v1/integrations/crowdsec/decisions/' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: hdr()
+        });
+        if (!r.ok) {
+          toast(await apiMessage(r), 'err');
+          if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+          return;
+        }
+        toast('Decision removed.', 'ok');
+        await loadCrowdsecDecisionsTable();
       });
-      if (!r.ok) {
-        if (msg) msg.textContent = await r.text().catch(() => r.statusText);
-        return;
-      }
-      await loadCrowdsecDecisionsTable();
     });
   })();
 
@@ -2168,38 +2456,43 @@
   };
 
   document.getElementById('btn-cs-ban').onclick = async () => {
-    const msg = document.getElementById('cs-ban-msg');
-    const ipEl = document.getElementById('cs-ban-ip');
-    const durEl = document.getElementById('cs-ban-duration');
-    const reasonEl = document.getElementById('cs-ban-reason');
-    if (msg) {
-      msg.textContent = '';
-      msg.className = 'warn';
-    }
-    const ip = ipEl && ipEl.value ? ipEl.value.trim() : '';
-    if (!ip) {
-      if (msg) msg.textContent = 'Enter an IP address.';
-      return;
-    }
-    const duration = durEl ? durEl.value : '24h';
-    const reason = reasonEl && reasonEl.value.trim() ? reasonEl.value.trim() : 'manual ban from UI';
-    const body = { ip: ip, type: 'ban', duration: duration, reason: reason };
-    const r = await fetch('/api/v1/integrations/crowdsec/decisions', {
-      method: 'POST',
-      headers: hdr(),
-      body: JSON.stringify(body)
+    const banBtn = document.getElementById('btn-cs-ban');
+    await withBusy(banBtn, async () => {
+      const msg = document.getElementById('cs-ban-msg');
+      const ipEl = document.getElementById('cs-ban-ip');
+      const durEl = document.getElementById('cs-ban-duration');
+      const reasonEl = document.getElementById('cs-ban-reason');
+      if (msg) {
+        msg.textContent = '';
+        msg.className = 'warn';
+      }
+      const ip = ipEl && ipEl.value ? ipEl.value.trim() : '';
+      if (!ip) {
+        if (msg) msg.textContent = 'Enter an IP address.';
+        return;
+      }
+      const duration = durEl ? durEl.value : '24h';
+      const reason = reasonEl && reasonEl.value.trim() ? reasonEl.value.trim() : 'manual ban from UI';
+      const body = { ip: ip, type: 'ban', duration: duration, reason: reason };
+      const r = await fetch('/api/v1/integrations/crowdsec/decisions', {
+        method: 'POST',
+        headers: hdr(),
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) {
+        toast(await apiMessage(r), 'err');
+        if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+        return;
+      }
+      toast('Ban submitted.', 'ok');
+      if (msg) {
+        msg.textContent = 'Ban submitted.';
+        msg.className = 'ok';
+      }
+      if (ipEl) ipEl.value = '';
+      if (reasonEl) reasonEl.value = '';
+      await loadCrowdsecDecisionsTable();
     });
-    if (!r.ok) {
-      if (msg) msg.textContent = await r.text().catch(() => r.statusText);
-      return;
-    }
-    if (msg) {
-      msg.textContent = 'Ban submitted.';
-      msg.className = 'ok';
-    }
-    if (ipEl) ipEl.value = '';
-    if (reasonEl) reasonEl.value = '';
-    await loadCrowdsecDecisionsTable();
   };
 
   document.getElementById('btn-tls-save').onclick = async () => {
@@ -2217,18 +2510,32 @@
   };
 
   document.getElementById('btn-ipbl-load').onclick = async () => {
+    const box = document.getElementById('ipbl-table');
     document.getElementById('ipbl-msg').textContent = '';
+    tableState(box, 'loading');
     const r = await fetch('/api/v1/ipbl/local', { headers: hdr() });
-    const j = await r.json();
-    if (!r.ok) { document.getElementById('ipbl-msg').textContent = JSON.stringify(j); return; }
+    const txt = await r.text();
+    let j = [];
+    try { j = JSON.parse(txt); } catch (_) { j = {}; }
+    if (!r.ok) {
+      tableState(box, 'error', { message: (j && j.error) || txt || r.statusText });
+      document.getElementById('ipbl-msg').textContent = (j && j.error) || txt;
+      return;
+    }
+    const list = Array.isArray(j) ? j : [];
+    if (!list.length) {
+      tableState(box, 'empty', { message: 'No local blacklist entries. Add a CIDR below.' });
+      return;
+    }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
-    document.getElementById('ipbl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Note</th><th>Enabled</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4">none</td></tr>'}</tbody></table>`;
-    document.getElementById('ipbl-table').querySelectorAll('[data-ipbl-del]').forEach((btn) => {
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    box.innerHTML = `<table><thead><tr><th>CIDR</th><th>Note</th><th>Enabled</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.querySelectorAll('[data-ipbl-del]').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ipbl-del');
         const d = await fetch('/api/v1/ipbl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { document.getElementById('ipbl-msg').textContent = await d.text(); return; }
+        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ipbl-msg').textContent = await d.text(); return; }
+        markPendingApply(true);
         document.getElementById('btn-ipbl-load').click();
       };
     });
@@ -2236,7 +2543,12 @@
   document.getElementById('btn-ipbl-sync').onclick = async () => {
     document.getElementById('ipbl-msg').textContent = '';
     const r = await fetch('/api/v1/ipbl/sync', { method: 'POST', headers: hdr(), body: '{}' });
-    document.getElementById('ipbl-msg').textContent = r.ok ? 'Sync OK (map updated).' : await r.text();
+    if (r.ok) {
+      markPendingApply(true);
+      document.getElementById('ipbl-msg').textContent = 'Sync OK (map updated).';
+    } else {
+      document.getElementById('ipbl-msg').textContent = await r.text();
+    }
   };
   document.getElementById('btn-ipbl-add').onclick = async () => {
     document.getElementById('ipbl-msg').textContent = '';
@@ -2246,25 +2558,39 @@
       enabled: true
     };
     const r = await fetch('/api/v1/ipbl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { document.getElementById('ipbl-msg').textContent = await r.text(); return; }
+    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ipbl-msg').textContent = await r.text(); return; }
+    markPendingApply(true);
     document.getElementById('ipbl-cidr').value = '';
     document.getElementById('ipbl-note').value = '';
     document.getElementById('btn-ipbl-load').click();
   };
 
   document.getElementById('btn-ipwl-load').onclick = async () => {
+    const box = document.getElementById('ipwl-table');
     document.getElementById('ipwl-msg').textContent = '';
+    tableState(box, 'loading');
     const r = await fetch('/api/v1/ipwl/local', { headers: hdr() });
-    const j = await r.json();
-    if (!r.ok) { document.getElementById('ipwl-msg').textContent = JSON.stringify(j); return; }
+    const txt = await r.text();
+    let j = [];
+    try { j = JSON.parse(txt); } catch (_) { j = {}; }
+    if (!r.ok) {
+      tableState(box, 'error', { message: (j && j.error) || txt || r.statusText });
+      return;
+    }
+    const list = Array.isArray(j) ? j : [];
+    if (!list.length) {
+      tableState(box, 'empty', { message: 'No allowlist entries. Add a trusted CIDR below.' });
+      return;
+    }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
-    document.getElementById('ipwl-table').innerHTML = `<table><thead><tr><th>CIDR</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
-    document.getElementById('ipwl-table').querySelectorAll('[data-ipwl-del]').forEach((btn) => {
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    box.innerHTML = `<table><thead><tr><th>CIDR</th><th>Comment</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.querySelectorAll('[data-ipwl-del]').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ipwl-del');
         const d = await fetch('/api/v1/ipwl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { document.getElementById('ipwl-msg').textContent = await d.text(); return; }
+        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ipwl-msg').textContent = await d.text(); return; }
+        markPendingApply(true);
         document.getElementById('btn-ipwl-load').click();
       };
     });
@@ -2276,7 +2602,8 @@
       comment: document.getElementById('ipwl-comment').value.trim()
     };
     const r = await fetch('/api/v1/ipwl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { document.getElementById('ipwl-msg').textContent = await r.text(); return; }
+    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ipwl-msg').textContent = await r.text(); return; }
+    markPendingApply(true);
     document.getElementById('ipwl-cidr').value = '';
     document.getElementById('ipwl-comment').value = '';
     document.getElementById('btn-ipwl-load').click();
@@ -2289,6 +2616,7 @@
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
       cachedSettings = await r.json();
+      markPendingApply(true);
       document.getElementById('ipwl-msg').textContent = 'Saved. Apply HAProxy to use new allowlist toggle.';
     } else {
       document.getElementById('ipwl-msg').textContent = await r.text();
@@ -2307,6 +2635,7 @@
     if (r.ok) {
       cachedSettings = await r.json();
       loadBotProtectionFromSettings();
+      markPendingApply(true);
       document.getElementById('ua-msg').textContent = 'Saved. Apply HAProxy to activate UA rules.';
     } else {
       document.getElementById('ua-msg').textContent = await r.text();
@@ -2317,17 +2646,29 @@
     const box = document.getElementById('ua-table');
     if (!box) return;
     document.getElementById('ua-msg').textContent = '';
+    tableState(box, 'loading');
     const r = await fetch('/api/v1/security/blocked-ua', { headers: hdr() });
-    const j = await r.json();
-    if (!r.ok) { document.getElementById('ua-msg').textContent = JSON.stringify(j); return; }
+    const txt = await r.text();
+    let j = [];
+    try { j = JSON.parse(txt); } catch (_) { j = {}; }
+    if (!r.ok) {
+      tableState(box, 'error', { message: (j && j.error) || txt || r.statusText });
+      return;
+    }
+    const list = Array.isArray(j) ? j : [];
+    if (!list.length) {
+      tableState(box, 'empty', { message: 'No blocked User-Agent patterns. Add one below, then Apply HAProxy.' });
+      return;
+    }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = (j || []).map((e) => `<tr><td><code>${escLocal(e.pattern)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
-    box.innerHTML = `<table><thead><tr><th>Pattern</th><th>Comment</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">none</td></tr>'}</tbody></table>`;
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.pattern)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    box.innerHTML = `<table><thead><tr><th>Pattern</th><th>Comment</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
     box.querySelectorAll('[data-ua-del]').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ua-del');
         const d = await fetch('/api/v1/security/blocked-ua/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { document.getElementById('ua-msg').textContent = await d.text(); return; }
+        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ua-msg').textContent = await d.text(); return; }
+        markPendingApply(true);
         loadBlockedUATable();
       };
     });
@@ -2340,7 +2681,8 @@
       comment: document.getElementById('ua-comment').value.trim()
     };
     const r = await fetch('/api/v1/security/blocked-ua', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { document.getElementById('ua-msg').textContent = await r.text(); return; }
+    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ua-msg').textContent = await r.text(); return; }
+    markPendingApply(true);
     document.getElementById('ua-pattern').value = '';
     document.getElementById('ua-comment').value = '';
     loadBlockedUATable();
@@ -2350,41 +2692,48 @@
   if (listenModeEl) listenModeEl.addEventListener('change', syncListenModeUI);
 
   document.getElementById('save').onclick = async () => {
-    const editId = document.getElementById('app-edit-id').value.trim();
-    const listenMode = (document.getElementById('listen-mode') || {}).value || 'https_only';
-    const certTrim = document.getElementById('app-cert').value.trim();
-    if (listenMode !== 'http_only' && !certTrim) {
-      alert('Certificate is required for listen mode: ' + listenMode);
-      return;
-    }
-    const body = {
-      name: document.getElementById('name').value,
-      public_host: document.getElementById('host').value,
-      backend_host: document.getElementById('backend').value,
-      backend_port: parseInt(document.getElementById('port').value, 10),
-      backend_https: document.getElementById('behttps').checked,
-      websocket: document.getElementById('ws').checked,
-      profile: document.getElementById('profile').value,
-      listen_mode: listenMode,
-      certificate_id: certTrim,
-      enabled: true,
-      restricted_paths: collectRestrictedPaths()
-    };
-    if (editId) {
-      body.id = editId;
-      const prev = appsListCache.find((x) => x.id === editId);
-      if (prev && prev.security) body.security = prev.security;
-    }
-    const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    alert(await r.text());
-    if (r.ok) {
-      document.getElementById('app-edit-id').value = '';
-      document.getElementById('apps-edit-hint').classList.add('hidden');
-    }
-    loadApps();
+    const saveBtn = document.getElementById('save');
+    await withBusy(saveBtn, async () => {
+      const editId = document.getElementById('app-edit-id').value.trim();
+      const listenMode = (document.getElementById('listen-mode') || {}).value || 'https_only';
+      const certTrim = document.getElementById('app-cert').value.trim();
+      if (listenMode !== 'http_only' && !certTrim) {
+        toast('Certificate is required for listen mode: ' + listenMode, 'err');
+        return;
+      }
+      const body = {
+        name: document.getElementById('name').value,
+        public_host: document.getElementById('host').value,
+        backend_host: document.getElementById('backend').value,
+        backend_port: parseInt(document.getElementById('port').value, 10),
+        backend_https: document.getElementById('behttps').checked,
+        websocket: document.getElementById('ws').checked,
+        profile: document.getElementById('profile').value,
+        listen_mode: listenMode,
+        certificate_id: certTrim,
+        enabled: true,
+        restricted_paths: collectRestrictedPaths()
+      };
+      if (editId) {
+        body.id = editId;
+        const prev = appsListCache.find((x) => x.id === editId);
+        if (prev && prev.security) body.security = prev.security;
+      }
+      const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+      if (r.ok) {
+        toast('Application saved. Apply on Config tab to activate.', 'ok');
+        markPendingApply(true);
+        clearAppFormFields();
+        setAppFormCollapsed(true);
+        loadApps();
+      } else {
+        toast(await apiMessage(r), 'err');
+      }
+    });
   };
 
   refreshSession();
 </script>
+<div id="toast-host" class="toast-host" aria-live="polite"></div>
 </body>
 </html>
