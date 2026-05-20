@@ -185,9 +185,11 @@ easy_waf_crowdsec_decisions_check() {
     if [[ "$code" == "200" ]]; then
       return 0
     fi
-    sleep 2
+    if [[ "$attempt" -lt 5 ]]; then
+      sleep 2
+    fi
   done
-  log "WARNING: LAPI decisions HTTP ${code} (expected 200); journalctl -u crowdsec -n 40"
+  log "WARNING: LAPI decisions HTTP ${code} after ${attempt} attempts (expected 200); journalctl -u crowdsec -n 40"
   return 1
 }
 
