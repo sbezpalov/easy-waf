@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -61,12 +62,12 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		if err != nil {
 			return SyncResult{}, err
 		}
-		client := &http.Client{Timeout: 45 * time.Second}
+		client := newIPBLHTTPClient(g.IPBLAllowPrivateFetch)
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
-			lines, ferr := fetchPlainList(ctx, client, src.URL)
+			lines, ferr := fetchPlainList(ctx, client, src.URL, g.IPBLAllowPrivateFetch)
 			if ferr != nil {
 				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), ferr.Error())
 				continue
@@ -142,12 +143,12 @@ func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.Global
 		if err != nil {
 			return nil, err
 		}
-		client := &http.Client{Timeout: 45 * time.Second}
+		client := newIPBLHTTPClient(g.IPBLAllowPrivateFetch)
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
-			lines, ferr := fetchPlainList(ctx, client, src.URL)
+			lines, ferr := fetchPlainList(ctx, client, src.URL, g.IPBLAllowPrivateFetch)
 			if ferr != nil {
 				continue
 			}
@@ -195,7 +196,14 @@ func validateCIDRLine(s string) error {
 	return nil
 }
 
-func fetchPlainList(ctx context.Context, client *http.Client, u string) ([]string, error) {
+func fetchPlainList(ctx context.Context, client *http.Client, u string, allowPrivate bool) ([]string, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateIPBLFetchURL(ctx, parsed, allowPrivate); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err

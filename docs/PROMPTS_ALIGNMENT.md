@@ -16,6 +16,11 @@
 | **Login rate limit** | **Done** | Per-IP sliding window **10 attempts / 5 min**, lockout **15 min**; `internal/api/ratelimit.go`, `handleLogin` in `internal/api/auth_handlers.go`, `LoginRL` wired in `internal/bootstrap/run.go` |
 | **Hostname validation** | **Done** | `validateAppHostnames` on `POST /api/v1/applications` — `internal/api/validate_application.go` |
 | **Mgmt ACL XFF spoofing** | **Done** | `TrustedRealIP` — forwarding headers trusted only from `EASY_WAF_TRUSTED_PROXY_CIDRS` (default loopback); `internal/api/realip.go` |
+| **Host diag injection** | **Done** | `internal/host/diag` — host validation on Ping/Trace; `ping`/`traceroute`/`tracepath` use `--` before target; tests reject `-T`, `--port=22`, `; rm` |
+| **IPBL SSRF** | **Done** | `internal/ipbl/fetch_ssrf.go` — resolve URL host, block private/link-local/ULA IPs; `CheckRedirect`; optional `ipbl_allow_private_fetch` (default false) |
+| **Host systemd whitelist** | **Done** | `AllowedUnit` / `AllowedAction` in `internal/host/systemd/allow.go` (parity with `privileged.sh`); `host_handlers` 400 before privileged call |
+| **SSH authorized_keys** | **Done** | `internal/host/users/sshkeys.go` — OpenSSH line regex; reject embedded newlines; no file write on invalid key |
+| **Journal allowlist** | **Done** | `internal/host/journal` — only `-n`, `-u`, `--since`, `--until`, `-p`, `--no-pager`; unit on systemd whitelist |
 
 ## §2 Goals — Core
 

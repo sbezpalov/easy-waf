@@ -82,6 +82,9 @@ func DeleteUser(ctx context.Context, username string) error {
 
 // SetSSHKeys replaces authorized_keys for the user.
 func SetSSHKeys(ctx context.Context, username string, keys []string) error {
+	if err := ValidateSSHPublicKeys(keys); err != nil {
+		return err
+	}
 	dir := "/var/lib/easy-waf/staging"
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err

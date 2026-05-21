@@ -121,6 +121,10 @@ func (s *Server) hostServiceAction(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(unit, ".service") {
 		unit += ".service"
 	}
+	if !hostsystemd.AllowedUnit(unit) || !hostsystemd.AllowedAction(action) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unit or action not allowed"})
+		return
+	}
 	if err := hostsystemd.Action(r.Context(), action, unit); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

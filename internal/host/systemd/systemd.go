@@ -8,28 +8,6 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
-// AllowedUnits may be controlled via the host API.
-var AllowedUnits = []string{
-	"easy-waf-api.service",
-	"easy-waf-acmed.service",
-	"haproxy.service",
-	"crowdsec.service",
-	"crowdsec-spoa-bouncer.service",
-	"crowdsec-haproxy-spoa-bouncer.service",
-	"fail2ban.service",
-	"nftables.service",
-	"postgresql.service",
-}
-
-func unitAllowed(unit string) bool {
-	for _, u := range AllowedUnits {
-		if u == unit {
-			return true
-		}
-	}
-	return false
-}
-
 // UnitState is one row for GET /host/services.
 type UnitState struct {
 	Unit        string `json:"unit"`
@@ -57,12 +35,10 @@ func List(ctx context.Context) ([]UnitState, error) {
 
 // Action runs start|stop|restart|reload|enable|disable on an allowed unit.
 func Action(ctx context.Context, action, unit string) error {
-	if !unitAllowed(unit) {
+	if !AllowedUnit(unit) {
 		return osErr("unit not allowed")
 	}
-	switch action {
-	case "start", "stop", "restart", "reload", "enable", "disable", "try-restart":
-	default:
+	if !AllowedAction(action) {
 		return osErr("action not allowed")
 	}
 	_, err := runner.Privileged(ctx, "systemctl", action, unit)

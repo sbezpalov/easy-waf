@@ -76,6 +76,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.IPBlacklistMapPath)
 	case "ipbl_external_enabled":
 		return json.Unmarshal(raw, &out.IPBLExternalEnabled)
+	case "ipbl_allow_private_fetch":
+		return json.Unmarshal(raw, &out.IPBLAllowPrivateFetch)
 	case "ip_allowlist_map_path":
 		return json.Unmarshal(raw, &out.IPAllowlistMapPath)
 	case "ipwl_enabled":

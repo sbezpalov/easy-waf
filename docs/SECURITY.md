@@ -43,9 +43,17 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 
 - Administrative actions are logged in PostgreSQL `audit_log` and should be forwarded to central SIEM in SME setups.
 
+## Host management (`/api/v1/host/*`)
+
+- **systemd:** `POST /host/services/{unit}/{action}` accepts only units and actions whitelisted in Go (`internal/host/systemd/allow.go`) and in `scripts/host/privileged.sh` — unknown values return **400** before the privileged helper runs.
+- **journal:** `GET /host/journal` builds `journalctl` arguments from an allowlist in Go (`internal/host/journal`); unit names use the same whitelist as systemd. Bash in `privileged.sh` still rejects shell metacharacters in journal args.
+- **Diagnostics:** `POST /host/diagnostics/ping` and `…/trace` validate hostnames/IPs like Ping; commands use a **`--`** separator before the target host so values such as `-T` or `--port=22` cannot be interpreted as flags.
+- **SSH keys:** `PUT /host/users/{name}/ssh-keys` validates each line (`ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-*` + base64); invalid or multiline payloads are rejected before writing `authorized_keys`.
+- **Power / apt / nft / netplan:** only fixed subcommands via `host-privileged.sh` (no arbitrary shell).
+
 ## IPBL and GeoIP
 
-- External blocklist URLs: treat as untrusted input; the product fetches over HTTPS and validates line format. Prefer allowlisting your office IPs for break-glass access.
+- External blocklist URLs: treat as untrusted input; fetches use HTTPS, line validation, and an **SSRF guard** (`internal/ipbl/fetch_ssrf.go`): the URL host is resolved and requests are blocked when any address is loopback, RFC1918, link-local, or ULA (unless **`ipbl_allow_private_fetch`** is true in global settings for lab use). Redirects are checked the same way. Prefer allowlisting your office IPs for break-glass access.
 
 ## Supply chain
 
