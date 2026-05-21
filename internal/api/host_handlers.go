@@ -45,6 +45,8 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Post("/updates/update", s.hostAptUpdate)
 		r.Post("/updates/upgrade", s.hostAptUpgrade)
 		r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
+		r.Get("/updates/upgrade/log", s.hostAptUpgradeLog)
+		r.Get("/updates/upgrade/status", s.hostAptUpgradeStatus)
 
 		r.Post("/power/reboot", s.hostReboot)
 		r.Post("/power/shutdown", s.hostPoweroff)
@@ -304,23 +306,24 @@ func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+var privilegedStreamFn = runner.PrivilegedStream
+
 func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("Content-Encoding", "identity")
 
 	s.hostAppendAudit(r.Context(), "host_apt_upgrade", map[string]any{"stream": true}, false)
 
 	var exitCode int
 	flush := func() {
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+		_ = rc.Flush()
 	}
 
-	err := runner.PrivilegedStream(r.Context(), func(line []byte) error {
+	err := privilegedStreamFn(r.Context(), func(line []byte) error {
 		if _, werr := w.Write(append(line, '\n')); werr != nil {
 			return werr
 		}
@@ -346,6 +349,37 @@ func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 	s.hostAppendAudit(r.Context(), "host_apt_upgrade_done", map[string]any{
 		"stream": true, "exit_code": exitCode,
 	}, exitCode != 0)
+}
+
+func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
+	out, err := runner.Privileged(r.Context(), "apt-upgrade-status")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	var st map[string]any
+	if len(out) > 0 {
+		_ = json.Unmarshal(out, &st)
+	}
+	if st == nil {
+		st = map[string]any{"active": false}
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostAptUpgradeLog(w http.ResponseWriter, r *http.Request) {
+	out, err := runner.Privileged(r.Context(), "apt-upgrade-log")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if len(out) == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(out)
 }
 
 func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {

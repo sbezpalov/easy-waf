@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,11 +46,11 @@ func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	}()
 
 	events := readStreamEvents(t, pr)
-	if len(events) < 3 {
+	if len(events) < 4 {
 		t.Fatalf("events: %+v", events)
 	}
-	if events[0].Type != "line" || events[0].Data != "Setting up pkg-a" {
-		t.Fatalf("first: %+v", events[0])
+	if events[0].Type != "line" || !strings.Contains(events[0].Data, "starting apt-get upgrade") {
+		t.Fatalf("start: %+v", events[0])
 	}
 	last := events[len(events)-1]
 	if last.Type != "exit" || last.Code != 0 {
@@ -56,32 +58,30 @@ func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	}
 }
 
-func TestDispatchAptUpgradeStream_singleFlight(t *testing.T) {
+func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 	resetAptUpgradeState()
+	aptUpgradeLogPathOverride = filepath.Join(t.TempDir(), "apt-upgrade.log")
+	defer func() { aptUpgradeLogPathOverride = "" }()
+
 	started := make(chan struct{})
 	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
 		close(started)
-		<-ctx.Done()
+		_ = emit("primary-line")
+		time.Sleep(200 * time.Millisecond)
 		return 0, nil
 	}
 	defer resetAptUpgradeState()
 
 	pr1, pw1 := io.Pipe()
-	aptCtx, aptCancel := context.WithCancel(context.Background())
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
-		close(started)
-		<-aptCtx.Done()
-		return 0, nil
-	}
 	go func() {
 		dispatchAptUpgradeStream(pw1)
 		_ = pw1.Close()
 	}()
-
+	go func() { _, _ = io.Copy(io.Discard, pr1) }()
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("first upgrade did not start")
+		t.Fatal("primary did not start")
 	}
 
 	pr2, pw2 := io.Pipe()
@@ -90,16 +90,48 @@ func TestDispatchAptUpgradeStream_singleFlight(t *testing.T) {
 		_ = pw2.Close()
 	}()
 	events := readStreamEvents(t, pr2)
-	if len(events) != 1 || events[0].Type != "exit" || events[0].Code != -1 {
-		t.Fatalf("second: %+v", events)
+	if len(events) < 2 {
+		t.Fatalf("attach events: %+v", events)
 	}
-	if events[0].Error == "" {
-		t.Fatal("expected already in progress error")
+	if !strings.Contains(events[0].Data, "attaching to upgrade already in progress") {
+		t.Fatalf("attach banner: %+v", events[0])
+	}
+	last := events[len(events)-1]
+	if last.Type != "exit" || last.Code != 0 {
+		t.Fatalf("attach exit: %+v", last)
+	}
+	_ = pr1.Close()
+}
+
+func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
+	resetAptUpgradeState()
+	aptUpgradeHeartbeatInterval = 50 * time.Millisecond
+	defer func() {
+		aptUpgradeHeartbeatInterval = 15 * time.Second
+		resetAptUpgradeState()
+	}()
+
+	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+		time.Sleep(200 * time.Millisecond)
+		_ = emit("done")
+		return 0, nil
 	}
 
-	aptCancel()
-	aptUpgradeEnd()
-	_ = pr1.Close()
+	pr, pw := io.Pipe()
+	go func() {
+		dispatchAptUpgradeStream(pw)
+		_ = pw.Close()
+	}()
+	events := readStreamEvents(t, pr)
+	var heartbeat bool
+	for _, ev := range events {
+		if ev.Type == "line" && strings.Contains(ev.Data, "still working") {
+			heartbeat = true
+		}
+	}
+	if !heartbeat {
+		t.Fatalf("expected heartbeat line: %+v", events)
+	}
 }
 
 func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T) {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -39,14 +40,82 @@ func TestHostAptUpgradeStream_setsNDJSONContentType(t *testing.T) {
 	if w.Header().Get("X-Accel-Buffering") != "no" {
 		t.Fatal("expected X-Accel-Buffering: no")
 	}
-	body := strings.TrimSpace(w.Body.String())
-	if body != "" {
-		sc := bufio.NewScanner(strings.NewReader(body))
-		for sc.Scan() {
-			var m map[string]any
-			if json.Unmarshal([]byte(sc.Text()), &m) != nil {
-				t.Fatalf("not json: %q", sc.Text())
+	if w.Header().Get("Content-Encoding") != "identity" {
+		t.Fatal("expected Content-Encoding: identity")
+	}
+}
+
+type streamSpy struct {
+	header  http.Header
+	chunks  [][]byte
+	flushes int
+}
+
+func (s *streamSpy) Header() http.Header {
+	if s.header == nil {
+		s.header = make(http.Header)
+	}
+	return s.header
+}
+
+func (s *streamSpy) Write(p []byte) (int, error) {
+	s.chunks = append(s.chunks, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+func (s *streamSpy) WriteHeader(statusCode int) {
+	s.Header().Set("X-Status", http.StatusText(statusCode))
+}
+
+func (s *streamSpy) Flush() {
+	s.flushes++
+}
+
+func TestHostAptUpgradeStream_flushesIncrementally(t *testing.T) {
+	orig := privilegedStreamFn
+	defer func() { privilegedStreamFn = orig }()
+
+	privilegedStreamFn = func(_ context.Context, onLine func([]byte) error, _ ...string) error {
+		for _, l := range []string{
+			`{"type":"line","data":"line-a"}`,
+			`{"type":"line","data":"line-b"}`,
+			`{"type":"exit","code":0}`,
+		} {
+			if err := onLine([]byte(l)); err != nil {
+				return err
 			}
 		}
+		return nil
+	}
+
+	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	s := &Server{Eng: eng, JWTSecret: []byte("test")}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/upgrade/stream", strings.NewReader("{}"))
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.RemoteAddr = "127.0.0.1:12345"
+
+	w := &streamSpy{}
+	s.hostAptUpgradeStream(w, req)
+
+	if w.flushes < 2 {
+		t.Fatalf("flushes=%d chunks=%d", w.flushes, len(w.chunks))
+	}
+	body := strings.Join(func() []string {
+		out := make([]string, len(w.chunks))
+		for i, c := range w.chunks {
+			out[i] = string(c)
+		}
+		return out
+	}(), "")
+	sc := bufio.NewScanner(strings.NewReader(body))
+	var n int
+	for sc.Scan() {
+		var m map[string]any
+		if json.Unmarshal([]byte(sc.Text()), &m) == nil {
+			n++
+		}
+	}
+	if n < 3 {
+		t.Fatalf("expected 3 ndjson records, got %d body=%q", n, body)
 	}
 }
