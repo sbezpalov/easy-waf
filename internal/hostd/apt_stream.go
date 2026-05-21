@@ -24,8 +24,8 @@ type streamEvent struct {
 }
 
 var (
-	aptUpgradeMu      sync.Mutex
-	aptUpgradeActive  bool
+	aptUpgradeMu         sync.Mutex
+	aptUpgradeActive     bool
 	aptUpgradeStreamHook func(ctx context.Context, emit func(string) error) (code int, err error)
 )
 
