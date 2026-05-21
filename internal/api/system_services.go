@@ -18,7 +18,7 @@ var coreSystemdUnits = []struct {
 	{"easy_waf_acmed", "easy-waf-acmed.service", "ACME worker"},
 	{"haproxy", "haproxy.service", "Edge TLS / routing"},
 	{"crowdsec", "crowdsec.service", "CrowdSec engine + LAPI"},
-	{"crowdsec_spoa", "", "HAProxy SPOA bouncer"}, // unit resolved at runtime (see crowdsecSpoaUnit)
+	{"crowdsec_spoa", "crowdsec-spoa-bouncer.service", "HAProxy SPOA bouncer"},
 	{"nftables", "nftables.service", "Host firewall (nftables)"},
 	{"fail2ban", "fail2ban.service", "Fail2ban"},
 	{"postgresql", "postgresql.service", "PostgreSQL (local default unit name)"},
@@ -51,33 +51,6 @@ func systemdUnitActiveState(ctx context.Context, unit string) string {
 	return "unknown"
 }
 
-// systemdUnitLoadState returns LoadState from systemctl (loaded, not-found, …).
-func systemdUnitLoadState(ctx context.Context, unit string) string {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for _, bin := range systemctlBins {
-		if out, err := exec.CommandContext(ctx, bin, "show", "-p", "LoadState", "--value", unit).Output(); err == nil {
-			if s := strings.TrimSpace(string(out)); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-// crowdsecSpoaUnit: Debian crowdsec-haproxy-spoa-bouncer package uses crowdsec-spoa-bouncer.service.
-func crowdsecSpoaUnit(ctx context.Context) string {
-	for _, u := range []string{
-		"crowdsec-spoa-bouncer.service",
-		"crowdsec-haproxy-spoa-bouncer.service",
-	} {
-		if systemdUnitLoadState(ctx, u) == "loaded" {
-			return u
-		}
-	}
-	return "crowdsec-spoa-bouncer.service"
-}
-
 func (s *Server) listSystemServices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	type row struct {
@@ -88,15 +61,11 @@ func (s *Server) listSystemServices(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]row, 0, len(coreSystemdUnits))
 	for _, u := range coreSystemdUnits {
-		unit := u.Unit
-		if u.ID == "crowdsec_spoa" {
-			unit = crowdsecSpoaUnit(ctx)
-		}
 		out = append(out, row{
 			ID:          u.ID,
-			Unit:        unit,
+			Unit:        u.Unit,
 			Label:       u.Label,
-			ActiveState: systemdUnitActiveState(ctx, unit),
+			ActiveState: systemdUnitActiveState(ctx, u.Unit),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"services": out})

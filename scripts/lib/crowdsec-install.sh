@@ -144,19 +144,8 @@ crowdsec_wait_lapi() {
   return 1
 }
 
-# Debian package crowdsec-haproxy-spoa-bouncer (0.3.x on Ubuntu 24.04) installs
-# crowdsec-spoa-bouncer.service; some RPM/docs use crowdsec-haproxy-spoa-bouncer.service.
+# apt package crowdsec-haproxy-spoa-bouncer installs crowdsec-spoa-bouncer.service (Ubuntu 24.04).
 crowdsec_spoa_bouncer_unit() {
-  if [[ -f /usr/lib/systemd/system/crowdsec-spoa-bouncer.service ]] ||
-    [[ -f /etc/systemd/system/crowdsec-spoa-bouncer.service ]]; then
-    printf '%s\n' crowdsec-spoa-bouncer.service
-    return 0
-  fi
-  if [[ -f /usr/lib/systemd/system/crowdsec-haproxy-spoa-bouncer.service ]] ||
-    [[ -f /etc/systemd/system/crowdsec-haproxy-spoa-bouncer.service ]]; then
-    printf '%s\n' crowdsec-haproxy-spoa-bouncer.service
-    return 0
-  fi
   printf '%s\n' crowdsec-spoa-bouncer.service
 }
 

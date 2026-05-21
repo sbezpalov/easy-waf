@@ -6,7 +6,7 @@
 
 Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer через **apt**; см. [CROWDSEC.md](CROWDSEC.md).
 
-**Имя systemd-юнита SPOA (важно):** пакет **`crowdsec-haproxy-spoa-bouncer`**, а сервис на Ubuntu 24.04 — **`crowdsec-spoa-bouncer.service`** (не `crowdsec-haproxy-spoa-bouncer.service`). После `apt install`:
+**SPOA bouncer:** apt-пакет **`crowdsec-haproxy-spoa-bouncer`**, systemd-юнит **`crowdsec-spoa-bouncer.service`**. После `apt install`:
 
 ```bash
 systemctl enable --now crowdsec-spoa-bouncer.service

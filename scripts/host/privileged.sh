@@ -13,7 +13,7 @@ _valid_token() { [[ "$1" =~ ^[a-f0-9]{8,64}$ ]]; }
 allowed_systemd_unit() {
   case "$1" in
     easy-waf-api.service|easy-waf-acmed.service|haproxy.service|crowdsec.service| \
-    crowdsec-spoa-bouncer.service|crowdsec-haproxy-spoa-bouncer.service|fail2ban.service|nftables.service|postgresql.service)
+    crowdsec-spoa-bouncer.service|fail2ban.service|nftables.service|postgresql.service)
       return 0
       ;;
   esac

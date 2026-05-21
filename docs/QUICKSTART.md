@@ -16,7 +16,7 @@ This **by default** (full appliance — no extra flags):
 
 1. Installs **HAProxy, nftables**, **PostgreSQL**, **fail2ban** (starts if installed), and **CrowdSec + HAProxy SPOA bouncer** (LAPI bootstrap, bouncer keys in `easy-waf.env`).
 2. Creates `/etc/easy-waf/easy-waf.env` with **`0.0.0.0:8000` / `0.0.0.0:8443`**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0`.
-3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-haproxy-spoa-bouncer** when packages install successfully.
+3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-spoa-bouncer** when packages install successfully.
 
 **External PostgreSQL only** (no local `postgresql` package):
 
