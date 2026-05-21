@@ -9,6 +9,9 @@ import (
 )
 
 func allowPeer(conn *net.UnixConn) error {
+	if peerCheckBypassed() {
+		return nil
+	}
 	raw, err := conn.File()
 	if err != nil {
 		return err

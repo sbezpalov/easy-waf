@@ -13,6 +13,7 @@ import (
 )
 
 func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
+	hostd.SetBypassPeerCheckForTest(true)
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "hostd.sock")
 
@@ -58,6 +59,7 @@ func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 }
 
 func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
+	hostd.SetBypassPeerCheckForTest(true)
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "hostd.sock")
 
