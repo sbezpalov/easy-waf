@@ -110,15 +110,27 @@ func SetAptActionLogPathOverrideForTest(path string) {
 	aptActionLogPathOverride = path
 }
 
-func writeStreamEvent(w *bufio.Writer, ev streamEvent) error {
+// aptStreamConn serializes NDJSON writes (heartbeat and apt output share one bufio.Writer).
+type aptStreamConn struct {
+	bw *bufio.Writer
+	mu sync.Mutex
+}
+
+func newAptStreamConn(conn io.Writer) *aptStreamConn {
+	return &aptStreamConn{bw: bufio.NewWriter(conn)}
+}
+
+func (s *aptStreamConn) writeEvent(ev streamEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(append(b, '\n')); err != nil {
+	if _, err := s.bw.Write(append(b, '\n')); err != nil {
 		return err
 	}
-	return w.Flush()
+	return s.bw.Flush()
 }
 
 // dispatchAptUpgradeStream runs apt-get upgrade (wrapper).
@@ -128,9 +140,9 @@ func dispatchAptUpgradeStream(conn io.Writer) {
 
 // dispatchAptStream runs apt-get upgrade or autoremove, or attaches to in-flight action.
 func dispatchAptStream(conn io.Writer, action string) {
-	bw := bufio.NewWriter(conn)
+	sc := newAptStreamConn(conn)
 	emitExit := func(code int, errMsg string) {
-		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
+		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
 	if !validAptStreamAction(action) {
@@ -138,15 +150,15 @@ func dispatchAptStream(conn io.Writer, action string) {
 		return
 	}
 	if !aptActionTryStart() {
-		dispatchAptActionAttach(bw)
+		dispatchAptActionAttach(sc)
 		return
 	}
-	dispatchAptActionPrimary(bw, action)
+	dispatchAptActionPrimary(sc, action)
 }
 
-func dispatchAptActionPrimary(bw *bufio.Writer, action string) {
+func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 	emitExit := func(code int, errMsg string) {
-		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
+		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
 	logPath := aptActionLogPath()
@@ -171,7 +183,7 @@ func dispatchAptActionPrimary(bw *bufio.Writer, action string) {
 		if clientDown {
 			return nil
 		}
-		if err := writeStreamEvent(bw, streamEvent{Type: "line", Data: line}); err != nil {
+		if err := sc.writeEvent(streamEvent{Type: "line", Data: line}); err != nil {
 			clientDown = true
 			return nil
 		}
@@ -190,9 +202,9 @@ func dispatchAptActionPrimary(bw *bufio.Writer, action string) {
 	emitExit(code, errMsg)
 }
 
-func dispatchAptActionAttach(bw *bufio.Writer) {
+func dispatchAptActionAttach(sc *aptStreamConn) {
 	emitExit := func(code int, errMsg string) {
-		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
+		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
 	clientDown := false
@@ -200,7 +212,7 @@ func dispatchAptActionAttach(bw *bufio.Writer) {
 		if clientDown {
 			return nil
 		}
-		if err := writeStreamEvent(bw, streamEvent{Type: "line", Data: line}); err != nil {
+		if err := sc.writeEvent(streamEvent{Type: "line", Data: line}); err != nil {
 			clientDown = true
 			return nil
 		}

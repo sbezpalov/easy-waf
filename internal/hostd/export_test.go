@@ -2,11 +2,23 @@ package hostd
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
+
+var testAptLogDir string
 
 // TestMain enables unix-socket tests when `go test` runs as a user other than easy-waf.
 func TestMain(m *testing.M) {
 	SetBypassPeerCheckForTest(true)
-	os.Exit(m.Run())
+	if dir, err := os.MkdirTemp("", "easy-waf-hostd-apt-*"); err == nil {
+		testAptLogDir = dir
+		SetAptActionLogPathOverrideForTest(filepath.Join(dir, "apt-action.log"))
+	}
+	code := m.Run()
+	if testAptLogDir != "" {
+		_ = os.RemoveAll(testAptLogDir)
+		aptActionLogPathOverride = ""
+	}
+	os.Exit(code)
 }
