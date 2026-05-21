@@ -104,7 +104,8 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 | Unit | Role |
 |------|------|
-| `easy-waf-api.service` (alias `easy-wafd.service` may point to same binary) | API, UI, config apply |
+| `easy-waf-hostd.service` | Root privilege broker — unix socket `/run/easy-waf/hostd.sock` (`root:easy-waf` **0660**); host/netplan/nft/systemd/apt/users/journal/power |
+| `easy-waf-api.service` (alias `easy-wafd.service` may point to same binary) | API, UI, config apply (unprivileged; talks to hostd) |
 | `easy-waf-acmed.service` | ACME issuance/renewal (Lego HTTP-01), then triggers config reload via DB + optional apply |
 | `haproxy.service` | Stock; reload triggered after successful apply |
 | `crowdsec.service` | Stock |
@@ -112,7 +113,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 ## Security model
 
-- Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated.
+- Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated. Host mutations go through **`easy-waf-hostd`** (root), not `sudo` from the API process.
 - Secrets in `/etc/easy-waf/secrets/` with `0600`. HAProxy reads generated configs via group **`easy-waf`** (AppArmor stock profile on Ubuntu).
 - UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **nftables** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
 - Subprocess: no shell; explicit argv; timeouts.
@@ -215,6 +216,7 @@ sequenceDiagram
 | Layer | Choice |
 |-------|--------|
 | Control plane | `easy-waf-api`: Go 1.22+, Chi, embedded `web/dist` |
+| Host broker | `easy-waf-hostd`: root unix-socket broker (`internal/hostd`) |
 | ACME worker | `easy-waf-acmed` — Lego v4 HTTP-01 (webroot) |
 | State | PostgreSQL (`pgx` / `database/sql`) |
 | Templates | `text/template` for HAProxy / SPOE |

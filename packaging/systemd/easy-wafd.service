@@ -1,7 +1,7 @@
 [Unit]
 Description=Easy Home WAF API (control plane + UI; architecture C)
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target postgresql.service easy-waf-hostd.service
+Wants=network-online.target easy-waf-hostd.service
 
 [Service]
 Type=simple

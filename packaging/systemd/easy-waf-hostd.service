@@ -1,0 +1,21 @@
+[Unit]
+Description=Easy Home WAF privileged host broker (root)
+After=network.target
+Before=easy-waf-api.service
+
+[Service]
+Type=simple
+User=root
+Group=easy-waf
+RuntimeDirectory=easy-waf
+RuntimeDirectoryMode=0750
+ExecStart=/usr/sbin/easy-waf-hostd
+Restart=on-failure
+RestartSec=2
+ProtectHome=true
+ProtectControlGroups=true
+NoNewPrivileges=false
+StateDirectory=easy-waf
+
+[Install]
+WantedBy=multi-user.target

@@ -45,12 +45,13 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 
 ## Host management (`/api/v1/host/*`)
 
-- **Netplan / nftables rollback window:** GUI and recommended API paths use `POST …/netplan/apply` and `POST …/firewall/apply-rollback` with `rollback_seconds` (clamped **30–600**, default **90**). The helper backs up the previous file under `/var/lib/easy-waf/rollback/`, applies the staged change, then starts a **transient `systemd-run` unit** that invokes `netplan-revert` or `nft-revert` after the timeout. **Revert does not depend on `easy-waf-api`** staying up — important when a bad network change drops the management session. `POST …/commit` with `{ "token" }` cancels the timer and removes the backup. Tokens are hex (`^[a-f0-9]{8,64}$`); invalid YAML/ruleset is rejected in Go (`nft -c`) or in the helper (`netplan generate`) **before** any timer is scheduled.
-- **systemd:** `POST /host/services/{unit}/{action}` accepts only units and actions whitelisted in Go (`internal/host/systemd/allow.go`) and in `scripts/host/privileged.sh` — unknown values return **400** before the privileged helper runs.
+- **Privilege model:** **`easy-waf-hostd`** runs as **root** on **`/run/easy-waf/hostd.sock`** (`root:easy-waf` **0660**). **`easy-waf-api`** keeps **`NoNewPrivileges=true`** and **`ProtectSystem=strict`**; it does **not** use `sudo` or `/usr/lib/easy-waf/host-privileged.sh`. Each request is JSON `{"argv":["opcode",…]}`; the broker dispatches only known opcodes via a **`switch`** (never `sh -c`, never blind `exec(argv…)`). Linux peers are checked with **`SO_PEERCRED`** (uid `easy-waf` or root).
+- **Netplan / nftables rollback window:** GUI paths use `POST …/netplan/apply` and `POST …/firewall/apply-rollback` with `rollback_seconds` (clamped **30–600**, default **90**). The broker backs up under `/var/lib/easy-waf/rollback/`, applies, then **`systemd-run`** → **`/usr/sbin/easy-waf-hostd revert <kind> <token>`**. Revert does not depend on API or the long-lived broker. `POST …/commit` cancels the timer. Invalid YAML/ruleset is rejected before any timer is scheduled.
+- **systemd:** `POST /host/services/{unit}/{action}` — allowlists in API and broker (`internal/host/systemd/allow.go`); unknown values return **400** before the broker runs.
 - **journal:** `GET /host/journal` builds `journalctl` arguments from an allowlist in Go (`internal/host/journal`); unit names use the same whitelist as systemd. Bash in `privileged.sh` still rejects shell metacharacters in journal args.
 - **Diagnostics:** `POST /host/diagnostics/ping` and `…/trace` validate hostnames/IPs like Ping; commands use a **`--`** separator before the target host so values such as `-T` or `--port=22` cannot be interpreted as flags.
 - **SSH keys:** `PUT /host/users/{name}/ssh-keys` validates each line (`ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-*` + base64); invalid or multiline payloads are rejected before writing `authorized_keys`.
-- **Power / apt / nft / netplan:** only fixed subcommands via `host-privileged.sh` (no arbitrary shell).
+- **Power / apt / nft / netplan:** only fixed opcodes via **`easy-waf-hostd`** (no arbitrary shell).
 
 ## Outbound requests (IPBL external feeds)
 

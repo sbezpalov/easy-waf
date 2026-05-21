@@ -22,7 +22,8 @@
 | **Host systemd whitelist** | **Done** | `AllowedUnit` / `AllowedAction` in `internal/host/systemd/allow.go` (parity with `privileged.sh`); `host_handlers` 400 before privileged call |
 | **SSH authorized_keys** | **Done** | `internal/host/users/sshkeys.go` — OpenSSH line regex; reject embedded newlines; no file write on invalid key |
 | **Journal allowlist** | **Done** | `internal/host/journal` — only `-n`, `-u`, `--since`, `--until`, `-p`, `--no-pager`; unit on systemd whitelist |
-| **Host management in GUI** | **Done** (part 1) | **System** tab: services (allowlisted systemd), apt check/upgrade, reboot/shutdown. **Network** tab: read-only overview; netplan + nftables **Advanced** apply with 90s safety window + **Keep changes** (commit); auto-revert via `systemd-run` in `scripts/host/privileged.sh`. **Users** tab stub — part 2 (accounts, journal, ping/trace, form editors). |
+| **Host management in GUI** | **Done** (part 1) | **System** tab: services (allowlisted systemd), apt check/upgrade, reboot/shutdown. **Network** tab: read-only overview; netplan + nftables **Advanced** apply with 90s safety window + **Keep changes** (commit); auto-revert via `systemd-run` → `easy-waf-hostd revert`. **Users** tab stub — part 2 (accounts, journal, ping/trace, form editors). |
+| **Host privilege model** | **Done** | Root broker **`easy-waf-hostd`** on `/run/easy-waf/hostd.sock`; `runner.Privileged` uses JSON over unix socket; API keeps `NoNewPrivileges`/`ProtectSystem=strict`; legacy sudo + `host-privileged.sh` removed on install |
 
 ## §2 Goals — Core
 

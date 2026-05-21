@@ -4,12 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 const (
-	DefaultSeconds = 90
-	MinSeconds     = 30
-	MaxSeconds     = 600
+	DefaultSeconds = hostspec.RollbackDefaultSec
+	MinSeconds     = hostspec.RollbackMinSec
+	MaxSeconds     = hostspec.RollbackMaxSec
 )
 
 // GenerateToken returns a hex token suitable for rollback unit names (8–64 hex chars).
@@ -23,29 +25,10 @@ func GenerateToken() (string, error) {
 
 // ClampRollbackSeconds enforces [30, 600]; zero or negative uses DefaultSeconds (90).
 func ClampRollbackSeconds(sec int) int {
-	if sec <= 0 {
-		return DefaultSeconds
-	}
-	if sec < MinSeconds {
-		return MinSeconds
-	}
-	if sec > MaxSeconds {
-		return MaxSeconds
-	}
-	return sec
+	return hostspec.ClampRollback(sec)
 }
 
-// ValidToken reports whether token matches privileged helper expectations.
+// ValidToken reports whether token matches rollback naming rules.
 func ValidToken(token string) bool {
-	if len(token) < 8 || len(token) > 64 {
-		return false
-	}
-	for i := 0; i < len(token); i++ {
-		c := token[i]
-		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') {
-			continue
-		}
-		return false
-	}
-	return true
+	return hostspec.ValidToken(token)
 }

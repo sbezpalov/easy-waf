@@ -19,6 +19,7 @@ build:
 	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-acmed ./cmd/easy-waf-acmed
 	CGO_ENABLED=0 go build -o $(DIST)/easy-wafd ./cmd/easy-wafd
 	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-admin ./cmd/easy-waf-admin
+	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-hostd ./cmd/easy-waf-hostd
 
 check-linux:
 	bash scripts/check-linux-artifacts.sh

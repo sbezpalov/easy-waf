@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Root-only helper for easy-waf host management API (invoked via sudo -n).
+# LEGACY / break-glass: manual root helper. Production API uses easy-waf-hostd (unix socket).
+# Not installed by install.sh; kept in-repo for emergency SSH use only.
 set -euo pipefail
 
 log() { echo "[easy-waf-host] $*" >&2; }

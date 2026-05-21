@@ -417,7 +417,7 @@ acquire_dist_binaries() {
       tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" 2>/dev/null || tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" --strip-components=1 2>/dev/null || true
       # GitHub release tarball layout: dist/<binaries> (see .github/workflows/release.yml)
       if [[ -f "${DIST_DIR}/dist/easy-waf-api" ]]; then
-        for b in easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
+        for b in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
           [[ -f "${DIST_DIR}/dist/${b}" ]] && mv -f "${DIST_DIR}/dist/${b}" "${DIST_DIR}/"
         done
         rmdir "${DIST_DIR}/dist" 2>/dev/null || true
@@ -525,14 +525,14 @@ install_systemd_units() {
     return 0
   fi
   [[ -d "$SYSTEMD_SRC" ]] || die "missing systemd units: $SYSTEMD_SRC"
-  for u in easy-waf-api.service easy-waf-acmed.service easy-wafd.service; do
+  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service; do
     if [[ -f "${SYSTEMD_SRC}/${u}" ]]; then
       install -m 0644 "${SYSTEMD_SRC}/${u}" "/etc/systemd/system/${u}"
       log "Installed /etc/systemd/system/${u}"
     fi
   done
   systemctl daemon-reload
-  log "Run: systemctl enable --now easy-waf-api.service easy-waf-acmed.service"
+  log "Run: systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service"
 }
 
 install_fail2ban_api_access() {
@@ -571,43 +571,28 @@ install_polkit_rules() {
     local polkit_src="${REPO_ROOT}/packaging/polkit"
     if [[ -d "$polkit_src" ]]; then
       mkdir -p /etc/polkit-1/rules.d
-      for f in 99-easy-waf-haproxy.rules 99-easy-waf-host.rules; do
-        if [[ -f "${polkit_src}/${f}" ]]; then
-          install -m 0644 "${polkit_src}/${f}" "/etc/polkit-1/rules.d/"
-          log "Installed /etc/polkit-1/rules.d/${f}"
-        fi
-      done
+      if [[ -f "${polkit_src}/99-easy-waf-haproxy.rules" ]]; then
+        install -m 0644 "${polkit_src}/99-easy-waf-haproxy.rules" "/etc/polkit-1/rules.d/"
+        log "Installed /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules"
+      fi
     fi
+  fi
+}
+
+cleanup_legacy_host_privilege() {
+  rm -f /etc/sudoers.d/easy-waf-host
+  rm -f /usr/lib/easy-waf/host-privileged.sh
+  rm -f /etc/polkit-1/rules.d/99-easy-waf-host.rules
+  log "Removed legacy host sudoers/helper/polkit (if present)"
+}
+
+install_hostd_binary() {
+  if [[ -f "${DIST_DIR}/easy-waf-hostd" ]]; then
+    install -m 0755 "${DIST_DIR}/easy-waf-hostd" /usr/sbin/easy-waf-hostd
+    log "Installed /usr/sbin/easy-waf-hostd"
   else
-    log "Polkit not found on system — host management may require manual sudoers"
+    log "WARNING: ${DIST_DIR}/easy-waf-hostd missing — build with: make build"
   fi
-}
-
-install_host_privileged_helper() {
-  local dest="/usr/lib/easy-waf/host-privileged.sh"
-  mkdir -p /usr/lib/easy-waf
-  install -m 0750 "${SCRIPT_DIR}/host/privileged.sh" "$dest"
-  log "Installed $dest"
-}
-
-install_host_sudoers() {
-  if ! id easy-waf &>/dev/null; then
-    return 0
-  fi
-  local f="/etc/sudoers.d/easy-waf-host"
-  cat >"$f" <<'EOF'
-# Easy Home WAF — host management API (NOPASSWD helper only).
-easy-waf ALL=(root) NOPASSWD: /usr/lib/easy-waf/host-privileged.sh *
-EOF
-  chmod 0440 "$f"
-  if command -v visudo &>/dev/null; then
-    if ! visudo -cf "$f" 2>/dev/null; then
-      rm -f "$f"
-      log "WARNING: invalid easy-waf-host sudoers — skipped"
-      return 0
-    fi
-  fi
-  log "Installed $f (host management for easy-waf user)"
 }
 
 
@@ -755,10 +740,10 @@ main() {
   easy_waf_sync_settings_to_db
   install_systemd_units
   install_polkit_rules
+  cleanup_legacy_host_privilege
+  install_hostd_binary
   install_fail2ban_api_access
   install_fail2ban_sudoers
-  install_host_privileged_helper
-  install_host_sudoers
   selinux_restore
   easy_waf_integrate_haproxy_edge
   easy_waf_load_nft_env_from_file_if_unset
@@ -769,15 +754,15 @@ main() {
   easy_waf_fixup_management_listen_addrs "$CFG_DIR/easy-waf.env"
 
   if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" == "1" ]] && [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]]; then
-    if systemctl enable --now easy-waf-api.service easy-waf-acmed.service; then
-      log "Enabled and started easy-waf-api and easy-waf-acmed"
+    if systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; then
+      log "Enabled and started easy-waf-hostd, easy-waf-api, easy-waf-acmed"
     else
-      log "WARNING: systemctl enable --now failed — run: sudo systemctl enable --now easy-waf-api easy-waf-acmed"
-      log "Then: sudo journalctl -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager"
+      log "WARNING: systemctl enable --now failed — run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
+      log "Then: sudo journalctl -u easy-waf-hostd -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager"
     fi
   else
     log "Services not started (EASY_WAF_ENABLE_SYSTEMD_UNITS=0 or EASY_WAF_SKIP_SYSTEMD=1)"
-    log "Run: sudo systemctl enable --now easy-waf-api easy-waf-acmed"
+    log "Run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
   fi
 
   if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" != "1" ]]; then
@@ -792,7 +777,7 @@ main() {
 easy_waf_post_install_summary() {
   log "=== Post-install summary ==="
   local u
-  for u in easy-waf-api easy-waf-acmed haproxy postgresql nftables; do
+  for u in easy-waf-hostd easy-waf-api easy-waf-acmed haproxy postgresql nftables; do
     if systemctl list-unit-files "${u}.service" &>/dev/null; then
       log "  ${u}: $(systemctl is-active "${u}.service" 2>/dev/null || echo unknown)"
     fi

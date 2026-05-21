@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 )
@@ -79,6 +80,9 @@ func buildJournalArgs(q Query) ([]string, error) {
 			return nil, fmt.Errorf("invalid priority")
 		}
 		args = append(args, "-p", p)
+	}
+	if err := hostspec.ValidateJournalArgs(args[1:]); err != nil {
+		return nil, err
 	}
 	return args, nil
 }

@@ -1,44 +1,16 @@
 package systemd
 
-// AllowedUnits matches scripts/host/privileged.sh allowed_systemd_unit().
-var AllowedUnits = []string{
-	"easy-waf-api.service",
-	"easy-waf-acmed.service",
-	"haproxy.service",
-	"crowdsec.service",
-	"crowdsec-spoa-bouncer.service",
-	"crowdsec-haproxy-spoa-bouncer.service",
-	"fail2ban.service",
-	"nftables.service",
-	"postgresql.service",
-}
+import "github.com/easy-waf/easy-waf/internal/host/systemdallow"
 
-var allowedActions = map[string]struct{}{
-	"start":       {},
-	"stop":        {},
-	"restart":     {},
-	"reload":      {},
-	"enable":      {},
-	"disable":     {},
-	"try-restart": {},
-}
-
-var allowedUnits = func() map[string]struct{} {
-	m := make(map[string]struct{}, len(AllowedUnits))
-	for _, u := range AllowedUnits {
-		m[u] = struct{}{}
-	}
-	return m
-}()
+// AllowedUnits is re-exported for API compatibility.
+var AllowedUnits = systemdallow.AllowedUnits
 
 // AllowedUnit reports whether unit is on the appliance whitelist.
 func AllowedUnit(unit string) bool {
-	_, ok := allowedUnits[unit]
-	return ok
+	return systemdallow.AllowedUnit(unit)
 }
 
 // AllowedAction reports whether action is on the appliance whitelist.
 func AllowedAction(action string) bool {
-	_, ok := allowedActions[action]
-	return ok
+	return systemdallow.AllowedAction(action)
 }

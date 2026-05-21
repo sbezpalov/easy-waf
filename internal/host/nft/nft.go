@@ -26,12 +26,12 @@ type Status struct {
 func GetStatus(ctx context.Context) (Status, error) {
 	st := Status{
 		RulesPath:   RulesPath,
-		HelperReady: runner.HelperInstalled(),
+		HelperReady: runner.BrokerAvailable(),
 	}
 	if b, err := os.ReadFile(RulesPath); err == nil {
 		st.Ruleset = string(b)
 	}
-	if runner.HelperInstalled() {
+	if runner.BrokerAvailable() {
 		out, err := runner.Privileged(ctx, "nft-list")
 		if err == nil {
 			st.Ruleset = string(out)
