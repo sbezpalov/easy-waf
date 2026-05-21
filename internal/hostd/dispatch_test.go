@@ -81,3 +81,43 @@ func TestDispatch_journalBadFlag(t *testing.T) {
 		t.Fatal("flag rejected")
 	}
 }
+
+func TestDispatch_fail2banReject(t *testing.T) {
+	d := &Dispatcher{Runner: &mockRunner{}}
+	for _, argv := range [][]string{
+		{"fail2ban", "reload"},
+		{"fail2ban", "set", "sshd", "banip", "1.2.3.4"},
+		{"fail2ban", "status", "../evil"},
+		{"fail2ban", "set", "sshd", "unbanip", "not-ip"},
+	} {
+		r := d.Dispatch(context.Background(), argv)
+		if r.OK {
+			t.Fatalf("expected reject: %v", argv)
+		}
+		if !strings.Contains(r.Error, "not allowed") {
+			t.Fatalf("%v: %q", argv, r.Error)
+		}
+	}
+}
+
+func TestDispatch_fail2banAllowed(t *testing.T) {
+	if resolveFail2banClient() == "" {
+		t.Skip("fail2ban-client not installed")
+	}
+	m := &mockRunner{}
+	d := &Dispatcher{Runner: m}
+	for _, argv := range [][]string{
+		{"fail2ban", "ping"},
+		{"fail2ban", "status"},
+		{"fail2ban", "status", "sshd"},
+		{"fail2ban", "set", "sshd", "unbanip", "203.0.113.1"},
+	} {
+		r := d.Dispatch(context.Background(), argv)
+		if !r.OK {
+			t.Fatalf("%v: %s", argv, r.Error)
+		}
+		if m.lastName == "" {
+			t.Fatalf("%v: runner not called", argv)
+		}
+	}
+}

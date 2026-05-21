@@ -82,30 +82,28 @@ sudo apt-get install -y fail2ban
 sudo systemctl enable --now fail2ban
 ```
 
-Re-run **`sudo bash scripts/install.sh`** to configure API access (fail2ban group + socket permissions).
+Re-run **`sudo bash scripts/install.sh`** so **`easy-waf-hostd`** is installed and legacy socket/sudoers drop-ins are removed.
 
-## Fail2Ban UI: permission denied on `/var/run/fail2ban/fail2ban.sock`
+## Fail2Ban UI: empty jails / bad gateway / permission denied
 
-Socket is **`root:root` mode `600`** and user **`easy-waf`** is not in group **`fail2ban`** (Ubuntu package often omits that group). **`sudo fail2ban-client` does not help** — `easy-waf-api` runs with **`NoNewPrivileges=true`**.
+The API does **not** call `fail2ban-client` as **`easy-waf`** and does **not** use `sudo` (`NoNewPrivileges=true`). Status and unban go through **`easy-waf-hostd`**, which runs **`fail2ban-client`** as root.
 
-```bash
-cd ~/easy-waf
-sudo bash scripts/fix-fail2ban-api-access.sh
-```
-
-Expect: `srw-rw---- root fail2ban` on `/run/fail2ban/fail2ban.sock` and `sudo -u easy-waf fail2ban-client ping` → **pong**. Then restart API if needed: `sudo systemctl restart easy-waf-api`.
-
-## Fail2Ban UI: “no new privileges” / permission denied on socket
-
-`easy-waf-api` uses **`NoNewPrivileges=true`**, so **`sudo fail2ban-client` does not work** even with `/etc/sudoers.d/easy-waf-fail2ban`.
-
-Fix (from repo root):
+Check (from repo root on the appliance):
 
 ```bash
-sudo bash scripts/install.sh   # runs install_fail2ban_api_access
-sudo systemctl restart fail2ban easy-waf-api
-sudo -u easy-waf fail2ban-client ping   # expect: pong
+systemctl status easy-waf-hostd fail2ban
+ls -la /run/easy-waf/hostd.sock
+sudo fail2ban-client ping    # expect: pong
+sudo fail2ban-client status
 ```
+
+If hostd is down or the socket is missing, restart after rebuild:
+
+```bash
+sudo systemctl restart easy-waf-hostd easy-waf-api
+```
+
+Old installs may still have **`/etc/sudoers.d/easy-waf-fail2ban`** or fail2ban socket drop-ins; **`install.sh`** removes them. Direct `sudo -u easy-waf fail2ban-client` is **not** the supported check on current releases.
 
 See [FAIL2BAN.md](FAIL2BAN.md).
 

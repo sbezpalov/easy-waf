@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Fail2ban Unix socket access for user easy-waf (easy-waf-api has NoNewPrivileges=true).
-# Sourced by scripts/install.sh and scripts/fix-fail2ban-api-access.sh.
+# LEGACY — not used by current install.sh. Fail2ban status/unban go through easy-waf-hostd.
+# Kept for manual repair on hosts upgraded from releases before the hostd broker path.
+# Sourced by scripts/fix-fail2ban-api-access.sh only.
 
 easy_waf_fail2ban_log() {
   if declare -F log &>/dev/null; then

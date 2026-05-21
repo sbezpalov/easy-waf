@@ -3,6 +3,7 @@ package hostspec
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -26,6 +27,8 @@ var (
 		"verbose": {}, "export": {}, "json": {}, "json-pretty": {}, "json-sse": {},
 		"json-seq": {}, "cat": {},
 	}
+	jailNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
+
 	journalPriority = map[string]struct{}{
 		"0": {}, "1": {}, "2": {}, "3": {}, "4": {}, "5": {}, "6": {}, "7": {},
 		"emerg": {}, "alert": {}, "crit": {}, "err": {}, "warning": {}, "notice": {}, "info": {}, "debug": {},
@@ -59,6 +62,17 @@ func ClampRollback(sec int) int {
 		return RollbackMaxSec
 	}
 	return sec
+}
+
+// ValidJailName checks fail2ban jail name syntax.
+func ValidJailName(jail string) bool {
+	jail = strings.TrimSpace(jail)
+	return jail != "" && jailNameRE.MatchString(jail)
+}
+
+// ValidIP reports whether s is a parseable IP address.
+func ValidIP(ip string) bool {
+	return net.ParseIP(strings.TrimSpace(ip)) != nil
 }
 
 // ValidUsername checks local account name syntax.

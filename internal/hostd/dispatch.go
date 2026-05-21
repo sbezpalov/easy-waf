@@ -220,6 +220,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		}
 		return sshAuthorizedKeys(ctx, r, argv[1], argv[2])
 
+	case "fail2ban":
+		return dispatchFail2ban(ctx, r, argv[1:])
+
 	default:
 		return failResp("unknown op: "+op, 1)
 	}

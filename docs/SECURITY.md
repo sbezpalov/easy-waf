@@ -52,6 +52,7 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 - **Diagnostics:** `POST /host/diagnostics/ping` and `…/trace` validate hostnames/IPs like Ping; commands use a **`--`** separator before the target host so values such as `-T` or `--port=22` cannot be interpreted as flags.
 - **SSH keys:** `PUT /host/users/{name}/ssh-keys` validates each line (`ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-*` + base64); invalid or multiline payloads are rejected before writing `authorized_keys`.
 - **Power / apt / nft / netplan:** only fixed opcodes via **`easy-waf-hostd`** (no arbitrary shell).
+- **Fail2ban:** `GET/POST /api/v1/integrations/fail2ban/*` uses broker opcode **`fail2ban`** with a strict allowlist (`ping`, `status`, `status <jail>`, `set <jail> unbanip <ip>`); jail/IP validated in **`internal/host/hostspec`**. Legacy fail2ban group/socket/sudoers access is retired.
 
 ## Outbound requests (IPBL external feeds)
 

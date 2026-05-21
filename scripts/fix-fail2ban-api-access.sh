@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY — pre-hostd repair (fail2ban group + socket drop-ins). Current installs use easy-waf-hostd.
 # Grant easy-waf-api Fail2ban socket access (group + systemd drop-ins). Idempotent. Run as root.
 set -euo pipefail
 

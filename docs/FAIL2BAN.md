@@ -16,34 +16,38 @@ Audit: explicit `fail2ban.unban` plus HTTP audit category **fail2ban**.
 
 ## Permissions
 
-`easy-waf-api` runs as user **`easy-waf`** with **`NoNewPrivileges=true`** (see `packaging/systemd/easy-waf-api.service`). That means **`sudo` cannot elevate** to root even with NOPASSWD sudoers — the UI would show *"no new privileges"* errors.
+`easy-waf-api` runs as user **`easy-waf`** with **`NoNewPrivileges=true`** (see `packaging/systemd/easy-waf-api.service`). It does **not** call `fail2ban-client` directly or use `sudo`.
 
-The supported path is **group access to the fail2ban Unix socket** (no sudo):
+Status and unban go through the root broker **`easy-waf-hostd`** on **`/run/easy-waf/hostd.sock`**. The broker runs **`/usr/bin/fail2ban-client`** as root and accepts only these forms:
 
-1. User **`easy-waf`** is in group **`fail2ban`** (`usermod` + `easy-waf-api.service.d/fail2ban.conf` with `SupplementaryGroups=fail2ban`).
-2. Drop-in **`fail2ban.service.d/easy-waf-socket.conf`** sets the socket to group **`fail2ban`**, mode **660**, and the runtime directory to **710**.
+- `ping`
+- `status`
+- `status <jail>`
+- `set <jail> unbanip <ip>`
 
-`scripts/install.sh` runs **`install_fail2ban_api_access`** when the fail2ban package is present. On **Ubuntu**, the `fail2ban` apt package often does **not** create a `fail2ban` group — the installer **creates** it and sets socket mode **660**.
+Jail names and IPs are validated in **`internal/host/hostspec`** before execution.
 
-### Repair on an existing host
+Membership in group **`fail2ban`**, socket drop-ins, and **`/etc/sudoers.d/easy-waf-fail2ban`** are **not** required on current installs. `scripts/install.sh` removes those artifacts on upgrade (`cleanup_legacy_fail2ban_access`).
+
+### Requirements
+
+1. **`easy-waf-hostd.service`** is enabled and active.
+2. **`fail2ban`** package is installed and **`fail2ban.service`** is running.
+
+Verify the broker and daemon:
 
 ```bash
-cd ~/easy-waf
-sudo bash scripts/fix-fail2ban-api-access.sh
+systemctl status easy-waf-hostd fail2ban
+ls -la /run/easy-waf/hostd.sock
+sudo fail2ban-client ping
+sudo fail2ban-client status
 ```
 
-Or full install: `sudo bash scripts/install.sh`
+After code changes: rebuild **`easy-waf-hostd`** and **`easy-waf-api`**, then `systemctl restart easy-waf-hostd easy-waf-api`.
 
-Verify as the API user:
+### Legacy socket access (old releases only)
 
-```bash
-sudo -u easy-waf fail2ban-client ping
-sudo -u easy-waf fail2ban-client status
-```
-
-### Optional sudo (non-appliance only)
-
-Set **`EASY_WAF_FAIL2BAN_USE_SUDO=1`** only if the API process runs **without** `NoNewPrivileges` and `/etc/sudoers.d/easy-waf-fail2ban` is present. Stock **`easy-waf-api`** does not set this; it relies on group socket access instead.
+Hosts upgraded from releases before the hostd path may still have group/socket drop-ins. `scripts/fix-fail2ban-api-access.sh` applies the old model for manual repair only. Prefer a normal **`install.sh`** run (which cleans legacy files and relies on hostd).
 
 ## UI
 
@@ -60,8 +64,7 @@ If fail2ban is not installed or not running, the status line explains the daemon
 ```bash
 sudo fail2ban-client status
 sudo fail2ban-client status sshd
-systemctl status fail2ban
-ls -la /var/run/fail2ban/fail2ban.sock /run/fail2ban/fail2ban.sock 2>/dev/null
+systemctl status fail2ban easy-waf-hostd
 ```
 
 From another host (with API token): `GET /api/v1/integrations/fail2ban` on the management listener (LAN CIDR only).

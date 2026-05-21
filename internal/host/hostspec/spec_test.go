@@ -44,6 +44,24 @@ func TestValidStagedPath(t *testing.T) {
 	}
 }
 
+func TestValidJailName(t *testing.T) {
+	if !ValidJailName("sshd") {
+		t.Fatal("sshd")
+	}
+	if ValidJailName("../evil") {
+		t.Fatal("reject path")
+	}
+}
+
+func TestValidIP(t *testing.T) {
+	if !ValidIP("203.0.113.1") {
+		t.Fatal("v4")
+	}
+	if ValidIP("not-ip") {
+		t.Fatal("reject")
+	}
+}
+
 func TestValidateJournalArgs(t *testing.T) {
 	if err := ValidateJournalArgs([]string{"--no-pager", "-n", "10", "-u", "haproxy.service"}); err != nil {
 		t.Fatal(err)

@@ -43,7 +43,7 @@
 | Базовый WAF (ACL), per-app | **Done** | см. **§7.1a** |
 | CrowdSec + решения (LAPI, decisions в UI) | **Done** | см. **§7.5** (ban/unban/whitelist в UI) |
 | SPOE bouncer | **Done** | см. **§7.3**; шаблон `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
-| Fail2Ban | **Done** | `install.sh` + `GET/POST /api/v1/integrations/fail2ban/*`, UI вкладка Fail2Ban, `docs/FAIL2BAN.md` |
+| Fail2Ban | **Done** | `GET/POST /api/v1/integrations/fail2ban/*` via **`easy-waf-hostd`** (`fail2ban` opcode); UI вкладка Fail2Ban; `docs/FAIL2BAN.md`; legacy socket/group path retired |
 | GeoIP + кэш (ipinfo, batch map, ACL) | **Done** | см. **§7.6** |
 
 ## §2 UX / Observability

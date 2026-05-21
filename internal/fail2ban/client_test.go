@@ -40,27 +40,28 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 	}
 }
 
-func TestClient_run_skipsSudoWhenNoNewPrivileges(t *testing.T) {
+func TestClient_run_usesInjectedRunner(t *testing.T) {
+	var got []string
 	c := &Client{
-		Bin: "/usr/bin/fail2ban-client",
 		Run: func(ctx context.Context, bin string, args ...string) ([]byte, error) {
-			if bin == "/usr/bin/sudo" {
-				t.Fatal("sudo must not be called when NoNewPrivileges blocks it")
-			}
-			return []byte("Permission denied to socket"), errors.New("exit status 255")
+			got = append([]string{bin}, args...)
+			return []byte("pong"), nil
 		},
 	}
-	_, err := c.run(context.Background(), "ping")
-	if err == nil {
-		t.Fatal("expected error")
+	out, err := c.run(context.Background(), "ping")
+	if err != nil || !strings.Contains(string(out), "pong") {
+		t.Fatalf("run: out=%q err=%v", out, err)
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "sudo") {
-		t.Fatalf("unexpected sudo in error: %v", err)
+	if len(got) != 2 || got[1] != "ping" {
+		t.Fatalf("runner argv: %v", got)
 	}
 }
 
 func TestClient_UnbanIP_validation(t *testing.T) {
-	c := &Client{Bin: "/bin/fail2ban-client", Run: execRunner}
+	c := &Client{Run: func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("Run must not be called for invalid jail/ip")
+		return nil, nil
+	}}
 	err := c.UnbanIP(context.Background(), "../evil", "1.2.3.4")
 	if !errors.Is(err, ErrInvalidJail) {
 		t.Fatalf("jail: %v", err)

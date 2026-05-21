@@ -3,24 +3,22 @@ package fail2ban
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
+	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
-var jailNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
-
-// CommandRunner runs fail2ban-client (or sudo wrapper). Tests inject a fake runner.
+// CommandRunner runs fail2ban-client subcommands (bin is ignored when using the broker runner).
 type CommandRunner func(ctx context.Context, bin string, args ...string) ([]byte, error)
 
 // Client wraps fail2ban-client for status and unban operations.
 type Client struct {
-	Bin     string
-	UseSudo bool
-	Run     CommandRunner
+	Bin string
+	Run CommandRunner
 }
 
 // Status is a lightweight integration snapshot for the UI.
@@ -42,12 +40,17 @@ type Overview struct {
 	Jails  []JailSummary `json:"jails"`
 }
 
-// DefaultClient returns a client with distro paths and optional sudo (EASY_WAF_FAIL2BAN_USE_SUDO=1).
+func brokerRunner(ctx context.Context, _ string, args ...string) ([]byte, error) {
+	argv := append([]string{"fail2ban"}, args...)
+	return runner.Privileged(ctx, argv...)
+}
+
+// DefaultClient returns a client that invokes fail2ban-client via easy-waf-hostd.
+// EASY_WAF_FAIL2BAN_USE_SUDO is deprecated and ignored.
 func DefaultClient() *Client {
 	return &Client{
-		Bin:     resolveBin(),
-		UseSudo: strings.TrimSpace(os.Getenv("EASY_WAF_FAIL2BAN_USE_SUDO")) == "1",
-		Run:     execRunner,
+		Bin: resolveBin(),
+		Run: brokerRunner,
 	}
 }
 
@@ -64,11 +67,6 @@ func resolveBin() string {
 		}
 	}
 	return "/usr/bin/fail2ban-client"
-}
-
-func execRunner(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	return cmd.CombinedOutput()
 }
 
 // Ping checks whether the fail2ban daemon responds.
@@ -120,7 +118,7 @@ func (c *Client) Overview(ctx context.Context) (Overview, error) {
 // JailStatus returns banned IPs for one jail.
 func (c *Client) JailStatus(ctx context.Context, jail string) (JailSummary, error) {
 	jail = strings.TrimSpace(jail)
-	if !validJailName(jail) {
+	if !hostspec.ValidJailName(jail) {
 		return JailSummary{}, ErrInvalidJail
 	}
 	out, err := c.run(ctx, "status", jail)
@@ -134,10 +132,10 @@ func (c *Client) JailStatus(ctx context.Context, jail string) (JailSummary, erro
 func (c *Client) UnbanIP(ctx context.Context, jail, ip string) error {
 	jail = strings.TrimSpace(jail)
 	ip = strings.TrimSpace(ip)
-	if !validJailName(jail) {
+	if !hostspec.ValidJailName(jail) {
 		return ErrInvalidJail
 	}
-	if net.ParseIP(ip) == nil {
+	if !hostspec.ValidIP(ip) {
 		return ErrInvalidIP
 	}
 	out, err := c.run(ctx, "set", jail, "unbanip", ip)
@@ -154,7 +152,7 @@ func (c *Client) UnbanIP(ctx context.Context, jail, ip string) error {
 func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 	run := c.Run
 	if run == nil {
-		run = execRunner
+		run = brokerRunner
 	}
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
@@ -162,38 +160,5 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 	if bin == "" {
 		bin = resolveBin()
 	}
-	out, err := run(ctx, bin, args...)
-	if err == nil {
-		return out, nil
-	}
-	// Auto-sudo is not used: easy-waf-api runs with NoNewPrivileges (sudo cannot elevate).
-	// Appliance access is via fail2ban group + socket permissions (install_fail2ban_api_access).
-	low := strings.ToLower(string(out) + err.Error())
-	if c.UseSudo && needsSudo(low) && !sudoBlockedByNoNewPrivileges(low) {
-		sudoOut, sudoErr := run(ctx, "/usr/bin/sudo", append([]string{"-n", bin}, args...)...)
-		if sudoErr == nil {
-			return sudoOut, nil
-		}
-		if len(sudoOut) > 0 {
-			out = append(out, sudoOut...)
-		}
-		err = sudoErr
-	}
-	return out, err
-}
-
-// sudoBlockedByNoNewPrivileges detects systemd NoNewPrivileges (easy-waf-api cannot use sudo).
-func sudoBlockedByNoNewPrivileges(msg string) bool {
-	return strings.Contains(msg, "no new privileges")
-}
-
-func needsSudo(msg string) bool {
-	return strings.Contains(msg, "permission denied") ||
-		strings.Contains(msg, "not allowed") ||
-		strings.Contains(msg, "access denied") ||
-		strings.Contains(msg, "you must be root")
-}
-
-func validJailName(jail string) bool {
-	return jail != "" && jailNameRE.MatchString(jail)
+	return run(ctx, bin, args...)
 }

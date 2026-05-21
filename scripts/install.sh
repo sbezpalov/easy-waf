@@ -535,13 +535,14 @@ install_systemd_units() {
   log "Run: systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service"
 }
 
+# LEGACY — use cleanup_legacy_fail2ban_access + easy-waf-hostd. Kept for fix-fail2ban-api-access.sh.
 install_fail2ban_api_access() {
   # shellcheck source=lib/fail2ban-access.sh
   source "${SCRIPT_DIR}/lib/fail2ban-access.sh"
   easy_waf_install_fail2ban_api_access "$REPO_ROOT"
 }
 
-# Legacy fallback when NoNewPrivileges=false. Ignored by easy-waf-api with stock unit.
+# LEGACY — not installed by install.sh; fail2ban goes through easy-waf-hostd.
 install_fail2ban_sudoers() {
   if ! id easy-waf &>/dev/null; then
     return 0
@@ -584,6 +585,17 @@ cleanup_legacy_host_privilege() {
   rm -f /usr/lib/easy-waf/host-privileged.sh
   rm -f /etc/polkit-1/rules.d/99-easy-waf-host.rules
   log "Removed legacy host sudoers/helper/polkit (if present)"
+}
+
+# Fail2ban API access via easy-waf-hostd; remove group/socket/sudoers drop-ins from older installs.
+cleanup_legacy_fail2ban_access() {
+  rm -f /etc/sudoers.d/easy-waf-fail2ban
+  rm -f /etc/systemd/system/fail2ban.service.d/easy-waf-socket.conf
+  rm -f /etc/systemd/system/easy-waf-api.service.d/fail2ban.conf
+  if command -v systemctl &>/dev/null; then
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+  log "Removed legacy fail2ban socket/sudoers access (if present); use easy-waf-hostd"
 }
 
 install_hostd_binary() {
@@ -742,8 +754,7 @@ main() {
   install_polkit_rules
   cleanup_legacy_host_privilege
   install_hostd_binary
-  install_fail2ban_api_access
-  install_fail2ban_sudoers
+  cleanup_legacy_fail2ban_access
   selinux_restore
   easy_waf_integrate_haproxy_edge
   easy_waf_load_nft_env_from_file_if_unset

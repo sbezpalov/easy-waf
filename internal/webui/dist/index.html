@@ -566,7 +566,7 @@
 
       <div id="tab-fail2ban" class="tab-panel">
         <h2>⛔ Fail2Ban</h2>
-        <p class="dash-note" style="margin-top:0">SSH and optional jails installed with the appliance. Status is read via <code>fail2ban-client</code> (sudoers drop-in from <code>install.sh</code> when fail2ban is present).</p>
+        <p class="dash-note" style="margin-top:0">SSH and optional jails installed with the appliance. Status is read via <code>fail2ban-client</code> through the <code>easy-waf-hostd</code> broker.</p>
         <div class="panel" style="max-width:100%">
           <div class="row">
             <button type="button" class="secondary" id="btn-f2b-refresh">Refresh jails</button>
