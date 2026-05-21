@@ -3,9 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/journal"
 	"github.com/easy-waf/easy-waf/internal/host/network"
 	"github.com/easy-waf/easy-waf/internal/host/nft"
+	"github.com/easy-waf/easy-waf/internal/host/rollback"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 	"github.com/easy-waf/easy-waf/internal/host/users"
@@ -23,10 +27,14 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 	r.Route("/host", func(r chi.Router) {
 		r.Get("/network", s.hostGetNetwork)
 		r.Put("/network/netplan", s.hostPutNetplan)
+		r.Post("/network/netplan/apply", s.hostNetplanApply)
+		r.Post("/network/netplan/commit", s.hostNetplanCommit)
 
 		r.Get("/firewall", s.hostGetFirewall)
 		r.Put("/firewall/ruleset", s.hostPutFirewall)
 		r.Post("/firewall/apply", s.hostApplyFirewall)
+		r.Post("/firewall/apply-rollback", s.hostFirewallApplyRB)
+		r.Post("/firewall/commit", s.hostFirewallCommit)
 
 		r.Get("/services", s.hostListServices)
 		r.Post("/services/{unit}/{action}", s.hostServiceAction)
@@ -59,6 +67,19 @@ func (s *Server) hostGetNetwork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ov)
 }
 
+func (s *Server) hostAppendAudit(ctx context.Context, action string, detail map[string]any, warn bool) {
+	if s.Eng == nil || s.Eng.Store == nil {
+		return
+	}
+	if warn {
+		if detail == nil {
+			detail = map[string]any{}
+		}
+		detail["level"] = "warn"
+	}
+	_ = s.Eng.Store.AppendAudit(ctx, action, detail)
+}
+
 func (s *Server) hostPutNetplan(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		YAML string `json:"yaml"`
@@ -72,6 +93,56 @@ func (s *Server) hostPutNetplan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
+func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		YAML            string `json:"yaml"`
+		RollbackSeconds int    `json:"rollback_seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	sec := rollback.ClampRollbackSeconds(body.RollbackSeconds)
+	tok, expires, err := network.ApplyNetplanWithRollback(r.Context(), body.YAML, sec)
+	if err != nil {
+		if errors.Is(err, os.ErrInvalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "yaml required"})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.hostAppendAudit(r.Context(), "host_netplan_apply", map[string]any{
+		"token":            tok,
+		"rollback_seconds": sec,
+		"expires_at":       expires.UTC().Format(time.RFC3339),
+	}, true)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":      tok,
+		"expires_at": expires.UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !rollback.ValidToken(body.Token) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid token"})
+		return
+	}
+	if err := network.CommitNetplan(r.Context(), body.Token); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.hostAppendAudit(r.Context(), "host_netplan_commit", map[string]any{"token": body.Token}, false)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "committed"})
 }
 
 func (s *Server) hostGetFirewall(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +177,56 @@ func (s *Server) hostApplyFirewall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
+func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ruleset         string `json:"ruleset"`
+		RollbackSeconds int    `json:"rollback_seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	sec := rollback.ClampRollbackSeconds(body.RollbackSeconds)
+	tok, expires, err := nft.ApplyRulesetWithRollback(r.Context(), body.Ruleset, sec)
+	if err != nil {
+		if errors.Is(err, os.ErrInvalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ruleset required"})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.hostAppendAudit(r.Context(), "host_firewall_apply", map[string]any{
+		"token":            tok,
+		"rollback_seconds": sec,
+		"expires_at":       expires.UTC().Format(time.RFC3339),
+	}, true)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":      tok,
+		"expires_at": expires.UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !rollback.ValidToken(body.Token) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid token"})
+		return
+	}
+	if err := nft.CommitRuleset(r.Context(), body.Token); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.hostAppendAudit(r.Context(), "host_firewall_commit", map[string]any{"token": body.Token}, false)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "committed"})
+}
+
 func (s *Server) hostListServices(w http.ResponseWriter, r *http.Request) {
 	list, err := hostsystemd.List(r.Context())
 	if err != nil {
@@ -129,6 +250,7 @@ func (s *Server) hostServiceAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_service_action", map[string]any{"unit": unit, "action": action}, false)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "unit": unit, "action": action})
 }
 
@@ -167,6 +289,7 @@ func (s *Server) hostAptUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_apt_update", nil, false)
 	writeJSON(w, http.StatusOK, st)
 }
 
@@ -176,6 +299,7 @@ func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_apt_upgrade", nil, true)
 	writeJSON(w, http.StatusOK, st)
 }
 
@@ -184,6 +308,7 @@ func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_power_reboot", nil, true)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "rebooting"})
 }
 
@@ -192,6 +317,7 @@ func (s *Server) hostPoweroff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_power_shutdown", nil, true)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
 }
 

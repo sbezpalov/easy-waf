@@ -4,6 +4,11 @@ set -euo pipefail
 
 log() { echo "[easy-waf-host] $*" >&2; }
 
+ROLLBACK_DIR="/var/lib/easy-waf/rollback"
+HELPER="/usr/lib/easy-waf/host-privileged.sh"
+
+_valid_token() { [[ "$1" =~ ^[a-f0-9]{8,64}$ ]]; }
+
 allowed_systemd_unit() {
   case "$1" in
     easy-waf-api.service|easy-waf-acmed.service|haproxy.service|crowdsec.service| \
@@ -124,6 +129,87 @@ cmd_ssh_authorized_keys() {
   install -m 0600 -o "$name" -g "$name" "$tmp" "${dir}/authorized_keys"
 }
 
+cmd_nft_apply_confirm() {
+  local src="$1" timeout="$2" token="$3"
+  [[ -f "$src" ]] || { log "missing staged nft"; exit 1; }
+  _valid_token "$token" || { log "bad token"; exit 1; }
+  [[ "$timeout" =~ ^[0-9]+$ ]] || { log "bad timeout"; exit 1; }
+  mkdir -p "$ROLLBACK_DIR"
+  if [[ -f /etc/nftables/easy-waf.nft ]]; then
+    cp -a /etc/nftables/easy-waf.nft "$ROLLBACK_DIR/nft-$token.bak"
+  else
+    : > "$ROLLBACK_DIR/nft-$token.bak"
+  fi
+  nft -c -f "$src"
+  install -m 0644 "$src" /etc/nftables/easy-waf.nft
+  nft -f /etc/nftables/easy-waf.nft
+  systemd-run --collect --unit="easy-waf-rb-nft-$token" --on-active="${timeout}s" \
+    "$HELPER" nft-revert "$token"
+  log "nft applied with rollback in ${timeout}s (token $token)"
+}
+
+cmd_nft_commit() {
+  _valid_token "${1:-}" || exit 1
+  systemctl stop "easy-waf-rb-nft-$1.service" 2>/dev/null || true
+  systemctl reset-failed "easy-waf-rb-nft-$1.service" 2>/dev/null || true
+  rm -f "$ROLLBACK_DIR/nft-$1.bak"
+  log "nft change committed (token $1)"
+}
+
+cmd_nft_revert() {
+  _valid_token "${1:-}" || exit 1
+  local bak="$ROLLBACK_DIR/nft-$1.bak"
+  [[ -f "$bak" ]] || exit 0
+  if [[ -s "$bak" ]]; then
+    install -m 0644 "$bak" /etc/nftables/easy-waf.nft
+    nft -f /etc/nftables/easy-waf.nft
+  fi
+  rm -f "$bak"
+  log "nft reverted (token $1)"
+}
+
+cmd_netplan_apply_confirm() {
+  local src="$1" timeout="$2" token="$3"
+  [[ -f "$src" ]] || exit 1
+  _valid_token "$token" || exit 1
+  [[ "$timeout" =~ ^[0-9]+$ ]] || exit 1
+  command -v netplan &>/dev/null || { log "netplan not installed"; exit 1; }
+  mkdir -p "$ROLLBACK_DIR"
+  if [[ -f /etc/netplan/99-easy-waf.yaml ]]; then
+    cp -a /etc/netplan/99-easy-waf.yaml "$ROLLBACK_DIR/netplan-$token.bak"
+  else
+    : > "$ROLLBACK_DIR/netplan-$token.bak"
+  fi
+  install -m 0600 "$src" /etc/netplan/99-easy-waf.yaml
+  netplan generate
+  netplan apply
+  systemd-run --collect --unit="easy-waf-rb-netplan-$token" --on-active="${timeout}s" \
+    "$HELPER" netplan-revert "$token"
+  log "netplan applied with rollback in ${timeout}s (token $token)"
+}
+
+cmd_netplan_commit() {
+  _valid_token "${1:-}" || exit 1
+  systemctl stop "easy-waf-rb-netplan-$1.service" 2>/dev/null || true
+  systemctl reset-failed "easy-waf-rb-netplan-$1.service" 2>/dev/null || true
+  rm -f "$ROLLBACK_DIR/netplan-$1.bak"
+  log "netplan change committed (token $1)"
+}
+
+cmd_netplan_revert() {
+  _valid_token "${1:-}" || exit 1
+  local bak="$ROLLBACK_DIR/netplan-$1.bak"
+  [[ -f "$bak" ]] || exit 0
+  if [[ -s "$bak" ]]; then
+    install -m 0600 "$bak" /etc/netplan/99-easy-waf.yaml
+  else
+    rm -f /etc/netplan/99-easy-waf.yaml
+  fi
+  netplan apply
+  rm -f "$bak"
+  log "netplan reverted (token $1)"
+}
+
 main() {
   [[ "$(id -u)" -eq 0 ]] || { log "must run as root"; exit 1; }
   local cmd="${1:-}"
@@ -144,6 +230,12 @@ main() {
     useradd) cmd_useradd "$1" ;;
     userdel) cmd_userdel "$1" ;;
     ssh-authorized-keys) cmd_ssh_authorized_keys "$1" "$2" ;;
+    nft-apply-confirm) cmd_nft_apply_confirm "$1" "$2" "$3" ;;
+    nft-commit) cmd_nft_commit "$1" ;;
+    nft-revert) cmd_nft_revert "$1" ;;
+    netplan-apply-confirm) cmd_netplan_apply_confirm "$1" "$2" "$3" ;;
+    netplan-commit) cmd_netplan_commit "$1" ;;
+    netplan-revert) cmd_netplan_revert "$1" ;;
     *) log "unknown command: $cmd"; exit 1 ;;
   esac
 }

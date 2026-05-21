@@ -62,6 +62,8 @@ func auditHTTPRouteCategory(path string) string {
 		return "fail2ban"
 	case strings.Contains(path, "/diagnostics"):
 		return "diagnostics"
+	case strings.Contains(path, "/host/"):
+		return "host"
 	case strings.Contains(path, "/auth/change-password"):
 		return "auth"
 	default:

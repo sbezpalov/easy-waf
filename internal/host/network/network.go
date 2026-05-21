@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/host/rollback"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
@@ -80,5 +82,39 @@ func ApplyNetplan(ctx context.Context, yaml string) error {
 		return err
 	}
 	_, err := runner.Privileged(ctx, "netplan-install", staged)
+	return err
+}
+
+// ApplyNetplanWithRollback stages YAML and applies with a systemd-run auto-revert window.
+func ApplyNetplanWithRollback(ctx context.Context, yaml string, timeoutSec int) (token string, expiresAt time.Time, err error) {
+	yaml = strings.TrimSpace(yaml)
+	if yaml == "" {
+		return "", time.Time{}, os.ErrInvalid
+	}
+	timeoutSec = rollback.ClampRollbackSeconds(timeoutSec)
+	tok, err := rollback.GenerateToken()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	dir := "/var/lib/easy-waf/staging"
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", time.Time{}, err
+	}
+	staged := filepath.Join(dir, "netplan-"+tok+".yaml")
+	if err := os.WriteFile(staged, []byte(yaml+"\n"), 0o600); err != nil {
+		return "", time.Time{}, err
+	}
+	if _, err := runner.Privileged(ctx, "netplan-apply-confirm", staged, strconv.Itoa(timeoutSec), tok); err != nil {
+		return "", time.Time{}, err
+	}
+	return tok, time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second), nil
+}
+
+// CommitNetplan cancels the rollback timer and removes the backup for token.
+func CommitNetplan(ctx context.Context, token string) error {
+	if !rollback.ValidToken(token) {
+		return os.ErrInvalid
+	}
+	_, err := runner.Privileged(ctx, "netplan-commit", token)
 	return err
 }

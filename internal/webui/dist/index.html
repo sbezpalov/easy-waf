@@ -26,6 +26,13 @@
     .warn { color: #d29922; }
     .ok { color: #3fb950; }
     .hidden { display: none !important; }
+    .rollback-banner {
+      position: sticky; top: 0.5rem; z-index: 25;
+      background: #3d2117; border: 1px solid #da3633; border-radius: 8px;
+      padding: 0.75rem 1rem; margin-bottom: 1rem; color: #ffdede;
+    }
+    .rollback-banner strong { color: #ffa657; }
+    .rollback-banner .row { margin-top: 0.5rem; }
 
     .login-wrap { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
 
@@ -212,6 +219,9 @@
         <a href="#security" class="nav-link" data-tab="security"><span>◎</span> Security</a>
         <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span>⚑</span> CrowdSec</a>
         <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span>⛔</span> Fail2Ban</a>
+        <a href="#system" class="nav-link" data-tab="system"><span>▦</span> System</a>
+        <a href="#network" class="nav-link" data-tab="network"><span>⇄</span> Network</a>
+        <a href="#users" class="nav-link" data-tab="users"><span>☺</span> Users</a>
         <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config<span class="pending-dot hidden" id="nav-config-pending" aria-hidden="true"></span></a>
         <a href="#settings" class="nav-link" data-tab="settings"><span>✎</span> Settings</a>
         <a href="#logs" class="nav-link" data-tab="logs"><span>◈</span> Logs / Audit</a>
@@ -575,6 +585,72 @@
         </div>
       </div>
 
+      <div id="tab-system" class="tab-panel">
+        <h2>▦ System</h2>
+        <p class="dash-note" style="margin-top:0">Host services, package updates, and power control (requires privileged helper on the appliance).</p>
+        <div class="panel" style="max-width:100%">
+          <h3>Services</h3>
+          <div class="row">
+            <button type="button" class="secondary" id="btn-sys-services-refresh">Refresh</button>
+          </div>
+          <div id="sys-services-table" style="margin-top:0.5rem"></div>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Updates (apt)</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.5rem">
+            <button type="button" class="secondary" id="btn-sys-apt-check">Check for updates</button>
+            <button type="button" class="secondary" id="btn-sys-apt-upgrade">Install upgrades</button>
+          </div>
+          <p id="sys-apt-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+          <pre id="sys-apt-output" style="max-height:14rem;overflow:auto;background:#0d1117;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Power</h3>
+          <div class="row">
+            <button type="button" class="secondary" id="btn-sys-reboot">Reboot</button>
+            <button type="button" class="secondary" id="btn-sys-shutdown">Shutdown</button>
+          </div>
+          <p id="sys-power-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+        </div>
+      </div>
+
+      <div id="tab-network" class="tab-panel">
+        <h2>⇄ Network</h2>
+        <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
+          <div><strong>Safety window active</strong> — <span id="host-rollback-label">changes</span> will auto-revert in <span id="host-rollback-countdown">90</span>s unless you confirm.</div>
+          <div class="row">
+            <button type="button" id="btn-host-rollback-keep">Keep changes</button>
+          </div>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Overview</h3>
+          <div id="net-overview" class="dash-note" style="color:#e6edf3">Loading…</div>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Netplan <small>(Advanced)</small></h3>
+          <p class="dash-note" style="margin-top:0">Wrong configuration can temporarily cut network access. Changes auto-revert after the safety window unless you click <strong>Keep changes</strong>. Form-based editor — next iteration.</p>
+          <textarea id="net-netplan-yaml" rows="10" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px" placeholder="# 99-easy-waf.yaml"></textarea>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" id="btn-net-netplan-apply">Apply (safety 90s)</button>
+          </div>
+          <p id="net-netplan-msg" class="warn" style="margin-top:0.35rem"></p>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Firewall / nftables <small>(Advanced)</small></h3>
+          <p class="dash-note" style="margin-top:0">Managed file <code>/etc/nftables/easy-waf.nft</code>. Same safety window as netplan.</p>
+          <textarea id="net-firewall-rules" rows="12" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px"></textarea>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" id="btn-net-firewall-apply">Apply (safety 90s)</button>
+          </div>
+          <p id="net-firewall-msg" class="warn" style="margin-top:0.35rem"></p>
+        </div>
+      </div>
+
+      <div id="tab-users" class="tab-panel">
+        <h2>☺ Users</h2>
+        <p class="dash-note">Local accounts &amp; SSH keys management — coming in the next iteration.</p>
+      </div>
+
       <div id="tab-config" class="tab-panel">
         <h2>⚙ Config</h2>
         <p><small>Apply renders from the database, validates with <code>haproxy -c</code>, writes the live config, and records a revision.</small></p>
@@ -677,6 +753,9 @@
     '#security': 'security',
     '#crowdsec': 'crowdsec',
     '#fail2ban': 'fail2ban',
+    '#system': 'system',
+    '#network': 'network',
+    '#users': 'users',
     '#config': 'config',
     '#settings': 'settings',
     '#logs': 'logs'
@@ -914,6 +993,15 @@
         break;
       case 'fail2ban':
         void loadFail2banOverview();
+        break;
+      case 'system':
+        loadSystemTab();
+        break;
+      case 'network':
+        loadNetworkTab();
+        break;
+      case 'users':
+        loadUsersTab();
         break;
       case 'config':
         loadRevisions();
@@ -2796,6 +2884,334 @@
       } else {
         toast(await apiMessage(r), 'err');
       }
+    });
+  };
+
+  const HOST_CRITICAL_UNITS = ['easy-waf-api.service', 'haproxy.service', 'postgresql.service'];
+  const HOST_SERVICE_ACTIONS = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
+  let hostRollback = { kind: null, token: null, commitUrl: null, timer: null, deadline: 0 };
+
+  function loadUsersTab() { /* stub — part 2 */ }
+
+  function updateHostRollbackApplyButtons() {
+    const np = document.getElementById('btn-net-netplan-apply');
+    const fw = document.getElementById('btn-net-firewall-apply');
+    const busy = !!hostRollback.kind;
+    if (np) np.disabled = busy;
+    if (fw) fw.disabled = busy;
+  }
+
+  function hideHostRollbackBanner() {
+    const banner = document.getElementById('host-rollback-banner');
+    if (banner) banner.classList.add('hidden');
+    if (hostRollback.timer) {
+      clearInterval(hostRollback.timer);
+      hostRollback.timer = null;
+    }
+    hostRollback.kind = null;
+    hostRollback.token = null;
+    hostRollback.commitUrl = null;
+    hostRollback.deadline = 0;
+    updateHostRollbackApplyButtons();
+  }
+
+  function showHostRollbackBanner(kind, token, expiresAt, commitUrl) {
+    hideHostRollbackBanner();
+    hostRollback.kind = kind;
+    hostRollback.token = token;
+    hostRollback.commitUrl = commitUrl;
+    hostRollback.deadline = new Date(expiresAt).getTime();
+    const banner = document.getElementById('host-rollback-banner');
+    const label = document.getElementById('host-rollback-label');
+    const cd = document.getElementById('host-rollback-countdown');
+    if (label) label.textContent = kind === 'netplan' ? 'Netplan' : 'Firewall';
+    if (banner) banner.classList.remove('hidden');
+    updateHostRollbackApplyButtons();
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((hostRollback.deadline - Date.now()) / 1000));
+      if (cd) cd.textContent = String(left);
+      if (left <= 0) {
+        clearInterval(hostRollback.timer);
+        hostRollback.timer = null;
+        toast('Safety window expired — if access was lost, changes were reverted. Reload the page.', 'warn', 12000);
+        hideHostRollbackBanner();
+      }
+    };
+    tick();
+    hostRollback.timer = setInterval(tick, 500);
+  }
+
+  document.getElementById('btn-host-rollback-keep').onclick = async () => {
+    if (!hostRollback.token || !hostRollback.commitUrl) return;
+    const r = await fetch(hostRollback.commitUrl, {
+      method: 'POST',
+      headers: hdr(),
+      body: JSON.stringify({ token: hostRollback.token })
+    });
+    if (!r.ok) {
+      toast(await apiMessage(r), 'err');
+      return;
+    }
+    toast('Changes kept.', 'ok');
+    hideHostRollbackBanner();
+    loadNetworkTab();
+  };
+
+  async function applyHostWithRollback(opts) {
+    const ok = await confirmDialog(
+      'Applying may break network or firewall access. A safety window starts: if you do not click “Keep changes” within 90 seconds, the system automatically reverts. Continue?',
+      { danger: true, okLabel: 'Apply' }
+    );
+    if (!ok) return;
+    const r = await fetch(opts.applyUrl, {
+      method: 'POST',
+      headers: hdr(),
+      body: JSON.stringify(opts.body)
+    });
+    if (!r.ok) {
+      toast(await apiMessage(r), 'err');
+      if (opts.msgEl) opts.msgEl.textContent = await r.text();
+      return;
+    }
+    const j = await r.json();
+    showHostRollbackBanner(opts.kind, j.token, j.expires_at, opts.commitUrl);
+    toast('Applied — confirm within the safety window.', 'warn', 8000);
+    if (opts.msgEl) {
+      opts.msgEl.textContent = 'Applied. Click “Keep changes” before the timer ends.';
+      opts.msgEl.className = 'ok';
+    }
+  }
+
+  async function loadSystemTab() {
+    await loadSystemServicesTable();
+    const aptOut = document.getElementById('sys-apt-output');
+    if (aptOut && !aptOut.textContent) aptOut.textContent = 'Click “Check for updates”.';
+  }
+
+  async function loadSystemServicesTable() {
+    const box = document.getElementById('sys-services-table');
+    if (!box) return;
+    tableState(box, 'loading');
+    const r = await fetch('/api/v1/host/services', { headers: hdr() });
+    if (!r.ok) {
+      tableState(box, 'error', { message: await apiMessage(r) });
+      return;
+    }
+    const j = await r.json();
+    const list = Array.isArray(j.services) ? j.services : [];
+    if (!list.length) {
+      tableState(box, 'empty', { message: 'No services.' });
+      return;
+    }
+    const actionBtns = (unit) => HOST_SERVICE_ACTIONS.map((act) =>
+      `<button type="button" class="secondary sys-svc-act" data-unit="${esc(unit)}" data-action="${esc(act)}">${esc(act)}</button>`
+    ).join(' ');
+    const rows = list.map((s) => `<tr>
+      <td><code>${esc(s.unit)}</code></td>
+      <td>${esc(s.active_state || '—')}</td>
+      <td>${esc(s.enabled_state || '—')}</td>
+      <td class="row" style="gap:0.25rem;flex-wrap:wrap">${actionBtns(s.unit)}</td>
+    </tr>`).join('');
+    box.innerHTML = `<table><thead><tr><th>Unit</th><th>Active</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.querySelectorAll('.sys-svc-act').forEach((btn) => {
+      btn.onclick = () => withBusy(btn, () => runHostServiceAction(btn.getAttribute('data-unit'), btn.getAttribute('data-action')));
+    });
+  }
+
+  async function runHostServiceAction(unit, action) {
+    let msg = `Run ${action} on ${unit}?`;
+    let danger = false;
+    if (HOST_CRITICAL_UNITS.includes(unit) && (action === 'stop' || action === 'disable')) {
+      danger = true;
+      msg = `Stopping or disabling ${unit} may take down the management UI or published traffic. Continue?`;
+    } else if (action === 'stop' || action === 'disable' || action === 'restart' || action === 'reload') {
+      danger = true;
+      msg = `${action} ${unit}?`;
+    }
+    const ok = await confirmDialog(msg, danger ? { danger: true, okLabel: action } : {});
+    if (!ok) return;
+    const r = await fetch(`/api/v1/host/services/${encodeURIComponent(unit)}/${encodeURIComponent(action)}`, {
+      method: 'POST',
+      headers: hdr(),
+      body: '{}'
+    });
+    if (!r.ok) {
+      toast(await apiMessage(r), 'err');
+      return;
+    }
+    toast(`${unit}: ${action} OK`, 'ok');
+    await loadSystemServicesTable();
+  }
+
+  document.getElementById('btn-sys-services-refresh').onclick = () => loadSystemServicesTable();
+
+  document.getElementById('btn-sys-apt-check').onclick = async () => {
+    const msg = document.getElementById('sys-apt-msg');
+    const out = document.getElementById('sys-apt-output');
+    if (msg) msg.textContent = '';
+    await withBusy(document.getElementById('btn-sys-apt-check'), async () => {
+      const u = await fetch('/api/v1/host/updates/update', { method: 'POST', headers: hdr(), body: '{}' });
+      if (!u.ok) {
+        toast(await apiMessage(u), 'err');
+        if (msg) msg.textContent = await u.text();
+        return;
+      }
+      const r = await fetch('/api/v1/host/updates', { headers: hdr() });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast(await apiMessage(r), 'err');
+        return;
+      }
+      if (out) out.textContent = j.output || '(no output)';
+      if (msg) {
+        msg.textContent = 'Package list refreshed.';
+        msg.className = 'ok';
+      }
+      toast('Update check done', 'ok');
+    });
+  };
+
+  document.getElementById('btn-sys-apt-upgrade').onclick = async () => {
+    const ok = await confirmDialog(
+      'Upgrading packages may restart services. Run now?',
+      { danger: true, okLabel: 'Upgrade' }
+    );
+    if (!ok) return;
+    const msg = document.getElementById('sys-apt-msg');
+    const out = document.getElementById('sys-apt-output');
+    await withBusy(document.getElementById('btn-sys-apt-upgrade'), async () => {
+      const r = await fetch('/api/v1/host/updates/upgrade', { method: 'POST', headers: hdr(), body: '{}' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast(await apiMessage(r), 'err');
+        if (msg) msg.textContent = await r.text();
+        return;
+      }
+      if (out) out.textContent = j.output || 'upgrade finished';
+      toast('Upgrade finished', 'ok');
+      const rr = await fetch('/api/v1/host/updates', { headers: hdr() });
+      if (rr.ok) {
+        const jj = await rr.json();
+        if (out) out.textContent = jj.output || out.textContent;
+      }
+    });
+  };
+
+  document.getElementById('btn-sys-reboot').onclick = async () => {
+    const ok = await confirmDialog(
+      'The appliance will reboot. Management UI will be unavailable during boot. Continue?',
+      { danger: true, okLabel: 'Reboot' }
+    );
+    if (!ok) return;
+    await withBusy(document.getElementById('btn-sys-reboot'), async () => {
+      const r = await fetch('/api/v1/host/power/reboot', { method: 'POST', headers: hdr(), body: '{}' });
+      if (!r.ok) toast(await apiMessage(r), 'err');
+      else toast('Rebooting…', 'warn', 10000);
+    });
+  };
+
+  document.getElementById('btn-sys-shutdown').onclick = async () => {
+    const ok = await confirmDialog(
+      'The appliance will power off. Physical or hypervisor access is required to turn it back on. Continue?',
+      { danger: true, okLabel: 'Shutdown' }
+    );
+    if (!ok) return;
+    await withBusy(document.getElementById('btn-sys-shutdown'), async () => {
+      const r = await fetch('/api/v1/host/power/shutdown', { method: 'POST', headers: hdr(), body: '{}' });
+      if (!r.ok) toast(await apiMessage(r), 'err');
+      else toast('Shutting down…', 'warn', 10000);
+    });
+  };
+
+  function formatNetOverview(ov) {
+    const lines = [];
+    if (ov.hostname) lines.push('Hostname: ' + ov.hostname);
+    if (ov.ntp_synced != null && ov.ntp_synced !== '') lines.push('NTP synchronized: ' + ov.ntp_synced);
+    if (Array.isArray(ov.dns) && ov.dns.length) lines.push('DNS: ' + ov.dns.join(', '));
+    const links = Array.isArray(ov.links) ? ov.links : [];
+    links.forEach((raw) => {
+      const l = raw && typeof raw === 'object' ? raw : null;
+      if (l && l.ifname) lines.push('Interface ' + l.ifname + ': ' + (l.operstate || l.state || '—'));
+    });
+    const addrs = Array.isArray(ov.addresses) ? ov.addresses : [];
+    addrs.forEach((raw) => {
+      try {
+        const a = raw && typeof raw === 'object' ? raw : JSON.parse(raw);
+        if (a && a.ifname && Array.isArray(a.addr_info)) {
+          a.addr_info.forEach((ai) => {
+            if (ai.local) lines.push('  ' + a.ifname + ' ' + (ai.family || '') + ' ' + ai.local + '/' + (ai.prefixlen || ''));
+          });
+        }
+      } catch (_) { /* skip */ }
+    });
+    const routes = Array.isArray(ov.routes) ? ov.routes : [];
+    routes.slice(0, 12).forEach((raw) => {
+      try {
+        const rt = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (rt && rt.dst !== undefined) {
+          lines.push('Route: ' + (rt.dst || 'default') + ' via ' + (rt.gateway || '—') + ' dev ' + (rt.dev || '—'));
+        }
+      } catch (_) { /* skip */ }
+    });
+    return lines.length ? lines.join('\n') : '(no overview data)';
+  }
+
+  function findEasyWafNetplan(files) {
+    if (!Array.isArray(files)) return '';
+    const f = files.find((x) => x.path && x.path.indexOf('99-easy-waf') >= 0);
+    return f ? (f.content || '') : (files[0] ? files[0].content : '');
+  }
+
+  async function loadNetworkTab() {
+    const ovBox = document.getElementById('net-overview');
+    if (ovBox) ovBox.textContent = 'Loading…';
+    const [netR, fwR] = await Promise.all([
+      fetch('/api/v1/host/network', { headers: hdr() }),
+      fetch('/api/v1/host/firewall', { headers: hdr() })
+    ]);
+    if (netR.ok) {
+      const ov = await netR.json();
+      if (ovBox) {
+        ovBox.style.whiteSpace = 'pre-wrap';
+        ovBox.textContent = formatNetOverview(ov);
+      }
+      const ta = document.getElementById('net-netplan-yaml');
+      if (ta) ta.value = findEasyWafNetplan(ov.netplan_files);
+    } else if (ovBox) {
+      ovBox.textContent = await apiMessage(netR);
+      ovBox.className = 'warn';
+    }
+    const fwTa = document.getElementById('net-firewall-rules');
+    if (fwR.ok && fwTa) {
+      const fw = await fwR.json();
+      fwTa.value = fw.ruleset || '';
+    }
+    updateHostRollbackApplyButtons();
+  }
+
+  document.getElementById('btn-net-netplan-apply').onclick = async () => {
+    if (hostRollback.kind) return;
+    const yaml = document.getElementById('net-netplan-yaml').value;
+    const msgEl = document.getElementById('net-netplan-msg');
+    await applyHostWithRollback({
+      kind: 'netplan',
+      applyUrl: '/api/v1/host/network/netplan/apply',
+      commitUrl: '/api/v1/host/network/netplan/commit',
+      body: { yaml, rollback_seconds: 90 },
+      msgEl
+    });
+  };
+
+  document.getElementById('btn-net-firewall-apply').onclick = async () => {
+    if (hostRollback.kind) return;
+    const ruleset = document.getElementById('net-firewall-rules').value;
+    const msgEl = document.getElementById('net-firewall-msg');
+    await applyHostWithRollback({
+      kind: 'firewall',
+      applyUrl: '/api/v1/host/firewall/apply-rollback',
+      commitUrl: '/api/v1/host/firewall/commit',
+      body: { ruleset, rollback_seconds: 90 },
+      msgEl
     });
   };
 
