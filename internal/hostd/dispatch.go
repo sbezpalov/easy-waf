@@ -169,6 +169,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		}
 		return okResp(stdout, stderr, code)
 
+	case "apt-autoremove-simulate":
+		stdout, stderr, code, err := runCmd(ctx, r, "apt-get", "-s", "autoremove")
+		if err != nil || code != 0 {
+			return failExec(stdout, stderr, code, err)
+		}
+		return okResp(stdout, stderr, code)
+
 	case "journal":
 		jargs := argv[1:]
 		if err := hostspec.ValidateJournalArgs(jargs); err != nil {

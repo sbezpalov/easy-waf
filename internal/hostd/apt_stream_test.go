@@ -32,11 +32,11 @@ func readStreamEvents(t *testing.T, r io.Reader) []streamEvent {
 
 func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	resetAptUpgradeState()
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
 		_ = emit("Setting up pkg-a")
 		_ = emit("Processing triggers")
 		return 0, nil
-	}
+	})
 	defer resetAptUpgradeState()
 
 	pr, pw := io.Pipe()
@@ -58,19 +58,110 @@ func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	}
 }
 
-func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
+func TestDispatchAptStream_autoremove(t *testing.T) {
 	resetAptUpgradeState()
-	aptUpgradeLogPathOverride = filepath.Join(t.TempDir(), "apt-upgrade.log")
-	defer func() { aptUpgradeLogPathOverride = "" }()
+	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+		if action != "autoremove" {
+			t.Fatalf("action: %q", action)
+		}
+		_ = emit("Removing orphan-pkg")
+		return 0, nil
+	})
+	defer resetAptUpgradeState()
+
+	pr, pw := io.Pipe()
+	go func() {
+		dispatchAptStream(pw, "autoremove")
+		_ = pw.Close()
+	}()
+	events := readStreamEvents(t, pr)
+	if !strings.Contains(events[0].Data, "starting apt-get autoremove") {
+		t.Fatalf("start: %+v", events[0])
+	}
+	last := events[len(events)-1]
+	if last.Type != "exit" || last.Code != 0 {
+		t.Fatalf("exit: %+v", last)
+	}
+}
+
+func TestDispatchAptStream_unknownAction(t *testing.T) {
+	resetAptUpgradeState()
+	defer resetAptUpgradeState()
+
+	pr, pw := io.Pipe()
+	go func() {
+		dispatchAptStream(pw, "purge")
+		_ = pw.Close()
+	}()
+	events := readStreamEvents(t, pr)
+	last := events[len(events)-1]
+	if last.Type != "exit" || last.Code != -1 || !strings.Contains(last.Error, "unknown apt action") {
+		t.Fatalf("exit: %+v", last)
+	}
+}
+
+func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
+	resetAptUpgradeState()
+	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	defer func() {
+		SetAptActionLogPathOverrideForTest("")
+		resetAptUpgradeState()
+	}()
 
 	started := make(chan struct{})
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+		if action != "upgrade" {
+			t.Fatalf("primary action: %q", action)
+		}
+		close(started)
+		_ = emit("primary-line")
+		time.Sleep(300 * time.Millisecond)
+		return 0, nil
+	})
+
+	pr1, pw1 := io.Pipe()
+	go func() {
+		dispatchAptStream(pw1, "upgrade")
+		_ = pw1.Close()
+	}()
+	go func() { _, _ = io.Copy(io.Discard, pr1) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("primary did not start")
+	}
+
+	pr2, pw2 := io.Pipe()
+	go func() {
+		dispatchAptStream(pw2, "autoremove")
+		_ = pw2.Close()
+	}()
+	events := readStreamEvents(t, pr2)
+	if !strings.Contains(events[0].Data, "attaching to apt action already in progress") {
+		t.Fatalf("attach banner: %+v", events[0])
+	}
+	last := events[len(events)-1]
+	if last.Type != "exit" || last.Code != 0 {
+		t.Fatalf("attach exit: %+v", last)
+	}
+	_ = pr1.Close()
+}
+
+func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
+	resetAptUpgradeState()
+	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	defer func() {
+		SetAptActionLogPathOverrideForTest("")
+		resetAptUpgradeState()
+	}()
+
+	started := make(chan struct{})
+	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
 		close(started)
 		_ = emit("primary-line")
 		time.Sleep(200 * time.Millisecond)
 		return 0, nil
-	}
-	defer resetAptUpgradeState()
+	})
 
 	pr1, pw1 := io.Pipe()
 	go func() {
@@ -90,10 +181,7 @@ func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 		_ = pw2.Close()
 	}()
 	events := readStreamEvents(t, pr2)
-	if len(events) < 2 {
-		t.Fatalf("attach events: %+v", events)
-	}
-	if !strings.Contains(events[0].Data, "attaching to upgrade already in progress") {
+	if !strings.Contains(events[0].Data, "attaching to apt action already in progress") {
 		t.Fatalf("attach banner: %+v", events[0])
 	}
 	last := events[len(events)-1]
@@ -105,17 +193,17 @@ func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 
 func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
 	resetAptUpgradeState()
-	aptUpgradeHeartbeatInterval = 50 * time.Millisecond
+	aptActionHeartbeatInterval = 50 * time.Millisecond
 	defer func() {
-		aptUpgradeHeartbeatInterval = 15 * time.Second
+		aptActionHeartbeatInterval = 15 * time.Second
 		resetAptUpgradeState()
 	}()
 
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
 		time.Sleep(200 * time.Millisecond)
 		_ = emit("done")
 		return 0, nil
-	}
+	})
 
 	pr, pw := io.Pipe()
 	go func() {
@@ -137,13 +225,13 @@ func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
 func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T) {
 	resetAptUpgradeState()
 	hookDone := make(chan struct{})
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
 		_ = emit("line-one")
 		time.Sleep(50 * time.Millisecond)
 		_ = emit("line-two")
 		close(hookDone)
 		return 0, nil
-	}
+	})
 	defer resetAptUpgradeState()
 
 	client, server := net.Pipe()
@@ -163,10 +251,10 @@ func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T)
 
 func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	resetAptUpgradeState()
-	aptUpgradeStreamHook = func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
 		_ = emit("mock upgrade line")
 		return 0, nil
-	}
+	})
 	defer resetAptUpgradeState()
 
 	dir := t.TempDir()
@@ -196,6 +284,44 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	if len(events) < 2 {
 		t.Fatalf("events: %+v", events)
 	}
+	if events[len(events)-1].Type != "exit" || events[len(events)-1].Code != 0 {
+		t.Fatalf("exit: %+v", events[len(events)-1])
+	}
+}
+
+func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
+	resetAptUpgradeState()
+	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+		_ = action
+		_ = emit("mock autoremove line")
+		return 0, nil
+	})
+	defer resetAptUpgradeState()
+
+	dir := t.TempDir()
+	sock := dir + "/hostd.sock"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = Serve(ctx, sock) }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	var conn net.Conn
+	var err error
+	for time.Now().Before(deadline) {
+		conn, err = net.Dial("unix", sock)
+		if err == nil {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if conn == nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-autoremove-stream"}}); err != nil {
+		t.Fatal(err)
+	}
+	events := readStreamEvents(t, conn)
 	if events[len(events)-1].Type != "exit" || events[len(events)-1].Code != 0 {
 		t.Fatalf("exit: %+v", events[len(events)-1])
 	}

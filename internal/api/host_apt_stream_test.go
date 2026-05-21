@@ -119,3 +119,61 @@ func TestHostAptUpgradeStream_flushesIncrementally(t *testing.T) {
 		t.Fatalf("expected 3 ndjson records, got %d body=%q", n, body)
 	}
 }
+
+func TestHostAutoremoveStream_requiresXHR(t *testing.T) {
+	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	s := &Server{Eng: eng, JWTSecret: []byte("test")}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	RequireXHR(http.HandlerFunc(s.hostAutoremoveStream)).ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status %d", w.Code)
+	}
+}
+
+func TestHostAutoremoveStream_setsNDJSONContentType(t *testing.T) {
+	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	s := &Server{Eng: eng, JWTSecret: []byte("test")}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.hostAutoremoveStream(w, req)
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/x-ndjson") {
+		t.Fatalf("content-type %q", ct)
+	}
+}
+
+func TestHostAutoremoveStream_flushesIncrementally(t *testing.T) {
+	orig := privilegedStreamFn
+	defer func() { privilegedStreamFn = orig }()
+
+	privilegedStreamFn = func(_ context.Context, onLine func([]byte) error, argv ...string) error {
+		if len(argv) != 1 || argv[0] != "apt-autoremove-stream" {
+			t.Fatalf("argv: %v", argv)
+		}
+		for _, l := range []string{
+			`{"type":"line","data":"removing foo"}`,
+			`{"type":"exit","code":0}`,
+		} {
+			if err := onLine([]byte(l)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	s := &Server{Eng: eng, JWTSecret: []byte("test")}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.RemoteAddr = "127.0.0.1:12345"
+
+	w := &streamSpy{}
+	s.hostAutoremoveStream(w, req)
+	if w.flushes < 1 {
+		t.Fatalf("flushes=%d", w.flushes)
+	}
+}

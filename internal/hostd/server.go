@@ -82,18 +82,22 @@ func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 		_ = writeResponse(c, failResp("empty argv", 1))
 		return
 	}
-	if req.Argv[0] == "apt-upgrade-stream" {
+	switch req.Argv[0] {
+	case "apt-upgrade-stream":
 		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
 		logOp("op=apt-upgrade-stream (stream)")
 		dispatchAptUpgradeStream(c)
 		return
-	}
-	if req.Argv[0] == "apt-upgrade-log" {
-		_ = writeResponse(c, dispatchAptUpgradeLog())
+	case "apt-autoremove-stream":
+		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
+		logOp("op=apt-autoremove-stream (stream)")
+		dispatchAptStream(c, "autoremove")
 		return
-	}
-	if req.Argv[0] == "apt-upgrade-status" {
-		_ = writeResponse(c, dispatchAptUpgradeStatus())
+	case "apt-upgrade-log", "apt-action-log":
+		_ = writeResponse(c, dispatchAptActionLog())
+		return
+	case "apt-upgrade-status", "apt-action-status":
+		_ = writeResponse(c, dispatchAptActionStatus())
 		return
 	}
 	resp := d.Dispatch(ctx, req.Argv)

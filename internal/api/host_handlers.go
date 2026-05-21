@@ -47,6 +47,8 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
 		r.Get("/updates/upgrade/log", s.hostAptUpgradeLog)
 		r.Get("/updates/upgrade/status", s.hostAptUpgradeStatus)
+		r.Get("/updates/autoremove/preview", s.hostAutoremovePreview)
+		r.Post("/updates/autoremove/stream", s.hostAutoremoveStream)
 
 		r.Post("/power/reboot", s.hostReboot)
 		r.Post("/power/shutdown", s.hostPoweroff)
@@ -309,6 +311,23 @@ func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 var privilegedStreamFn = runner.PrivilegedStream
 
 func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
+	s.streamAptAction(w, r, "apt-upgrade-stream", "host_apt_upgrade", "host_apt_upgrade_done")
+}
+
+func (s *Server) hostAutoremoveStream(w http.ResponseWriter, r *http.Request) {
+	s.streamAptAction(w, r, "apt-autoremove-stream", "host_apt_autoremove", "host_apt_autoremove_done")
+}
+
+func (s *Server) hostAutoremovePreview(w http.ResponseWriter, r *http.Request) {
+	st, err := apt.AutoremovePreview(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerOp, auditEvent, auditDoneEvent string) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -316,7 +335,7 @@ func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Content-Encoding", "identity")
 
-	s.hostAppendAudit(r.Context(), "host_apt_upgrade", map[string]any{"stream": true}, false)
+	s.hostAppendAudit(r.Context(), auditEvent, map[string]any{"stream": true}, false)
 
 	var exitCode int
 	flush := func() {
@@ -337,16 +356,16 @@ func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 			exitCode = ev.Code
 		}
 		return nil
-	}, "apt-upgrade-stream")
+	}, brokerOp)
 	if err != nil {
-		// Client may have disconnected; broker still runs apt — do not claim upgrade stopped.
+		// Client may have disconnected; broker still runs apt — do not claim the action stopped.
 		b, _ := json.Marshal(map[string]any{"type": "exit", "code": -1, "error": err.Error()})
 		_, _ = w.Write(append(b, '\n'))
 		flush()
 		return
 	}
 
-	s.hostAppendAudit(r.Context(), "host_apt_upgrade_done", map[string]any{
+	s.hostAppendAudit(r.Context(), auditDoneEvent, map[string]any{
 		"stream": true, "exit_code": exitCode,
 	}, exitCode != 0)
 }

@@ -13,20 +13,23 @@ import (
 	"time"
 )
 
-const defaultAptUpgradeLogPath = "/var/lib/easy-waf/apt-upgrade.log"
+const (
+	defaultAptActionLogPath  = "/var/lib/easy-waf/apt-action.log"
+	defaultAptUpgradeLogPath = "/var/lib/easy-waf/apt-upgrade.log" // legacy path (read fallback)
+)
 
-// aptUpgradeLogPathOverride is set in tests to use a temp directory.
-var aptUpgradeLogPathOverride string
+// aptActionLogPathOverride is set in tests to use a temp directory.
+var aptActionLogPathOverride string
 
-func aptUpgradeLogPath() string {
-	if aptUpgradeLogPathOverride != "" {
-		return aptUpgradeLogPathOverride
+func aptActionLogPath() string {
+	if aptActionLogPathOverride != "" {
+		return aptActionLogPathOverride
 	}
-	return defaultAptUpgradeLogPath
+	return defaultAptActionLogPath
 }
 
-// aptUpgradeHeartbeatInterval is overridable in tests.
-var aptUpgradeHeartbeatInterval = 15 * time.Second
+// aptActionHeartbeatInterval is overridable in tests.
+var aptActionHeartbeatInterval = 15 * time.Second
 
 // streamEvent is one NDJSON line on the broker socket for streaming ops.
 type streamEvent struct {
@@ -37,58 +40,74 @@ type streamEvent struct {
 }
 
 var (
-	aptUpgradeMu         sync.Mutex
-	aptUpgradeActive     bool
-	aptUpgradeLastCode   int
-	aptUpgradeLastErr    string
-	aptUpgradeStreamHook func(ctx context.Context, emit func(string) error) (code int, err error)
+	aptActionMu         sync.Mutex
+	aptActionActive     bool
+	aptActionLastCode   int
+	aptActionLastErr    string
+	aptActionStreamHook func(ctx context.Context, action string, emit func(string) error) (code int, err error)
 )
 
-func aptUpgradeTryStart() bool {
-	aptUpgradeMu.Lock()
-	defer aptUpgradeMu.Unlock()
-	if aptUpgradeActive {
+func validAptStreamAction(action string) bool {
+	return action == "upgrade" || action == "autoremove"
+}
+
+func aptActionTryStart() bool {
+	aptActionMu.Lock()
+	defer aptActionMu.Unlock()
+	if aptActionActive {
 		return false
 	}
-	aptUpgradeActive = true
-	aptUpgradeLastCode = 0
-	aptUpgradeLastErr = ""
+	aptActionActive = true
+	aptActionLastCode = 0
+	aptActionLastErr = ""
 	return true
 }
 
-func aptUpgradeFinish(code int, errMsg string) {
-	aptUpgradeMu.Lock()
-	aptUpgradeActive = false
-	aptUpgradeLastCode = code
-	aptUpgradeLastErr = errMsg
-	aptUpgradeMu.Unlock()
+func aptActionFinish(code int, errMsg string) {
+	aptActionMu.Lock()
+	aptActionActive = false
+	aptActionLastCode = code
+	aptActionLastErr = errMsg
+	aptActionMu.Unlock()
 }
 
-func aptUpgradeIsActive() bool {
-	aptUpgradeMu.Lock()
-	defer aptUpgradeMu.Unlock()
-	return aptUpgradeActive
-}
-
-func aptUpgradeSnapshot() (active bool, code int, errMsg string) {
-	aptUpgradeMu.Lock()
-	defer aptUpgradeMu.Unlock()
-	return aptUpgradeActive, aptUpgradeLastCode, aptUpgradeLastErr
+func aptActionSnapshot() (active bool, code int, errMsg string) {
+	aptActionMu.Lock()
+	defer aptActionMu.Unlock()
+	return aptActionActive, aptActionLastCode, aptActionLastErr
 }
 
 // ResetAptUpgradeStateForTest clears single-flight state (tests only).
 func ResetAptUpgradeStateForTest() {
-	aptUpgradeMu.Lock()
-	aptUpgradeActive = false
-	aptUpgradeLastCode = 0
-	aptUpgradeLastErr = ""
-	aptUpgradeMu.Unlock()
-	aptUpgradeStreamHook = nil
+	ResetAptActionStateForTest()
 }
 
-// SetAptUpgradeStreamHookForTest overrides apt execution (tests only).
+// ResetAptActionStateForTest clears single-flight state (tests only).
+func ResetAptActionStateForTest() {
+	aptActionMu.Lock()
+	aptActionActive = false
+	aptActionLastCode = 0
+	aptActionLastErr = ""
+	aptActionMu.Unlock()
+	aptActionStreamHook = nil
+}
+
+// SetAptUpgradeStreamHookForTest overrides apt execution for upgrade (tests only).
 func SetAptUpgradeStreamHookForTest(hook func(ctx context.Context, emit func(string) error) (int, error)) {
-	aptUpgradeStreamHook = hook
+	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+		_ = action
+		return hook(ctx, emit)
+	})
+}
+
+// SetAptActionStreamHookForTest overrides apt execution (tests only).
+func SetAptActionStreamHookForTest(hook func(ctx context.Context, action string, emit func(string) error) (int, error)) {
+	aptActionStreamHook = hook
+}
+
+// SetAptActionLogPathOverrideForTest redirects the apt action log file (tests only).
+func SetAptActionLogPathOverrideForTest(path string) {
+	aptActionLogPathOverride = path
 }
 
 func writeStreamEvent(w *bufio.Writer, ev streamEvent) error {
@@ -102,26 +121,39 @@ func writeStreamEvent(w *bufio.Writer, ev streamEvent) error {
 	return w.Flush()
 }
 
-// dispatchAptUpgradeStream runs apt-get upgrade or attaches to an in-flight upgrade.
+// dispatchAptUpgradeStream runs apt-get upgrade (wrapper).
 func dispatchAptUpgradeStream(conn io.Writer) {
-	if !aptUpgradeTryStart() {
-		dispatchAptUpgradeAttach(conn)
-		return
-	}
-	dispatchAptUpgradePrimary(conn)
+	dispatchAptStream(conn, "upgrade")
 }
 
-func dispatchAptUpgradePrimary(conn io.Writer) {
+// dispatchAptStream runs apt-get upgrade or autoremove, or attaches to in-flight action.
+func dispatchAptStream(conn io.Writer, action string) {
 	bw := bufio.NewWriter(conn)
 	emitExit := func(code int, errMsg string) {
 		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
-	logPath := aptUpgradeLogPath()
+	if !validAptStreamAction(action) {
+		emitExit(-1, "unknown apt action: "+action)
+		return
+	}
+	if !aptActionTryStart() {
+		dispatchAptActionAttach(bw)
+		return
+	}
+	dispatchAptActionPrimary(bw, action)
+}
+
+func dispatchAptActionPrimary(bw *bufio.Writer, action string) {
+	emitExit := func(code int, errMsg string) {
+		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
+	}
+
+	logPath := aptActionLogPath()
 	_ = os.MkdirAll(filepath.Dir(logPath), 0o750)
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		logOp("apt-upgrade-stream: log file: %v", err)
+		logOp("apt-stream %s: log file: %v", action, err)
 	}
 	if logFile != nil {
 		defer logFile.Close()
@@ -146,20 +178,19 @@ func dispatchAptUpgradePrimary(conn io.Writer) {
 		return nil
 	}
 
-	_ = emitLine("==> starting apt-get upgrade ...")
+	_ = emitLine(fmt.Sprintf("==> starting apt-get %s ...", action))
 	emitDpkgLockHint(emitLine)
 
-	code, runErr := runAptUpgradeStream(aptCtx, emitLine)
+	code, runErr := runAptActionStream(aptCtx, action, emitLine)
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
 	}
-	aptUpgradeFinish(code, errMsg)
+	aptActionFinish(code, errMsg)
 	emitExit(code, errMsg)
 }
 
-func dispatchAptUpgradeAttach(conn io.Writer) {
-	bw := bufio.NewWriter(conn)
+func dispatchAptActionAttach(bw *bufio.Writer) {
 	emitExit := func(code int, errMsg string) {
 		_ = writeStreamEvent(bw, streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
@@ -176,13 +207,13 @@ func dispatchAptUpgradeAttach(conn io.Writer) {
 		return nil
 	}
 
-	_ = emitLine("==> attaching to upgrade already in progress ...")
+	_ = emitLine("==> attaching to apt action already in progress ...")
 
 	var offset int64
 	for {
-		lines, newOff, err := readAptUpgradeLogFrom(offset)
+		lines, newOff, err := readAptActionLogFrom(offset)
 		if err != nil {
-			emitExit(-1, "cannot read upgrade log: "+err.Error())
+			emitExit(-1, "cannot read apt action log: "+err.Error())
 			return
 		}
 		offset = newOff
@@ -190,7 +221,7 @@ func dispatchAptUpgradeAttach(conn io.Writer) {
 			_ = emitLine(line)
 		}
 
-		active, code, errMsg := aptUpgradeSnapshot()
+		active, code, errMsg := aptActionSnapshot()
 		if !active {
 			emitExit(code, errMsg)
 			return
@@ -199,8 +230,8 @@ func dispatchAptUpgradeAttach(conn io.Writer) {
 	}
 }
 
-func readAptUpgradeLogFrom(offset int64) (lines []string, newOffset int64, err error) {
-	f, err := os.Open(aptUpgradeLogPath())
+func readAptActionLogFrom(offset int64) (lines []string, newOffset int64, err error) {
+	f, err := os.Open(aptActionLogPath())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, 0, nil
@@ -222,9 +253,9 @@ func readAptUpgradeLogFrom(offset int64) (lines []string, newOffset int64, err e
 	return lines, newOffset, err
 }
 
-// dispatchAptUpgradeStatus returns whether an upgrade is in progress (JSON in stdout).
-func dispatchAptUpgradeStatus() Response {
-	active, code, errMsg := aptUpgradeSnapshot()
+// dispatchAptActionStatus returns whether an apt action is in progress (JSON in stdout).
+func dispatchAptActionStatus() Response {
+	active, code, errMsg := aptActionSnapshot()
 	payload, err := json.Marshal(map[string]any{
 		"active":    active,
 		"exit_code": code,
@@ -236,9 +267,17 @@ func dispatchAptUpgradeStatus() Response {
 	return okResp(payload, nil, 0)
 }
 
-// dispatchAptUpgradeLog returns the current upgrade log file (read-only).
-func dispatchAptUpgradeLog() Response {
-	b, err := os.ReadFile(aptUpgradeLogPath())
+// dispatchAptUpgradeStatus is a legacy alias.
+func dispatchAptUpgradeStatus() Response {
+	return dispatchAptActionStatus()
+}
+
+// dispatchAptActionLog returns the current apt action log (read-only).
+func dispatchAptActionLog() Response {
+	b, err := os.ReadFile(aptActionLogPath())
+	if err != nil && os.IsNotExist(err) {
+		b, err = os.ReadFile(defaultAptUpgradeLogPath)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return okResp(nil, nil, 0)
@@ -248,13 +287,18 @@ func dispatchAptUpgradeLog() Response {
 	return okResp(b, nil, 0)
 }
 
-func runAptUpgradeStream(ctx context.Context, emit func(string) error) (int, error) {
+// dispatchAptUpgradeLog is a legacy alias.
+func dispatchAptUpgradeLog() Response {
+	return dispatchAptActionLog()
+}
+
+func runAptActionStream(ctx context.Context, action string, emit func(string) error) (int, error) {
 	done := make(chan struct{})
 	defer close(done)
 	var lastLineMu sync.Mutex
 	lastLineAt := time.Now()
 	started := time.Now()
-	go aptUpgradeHeartbeat(ctx, done, started, &lastLineMu, &lastLineAt, emit)
+	go aptActionHeartbeat(ctx, done, started, &lastLineMu, &lastLineAt, emit)
 
 	wrapEmit := func(line string) error {
 		lastLineMu.Lock()
@@ -263,19 +307,20 @@ func runAptUpgradeStream(ctx context.Context, emit func(string) error) (int, err
 		return emit(line)
 	}
 
-	if aptUpgradeStreamHook != nil {
-		return aptUpgradeStreamHook(ctx, wrapEmit)
+	if aptActionStreamHook != nil {
+		return aptActionStreamHook(ctx, action, wrapEmit)
 	}
-	return execAptUpgradeStream(ctx, wrapEmit)
+	return execAptStream(ctx, action, wrapEmit)
 }
 
-func execAptUpgradeStream(ctx context.Context, emit func(string) error) (int, error) {
-	cmd := exec.CommandContext(ctx, "apt-get",
+func execAptStream(ctx context.Context, action string, emit func(string) error) (int, error) {
+	args := []string{
 		"-y",
 		"-o", "Dpkg::Use-Pty=0",
 		"-o", "DPkg::Lock::Timeout=120",
-		"upgrade",
-	)
+		action,
+	}
+	cmd := exec.CommandContext(ctx, "apt-get", args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	stdout, err := cmd.StdoutPipe()
@@ -321,8 +366,8 @@ func execAptUpgradeStream(ctx context.Context, emit func(string) error) (int, er
 	return 0, nil
 }
 
-func aptUpgradeHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
-	ticker := time.NewTicker(aptUpgradeHeartbeatInterval)
+func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
+	ticker := time.NewTicker(aptActionHeartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -334,7 +379,7 @@ func aptUpgradeHeartbeat(ctx context.Context, done <-chan struct{}, started time
 			lastLineMu.Lock()
 			silent := time.Since(*lastLineAt)
 			lastLineMu.Unlock()
-			if silent < aptUpgradeHeartbeatInterval {
+			if silent < aptActionHeartbeatInterval {
 				continue
 			}
 			elapsed := time.Since(started).Round(time.Second)
