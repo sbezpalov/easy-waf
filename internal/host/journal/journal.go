@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
+	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 )
 
 // Query parameters for journalctl.
