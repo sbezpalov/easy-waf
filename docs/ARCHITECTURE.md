@@ -216,7 +216,7 @@ sequenceDiagram
 | Layer | Choice |
 |-------|--------|
 | Control plane | `easy-waf-api`: Go 1.22+, Chi, embedded `web/dist` |
-| Host broker | `easy-waf-hostd`: root unix-socket broker (`internal/hostd`) |
+| Host broker | `easy-waf-hostd`: root unix-socket broker (`internal/hostd`); long ops (e.g. `apt-upgrade-stream`) return **NDJSON** lines on the same socket instead of one JSON blob |
 | ACME worker | `easy-waf-acmed` — Lego v4 HTTP-01 (webroot) |
 | State | PostgreSQL (`pgx` / `database/sql`) |
 | Templates | `text/template` for HAProxy / SPOE |

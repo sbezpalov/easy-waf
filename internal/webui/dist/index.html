@@ -600,9 +600,10 @@
           <div class="row" style="flex-wrap:wrap;gap:0.5rem">
             <button type="button" class="secondary" id="btn-sys-apt-check">Check for updates</button>
             <button type="button" class="secondary" id="btn-sys-apt-upgrade">Install upgrades</button>
+            <button type="button" class="secondary" id="btn-sys-apt-clear-log">Clear log</button>
           </div>
           <p id="sys-apt-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
-          <pre id="sys-apt-output" style="max-height:14rem;overflow:auto;background:#0d1117;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+          <pre id="sys-apt-output" style="max-height:18rem;overflow:auto;background:#0d1117;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-word"></pre>
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Power</h3>
@@ -736,13 +737,14 @@
   const getTok = () => sessionStorage.getItem(TOK) || '';
   const setTok = (t) => { if (t) sessionStorage.setItem(TOK, t); else sessionStorage.removeItem(TOK); };
 
-  const hdr = () => {
+  const hdr = (extra) => {
     const t = getTok();
     const h = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest'
     };
     if (t) h['Authorization'] = 'Bearer ' + t;
+    if (extra && typeof extra === 'object') Object.assign(h, extra);
     return h;
   };
 
@@ -3071,6 +3073,43 @@
     });
   };
 
+  let aptLogStickBottom = true;
+
+  function appendUpgradeLog(line) {
+    const out = document.getElementById('sys-apt-output');
+    if (!out) return;
+    out.style.display = 'block';
+    const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+    if (!atBottom) aptLogStickBottom = false;
+    out.textContent += (out.textContent ? '\n' : '') + line;
+    if (aptLogStickBottom || atBottom) {
+      out.scrollTop = out.scrollHeight;
+      aptLogStickBottom = true;
+    }
+  }
+
+  function setAptButtonsDisabled(disabled) {
+    ['btn-sys-apt-check', 'btn-sys-apt-upgrade'].forEach((id) => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !!disabled;
+    });
+  }
+
+  async function refreshAptPackageList() {
+    const out = document.getElementById('sys-apt-output');
+    const r = await fetch('/api/v1/host/updates', { headers: hdr() });
+    if (r.ok) {
+      const j = await r.json().catch(() => ({}));
+      if (out && j.output) out.textContent = j.output;
+    }
+  }
+
+  document.getElementById('btn-sys-apt-clear-log').onclick = () => {
+    const out = document.getElementById('sys-apt-output');
+    if (out) out.textContent = '';
+    aptLogStickBottom = true;
+  };
+
   document.getElementById('btn-sys-apt-upgrade').onclick = async () => {
     const ok = await confirmDialog(
       'Upgrading packages may restart services. Run now?',
@@ -3079,22 +3118,93 @@
     if (!ok) return;
     const msg = document.getElementById('sys-apt-msg');
     const out = document.getElementById('sys-apt-output');
-    await withBusy(document.getElementById('btn-sys-apt-upgrade'), async () => {
-      const r = await fetch('/api/v1/host/updates/upgrade', { method: 'POST', headers: hdr(), body: '{}' });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        toast(await apiMessage(r), 'err');
-        if (msg) msg.textContent = await r.text();
+    aptLogStickBottom = true;
+    if (out) {
+      out.textContent = '';
+      out.style.display = 'block';
+    }
+    if (msg) {
+      msg.textContent = 'Upgrade running…';
+      msg.className = 'warn';
+    }
+    setAptButtonsDisabled(true);
+    let exitCode = -1;
+    let streamError = '';
+    try {
+      const resp = await fetch('/api/v1/host/updates/upgrade/stream', {
+        method: 'POST',
+        headers: hdr({ Accept: 'application/x-ndjson' }),
+        credentials: 'same-origin',
+        body: '{}'
+      });
+      if (!resp.ok || !resp.body) {
+        toast(await apiMessage(resp), 'err');
+        if (msg) msg.textContent = await resp.text().catch(() => 'Upgrade failed');
         return;
       }
-      if (out) out.textContent = j.output || 'upgrade finished';
-      toast('Upgrade finished', 'ok');
-      const rr = await fetch('/api/v1/host/updates', { headers: hdr() });
-      if (rr.ok) {
-        const jj = await rr.json();
-        if (out) out.textContent = jj.output || out.textContent;
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          let ev;
+          try {
+            ev = JSON.parse(line);
+          } catch (_) {
+            continue;
+          }
+          if (ev.type === 'line' && ev.data != null) appendUpgradeLog(String(ev.data));
+          else if (ev.type === 'exit') {
+            exitCode = typeof ev.code === 'number' ? ev.code : -1;
+            if (ev.error) streamError = String(ev.error);
+          }
+        }
       }
-    });
+      if (buf.trim()) {
+        try {
+          const ev = JSON.parse(buf.trim());
+          if (ev.type === 'line' && ev.data != null) appendUpgradeLog(String(ev.data));
+          else if (ev.type === 'exit') {
+            exitCode = typeof ev.code === 'number' ? ev.code : -1;
+            if (ev.error) streamError = String(ev.error);
+          }
+        } catch (_) { /* ignore trailing partial */ }
+      }
+    } catch (e) {
+      streamError = e && e.message ? e.message : 'stream interrupted';
+      if (msg) {
+        msg.textContent =
+          'Stream interrupted — upgrade may still be running on the host. Use Check for updates to refresh the package list.';
+        msg.className = 'warn';
+      }
+      toast('Upgrade stream interrupted', 'warn', 8000);
+      await refreshAptPackageList();
+      return;
+    } finally {
+      setAptButtonsDisabled(false);
+    }
+    if (exitCode === 0) {
+      if (msg) {
+        msg.textContent = 'Upgrade finished.';
+        msg.className = 'ok';
+      }
+      toast('Upgrade finished', 'ok');
+    } else {
+      const detail = streamError || (exitCode === -1 ? 'upgrade already in progress or broker error' : 'exit code ' + exitCode);
+      if (msg) {
+        msg.textContent = detail;
+        msg.className = 'warn';
+      }
+      toast(detail, 'err', 10000);
+    }
+    await refreshAptPackageList();
   };
 
   document.getElementById('btn-sys-reboot').onclick = async () => {

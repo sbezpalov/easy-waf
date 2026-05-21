@@ -44,6 +44,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Get("/updates", s.hostGetUpdates)
 		r.Post("/updates/update", s.hostAptUpdate)
 		r.Post("/updates/upgrade", s.hostAptUpgrade)
+		r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
 
 		r.Post("/power/reboot", s.hostReboot)
 		r.Post("/power/shutdown", s.hostPoweroff)
@@ -301,6 +302,50 @@ func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hostAppendAudit(r.Context(), "host_apt_upgrade", nil, true)
 	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	s.hostAppendAudit(r.Context(), "host_apt_upgrade", map[string]any{"stream": true}, false)
+
+	var exitCode int
+	flush := func() {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+
+	err := runner.PrivilegedStream(r.Context(), func(line []byte) error {
+		if _, werr := w.Write(append(line, '\n')); werr != nil {
+			return werr
+		}
+		flush()
+		var ev struct {
+			Type  string `json:"type"`
+			Code  int    `json:"code"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(line, &ev) == nil && ev.Type == "exit" {
+			exitCode = ev.Code
+		}
+		return nil
+	}, "apt-upgrade-stream")
+	if err != nil {
+		// Client may have disconnected; broker still runs apt — do not claim upgrade stopped.
+		b, _ := json.Marshal(map[string]any{"type": "exit", "code": -1, "error": err.Error()})
+		_, _ = w.Write(append(b, '\n'))
+		flush()
+		return
+	}
+
+	s.hostAppendAudit(r.Context(), "host_apt_upgrade_done", map[string]any{
+		"stream": true, "exit_code": exitCode,
+	}, exitCode != 0)
 }
 
 func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {

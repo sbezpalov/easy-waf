@@ -82,6 +82,11 @@ func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 		_ = writeResponse(c, failResp("empty argv", 1))
 		return
 	}
+	if req.Argv[0] == "apt-upgrade-stream" {
+		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
+		dispatchAptUpgradeStream(c)
+		return
+	}
 	resp := d.Dispatch(ctx, req.Argv)
 	_ = writeResponse(c, resp)
 }
