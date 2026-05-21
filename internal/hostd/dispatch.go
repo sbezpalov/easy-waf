@@ -176,6 +176,21 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		}
 		return okResp(stdout, stderr, code)
 
+	case "apt-cache-size":
+		stdout, stderr, code, err := runCmd(ctx, r, "du", "-sb", "/var/cache/apt/archives")
+		if err != nil || code != 0 {
+			return failExec(stdout, stderr, code, err)
+		}
+		return okResp(stdout, stderr, code)
+
+	case "apt-clean":
+		stdout, stderr, code, err := runCmd(ctx, r,
+			"apt-get", "-o", "DPkg::Lock::Timeout=120", "clean")
+		if err != nil || code != 0 {
+			return failExec(stdout, stderr, code, err)
+		}
+		return okResp(stdout, stderr, code)
+
 	case "journal":
 		jargs := argv[1:]
 		if err := hostspec.ValidateJournalArgs(jargs); err != nil {

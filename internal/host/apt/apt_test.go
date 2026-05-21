@@ -53,6 +53,51 @@ func TestAutoremovePreview(t *testing.T) {
 	}
 }
 
+func TestParseCacheSizeBytes(t *testing.T) {
+	n, err := ParseCacheSizeBytes("340123456\t/var/cache/apt/archives\n")
+	if err != nil || n != 340123456 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	n, err = ParseCacheSizeBytes("")
+	if err != nil || n != 0 {
+		t.Fatalf("empty: n=%d err=%v", n, err)
+	}
+}
+
+func TestCacheSizeBytes(t *testing.T) {
+	orig := aptPrivilegedFn
+	defer func() { aptPrivilegedFn = orig }()
+	aptPrivilegedFn = func(_ context.Context, args ...string) ([]byte, error) {
+		if args[0] != "apt-cache-size" {
+			t.Fatalf("args: %v", args)
+		}
+		return []byte("1024\t/var/cache/apt/archives\n"), nil
+	}
+	n, err := CacheSizeBytes(context.Background())
+	if err != nil || n != 1024 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
+
+func TestCleanCache(t *testing.T) {
+	orig := aptPrivilegedFn
+	defer func() { aptPrivilegedFn = orig }()
+	var called bool
+	aptPrivilegedFn = func(_ context.Context, args ...string) ([]byte, error) {
+		if args[0] == "apt-clean" {
+			called = true
+			return nil, nil
+		}
+		return nil, errors.New("unexpected")
+	}
+	if err := CleanCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("apt-clean not called")
+	}
+}
+
 func TestAutoremovePreview_error(t *testing.T) {
 	orig := aptPrivilegedFn
 	defer func() { aptPrivilegedFn = orig }()

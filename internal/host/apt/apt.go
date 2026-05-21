@@ -2,7 +2,9 @@ package apt
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +33,13 @@ func SimulateUpgrade(ctx context.Context) (UpdatesStatus, error) {
 
 // aptPrivilegedFn is runner.Privileged; overridden in tests.
 var aptPrivilegedFn = runner.Privileged
+
+// SetPrivilegedFnForTest overrides broker calls in tests; returns the previous function.
+func SetPrivilegedFnForTest(fn func(context.Context, ...string) ([]byte, error)) func(context.Context, ...string) ([]byte, error) {
+	prev := aptPrivilegedFn
+	aptPrivilegedFn = fn
+	return prev
+}
 
 // AutoremovePreview returns packages apt-get autoremove would remove (simulate only).
 func AutoremovePreview(ctx context.Context) (UpdatesStatus, error) {
@@ -80,6 +89,38 @@ func Upgrade(ctx context.Context) (UpdatesStatus, error) {
 		return UpdatesStatus{}, err
 	}
 	return UpdatesStatus{Output: "upgrade finished"}, nil
+}
+
+// CacheSizeBytes returns the size of /var/cache/apt/archives (du -sb via broker).
+func CacheSizeBytes(ctx context.Context) (int64, error) {
+	out, err := aptPrivilegedFn(ctx, "apt-cache-size")
+	if err != nil {
+		return 0, err
+	}
+	return ParseCacheSizeBytes(string(out))
+}
+
+// ParseCacheSizeBytes parses du -sb output: "<bytes>\t/path".
+func ParseCacheSizeBytes(output string) (int64, error) {
+	line := strings.TrimSpace(output)
+	if line == "" {
+		return 0, nil
+	}
+	field := strings.Fields(line)[0]
+	n, err := strconv.ParseInt(field, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("apt cache size: parse %q: %w", field, err)
+	}
+	if n < 0 {
+		return 0, nil
+	}
+	return n, nil
+}
+
+// CleanCache runs apt-get clean via the host broker.
+func CleanCache(ctx context.Context) error {
+	_, err := aptPrivilegedFn(ctx, "apt-clean")
+	return err
 }
 
 // ListUpgradable reads /var/lib/apt/lists or runs apt list --upgradable without root.

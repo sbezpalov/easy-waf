@@ -14,6 +14,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/host/apt"
 	"github.com/easy-waf/easy-waf/internal/host/diag"
+	"github.com/easy-waf/easy-waf/internal/host/disk"
 	"github.com/easy-waf/easy-waf/internal/host/journal"
 	"github.com/easy-waf/easy-waf/internal/host/network"
 	"github.com/easy-waf/easy-waf/internal/host/nft"
@@ -49,6 +50,9 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Get("/updates/upgrade/status", s.hostAptUpgradeStatus)
 		r.Get("/updates/autoremove/preview", s.hostAutoremovePreview)
 		r.Post("/updates/autoremove/stream", s.hostAutoremoveStream)
+		r.Post("/updates/clean", s.hostAptClean)
+
+		r.Get("/disk", s.hostDisk)
 
 		r.Post("/power/reboot", s.hostReboot)
 		r.Post("/power/shutdown", s.hostPoweroff)
@@ -286,6 +290,52 @@ func (s *Server) hostGetUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) hostDisk(w http.ResponseWriter, r *http.Request) {
+	mounts, err := disk.Usage("/", "/var")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	resp := map[string]any{"mounts": mounts}
+	if n, err := apt.CacheSizeBytes(r.Context()); err == nil && n >= 0 {
+		resp["cache_bytes"] = n
+	}
+	if st, err := apt.AutoremovePreview(r.Context()); err == nil {
+		if c := len(st.Packages); c > 0 {
+			resp["removable_count"] = c
+		} else if !apt.AutoremoveNothingToDo(st) {
+			resp["removable_count"] = 0
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) hostAptClean(w http.ResponseWriter, r *http.Request) {
+	before, err := apt.CacheSizeBytes(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := apt.CleanCache(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	after, err := apt.CacheSizeBytes(r.Context())
+	if err != nil {
+		after = 0
+	}
+	freed := before - after
+	if freed < 0 {
+		freed = 0
+	}
+	s.hostAppendAudit(r.Context(), "host_apt_clean", map[string]any{
+		"freed_bytes": freed,
+		"before":      before,
+		"after":       after,
+	}, false)
+	writeJSON(w, http.StatusOK, map[string]int64{"freed_bytes": freed})
 }
 
 func (s *Server) hostAptUpdate(w http.ResponseWriter, r *http.Request) {

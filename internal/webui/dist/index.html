@@ -24,6 +24,12 @@
     .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
     .panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--panel); max-width: 52rem; }
     .warn { color: #d29922; }
+    .err { color: #f85149; }
+    .disk-bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 0.25rem; }
+    .disk-bar-fill { height: 100%; background: #3fb950; border-radius: 4px; transition: width 0.2s; }
+    .disk-bar-fill.warn { background: #d29922; }
+    .disk-bar-fill.err { background: #f85149; }
+    .sys-disk-hint { font-size: 12px; color: var(--muted, #8b949e); margin-top: 0.35rem; }
     .ok { color: #3fb950; }
     .hidden { display: none !important; }
     .rollback-banner {
@@ -597,10 +603,15 @@
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Updates (apt)</h3>
+          <div id="sys-disk-panel" style="margin-bottom:0.75rem">
+            <div id="sys-disk-mounts"></div>
+            <p id="sys-disk-reclaim" class="sys-disk-hint"></p>
+          </div>
           <div class="row" style="flex-wrap:wrap;gap:0.5rem">
             <button type="button" class="secondary" id="btn-sys-apt-check">Check for updates</button>
             <button type="button" class="secondary" id="btn-sys-apt-upgrade">Install upgrades</button>
             <button type="button" class="secondary" id="btn-sys-apt-autoremove">Clean up (autoremove)</button>
+            <button type="button" class="secondary" id="btn-sys-apt-clean">Clean apt cache</button>
             <button type="button" class="secondary" id="btn-sys-apt-clear-log">Clear log</button>
             <button type="button" class="secondary" id="btn-sys-apt-last-log">Show last upgrade log</button>
           </div>
@@ -2990,7 +3001,63 @@
     await loadSystemServicesTable();
     const aptOut = document.getElementById('sys-apt-output');
     if (aptOut && !aptOut.textContent) aptOut.textContent = 'Click “Check for updates”.';
+    void loadHostDiskPanel();
     void tryAttachRunningAptUpgrade();
+  }
+
+  function formatBytes(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x) || x < 0) return '0 B';
+    if (x < 1024) return x + ' B';
+    if (x < 1024 * 1024) return (x / 1024).toFixed(1) + ' KB';
+    if (x < 1024 * 1024 * 1024) return (x / (1024 * 1024)).toFixed(1) + ' MB';
+    return (x / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  }
+
+  function diskBarClass(pct) {
+    if (pct >= 90) return 'err';
+    if (pct >= 80) return 'warn';
+    return '';
+  }
+
+  async function loadHostDiskPanel() {
+    const mountsEl = document.getElementById('sys-disk-mounts');
+    const reclaimEl = document.getElementById('sys-disk-reclaim');
+    const cleanBtn = document.getElementById('btn-sys-apt-clean');
+    if (!mountsEl) return;
+    const r = await fetch('/api/v1/host/disk', { headers: hdr() });
+    if (!r.ok) {
+      mountsEl.innerHTML = '<p class="warn">Disk info unavailable.</p>';
+      return;
+    }
+    const j = await r.json().catch(() => ({}));
+    const mounts = Array.isArray(j.mounts) ? j.mounts : [];
+    mountsEl.innerHTML = mounts.map((m) => {
+      const pct = typeof m.used_percent === 'number' ? m.used_percent : 0;
+      const used = formatBytes(m.used_bytes);
+      const total = formatBytes(m.total_bytes);
+      const free = formatBytes(m.free_bytes);
+      const barCls = diskBarClass(pct);
+      const path = esc(m.path || '/');
+      return `<div style="margin-bottom:0.5rem">
+        <div style="font-size:13px">Disk ${path}: ${used} used of ${total} (${pct}%) · ${free} free</div>
+        <div class="disk-bar-track"><div class="disk-bar-fill ${barCls}" style="width:${Math.min(100, Math.max(0, pct))}%"></div></div>
+      </div>`;
+    }).join('');
+    const hints = [];
+    const cache = Number(j.cache_bytes);
+    if (Number.isFinite(cache) && cache > 0) {
+      hints.push('Package cache: ' + formatBytes(cache));
+    }
+    const rem = j.removable_count;
+    if (typeof rem === 'number' && rem > 0) {
+      hints.push('Removable packages: ' + rem);
+    }
+    if (reclaimEl) reclaimEl.textContent = hints.join(' · ');
+    if (cleanBtn) {
+      cleanBtn.disabled = !Number.isFinite(cache) || cache < 1024 * 1024;
+      cleanBtn.title = cleanBtn.disabled ? 'Package cache is already small' : 'Remove downloaded .deb files from /var/cache/apt/archives';
+    }
   }
 
   async function tryAttachRunningAptUpgrade() {
@@ -3110,7 +3177,7 @@
   }
 
   function setAptButtonsDisabled(disabled) {
-    ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove'].forEach((id) => {
+    ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove', 'btn-sys-apt-clean'].forEach((id) => {
       const b = document.getElementById(id);
       if (b) b.disabled = !!disabled;
     });
@@ -3288,6 +3355,37 @@
       return { exitCode: -1, exitErr: transport };
     }
   }
+
+  document.getElementById('btn-sys-apt-clean').onclick = async () => {
+    const msg = document.getElementById('sys-apt-msg');
+    if (msg) {
+      msg.textContent = 'Cleaning cache…';
+      msg.className = 'warn';
+    }
+    setAptButtonsDisabled(true);
+    try {
+      const r = await fetch('/api/v1/host/updates/clean', {
+        method: 'POST',
+        headers: hdr(),
+        body: '{}'
+      });
+      if (!r.ok) {
+        toast(await apiMessage(r), 'err');
+        if (msg) msg.textContent = await r.text().catch(() => 'Clean failed');
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      const freed = Number(j.freed_bytes);
+      toast('Freed ' + formatBytes(Number.isFinite(freed) ? freed : 0), 'ok');
+      if (msg) {
+        msg.textContent = 'Apt cache cleaned.';
+        msg.className = 'ok';
+      }
+      await loadHostDiskPanel();
+    } finally {
+      setAptButtonsDisabled(false);
+    }
+  };
 
   document.getElementById('btn-sys-apt-upgrade').onclick = async () => {
     const ok = await confirmDialog(

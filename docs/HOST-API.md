@@ -10,7 +10,8 @@ Authenticated routes under **`/api/v1/host/*`** (JWT + `X-Requested-With`). Priv
 | Firewall (safe apply) | `POST /host/firewall/apply-rollback`, `POST /host/firewall/commit` | Same rollback window via broker `nft-apply-confirm` / `nft-commit`. API runs `nft -c` **before** the broker (invalid ruleset → 4xx, no timer). |
 | Services | `GET /host/services`, `POST /host/services/{unit}/{action}` | Whitelisted systemd units only |
 | Journal | `GET /host/journal?unit=&lines=&since=` | `journalctl` via broker |
-| Updates | `GET /host/updates`, `POST /host/updates/update`, `POST /host/updates/upgrade` (legacy), `POST /host/updates/upgrade/stream` (NDJSON live log), `GET /host/updates/upgrade/status`, `GET /host/updates/upgrade/log`, `GET /host/updates/autoremove/preview`, `POST /host/updates/autoremove/stream` | apt via broker |
+| Updates | `GET /host/updates`, `POST /host/updates/update`, `POST /host/updates/upgrade` (legacy), `POST /host/updates/upgrade/stream` (NDJSON live log), `GET /host/updates/upgrade/status`, `GET /host/updates/upgrade/log`, `GET /host/updates/autoremove/preview`, `POST /host/updates/autoremove/stream`, `POST /host/updates/clean` | apt via broker |
+| Disk | `GET /host/disk` | `statfs` in API process (no root); optional `cache_bytes`, `removable_count` via broker |
 | Power | `POST /host/power/reboot`, `POST /host/power/shutdown` | |
 | Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Local accounts uid ≥ 1000 |
 | Diagnostics | `POST /host/diagnostics/ping`, `POST /host/diagnostics/trace` | JSON body `{ "host": "…" }` |
@@ -41,3 +42,15 @@ Legacy `POST /host/updates/upgrade` still blocks until the non-streaming `apt-up
 - Same NDJSON contract as upgrade stream (`line` / `exit`, flush, heartbeat, attach).
 - **Broker:** `apt-autoremove-stream` runs `apt-get -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=120 autoremove` (no `--purge`).
 - Shares the same single-flight lock as `apt-upgrade-stream`.
+
+### `GET /host/disk`
+
+- **Mounts:** `statfs` on `/` and `/var` (deduplicated by filesystem ID). Each entry: `path`, `total_bytes`, `free_bytes` (available to unprivileged user via `Bavail`), `used_bytes`, `used_percent`.
+- **`cache_bytes`:** size of `/var/cache/apt/archives` via broker `apt-cache-size` (`du -sb`), when available.
+- **`removable_count`:** count of packages from `apt-autoremove-simulate` preview, when available.
+
+### `POST /host/updates/clean`
+
+- Runs `apt-get clean` via broker opcode `apt-clean` (`-o DPkg::Lock::Timeout=120`). Removes downloaded `.deb` archives only (installed packages unchanged).
+- **Response:** `{ "freed_bytes": N }` — difference in `cache_bytes` before and after.
+- **Audit:** `host_apt_clean`. No confirmation required (safe operation).
