@@ -61,12 +61,13 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		if err != nil {
 			return SyncResult{}, err
 		}
-		client := newFeedClient(g.IPBLAllowPrivateFetch)
+		allowed := ParseFeedAllowedPrefixes(g)
+		client := newFeedClient(allowed)
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
-			if _, vErr := validateFeedURLContext(ctx, src.URL, g.IPBLAllowPrivateFetch); vErr != nil {
+			if _, vErr := validateFeedURLContext(ctx, src.URL, allowed); vErr != nil {
 				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), vErr.Error())
 				continue
 			}
@@ -146,12 +147,13 @@ func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.Global
 		if err != nil {
 			return nil, err
 		}
-		client := newFeedClient(g.IPBLAllowPrivateFetch)
+		allowed := ParseFeedAllowedPrefixes(g)
+		client := newFeedClient(allowed)
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
-			if _, vErr := validateFeedURLContext(ctx, src.URL, g.IPBLAllowPrivateFetch); vErr != nil {
+			if _, vErr := validateFeedURLContext(ctx, src.URL, allowed); vErr != nil {
 				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), vErr.Error())
 				continue
 			}

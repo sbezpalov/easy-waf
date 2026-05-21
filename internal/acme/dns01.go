@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge"
+	"github.com/go-acme/lego/v4/challenge/dns01"
 	"github.com/go-acme/lego/v4/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v4/providers/dns/cloudns"
 	"github.com/go-acme/lego/v4/providers/dns/httpreq"
@@ -17,7 +18,8 @@ import (
 const DefaultDNSProvider = "cloudns"
 
 // IssueDNS01 runs ACME DNS-01 using Lego. Secrets must be supplied via env file (see docs/DNS01.md).
-func IssueDNS01(ctx context.Context, email string, domains []string, staging bool, accountKeyPath, providerName, envFile string) (*certificate.Resource, error) {
+// dnsResolvers optionally overrides recursive resolvers for propagation checks (split-DNS; e.g. 1.1.1.1:53).
+func IssueDNS01(ctx context.Context, email string, domains []string, staging bool, accountKeyPath, providerName, envFile string, dnsResolvers []string) (*certificate.Resource, error) {
 	if email == "" || len(domains) == 0 {
 		return nil, fmt.Errorf("email and domains required")
 	}
@@ -42,7 +44,11 @@ func IssueDNS01(ctx context.Context, email string, domains []string, staging boo
 		return nil, err
 	}
 
-	if err := client.Challenge.SetDNS01Provider(p); err != nil {
+	var dnsOpts []dns01.ChallengeOption
+	if ns := dns01.ParseNameservers(dnsResolvers); len(ns) > 0 {
+		dnsOpts = append(dnsOpts, dns01.AddRecursiveNameservers(ns))
+	}
+	if err := client.Challenge.SetDNS01Provider(p, dnsOpts...); err != nil {
 		return nil, err
 	}
 

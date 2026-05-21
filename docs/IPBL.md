@@ -7,7 +7,11 @@
 - **Local entries** (`ipbl_local`): administrator-defined IPv4/IPv6 or CIDR strings, editable via API (`/api/v1/ipbl/local`).
 - **External sources** (`ipbl_external_sources`): HTTP(S) URLs pointing to plain-text lists (one IP or CIDR per line, `#` comments allowed). Fetched periodically when `SyncAndWrite` runs (on HAProxy apply and via `POST /api/v1/ipbl/sync`).
 
-**SSRF protection (default):** only **public** feed URLs are allowed. Private, loopback, link-local, metadata (**169.254.x**), and CGNAT addresses are rejected at URL save time and again at fetch (including dial-time and redirects). For lab feeds on LAN addresses, set global **`ipbl_allow_private_fetch`** to `true` (default `false`). See [SECURITY.md](SECURITY.md).
+**SSRF protection (default):** only **public** feed URLs are allowed. **Hard-blocked** destinations (loopback, link-local, metadata **169.254.x**, CGNAT **100.64.0.0/10**, unspecified) are never allowed, even via allowlist.
+
+**Trusted internal feeds (split-DNS):** set global **`ipbl_fetch_allowed_cidrs`** to the RFC1918 ranges where your feeds live (e.g. `192.168.1.0/24`). UI: **Security → IP Blacklist → Trusted internal CIDRs for feed fetch** (one CIDR per line). Checks run at URL save, sync, dial time, and on redirects.
+
+Deprecated: **`ipbl_allow_private_fetch`** — when `true` and `ipbl_fetch_allowed_cidrs` is empty, allows all RFC1918 only (not loopback/metadata). Prefer explicit CIDRs. See [SECURITY.md](SECURITY.md) and [DNS.md](DNS.md).
 
 ### Allowlist (trusted sources)
 

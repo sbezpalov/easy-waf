@@ -15,6 +15,18 @@ The generated HAProxy config routes those URLs to **`bk_acme` → `127.0.0.1:808
 
 Implemented via **Lego** (`easy-waf-acmed`): `dns_provider` is one of `cloudflare`, `cloudns` (default when empty), `route53`, `webhook` (Lego `httpreq`). Credentials live in a **root-only env file** referenced by `dns_credentials_env_file` — see [DNS01.md](DNS01.md) and `configs/examples/dns-*.env.example`.
 
+### Split-DNS and propagation checks
+
+After publishing the TXT record, Lego polls **recursive resolvers** until the challenge is visible publicly. If the appliance uses an **internal DNS forwarder** that does not expose the public TXT view, DNS-01 can hang or fail.
+
+Set global **`acme_dns_resolvers`** to public resolvers, for example:
+
+```json
+{ "acme_dns_resolvers": ["1.1.1.1:53", "8.8.8.8:53"] }
+```
+
+Empty list = system resolver (`/etc/resolv.conf`). See [DNS.md](DNS.md).
+
 ## Renewal
 
 - `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). It processes `acme_status = pending` and renews certs whose `not_after` is inside the renewal window.

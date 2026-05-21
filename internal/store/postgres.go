@@ -52,6 +52,15 @@ var migration011SQL string
 //go:embed migrations/012_listen_mode.sql
 var migration012SQL string
 
+//go:embed migrations/013_ipbl_allow_private_fetch.sql
+var migration013SQL string
+
+//go:embed migrations/014_ipbl_fetch_allowed_cidrs.sql
+var migration014SQL string
+
+//go:embed migrations/015_acme_dns_resolvers.sql
+var migration015SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -77,7 +86,11 @@ func OpenPostgres(dsn string) (*Store, error) {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL, migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL, migration011SQL, migration012SQL} {
+	for _, raw := range []string{
+		initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL,
+		migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL,
+		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
+	} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
 		for _, p := range parts {

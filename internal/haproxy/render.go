@@ -23,6 +23,7 @@ type AppRender struct {
 	GeoEnforceMapPath string
 	UsePerAppGeo      bool
 	RateLimitBurst    int
+	BackendUsesDNS    bool // backend_host is FQDN — use resolvers easy_waf_dns
 }
 
 // RenderInput is passed to the HAProxy template.
@@ -44,6 +45,7 @@ type RenderInput struct {
 	UseBlockedUserAgents     bool   // enabled in settings and map has at least one pattern line
 	StateDir                 string // state directory for per-app GeoIP map paths
 	UseCrowdSecFilter        bool   // at least one app requests CrowdSec and SPOE path is configured
+	NeedsDNSResolver         bool   // any backend uses DNS name (split-DNS / DHCP)
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -103,6 +105,7 @@ func Render(in RenderInput) (Rendered, error) {
 		if burst < 1 {
 			burst = 1
 		}
+		usesDNS := !backendHostIsLiteralIP(app.BackendHost)
 		apps = append(apps, AppRender{
 			Application:       app,
 			Profile:           p,
@@ -110,7 +113,15 @@ func Render(in RenderInput) (Rendered, error) {
 			GeoEnforceMapPath: geoPath,
 			UsePerAppGeo:      useAppGeo,
 			RateLimitBurst:    burst,
+			BackendUsesDNS:    usesDNS,
 		})
+	}
+	in.NeedsDNSResolver = false
+	for _, a := range apps {
+		if a.BackendUsesDNS {
+			in.NeedsDNSResolver = true
+			break
+		}
 	}
 	var httpsApps, httpApps, redirectApps []AppRender
 	for _, a := range apps {
@@ -285,6 +296,17 @@ defaults
 	timeout server  50s
 	timeout tunnel  3600s
 
+{{if .NeedsDNSResolver}}
+# System DNS (split-DNS / internal forwarders via /etc/resolv.conf)
+resolvers easy_waf_dns
+	parse-resolv-conf
+	resolve_retries 3
+	timeout resolve 2s
+	timeout retry 2s
+	hold valid 30s
+	hold nx 5s
+
+{{end}}
 # HTTP — ACME HTTP-01, per-app plain HTTP, per-host HTTPS redirects, default redirect
 # Rule order: ACLs → all http-request → use_backend (avoids HAProxy 3.x "http-request after use_backend" warnings).
 frontend fe_http
@@ -448,9 +470,17 @@ backend {{backendName $a.Application.PublicHost}}
 	option httpchk GET {{$a.Application.HealthPath}}
 	{{- end }}
 	{{- if $a.Application.BackendHTTPS }}
+	{{- if $a.BackendUsesDNS }}
+	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} ssl verify none resolvers easy_waf_dns init-addr last,libc,none check inter 3s fall 3 rise 2
+	{{- else }}
 	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} ssl verify none check inter 3s fall 3 rise 2
+	{{- end }}
+	{{- else }}
+	{{- if $a.BackendUsesDNS }}
+	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} resolvers easy_waf_dns init-addr last,libc,none check inter 3s fall 3 rise 2
 	{{- else }}
 	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} check inter 3s fall 3 rise 2
+	{{- end }}
 	{{- end }}
 {{end}}
 `

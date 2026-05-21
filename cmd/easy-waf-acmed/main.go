@@ -116,7 +116,7 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 			err = fmt.Errorf("dns-01: dns_credentials_env_file must point to a root-readable env file on the appliance")
 			break
 		}
-		res, err = acme.IssueDNS01(ctx, email, domains, staging, accountKey, provider, envFile)
+		res, err = acme.IssueDNS01(ctx, email, domains, staging, accountKey, provider, envFile, eng.Settings.ACMEDNSResolvers)
 	case "http-01":
 		res, err = acme.IssueHTTP01Webroot(ctx, email, domains, webroot, staging, accountKey)
 	default:

@@ -30,6 +30,8 @@ var goldenScenarioNames = []string{
 	"http-only-app",
 	"mixed-listen-modes",
 	"http-only-reverse-proxy",
+	"backend-by-hostname",
+	"backend-by-ip",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -477,6 +479,32 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{},
 			CRTListPath:  "testdata/golden/http-only-reverse-proxy.crt-list.txt",
+		}
+	case "backend-by-hostname":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "bh1", Name: "NAS", PublicHost: "nas.example.com", BackendHost: "nas.lan", BackendPort: 8080,
+					Profile: "balanced", CertificateID: "c1", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/backend-by-hostname.crt-list.txt",
+		}
+	case "backend-by-ip":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "bi1", Name: "ByIP", PublicHost: "ip.example.com", BackendHost: "10.0.0.9", BackendPort: 80,
+					Profile: "balanced", CertificateID: "c1", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/backend-by-ip.crt-list.txt",
 		}
 	default:
 		return RenderInput{}

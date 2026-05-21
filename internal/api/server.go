@@ -523,7 +523,8 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, err := ipbl.ValidateFeedURLContext(r.Context(), e.URL, s.Eng.Settings.IPBLAllowPrivateFetch); err != nil {
+	allowed := ipbl.ParseFeedAllowedPrefixes(s.Eng.Settings)
+	if _, err := ipbl.ValidateFeedURLContext(r.Context(), e.URL, allowed); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

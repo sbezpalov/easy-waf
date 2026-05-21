@@ -53,12 +53,16 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 
 ## Outbound requests (IPBL external feeds)
 
-- **IPBL external feeds** (`internal/ipbl/ssrfguard.go`): URLs must use **http** or **https**. By default, the host is resolved and **every** returned address is checked against private, loopback, link-local, multicast, unspecified, and **CGNAT (100.64.0.0/10)** ranges (cloud metadata paths such as **169.254.169.254** are blocked).
+- **IPBL external feeds** (`internal/ipbl/ssrfguard.go`): URLs must use **http** or **https**. Resolved and dial-time addresses are checked in two layers:
+  - **Hard floor (always blocked):** loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), unspecified, **CGNAT (100.64.0.0/10)** — including cloud metadata (**169.254.169.254**). These cannot be overridden by any allowlist (protects local PostgreSQL, metadata APIs).
+  - **Soft (RFC1918 private):** `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` — blocked unless the IP is inside **`ipbl_fetch_allowed_cidrs`** (granular allowlist for split-DNS internal feeds). Empty allowlist = **public feeds only** (secure default).
 - **DNS rebinding:** the HTTP transport uses a **dial-time** IP re-check so a hostname that was public at validation time cannot connect to a private address later.
 - **Redirects:** each redirect target is re-validated (max 5 hops).
-- **Lab override:** set **`ipbl_allow_private_fetch`: true** in global settings (or `ipbl_allow_private_fetch` via API PATCH) to allow RFC1918/loopback feed URLs — default is **false**.
+- **Split-DNS example:** feed at `http://blocklist.lan/list.txt` resolving to `192.168.1.50` — set `ipbl_fetch_allowed_cidrs: ["192.168.1.0/24"]`. Do **not** use deprecated **`ipbl_allow_private_fetch`** in production; it opens all RFC1918 when the CIDR list is empty.
 - Adding a source via **`POST /api/v1/ipbl/sources`** validates the URL immediately (**400** on blocked hosts). Sync skips bad sources and records the reason on the source row (`last_fetch_error`).
 - When **`ipbl_external_enabled`** is **false** (air-gapped), no outbound feed fetch runs.
+
+See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS environments.
 
 ## IPBL and GeoIP
 

@@ -173,8 +173,12 @@ type GlobalSettings struct {
 	IPBlacklistMapPath string `json:"ip_blacklist_map_path,omitempty"`
 	// IPBLExternalEnabled enables merging synced external lists into the map file.
 	IPBLExternalEnabled bool `json:"ipbl_external_enabled"`
-	// IPBLAllowPrivateFetch allows external list URLs that resolve to RFC1918/loopback (lab only; default false).
-	IPBLAllowPrivateFetch bool `json:"ipbl_allow_private_fetch"`
+	// IPBLFetchAllowedCIDRs allows feed URLs that resolve to private IPs in these prefixes (split-DNS internal feeds).
+	IPBLFetchAllowedCIDRs []string `json:"ipbl_fetch_allowed_cidrs,omitempty"`
+	// IPBLAllowPrivateFetch is deprecated: use ipbl_fetch_allowed_cidrs; when true and CIDRs empty, allows 10/8, 172.16/12, 192.168/16 only.
+	IPBLAllowPrivateFetch bool `json:"ipbl_allow_private_fetch,omitempty"`
+	// ACMEDNSResolvers overrides DNS used for ACME DNS-01 propagation checks (e.g. "1.1.1.1:53","8.8.8.8:53").
+	ACMEDNSResolvers []string `json:"acme_dns_resolvers,omitempty"`
 	// IPAllowlistMapPath is the generated HAProxy src map for trusted CIDRs (see docs/IPBL.md).
 	IPAllowlistMapPath string `json:"ip_allowlist_map_path,omitempty"`
 	// IPWLEnabled turns on HAProxy ACL + http-request allow for sources in the allowlist map.

@@ -412,6 +412,18 @@
         </div>
         <p id="ipbl-msg" class="warn"></p>
 
+        <div class="panel" style="max-width:42rem;margin-top:1rem">
+          <h4>Trusted internal CIDRs for feed fetch</h4>
+          <p class="dash-note" style="margin-top:0">Allow IPBL feeds hosted on internal DNS names resolving to these private ranges (split-DNS). Loopback and metadata addresses are always blocked.</p>
+          <label>One CIDR per line<br />
+            <textarea id="ipbl-fetch-allowed-cidrs" rows="4" style="width:100%;font-family:monospace;font-size:12px" placeholder="192.168.1.0/24&#10;10.0.0.0/8"></textarea>
+          </label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-ipbl-fetch-cidrs-save">Save trusted CIDRs</button>
+          </div>
+          <p id="ipbl-fetch-cidrs-msg" class="warn" style="margin:0.35rem 0 0"></p>
+        </div>
+
         <h3>IP Allowlist</h3>
         <p><small>Trusted CIDRs bypass IP blacklist and per-app HTTP rate limits when enabled.</small></p>
         <div class="row">
@@ -1508,6 +1520,7 @@
     loadIpwlToggleFromSettings();
     loadBotProtectionFromSettings();
     loadGeoIPFromSettings();
+    loadIpblFetchCIDRsFromSettings();
     document.getElementById('cs-lapi-url').value = cachedSettings.crowdsec_lapi_url || '';
     document.getElementById('cs-lapi-key').value = '';
     document.getElementById('cs-lapi-key').placeholder = cachedSettings.crowdsec_lapi_key_set
@@ -1532,6 +1545,19 @@
     if (!cachedSettings) return;
     document.getElementById('ua-block-empty').checked = cachedSettings.block_empty_ua !== false;
     document.getElementById('ua-blocklist-enabled').checked = !!cachedSettings.blocked_user_agents_enabled;
+  }
+
+  function loadIpblFetchCIDRsFromSettings() {
+    const ta = document.getElementById('ipbl-fetch-allowed-cidrs');
+    if (!ta || !cachedSettings) return;
+    const list = cachedSettings.ipbl_fetch_allowed_cidrs;
+    ta.value = Array.isArray(list) ? list.join('\n') : '';
+  }
+
+  function parseIpblFetchCIDRsTextarea() {
+    const ta = document.getElementById('ipbl-fetch-allowed-cidrs');
+    if (!ta) return [];
+    return ta.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   }
 
   function certStatusPillHTML(status) {
@@ -2525,6 +2551,29 @@
     document.getElementById('tls-msg').textContent = 'TLS updated. Reload https:// on :8443.';
     document.getElementById('tls-cert').value = '';
     document.getElementById('tls-key').value = '';
+  };
+
+  document.getElementById('btn-ipbl-fetch-cidrs-save').onclick = async () => {
+    const msg = document.getElementById('ipbl-fetch-cidrs-msg');
+    if (msg) msg.textContent = '';
+    if (!cachedSettings) await loadSettingsPanel();
+    if (!cachedSettings) {
+      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      return;
+    }
+    const patch = { ipbl_fetch_allowed_cidrs: parseIpblFetchCIDRsTextarea() };
+    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+    if (r.ok) {
+      cachedSettings = await r.json();
+      loadIpblFetchCIDRsFromSettings();
+      if (msg) {
+        msg.textContent = 'Trusted CIDRs saved.';
+        msg.className = 'ok';
+      }
+    } else if (msg) {
+      msg.textContent = await r.text();
+      msg.className = 'warn';
+    }
   };
 
   document.getElementById('btn-ipbl-load').onclick = async () => {
