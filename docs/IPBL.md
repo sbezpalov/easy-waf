@@ -7,6 +7,8 @@
 - **Local entries** (`ipbl_local`): administrator-defined IPv4/IPv6 or CIDR strings, editable via API (`/api/v1/ipbl/local`).
 - **External sources** (`ipbl_external_sources`): HTTP(S) URLs pointing to plain-text lists (one IP or CIDR per line, `#` comments allowed). Fetched periodically when `SyncAndWrite` runs (on HAProxy apply and via `POST /api/v1/ipbl/sync`).
 
+**SSRF protection (default):** only **public** feed URLs are allowed. Private, loopback, link-local, metadata (**169.254.x**), and CGNAT addresses are rejected at URL save time and again at fetch (including dial-time and redirects). For lab feeds on LAN addresses, set global **`ipbl_allow_private_fetch`** to `true` (default `false`). See [SECURITY.md](SECURITY.md).
+
 ### Allowlist (trusted sources)
 
 - **Local entries** (`ipwl_local`): `id`, `cidr`, `comment`, `created_at`. Managed via API (`GET` / `POST` / `DELETE /api/v1/ipwl/local/…`).

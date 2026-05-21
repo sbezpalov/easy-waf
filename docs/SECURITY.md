@@ -51,9 +51,18 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 - **SSH keys:** `PUT /host/users/{name}/ssh-keys` validates each line (`ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-*` + base64); invalid or multiline payloads are rejected before writing `authorized_keys`.
 - **Power / apt / nft / netplan:** only fixed subcommands via `host-privileged.sh` (no arbitrary shell).
 
+## Outbound requests (IPBL external feeds)
+
+- **IPBL external feeds** (`internal/ipbl/ssrfguard.go`): URLs must use **http** or **https**. By default, the host is resolved and **every** returned address is checked against private, loopback, link-local, multicast, unspecified, and **CGNAT (100.64.0.0/10)** ranges (cloud metadata paths such as **169.254.169.254** are blocked).
+- **DNS rebinding:** the HTTP transport uses a **dial-time** IP re-check so a hostname that was public at validation time cannot connect to a private address later.
+- **Redirects:** each redirect target is re-validated (max 5 hops).
+- **Lab override:** set **`ipbl_allow_private_fetch`: true** in global settings (or `ipbl_allow_private_fetch` via API PATCH) to allow RFC1918/loopback feed URLs — default is **false**.
+- Adding a source via **`POST /api/v1/ipbl/sources`** validates the URL immediately (**400** on blocked hosts). Sync skips bad sources and records the reason on the source row (`last_fetch_error`).
+- When **`ipbl_external_enabled`** is **false** (air-gapped), no outbound feed fetch runs.
+
 ## IPBL and GeoIP
 
-- External blocklist URLs: treat as untrusted input; fetches use HTTPS, line validation, and an **SSRF guard** (`internal/ipbl/fetch_ssrf.go`): the URL host is resolved and requests are blocked when any address is loopback, RFC1918, link-local, or ULA (unless **`ipbl_allow_private_fetch`** is true in global settings for lab use). Redirects are checked the same way. Prefer allowlisting your office IPs for break-glass access.
+- External blocklist URLs: treat as untrusted input; line format is validated after download. Prefer allowlisting your office IPs for break-glass access.
 
 ## Supply chain
 
