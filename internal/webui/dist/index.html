@@ -662,7 +662,19 @@
 
       <div id="tab-users" class="tab-panel">
         <h2>☺ Users</h2>
-        <p class="dash-note">Local accounts &amp; SSH keys management — coming in the next iteration.</p>
+        <p class="dash-note" style="margin-top:0">Local UNIX accounts (uid ≥ 1000) and SSH authorized keys. Protected accounts: <code>root</code>, <code>easy-waf</code>.</p>
+        <div class="panel" style="max-width:100%">
+          <h3>Accounts</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-bottom:0.5rem">
+            <label>New username
+              <input id="users-new-name" type="text" autocomplete="off" placeholder="alice" pattern="[a-z_][a-z0-9_-]*" style="min-width:10rem" />
+            </label>
+            <button type="button" id="btn-users-create">Create user</button>
+            <button type="button" class="secondary" id="btn-users-refresh">Refresh</button>
+          </div>
+          <p id="users-msg" class="warn" style="min-height:1rem"></p>
+          <div id="users-table" style="margin-top:0.35rem"></div>
+        </div>
       </div>
 
       <div id="tab-config" class="tab-panel">
@@ -2906,7 +2918,219 @@
   const HOST_SERVICE_ACTIONS = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
   let hostRollback = { kind: null, token: null, commitUrl: null, timer: null, deadline: 0 };
 
-  function loadUsersTab() { /* stub — part 2 */ }
+  const HOST_PROTECTED_USERNAMES = ['root', 'easy-waf'];
+  const HOST_USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
+
+  function sshKeysEditorDialog(username, initialKeys) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const box = document.createElement('div');
+      box.className = 'modal-box';
+      box.style.maxWidth = '42rem';
+      const title = document.createElement('p');
+      title.className = 'modal-message';
+      title.style.marginBottom = '0.5rem';
+      title.textContent = 'SSH keys for ' + username;
+      const hint = document.createElement('p');
+      hint.className = 'dash-note';
+      hint.style.margin = '0 0 0.5rem';
+      hint.textContent = 'One OpenSSH public key per line (ssh-ed25519, ssh-rsa, …). Empty lines ignored.';
+      const ta = document.createElement('textarea');
+      ta.rows = 10;
+      ta.style.width = '100%';
+      ta.style.fontFamily = 'ui-monospace, monospace';
+      ta.style.fontSize = '12px';
+      ta.value = Array.isArray(initialKeys) ? initialKeys.join('\n') : '';
+      const actions = document.createElement('div');
+      actions.className = 'modal-actions row';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'secondary';
+      cancel.textContent = 'Cancel';
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = 'Save keys';
+      const close = (val) => {
+        overlay.remove();
+        resolve(val);
+      };
+      cancel.onclick = () => close(null);
+      save.onclick = () => {
+        const keys = ta.value.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+        close(keys);
+      };
+      overlay.onclick = (e) => { if (e.target === overlay) close(null); };
+      actions.appendChild(cancel);
+      actions.appendChild(save);
+      box.appendChild(title);
+      box.appendChild(hint);
+      box.appendChild(ta);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      ta.focus();
+    });
+  }
+
+  async function loadUsersTable() {
+    const box = document.getElementById('users-table');
+    if (!box) return;
+    tableState(box, 'loading');
+    const r = await fetch('/api/v1/host/users', { headers: hdr() });
+    if (!r.ok) {
+      tableState(box, 'error', { message: await apiMessage(r) });
+      return;
+    }
+    const j = await r.json().catch(() => ({}));
+    const list = Array.isArray(j.users) ? j.users : [];
+    if (!list.length) {
+      tableState(box, 'empty', { message: 'No local users found.' });
+      return;
+    }
+    list.sort((a, b) => String(a.username).localeCompare(String(b.username)));
+    const rows = list.map((u) => {
+      const name = String(u.username || '');
+      const keys = Array.isArray(u.ssh_keys) ? u.ssh_keys : [];
+      const keyLabel = keys.length ? keys.length + ' key' + (keys.length === 1 ? '' : 's') : '—';
+      const protectedUser = HOST_PROTECTED_USERNAMES.includes(name);
+      const delBtn = protectedUser
+        ? '<span class="dash-note" title="Protected account">—</span>'
+        : `<button type="button" class="secondary users-del" data-user="${esc(name)}">Delete</button>`;
+      return `<tr>
+        <td><code>${esc(name)}</code></td>
+        <td>${esc(u.uid || '—')}</td>
+        <td><code>${esc(u.home || '—')}</code></td>
+        <td><code>${esc(u.shell || '—')}</code></td>
+        <td>${esc(keyLabel)}</td>
+        <td class="row" style="gap:0.25rem;flex-wrap:wrap">
+          <button type="button" class="secondary users-ssh" data-user="${esc(name)}">SSH keys</button>
+          ${delBtn}
+        </td>
+      </tr>`;
+    }).join('');
+    box.innerHTML = `<table><thead><tr><th>User</th><th>UID</th><th>Home</th><th>Shell</th><th>Keys</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.querySelectorAll('.users-ssh').forEach((btn) => {
+      btn.onclick = () => withBusy(btn, () => editUserSSHKeys(btn.getAttribute('data-user')));
+    });
+    box.querySelectorAll('.users-del').forEach((btn) => {
+      btn.onclick = () => withBusy(btn, () => deleteHostUser(btn.getAttribute('data-user')));
+    });
+  }
+
+  async function editUserSSHKeys(username) {
+    if (!username) return;
+    const r = await fetch('/api/v1/host/users', { headers: hdr() });
+    if (!r.ok) {
+      toast(await apiMessage(r), 'err');
+      return;
+    }
+    const j = await r.json().catch(() => ({}));
+    const list = Array.isArray(j.users) ? j.users : [];
+    const ac = list.find((u) => u.username === username);
+    const keys = ac && Array.isArray(ac.ssh_keys) ? ac.ssh_keys : [];
+    const newKeys = await sshKeysEditorDialog(username, keys);
+    if (newKeys === null) return;
+    const msg = document.getElementById('users-msg');
+    const put = await fetch('/api/v1/host/users/' + encodeURIComponent(username) + '/ssh-keys', {
+      method: 'PUT',
+      headers: hdr(),
+      body: JSON.stringify({ keys: newKeys })
+    });
+    if (!put.ok) {
+      const err = await apiMessage(put);
+      toast(err, 'err');
+      if (msg) {
+        msg.textContent = err;
+        msg.className = 'warn';
+      }
+      return;
+    }
+    toast('SSH keys updated for ' + username, 'ok');
+    if (msg) {
+      msg.textContent = 'SSH keys saved for ' + username + '.';
+      msg.className = 'ok';
+    }
+    await loadUsersTable();
+  }
+
+  async function deleteHostUser(username) {
+    if (!username || HOST_PROTECTED_USERNAMES.includes(username)) return;
+    const ok = await confirmDialog(
+      'Delete user ' + username + ' and remove home directory?',
+      { danger: true, okLabel: 'Delete' }
+    );
+    if (!ok) return;
+    const msg = document.getElementById('users-msg');
+    const r = await fetch('/api/v1/host/users/' + encodeURIComponent(username), {
+      method: 'DELETE',
+      headers: hdr()
+    });
+    if (!r.ok) {
+      const err = await apiMessage(r);
+      toast(err, 'err');
+      if (msg) {
+        msg.textContent = err;
+        msg.className = 'warn';
+      }
+      return;
+    }
+    toast('User ' + username + ' deleted', 'ok');
+    if (msg) {
+      msg.textContent = 'User ' + username + ' deleted.';
+      msg.className = 'ok';
+    }
+    await loadUsersTable();
+  }
+
+  function loadUsersTab() {
+    void loadUsersTable();
+  }
+
+  document.getElementById('btn-users-refresh').onclick = () => loadUsersTable();
+
+  document.getElementById('btn-users-create').onclick = async () => {
+    const input = document.getElementById('users-new-name');
+    const msg = document.getElementById('users-msg');
+    const name = (input && input.value ? input.value : '').trim().toLowerCase();
+    if (!HOST_USERNAME_RE.test(name)) {
+      toast('Invalid username (use lowercase letters, digits, _ - ; start with letter or _)', 'err');
+      if (msg) {
+        msg.textContent = 'Invalid username.';
+        msg.className = 'warn';
+      }
+      return;
+    }
+    if (HOST_PROTECTED_USERNAMES.includes(name)) {
+      toast('That username is reserved', 'err');
+      return;
+    }
+    const ok = await confirmDialog('Create local user ' + name + '?', { okLabel: 'Create' });
+    if (!ok) return;
+    await withBusy(document.getElementById('btn-users-create'), async () => {
+      const r = await fetch('/api/v1/host/users', {
+        method: 'POST',
+        headers: hdr(),
+        body: JSON.stringify({ username: name })
+      });
+      if (!r.ok) {
+        const err = await apiMessage(r);
+        toast(err, 'err');
+        if (msg) {
+          msg.textContent = err;
+          msg.className = 'warn';
+        }
+        return;
+      }
+      if (input) input.value = '';
+      toast('User ' + name + ' created', 'ok');
+      if (msg) {
+        msg.textContent = 'User ' + name + ' created.';
+        msg.className = 'ok';
+      }
+      await loadUsersTable();
+    });
+  };
 
   function updateHostRollbackApplyButtons() {
     const np = document.getElementById('btn-net-netplan-apply');

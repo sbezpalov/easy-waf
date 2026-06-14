@@ -15,6 +15,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/apt"
 	"github.com/easy-waf/easy-waf/internal/host/diag"
 	"github.com/easy-waf/easy-waf/internal/host/disk"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/journal"
 	"github.com/easy-waf/easy-waf/internal/host/network"
 	"github.com/easy-waf/easy-waf/internal/host/nft"
@@ -491,24 +492,38 @@ func (s *Server) hostCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
+	if !hostspec.ValidUsername(body.Username) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid username"})
+		return
+	}
 	if err := users.CreateUser(r.Context(), body.Username); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_user_create", map[string]any{"username": body.Username}, false)
 	writeJSON(w, http.StatusCreated, map[string]string{"username": body.Username})
 }
 
 func (s *Server) hostDeleteUser(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	if !hostspec.DeletableUsername(name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user cannot be deleted"})
+		return
+	}
 	if err := users.DeleteUser(r.Context(), name); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_user_delete", map[string]any{"username": name}, true)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	if !hostspec.ValidUsername(name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid username"})
+		return
+	}
 	var body struct {
 		Keys []string `json:"keys"`
 	}
@@ -520,6 +535,10 @@ func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.hostAppendAudit(r.Context(), "host_user_ssh_keys", map[string]any{
+		"username": name,
+		"count":    len(body.Keys),
+	}, false)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
