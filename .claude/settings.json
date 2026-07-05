@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "//": "Командные настройки Claude Code для easy-waf. Личные оверрайды — в settings.local.json (не коммитить).",
+  "permissions": { "allow": ["Read", "Edit"], "deny": [] }
+}

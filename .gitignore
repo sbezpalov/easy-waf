@@ -12,3 +12,5 @@ $RECYCLE.BIN/
 .env
 .idea/
 # .vscode/ — в репозитории общие настройки проекта (Remote SSH → waf-dev); личные launch.json можно в .git/info/exclude
+.claude/settings.local.json
+.DS_Store
