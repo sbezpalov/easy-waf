@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-11
+
 ### Added
 
 - System → Updates: **live streaming log** for `apt upgrade` (`POST /api/v1/host/updates/upgrade/stream`, NDJSON via `easy-waf-hostd` `apt-upgrade-stream`)
@@ -27,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/install.sh`: appliance base packages no longer install `nginx`; edge remains HAProxy-only to avoid extra attack surface and port conflicts
 - Platform: **Ubuntu 24.04 LTS only** — dropped AlmaLinux/RHEL support; host firewall is **nftables** (not firewalld); docs and CI aligned to `ubuntu:24.04`
 - Host management API (`/api/v1/host/*`): network, nftables, services, journal, apt, users/SSH keys
+
+### Security
+
+- Broker peer authentication: `easy-waf-hostd` enforces `SO_PEERCRED`, accepting connections only from uid `0` or `easy-waf`; socket is `root:easy-waf 0660` in `/run/easy-waf` (`0750`)
+- Allowlisted opcode dispatch only — unknown opcodes rejected; strict argc checks and validators (`ValidToken`, `ValidStagedPath`, `ValidUsername`, `ValidJailName`, `ValidIP`, journal arg allowlist) on every privileged path
+- SSRF protection for external IPBL feeds (blocks private/special-use IPs); split-DNS resolvers for ACME DNS-01 propagation checks
+- Timed rollback for nftables/netplan via transient `systemd-run` timer with token-scoped backups (auto-revert unless committed)
 
 ## [1.0.0] - 2026-04-16
 
