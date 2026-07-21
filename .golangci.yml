@@ -10,6 +10,11 @@ linters:
     - staticcheck
     - ineffassign
     - misspell
+    - gosec
+    - errcheck
+    - gocritic
+    - prealloc
+    - revive
 
 issues:
   max-same-issues: 50

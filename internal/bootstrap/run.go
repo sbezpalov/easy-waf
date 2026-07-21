@@ -210,6 +210,9 @@ func RunAPI() {
 		Addr:              httpAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		log.Printf("easy-waf-api management HTTP on %s state=%s db=postgresql", httpAddr, stateDir)
@@ -228,6 +231,9 @@ func RunAPI() {
 			Addr:              acAddr,
 			Handler:           acmeChallengeHandler(wr),
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
 		go func(srv *http.Server) {
 			log.Printf("easy-waf-api ACME HTTP-01 loopback on %s (webroot %s)", acAddr, wr)
@@ -247,6 +253,9 @@ func RunAPI() {
 			Addr:              httpsAddr,
 			Handler:           r,
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
 			TLSConfig:         tlsConf,
 		}
 		go func() {

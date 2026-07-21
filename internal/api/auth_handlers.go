@@ -135,7 +135,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "current password incorrect", http.StatusUnauthorized)
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), 12)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

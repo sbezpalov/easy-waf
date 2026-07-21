@@ -63,7 +63,7 @@ func (s *Store) EnsureDefaultAdmin(ctx context.Context) (created bool, err error
 	if err != nil || n > 0 {
 		return false, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin"), 12)
 	if err != nil {
 		return false, err
 	}
