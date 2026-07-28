@@ -1,6 +1,6 @@
 # Deployment: Ubuntu 24.04 LTS — Deployment, OVF/OVA, Distribution
 
-**Версия:** корневой [`VERSION`](../VERSION) (**1.0.0** для текущего релиза); инсталлятор подставляет его при загрузке релизных артефактов.
+**Version:** root [`VERSION`](../VERSION) (**1.0.0** for the current release); the installer uses it when fetching release artifacts.
 
 ## Development (Windows) vs deployment (Linux)
 
@@ -73,9 +73,9 @@ See [packaging/ovf/README.md](../packaging/ovf/README.md) for a minimal checklis
 
 ## Release artifacts (for `download-release.sh`)
 
-Автоматическая сборка и публикация GitHub Release: workflow **[`.github/workflows/release.yml`](../.github/workflows/release.yml)** (триггер — push тега `v*`: `make build`, tarball, `SHA256SUMS`, текст релиза из секции [`CHANGELOG.md`](../CHANGELOG.md) для этой версии).
+Automated GitHub Release build and publish: workflow **[`.github/workflows/release.yml`](../.github/workflows/release.yml)** (trigger — push of tag `v*`: `make build`, tarball, `SHA256SUMS`, release notes from the matching [`CHANGELOG.md`](../CHANGELOG.md) section).
 
-Архив `easy-waf_<version>_linux_amd64.tar.gz` содержит:
+Archive `easy-waf_<version>_linux_amd64.tar.gz` contains:
 
 ```
 dist/easy-waf-api
@@ -86,7 +86,7 @@ packaging/systemd/*.service
 configs/defaults/easy-waf.env.example
 ```
 
-При распаковке в `repo/dist/` скрипты **`scripts/install.sh`** и **`scripts/download-release.sh`** поднимают бинарники из вложенной папки `dist/` в корень целевого `dist/`, чтобы пути совпадали с `make build`.
+When unpacking into `repo/dist/`, **`scripts/install.sh`** and **`scripts/download-release.sh`** hoist binaries from the nested `dist/` folder into the target `dist/` root so paths match `make build`.
 
 ## Upgrades
 

@@ -2,7 +2,7 @@
 
 This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting generated config, manual validation, and toggles used during debugging.
 
-**Версия:** [`VERSION`](../VERSION) — **1.0.0**.
+**Version:** [`VERSION`](../VERSION) — **1.0.0**.
 
 ## Layout (defaults)
 
@@ -41,47 +41,47 @@ Fix template/data issues, then use the UI **Apply** or your orchestration.
 
 Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
 
-## Обновление кода после `git pull` (почему «не вижу изменений» в UI)
+## Updating code after `git pull` (why the UI “doesn’t show changes”)
 
-Веб‑интерфейс **встроен в бинарник** `easy-waf-api` на этапе сборки (`go:embed` → `internal/webui/dist`). Изменения в `index.html` и новые API‑маршруты **не появятся**, пока не пересобрать API и не перезапустить сервис.
+The web UI is **embedded in the `easy-waf-api` binary** at build time (`go:embed` → `internal/webui/dist`). Changes to `index.html` and new API routes **will not appear** until you rebuild the API and restart the service.
 
-На машине с репозиторием (от root или с правами на `make install`):
+On a machine with the repo (as root or with rights to `make install`):
 
 ```bash
 cd /path/to/easy-waf
 git pull
-make clean && make build && make test   # или: go build -o dist/easy-waf-api ./cmd/easy-waf-api …
+make clean && make build && make test   # or: go build -o dist/easy-waf-api ./cmd/easy-waf-api …
 sudo install -m 0755 dist/easy-waf-api /usr/sbin/easy-waf-api
-sudo install -m 0755 dist/easy-waf-acmed /usr/sbin/easy-waf-acmed   # при изменениях acmed
+sudo install -m 0755 dist/easy-waf-acmed /usr/sbin/easy-waf-acmed   # if acmed changed
 sudo systemctl restart easy-waf-api.service
-# при необходимости: sudo systemctl restart easy-waf-acmed.service
+# if needed: sudo systemctl restart easy-waf-acmed.service
 ```
 
-Жёсткое обновление страницы в браузере: **Ctrl+F5** (без кэша). Старый процесс `easy-waf-api` продолжает отдавать старый embed до рестарта.
+Hard-refresh the browser: **Ctrl+F5** (bypass cache). An old `easy-waf-api` process keeps serving the old embed until restart.
 
-### Дашборд: блок «Core services (systemd)» пустой или «unavailable»
+### Dashboard: “Core services (systemd)” empty or “unavailable”
 
-1. **Войдите в UI** и откройте вкладку **Dashboard**. Запрос идёт с JWT; при истёкшей сессии дашборд частично не загрузится — перелогиньтесь.
-2. **Проверьте ответ API на хосте** (подставьте порт из `EASY_WAF_LISTEN_HTTP` в `/etc/easy-waf/easy-waf.env`, часто `8000`):
+1. **Sign in to the UI** and open the **Dashboard** tab. The request uses JWT; with an expired session the dashboard may only partially load — sign in again.
+2. **Check the API response on the host** (use the port from `EASY_WAF_LISTEN_HTTP` in `/etc/easy-waf/easy-waf.env`, often `8000`):
    ```bash
    curl -sS -X POST "http://127.0.0.1:8000/api/v1/auth/login" \
      -H "Content-Type: application/json" \
      -H "X-Requested-With: XMLHttpRequest" \
-     -d '{"username":"ВАШ_ЛОГИН","password":"ВАШ_ПАРОЛЬ"}'
+     -d '{"username":"YOUR_LOGIN","password":"YOUR_PASSWORD"}'
    ```
-   Скопируйте `token` из JSON, затем:
+   Copy `token` from the JSON, then:
    ```bash
    curl -sS -o /tmp/svc.json -w "HTTP %{http_code}\n" \
-     -H "Authorization: Bearer ТОКЕН" \
+     -H "Authorization: Bearer TOKEN" \
      "http://127.0.0.1:8000/api/v1/system/services"
    cat /tmp/svc.json
    ```
-   - **404** — на диске старый `easy-waf-api` без маршрута: пересоберите и переустановите бинарник, **`systemctl restart easy-waf-api`**, снова **Ctrl+F5** в браузере.
-   - **401 / 403** — неверный пароль или **обязательная смена начального пароля**; выполните смену пароля в UI, затем обновите дашборд.
-   - **200** и в JSON есть массив `services` — API в порядке; если таблицы в браузере всё равно нет, откройте инструменты разработчика → **Network** → запрос `system/services` (кэш, другой origin, блокировка расширениями).
-3. **Юнит `easy-waf-api`**: актуальный шаблон в репозитории — `packaging/systemd/easy-waf-api.service` (для `systemctl show` из процесса API нужна запись в **`/run`** в `ReadWritePaths`). После правки unit: **`systemctl daemon-reload`** и **restart**.
+   - **404** — old `easy-waf-api` on disk without the route: rebuild and reinstall the binary, **`systemctl restart easy-waf-api`**, then **Ctrl+F5** in the browser.
+   - **401 / 403** — wrong password or **required initial password change**; change the password in the UI, then refresh the dashboard.
+   - **200** with a `services` array — API is fine; if the table is still missing in the browser, open DevTools → **Network** → `system/services` (cache, wrong origin, extension blocking).
+3. **`easy-waf-api` unit**: current template in the repo is `packaging/systemd/easy-waf-api.service` (for `systemctl show` from the API process, **`/run`** must be in `ReadWritePaths`). After editing the unit: **`systemctl daemon-reload`** and **restart**.
 
-Изменения только в **`scripts/install.sh`** (например `ensure_haproxy_systemd_enabled`) на уже установленной системе: либо повторить нужный фрагмент вручную (`sudo systemctl enable haproxy.service`), либо снова запустить установщик с осторожностью к уже настроенным файлам — см. [DEPLOYMENT.md](DEPLOYMENT.md).
+Changes only in **`scripts/install.sh`** (e.g. `ensure_haproxy_systemd_enabled`) on an already installed system: either re-run the relevant fragment manually (`sudo systemctl enable haproxy.service`), or re-run the installer carefully around already configured files — see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Profiles vs generated rules
 

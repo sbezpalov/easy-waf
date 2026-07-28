@@ -2,7 +2,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Версия поставки:** см. корневой [`VERSION`](../VERSION) в репозитории (**1.0.0**); `scripts/install.sh` использует его для попытки скачать готовые бинарники с GitHub Releases (см. [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
+**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.0.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
 ## One-command install
 
@@ -47,18 +47,18 @@ Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` duri
 
 ## After install
 
-- **UI (LAN):** по умолчанию **`EASY_WAF_LISTEN_HTTP=0.0.0.0:8000`** и **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Открой **`http://<LAN-IP>:8000`** или **`https://<LAN-IP>:8443`**. На **8443** изначально **самоподписанный** сертификат (`…/secrets/management.crt`); замена — блок **Management TLS** в UI или `PUT /api/v1/settings/management-tls`. **`install.sh`** настраивает **nftables**: **8000 и 8443/tcp** только с **127.0.0.0/8** и **RFC1918** (когда **`EASY_WAF_NFT_MGMT_LAN=1`**).
+- **UI (LAN):** by default **`EASY_WAF_LISTEN_HTTP=0.0.0.0:8000`** and **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Open **`http://<LAN-IP>:8000`** or **`https://<LAN-IP>:8443`**. Port **8443** starts with a **self-signed** certificate (`…/secrets/management.crt`); replace via the **Management TLS** block in the UI or `PUT /api/v1/settings/management-tls`. **`install.sh`** configures **nftables**: **8000 and 8443/tcp** only from **127.0.0.0/8** and **RFC1918** (when **`EASY_WAF_NFT_MGMT_LAN=1`**).
 - **Login:** `admin` / `admin`, then change password when prompted.
 
-**Старый формат `EASY_WAF_LISTEN=...`:** задай в `/etc/easy-waf/easy-waf.env` переменные **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`**, удали строку **`EASY_WAF_LISTEN`**, обнови unit из `packaging/systemd/`, затем:
+**Legacy `EASY_WAF_LISTEN=...` format:** set **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** in `/etc/easy-waf/easy-waf.env`, remove the **`EASY_WAF_LISTEN`** line, refresh the unit from `packaging/systemd/`, then:
 
 `sudo bash scripts/fix-nftables-edge.sh`
 
-и `sudo systemctl daemon-reload && sudo systemctl restart easy-waf-api`.
+and `sudo systemctl daemon-reload && sudo systemctl restart easy-waf-api`.
 
-**Только loopback:** `EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`** при установке.
+**Loopback only:** `EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`** at install time.
 
-**Без HTTPS:** `EASY_WAF_MANAGEMENT_HTTPS=0` — остаётся только HTTP (например на 8000).
+**No HTTPS:** `EASY_WAF_MANAGEMENT_HTTPS=0` — HTTP only (e.g. on 8000).
 
 ## Interactive (LAN API, optional CrowdSec)
 

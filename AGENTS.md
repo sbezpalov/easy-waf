@@ -5,6 +5,10 @@
 > инструменты. Тонкие редиректы (`.cursorrules`, `CLAUDE.md`, `GEMINI.md`,
 > `PERPLEXITY.md`) дополняют, но не отменяют эти правила. **Прочитай целиком перед работой.**
 
+## Language
+- **Default:** English — chat replies, UI strings, commit/PR text, and new docs.
+- **Alternative:** Russian when the user explicitly asks for it (see `.cursor/rules/020-language.mdc`).
+
 ## 1. Проект
 **Easy Home WAF** — self-hosted appliance: защищённый reverse proxy / домашний WAF
 для публикации локальных сервисов (Home Assistant, Frigate, Nextcloud, Wirenboard и т.п.)

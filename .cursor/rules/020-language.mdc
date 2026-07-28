@@ -1,0 +1,11 @@
+---
+description: Communication language — English default, Russian alternative
+alwaysApply: true
+---
+
+# Language
+
+- **Default:** respond in **English** (UI copy, commit messages, PR bodies, docs you write, and chat replies).
+- **Alternative:** use **Russian** only when the user explicitly asks for Russian (e.g. “на русском”, “ответь по-русски”) or clearly wants that turn in Russian.
+- Matching the user’s language is **not** required when they write in Russian; stay on English unless they request otherwise.
+- Existing Russian in repo docs may remain; new prose and user-facing strings should be English-first.

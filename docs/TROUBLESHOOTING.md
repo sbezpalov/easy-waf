@@ -1,29 +1,29 @@
 # Troubleshooting
 
-Документ соответствует ветке релиза **1.0.0** (см. [`VERSION`](../VERSION)).
+This document matches release branch **1.0.0** (see [`VERSION`](../VERSION)).
 
-## `systemctl`: нет юнита `crowdsec.service` / SPOA bouncer
+## `systemctl`: no `crowdsec.service` / SPOA bouncer unit
 
-Пакеты не ставились (например **`EASY_WAF_INSTALL_CROWDSEC=0`**, сбой packagecloud). По умолчанию **`scripts/install.sh`** ставит CrowdSec и SPOA bouncer через **apt**; см. [CROWDSEC.md](CROWDSEC.md).
+Packages were not installed (e.g. **`EASY_WAF_INSTALL_CROWDSEC=0`**, packagecloud failure). By default **`scripts/install.sh`** installs CrowdSec and the SPOA bouncer via **apt**; see [CROWDSEC.md](CROWDSEC.md).
 
-**SPOA bouncer:** apt-пакет **`crowdsec-haproxy-spoa-bouncer`**, systemd-юнит **`crowdsec-spoa-bouncer.service`**. После `apt install`:
+**SPOA bouncer:** apt package **`crowdsec-haproxy-spoa-bouncer`**, systemd unit **`crowdsec-spoa-bouncer.service`**. After `apt install`:
 
 ```bash
 systemctl enable --now crowdsec-spoa-bouncer.service
 systemctl status crowdsec-spoa-bouncer.service
 ```
 
-Конфиг bouncer: `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml`.
+Bouncer config: `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml`.
 
-После установки пакеты есть, а юниты могут быть **disabled** до явного запуска LAPI: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** или **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** (перерегистрирует bouncers **`easy-waf-api`** / **`easy-waf-spoa`** и ключ в **`/etc/easy-waf/easy-waf.env`**).
+After install, packages may exist while units stay **disabled** until LAPI is started: **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** or **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** (re-registers bouncers **`easy-waf-api`** / **`easy-waf-spoa`** and the key in **`/etc/easy-waf/easy-waf.env`**).
 
-## Dashboard: все сервисы в блоке «Core services» = `unknown`
+## Dashboard: all “Core services” show `unknown`
 
-API вызывает **`/usr/bin/systemctl show -p ActiveState`** (и при необходимости **`is-active`**) от пользователя **`easy-waf`**.
+The API runs **`/usr/bin/systemctl show -p ActiveState`** (and **`is-active`** if needed) as user **`easy-waf`**.
 
-1. Убедитесь, что на хосте установлен **актуальный** `easy-waf-api` после `git pull` и **`systemctl restart easy-waf-api`** (см. [OPERATIONS.md](OPERATIONS.md) — UI встроен в бинарник).
-2. Проверьте от имени `easy-waf`: `sudo -u easy-waf /usr/bin/systemctl show -p ActiveState --value haproxy.service` — должно вывести `active` или `inactive`, не пусто.
-3. Если команда недоступна: **AppArmor** / отсутствие **`/usr/bin/systemctl`**, или ограничения unit (юнит `easy-waf-api.service` уже содержит `ReadWritePaths=/run` для D-Bus).
+1. Ensure the host has a **current** `easy-waf-api` after `git pull` and **`systemctl restart easy-waf-api`** (see [OPERATIONS.md](OPERATIONS.md) — UI is embedded in the binary).
+2. Check as `easy-waf`: `sudo -u easy-waf /usr/bin/systemctl show -p ActiveState --value haproxy.service` — should print `active` or `inactive`, not empty.
+3. If the command fails: **AppArmor** / missing **`/usr/bin/systemctl`**, or unit restrictions (`easy-waf-api.service` already has `ReadWritePaths=/run` for D-Bus).
 
 ## `$'\r': command not found` when running a `*.sh` script
 

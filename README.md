@@ -1,5 +1,7 @@
 # Easy Home WAF
 
+**English** | [Русский](README.ru.md)
+
 [![CI](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml)
 [![Release](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml)
 
@@ -7,14 +9,14 @@ Self-hosted **secure reverse proxy / home WAF appliance** for publishing local s
 
 **Target platform:** **Ubuntu 24.04 LTS** only, HAProxy 3.x (distro build), systemd, **nftables** host firewall; netplan for networking.
 
-**Release / installer:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub release и документов; релизы собирает workflow [`release.yml`](.github/workflows/release.yml) (тег `v*`, см. [`CHANGELOG.md`](CHANGELOG.md)).
+**Release / installer:** the root [`VERSION`](VERSION) file sets the number for GitHub releases and docs; releases are built by workflow [`release.yml`](.github/workflows/release.yml) (tag `v*`, see [`CHANGELOG.md`](CHANGELOG.md)).
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
-| [docs/DEV_HOST.md](docs/DEV_HOST.md) | Пилот по SSH: хост **`waf-dev`**, Remote SSH, `.vscode/settings.json` |
-| [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) | Требования [prompts.md](prompts.md) ↔ код (MVP gap matrix) |
+| [docs/DEV_HOST.md](docs/DEV_HOST.md) | Pilot host over SSH: **`waf-dev`**, Remote SSH, `.vscode/settings.json` |
+| [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) | [prompts.md](prompts.md) requirements ↔ code (MVP gap matrix) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, config lifecycle, risks |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Install and first application |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Installer (apt), OVF/OVA, releases |
