@@ -12,9 +12,17 @@ This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting g
 | Generated HAProxy config | `$STATE/haproxy/haproxy.cfg` |
 | Generated TLS crt-list | `$STATE/haproxy/crt-list.txt` |
 | IP block map (when used) | `$STATE/haproxy/ip_blacklist.map` (from settings) |
-| Config revisions (snapshots) | `$STATE/revisions/haproxy-<sha12>.cfg` |
+| Artifact revisions | `$STATE/revisions/artifacts-*/manifest.json` + checksum-verified file copies |
+| Config preview / legacy rollback | `$STATE/revisions/haproxy-<sha12>.cfg` |
 
 Settings also store `haproxy_config_path` / `haproxy_binary` — apply writes to the configured path and runs `haproxy -c` before reload.
+
+Apply and rollback serialize through a PostgreSQL advisory lock shared by the
+API and ACME worker. The generated config, crt-list, IP maps, blocked-UA map,
+and GeoIP maps are treated as one revision. If validation, promotion, reload,
+or revision bookkeeping fails, the previous set is restored; after a failed
+post-promotion reload, the restored config is reloaded when a previous live
+revision exists.
 
 ## Manual check before reload
 
@@ -37,7 +45,7 @@ Fix template/data issues, then use the UI **Apply** or your orchestration.
 | Variable | Effect |
 |----------|--------|
 | `EASY_WAF_SKIP_VALIDATE` | If set (non-empty), skip `haproxy -c` during apply — **only** for broken lab environments; never in production. |
-| `EASY_WAF_SKIP_RELOAD` | If set, write config and revision but **do not** reload HAProxy (audit-only / dry write). |
+| `EASY_WAF_SKIP_RELOAD` | If set, write the artifact set and revision but **do not** reload HAProxy (test/debug only). |
 
 Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
 

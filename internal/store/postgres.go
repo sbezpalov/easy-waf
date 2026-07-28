@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/audit"
@@ -271,15 +272,13 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
-// AppendAudit writes an append-only audit record. user_name and source_ip are taken from
-// audit.Meta on the context when present (see API attachAuditRequestMeta after auth.Session).
-func (s *Store) AppendAudit(ctx context.Context, action string, detail any) error {
+func auditRecordArgs(ctx context.Context, detail any) ([]byte, any, any, error) {
 	var b []byte
-	var err error
 	if detail != nil {
+		var err error
 		b, err = json.Marshal(detail)
 		if err != nil {
-			return err
+			return nil, nil, nil, err
 		}
 	}
 	userArg := any(nil)
@@ -292,11 +291,54 @@ func (s *Store) AppendAudit(ctx context.Context, action string, detail any) erro
 			ipArg = strings.TrimSpace(m.SourceIP)
 		}
 	}
+	return b, userArg, ipArg, nil
+}
+
+// AppendAudit writes an append-only audit record. user_name and source_ip are taken from
+// audit.Meta on the context when present (see API attachAuditRequestMeta after auth.Session).
+func (s *Store) AppendAudit(ctx context.Context, action string, detail any) error {
+	b, userArg, ipArg, err := auditRecordArgs(ctx, detail)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
 		VALUES ($1,$2,$3,$4,$5)`,
 		time.Now().UTC(), action, b, userArg, ipArg)
 	return err
+}
+
+// AcquireAdvisoryLock holds a PostgreSQL session advisory lock until the returned
+// release function is called. A dedicated sql.Conn keeps the lock on one session.
+func (s *Store) AcquireAdvisoryLock(ctx context.Context, key int64) (func() error, error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, key); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	var once sync.Once
+	var releaseErr error
+	release := func() error {
+		once.Do(func() {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			var unlocked bool
+			if err := conn.QueryRowContext(releaseCtx, `SELECT pg_advisory_unlock($1)`, key).Scan(&unlocked); err != nil {
+				releaseErr = err
+			} else if !unlocked {
+				releaseErr = fmt.Errorf("postgres advisory lock %d was not held", key)
+			}
+			if err := conn.Close(); releaseErr == nil && err != nil {
+				releaseErr = err
+			}
+		})
+		return releaseErr
+	}
+	return release, nil
 }
 
 // AppendRevision records a successful HAProxy config revision.
@@ -305,6 +347,37 @@ func (s *Store) AppendRevision(ctx context.Context, label, sha256, path string) 
 		INSERT INTO config_revisions(at, label, haproxy_sha256, content_path) VALUES($1,$2,$3,$4)`,
 		time.Now().UTC(), label, sha256, path)
 	return err
+}
+
+// AppendRevisionAndAudit records a successful revision and its audit event in
+// one database transaction so callers never retain half of the bookkeeping.
+func (s *Store) AppendRevisionAndAudit(
+	ctx context.Context,
+	label, sha256, path, action string,
+	detail any,
+) error {
+	b, userArg, ipArg, err := auditRecordArgs(ctx, detail)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO config_revisions(at, label, haproxy_sha256, content_path)
+		VALUES($1,$2,$3,$4)`, now, label, sha256, path); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
+		VALUES ($1,$2,$3,$4,$5)`, now, action, b, userArg, ipArg); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ConfigRevision is one row in config_revisions (HAProxy cfg snapshot metadata).

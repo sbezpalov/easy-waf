@@ -140,4 +140,25 @@ func TestApplyWritesAuditLogEntry(t *testing.T) {
 	if !found {
 		t.Fatalf("expected new audit_log row with action 'apply' after Apply (audit ids after %d)", beforeMax)
 	}
+
+	revisions, err := st.ListConfigRevisions(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var applied *store.ConfigRevision
+	for i := range revisions {
+		if revisions[i].Label == "integration-apply-audit" {
+			applied = &revisions[i]
+			break
+		}
+	}
+	if applied == nil {
+		t.Fatal("expected config revision for integration apply")
+	}
+	if filepath.Base(applied.ContentPath) != "manifest.json" {
+		t.Fatalf("revision content path = %q, want artifact manifest", applied.ContentPath)
+	}
+	if _, err := os.Stat(applied.ContentPath); err != nil {
+		t.Fatalf("revision artifact manifest: %v", err)
+	}
 }

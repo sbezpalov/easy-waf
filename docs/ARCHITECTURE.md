@@ -89,7 +89,8 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 ## Configuration model
 
 - **Source of truth**: PostgreSQL tables (`applications` including JSONB `restricted_paths` for LAN-only URL prefixes, `certificates`, `settings`, `audit_log`, `config_revisions`, `ipwl_local`, `ipbl_local`, `ipbl_external_sources`) + export bundles for backup.
-- **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), `ip_allowlist.map` (from `ipwl_local` when enabled), optional `crowdsec-spoe.cfg` fragments.
+- **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), `ip_allowlist.map` (from `ipwl_local` when enabled), blocked User-Agent and global/per-app GeoIP maps.
+- **Artifact revisions**: each successful apply stores a checksum-verified manifest and private copies of the complete generated set under `revisions/artifacts-*/`. The legacy `haproxy-<sha12>.cfg` copy remains for UI previews and rollback compatibility with revisions created before artifact manifests.
 - **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
 
 ## Directory layout (on appliance)
@@ -141,7 +142,7 @@ Operational note: if a hostname is routed to an app but **no matching PEM** is i
 
 1. User creates a **certificate** record (ACME HTTP-01 / DNS-01, or manual paths) and links it from each **application** via `certificate_id`.
 2. ACME client (Lego) obtains or renews cert → PEM bundle written to HAProxy-ready paths.
-3. Revision saved; `haproxy -c`; reload on success; failure keeps previous revision active.
+3. The complete generated artifact set is staged/snapshotted; `haproxy -c` runs before reload. Reload and revision/audit bookkeeping succeed together, or the previous files are restored.
 4. Renewal scheduler in `easy-waf-acmed` (periodic tick); staging toggle per CA account.
 
 ## Config generation / apply flow
@@ -154,16 +155,25 @@ sequenceDiagram
   participant Renderer
   participant HAProxy
   UI->>API: PUT /applications
-  API->>Store: transaction + revision snapshot
+  API->>Store: acquire PostgreSQL advisory lock
+  API->>API: snapshot current generated artifact set
   API->>Renderer: render templates
-  Renderer->>API: bytes + metadata
-  API->>HAProxy: haproxy -c -f /run/easy-waf/staging.cfg
+  Renderer->>API: config + crt-list + maps
+  API->>HAProxy: haproxy -c -f <staging.cfg>
   alt valid
-    API->>HAProxy: atomic promote + reload
+    API->>API: promote set + write revision manifest
+    API->>HAProxy: reload-or-restart
+    API->>Store: revision + audit (one DB transaction)
   else invalid
-    API->>UI: error + keep last good
+    API->>API: restore previous artifact set
+    API->>UI: error + keep last good set
   end
+  API->>Store: release advisory lock
 ```
+
+`easy-waf-api` and `easy-waf-acmed` share the advisory lock, so only one process
+can promote or roll back HAProxy artifacts at a time. New rollback revisions
+restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 ## Log and metrics flow
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,10 @@ import (
 )
 
 const settingsKeyGlobal = "global_settings_json"
+
+// haproxyApplyAdvisoryLockKey serializes artifact promotion across
+// easy-waf-api and easy-waf-acmed sessions.
+const haproxyApplyAdvisoryLockKey int64 = 0x455741464150504c // "EWAFAPPL"
 
 // Engine coordinates render + apply + revision bookkeeping.
 type Engine struct {
@@ -249,25 +254,78 @@ func (e *Engine) LiveHAProxySHA256() (string, error) {
 	return sha256HexFile(haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath))
 }
 
-func (e *Engine) reloadAppendRevisionAndAudit(ctx context.Context, label, sha256Hex, cfgPath, auditAction string, auditDetail map[string]any) error {
-	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
-		if err := e.Store.AppendRevision(ctx, label, sha256Hex, cfgPath); err != nil {
-			return err
-		}
-		auditDetail["skipped_reload"] = true
-		return e.Store.AppendAudit(ctx, auditAction, auditDetail)
+func appendFailure(base *error, action string, err error) {
+	if err == nil {
+		return
 	}
-	if err := apply.ReloadHAProxy(); err != nil {
-		return err
+	wrapped := fmt.Errorf("%s: %w", action, err)
+	if *base == nil {
+		*base = wrapped
+		return
 	}
-	if err := e.Store.AppendRevision(ctx, label, sha256Hex, cfgPath); err != nil {
-		return err
-	}
-	return e.Store.AppendAudit(ctx, auditAction, auditDetail)
+	*base = errors.Join(*base, wrapped)
 }
 
-// Apply renders, validates with haproxy -c, writes atomically, records revision, reloads.
-func (e *Engine) Apply(ctx context.Context, label string) error {
+func (e *Engine) finishFailedArtifactTransaction(
+	tx *artifactTransaction,
+	cfgPath string,
+	promoted bool,
+	runtimeChanged bool,
+	skipReload bool,
+	retErr *error,
+) {
+	// A successful first start has no previous runtime/config to restore. Keep
+	// the valid promoted set if only later bookkeeping failed.
+	if runtimeChanged && !tx.snapshot.hasFile(cfgPath) {
+		return
+	}
+	appendFailure(retErr, "restore previous HAProxy artifacts", tx.rollback())
+	if promoted && !skipReload && tx.snapshot.hasFile(cfgPath) {
+		appendFailure(retErr, "reload restored HAProxy configuration", apply.ReloadHAProxy())
+	}
+}
+
+// Apply renders and validates one complete managed artifact set, promotes it,
+// records a full revision manifest, and reloads HAProxy. Any failure restores
+// the previous files; a failed post-promotion reload also reloads that restored
+// configuration when one existed.
+func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
+	releaseLock, err := e.Store.AcquireAdvisoryLock(ctx, haproxyApplyAdvisoryLockKey)
+	if err != nil {
+		return fmt.Errorf("acquire HAProxy apply lock: %w", err)
+	}
+	defer func() {
+		appendFailure(&retErr, "release HAProxy apply lock", releaseLock())
+	}()
+
+	tx, err := e.beginArtifactTransaction()
+	if err != nil {
+		return fmt.Errorf("snapshot current HAProxy artifacts: %w", err)
+	}
+	defer func() { _ = tx.remove() }()
+
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
+	skipReload := os.Getenv("EASY_WAF_SKIP_RELOAD") != ""
+	promoted := false
+	runtimeChanged := false
+	var revisionSnapshot *artifactSnapshot
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		e.finishFailedArtifactTransaction(
+			tx,
+			cfgPath,
+			promoted,
+			runtimeChanged,
+			skipReload,
+			&retErr,
+		)
+		if revisionSnapshot != nil && !(runtimeChanged && !tx.snapshot.hasFile(cfgPath)) {
+			appendFailure(&retErr, "remove failed revision snapshot", revisionSnapshot.remove())
+		}
+	}()
+
 	r, err := e.RenderFromStore(ctx)
 	if err != nil {
 		return err
@@ -275,9 +333,9 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 	if strings.TrimSpace(r.CRTList) == "" && r.RequiresTLS {
 		return fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
 	}
-	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
 	_, _, crtListPath := haproxy.Paths(e.StateDir)
 	staging := cfgPath + ".staging"
+	defer func() { _ = os.Remove(staging) }()
 	if err := apply.WriteAtomic(staging, []byte(r.HAProxyConfig), 0o640); err != nil {
 		return err
 	}
@@ -289,20 +347,53 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
-	revDir := filepath.Join(e.StateDir, "revisions")
-	_ = os.MkdirAll(revDir, 0o750)
-	snap := filepath.Join(revDir, fmt.Sprintf("haproxy-%s.cfg", r.SHA256[:12]))
-	_ = os.WriteFile(snap, []byte(r.HAProxyConfig), 0o640)
-
 	if err := apply.WriteAtomic(cfgPath, []byte(r.HAProxyConfig), 0o640); err != nil {
 		return err
 	}
-	return e.reloadAppendRevisionAndAudit(ctx, label, r.SHA256, cfgPath, "apply", map[string]any{"sha256": r.SHA256, "path": cfgPath})
+	promoted = true
+
+	revisionSnapshot, err = e.createRevisionSnapshot(r.SHA256, nil)
+	if err != nil {
+		return fmt.Errorf("snapshot new HAProxy revision: %w", err)
+	}
+	if !skipReload {
+		if err := apply.ReloadHAProxy(); err != nil {
+			return err
+		}
+		runtimeChanged = true
+	}
+	detail := map[string]any{
+		"sha256":            r.SHA256,
+		"path":              cfgPath,
+		"artifact_manifest": revisionSnapshot.ManifestPath,
+	}
+	if skipReload {
+		detail["skipped_reload"] = true
+	}
+	if err := e.Store.AppendRevisionAndAudit(
+		ctx,
+		label,
+		r.SHA256,
+		revisionSnapshot.ManifestPath,
+		"apply",
+		detail,
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
-// Rollback restores live haproxy.cfg from the on-disk snapshot for a stored revision,
-// runs haproxy -c, reloads, and appends a new revision row labeled rollback from <short sha>.
-func (e *Engine) Rollback(ctx context.Context, revisionID int64) error {
+// Rollback restores a full managed artifact set for new revisions. Legacy rows
+// without a manifest retain cfg-only fallback behavior.
+func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) {
+	releaseLock, err := e.Store.AcquireAdvisoryLock(ctx, haproxyApplyAdvisoryLockKey)
+	if err != nil {
+		return fmt.Errorf("acquire HAProxy apply lock: %w", err)
+	}
+	defer func() {
+		appendFailure(&retErr, "release HAProxy apply lock", releaseLock())
+	}()
+
 	rev, err := e.Store.GetConfigRevision(ctx, revisionID)
 	if err != nil {
 		return err
@@ -310,37 +401,125 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) error {
 	if len(rev.HAProxySHA256) < 12 {
 		return fmt.Errorf("invalid stored revision hash")
 	}
-	snapPath := filepath.Join(e.StateDir, "revisions", fmt.Sprintf("haproxy-%s.cfg", rev.HAProxySHA256[:12]))
-	b, err := os.ReadFile(snapPath)
-	if err != nil {
-		return fmt.Errorf("revision snapshot not found: %w", err)
-	}
-	got := sha256HexBytes(b)
-	if got != rev.HAProxySHA256 {
-		return fmt.Errorf("revision snapshot corrupt: sha256 mismatch")
-	}
+
 	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
-	if curSHA, err := sha256HexFile(cfgPath); err == nil && curSHA == got {
-		return fmt.Errorf("already using this configuration")
+	tx, err := e.beginArtifactTransaction()
+	if err != nil {
+		return fmt.Errorf("snapshot current HAProxy artifacts: %w", err)
 	}
-	staging := cfgPath + ".staging"
-	if err := apply.WriteAtomic(staging, b, 0o640); err != nil {
+	defer func() { _ = tx.remove() }()
+
+	skipReload := os.Getenv("EASY_WAF_SKIP_RELOAD") != ""
+	promoted := false
+	runtimeChanged := false
+	var revisionSnapshot *artifactSnapshot
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		e.finishFailedArtifactTransaction(
+			tx,
+			cfgPath,
+			promoted,
+			runtimeChanged,
+			skipReload,
+			&retErr,
+		)
+		if revisionSnapshot != nil && !(runtimeChanged && !tx.snapshot.hasFile(cfgPath)) {
+			appendFailure(&retErr, "remove failed revision snapshot", revisionSnapshot.remove())
+		}
+	}()
+
+	var targetExtra []string
+	if filepath.Base(filepath.Clean(rev.ContentPath)) == "manifest.json" {
+		targetManifest, err := readAndVerifyArtifactManifest(rev.ContentPath)
+		if err != nil {
+			return fmt.Errorf("revision artifact manifest invalid: %w", err)
+		}
+		if !strings.EqualFold(targetManifest.ConfigSHA256, rev.HAProxySHA256) {
+			return fmt.Errorf("revision artifact manifest config checksum mismatch")
+		}
+		targetExtra = artifactManifestPaths(targetManifest)
+		currentManaged, err := e.managedArtifactPaths(targetExtra)
+		if err != nil {
+			return err
+		}
+		if _, err := restoreArtifactManifest(rev.ContentPath, currentManaged, cfgPath); err != nil {
+			return fmt.Errorf("restore revision artifacts: %w", err)
+		}
+		promoted = true
+	} else {
+		snapPath := filepath.Join(e.StateDir, "revisions", fmt.Sprintf("haproxy-%s.cfg", rev.HAProxySHA256[:12]))
+		b, err := os.ReadFile(snapPath)
+		if err != nil {
+			return fmt.Errorf("revision snapshot not found: %w", err)
+		}
+		got := sha256HexBytes(b)
+		if got != rev.HAProxySHA256 {
+			return fmt.Errorf("revision snapshot corrupt: sha256 mismatch")
+		}
+		if curSHA, err := sha256HexFile(cfgPath); err == nil && curSHA == got {
+			return fmt.Errorf("already using this configuration")
+		}
+		staging := cfgPath + ".staging"
+		defer func() { _ = os.Remove(staging) }()
+		if err := apply.WriteAtomic(staging, b, 0o640); err != nil {
+			return err
+		}
+		if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
+			if err := apply.Validate(e.Settings.HAProxyBinary, staging); err != nil {
+				return fmt.Errorf("validation failed: %w", err)
+			}
+		}
+		if err := apply.WriteAtomic(cfgPath, b, 0o640); err != nil {
+			return err
+		}
+		promoted = true
+	}
+
+	got, err := sha256HexFile(cfgPath)
+	if err != nil {
 		return err
 	}
+	if !strings.EqualFold(got, rev.HAProxySHA256) {
+		return fmt.Errorf("restored revision config checksum mismatch")
+	}
 	if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
-		if err := apply.Validate(e.Settings.HAProxyBinary, staging); err != nil {
+		if err := apply.Validate(e.Settings.HAProxyBinary, cfgPath); err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
-	if err := apply.WriteAtomic(cfgPath, b, 0o640); err != nil {
-		return err
+
+	revisionSnapshot, err = e.createRevisionSnapshot(got, targetExtra)
+	if err != nil {
+		return fmt.Errorf("snapshot rollback revision: %w", err)
+	}
+	if !skipReload {
+		if err := apply.ReloadHAProxy(); err != nil {
+			return err
+		}
+		runtimeChanged = true
 	}
 	label := fmt.Sprintf("rollback from %s", rev.HAProxySHA256[:12])
 	detail := map[string]any{
-		"sha256":           got,
-		"path":             cfgPath,
-		"from_revision_id": revisionID,
-		"from_label":       rev.Label,
+		"sha256":            got,
+		"path":              cfgPath,
+		"from_revision_id":  revisionID,
+		"from_label":        rev.Label,
+		"artifact_manifest": revisionSnapshot.ManifestPath,
 	}
-	return e.reloadAppendRevisionAndAudit(ctx, label, got, cfgPath, "rollback", detail)
+	if skipReload {
+		detail["skipped_reload"] = true
+	}
+	if err := e.Store.AppendRevisionAndAudit(
+		ctx,
+		label,
+		got,
+		revisionSnapshot.ManifestPath,
+		"rollback",
+		detail,
+	); err != nil {
+		return err
+	}
+	return nil
 }
