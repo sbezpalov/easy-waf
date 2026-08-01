@@ -69,10 +69,10 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 	}
 	snap1 := filepath.Join(revDir, fmt.Sprintf("haproxy-%s.cfg", h1[:12]))
 	snap2 := filepath.Join(revDir, fmt.Sprintf("haproxy-%s.cfg", h2[:12]))
-	if err := os.WriteFile(snap1, cfgV1, 0o640); err != nil {
+	if err := os.WriteFile(snap1, cfgV1, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(snap2, cfgV2, 0o640); err != nil {
+	if err := os.WriteFile(snap2, cfgV2, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,7 +100,7 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 		}
 	})
 
-	if err := os.WriteFile(cfgPath, cfgV2, 0o640); err != nil {
+	if err := os.WriteFile(cfgPath, cfgV2, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.Rollback(ctx, id1); err != nil {

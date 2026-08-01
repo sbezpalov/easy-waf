@@ -11,7 +11,7 @@ type mockRunner struct {
 	lastArgs []string
 }
 
-func (m *mockRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+func (m *mockRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	m.lastName = name
 	m.lastArgs = args
 	if name == "systemctl" && len(args) >= 2 && args[0] == "reboot" {

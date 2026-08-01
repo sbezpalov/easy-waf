@@ -130,7 +130,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		{"haproxy", "logs/journal-haproxy.txt"},
 	} {
 		ctx2, cancel := context.WithTimeout(ctx, 45*time.Second)
-		out, _ := exec.CommandContext(ctx2, "journalctl", "-u", pair.unit, "--since", "24 hours ago", "-n", "500", "--no-pager").CombinedOutput()
+		out, _ := exec.CommandContext(ctx2, "journalctl", "-u", pair.unit, "--since", "24 hours ago", "-n", "500", "--no-pager").CombinedOutput() //nolint:gosec
 		cancel()
 		if err := addTarBytes(tw, prefix+pair.dst, out, 0o644); err != nil {
 			return err

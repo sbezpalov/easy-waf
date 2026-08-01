@@ -51,7 +51,7 @@ func (s *Server) Router() chi.Router {
 	r.Use(RequireXHR)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
@@ -148,14 +148,14 @@ func (s *Server) metricsHandler() http.Handler {
 	})
 }
 
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"state_dir": s.Eng.StateDir,
 		"version":   os.Getenv("EASY_WAF_VERSION"),
 	})
 }
 
-func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]profiles.Profile{}
 	for k, v := range profiles.All() {
 		out[string(k)] = v
@@ -375,7 +375,7 @@ func (s *Server) writeSettingsResponse(w http.ResponseWriter, code int, gs confi
 	})
 }
 
-func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
 	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings)
 }
 
@@ -581,7 +581,7 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ip": ip, "country": cc, "cached": cached})
 }
 
-func (s *Server) geoipStats(w http.ResponseWriter, r *http.Request) {
+func (s *Server) geoipStats(w http.ResponseWriter, _ *http.Request) {
 	if s.Eng.GeoIP == nil || s.Eng.GeoIP.Cache == nil {
 		writeJSON(w, http.StatusOK, geoip.Stats{})
 		return

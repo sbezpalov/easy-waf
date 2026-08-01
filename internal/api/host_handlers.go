@@ -475,7 +475,7 @@ func hostPower(ctx context.Context, action string) error {
 	return err
 }
 
-func (s *Server) hostListUsers(w http.ResponseWriter, r *http.Request) {
+func (s *Server) hostListUsers(w http.ResponseWriter, _ *http.Request) {
 	list, err := users.List()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

@@ -43,7 +43,7 @@ func writeTestCountryMMDB(t *testing.T, ip, iso string) string {
 	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "test.mmdb")
-	if err := os.WriteFile(p, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(p, buf.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -77,8 +77,8 @@ func TestMaxMindProvider_Reload(t *testing.T) {
 	p1 := filepath.Join(dir, "db.mmdb")
 	p2 := filepath.Join(dir, "db2.mmdb")
 	// First DB: US
-	_ = os.WriteFile(p1, mustBuildMMDB(t, "8.8.8.8", "US"), 0o644)
-	_ = os.WriteFile(p2, mustBuildMMDB(t, "8.8.8.8", "DE"), 0o644)
+	_ = os.WriteFile(p1, mustBuildMMDB(t, "8.8.8.8", "US"), 0o600)
+	_ = os.WriteFile(p2, mustBuildMMDB(t, "8.8.8.8", "DE"), 0o600)
 
 	prov, err := NewMaxMindProvider(p1)
 	if err != nil {

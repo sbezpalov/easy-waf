@@ -37,7 +37,7 @@ func UpsertEnvKey(path, key, value string) error {
 	if out != "" && !strings.HasSuffix(out, "\n") {
 		out += "\n"
 	}
-	return os.WriteFile(path, []byte(out), 0o640)
+	return os.WriteFile(path, []byte(out), 0o600)
 }
 
 // ReadEnvKey returns the value for KEY in a line-oriented env file (first match). Empty if missing or unreadable.
@@ -70,8 +70,8 @@ func RemoveEnvKey(path, key string) error {
 		return err
 	}
 	prefix := key + "="
-	var lines []string
 	raw := strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n")
+	lines := make([]string, 0, len(raw))
 	for _, line := range raw {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -87,5 +87,5 @@ func RemoveEnvKey(path, key string) error {
 	if out != "" && !strings.HasSuffix(out, "\n") {
 		out += "\n"
 	}
-	return os.WriteFile(path, []byte(out), 0o640)
+	return os.WriteFile(path, []byte(out), 0o600)
 }

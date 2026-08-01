@@ -538,10 +538,10 @@ func TestGoldenRender(t *testing.T) {
 				if err := os.MkdirAll(goldenDir, 0o755); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(cfgPath, []byte(got), 0o644); err != nil {
+				if err := os.WriteFile(cfgPath, []byte(got), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(crtPath, []byte(crtWant), 0o644); err != nil {
+				if err := os.WriteFile(crtPath, []byte(crtWant), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				t.Logf("UPDATE_GOLDEN: wrote %s and %s", cfgPath, crtPath)

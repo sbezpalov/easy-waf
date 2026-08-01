@@ -92,7 +92,7 @@ func (m *MemoryCache) Set(ip, country string) {
 	m.items[ip] = Entry{Country: country, Expires: now.Add(m.ttl), lastUsed: now}
 }
 
-func (m *MemoryCache) evictOneLocked(now time.Time) {
+func (m *MemoryCache) evictOneLocked(_ time.Time) {
 	var victim string
 	var oldest time.Time
 	first := true

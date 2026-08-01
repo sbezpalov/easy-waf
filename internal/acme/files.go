@@ -22,7 +22,7 @@ func WriteCertificateResource(stateDir, certID string, res *certificate.Resource
 	}
 	fullchainPath = filepath.Join(dir, "fullchain.pem")
 	keyPath = filepath.Join(dir, "privkey.pem")
-	if err := os.WriteFile(fullchainPath, res.Certificate, 0o640); err != nil {
+	if err := os.WriteFile(fullchainPath, res.Certificate, 0o600); err != nil {
 		return "", "", time.Time{}, time.Time{}, err
 	}
 	if err := os.WriteFile(keyPath, res.PrivateKey, 0o600); err != nil {

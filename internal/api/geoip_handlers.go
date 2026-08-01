@@ -18,7 +18,7 @@ type geoipProviderRow struct {
 	MMDBPath  string `json:"mmdb_path,omitempty"`
 }
 
-func (s *Server) geoipListProviders(w http.ResponseWriter, r *http.Request) {
+func (s *Server) geoipListProviders(w http.ResponseWriter, _ *http.Request) {
 	path := strings.TrimSpace(s.Eng.Settings.GeoIPMMDBPath)
 	ok := path != ""
 	if ok {

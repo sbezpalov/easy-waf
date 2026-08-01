@@ -39,7 +39,7 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	}
 
 	spoePath := filepath.Join(dir, "crowdsec-spoe.cfg")
-	if err := os.WriteFile(spoePath, []byte("# placeholder for SPOE (not loaded when filter is commented)\n"), 0o644); err != nil {
+	if err := os.WriteFile(spoePath, []byte("# placeholder for SPOE (not loaded when filter is commented)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,15 +77,17 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	if strings.Contains(r.HAProxyConfig, "_traversal path -m reg") {
 		const wantTraversalACL = `_traversal path -m reg -i \.\./`
 		if !strings.Contains(r.HAProxyConfig, wantTraversalACL) {
-			i := strings.Index(r.HAProxyConfig, "_traversal path")
-			snippet := r.HAProxyConfig[i:]
+			snippet := r.HAProxyConfig
+			if i := strings.Index(r.HAProxyConfig, "_traversal path"); i >= 0 {
+				snippet = r.HAProxyConfig[i:]
+			}
 			if len(snippet) > 200 {
 				snippet = snippet[:200] + "…"
 			}
 			t.Fatalf("expected %q in rendered config (re-run after merging latest internal/haproxy/render.go); got near: %q", wantTraversalACL, snippet)
 		}
 	}
-	if err := os.WriteFile(crtListPath, []byte(r.CRTList), 0o640); err != nil {
+	if err := os.WriteFile(crtListPath, []byte(r.CRTList), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,7 +99,7 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		t.Fatal("could not comment SPOE filter line — update haproxy_validate_test.go if template indentation changed")
 	}
 	cfgPath := filepath.Join(hdir, "haproxy.cfg")
-	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0o640); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,5 +129,5 @@ func writeSelfSignedBundle(path string) error {
 	var buf bytes.Buffer
 	buf.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 	buf.Write(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
-	return os.WriteFile(path, buf.Bytes(), 0o640)
+	return os.WriteFile(path, buf.Bytes(), 0o600)
 }

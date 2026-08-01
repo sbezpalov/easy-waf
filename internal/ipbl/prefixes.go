@@ -12,7 +12,7 @@ import (
 // Invalid CIDR strings are logged and skipped. Deprecated IPBLAllowPrivateFetch
 // (when no explicit CIDRs) adds RFC1918 prefixes for backward compatibility.
 func ParseFeedAllowedPrefixes(g config.GlobalSettings) []netip.Prefix {
-	var out []netip.Prefix
+	out := make([]netip.Prefix, 0, len(g.IPBLFetchAllowedCIDRs))
 	for _, s := range g.IPBLFetchAllowedCIDRs {
 		s = strings.TrimSpace(s)
 		if s == "" {

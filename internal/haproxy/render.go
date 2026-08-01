@@ -82,7 +82,7 @@ func Render(in RenderInput) (Rendered, error) {
 			return Rendered{}, err
 		}
 	}
-	var apps []AppRender
+	apps := make([]AppRender, 0, len(in.Applications))
 	for _, app := range in.Applications {
 		if !app.Enabled {
 			continue
@@ -147,17 +147,6 @@ func Render(in RenderInput) (Rendered, error) {
 		in.UseCrowdSecFilter = false
 	}
 
-	tmpl, err := template.New("haproxy").Funcs(template.FuncMap{
-		"backendName": sanitizeBackendName,
-		"join":        strings.Join,
-		"joinCIDRs":   joinCIDRs,
-		"haDur":       formatHAProxyDuration,
-		"methodSlug":  methodSlug,
-	}).Parse(haproxyTemplate)
-	if err != nil {
-		return Rendered{}, err
-	}
-
 	var crtBuf strings.Builder
 	for _, line := range crtLines {
 		crtBuf.WriteString(line)
@@ -170,7 +159,7 @@ func Render(in RenderInput) (Rendered, error) {
 	}{
 		RenderInput: in,
 	}
-	if err := tmpl.Execute(&cfgBuf, data); err != nil {
+	if err := compiledTemplate.Execute(&cfgBuf, data); err != nil {
 		return Rendered{}, err
 	}
 	cfg := cfgBuf.String()
@@ -184,7 +173,7 @@ func Render(in RenderInput) (Rendered, error) {
 }
 
 func buildCRTList(in RenderInput) []string {
-	var lines []string
+	lines := make([]string, 0, len(in.Applications))
 	seen := map[string]struct{}{}
 	for _, app := range in.Applications {
 		if !app.Enabled || app.CertificateID == "" {
@@ -484,6 +473,14 @@ backend {{backendName $a.Application.PublicHost}}
 	{{- end }}
 {{end}}
 `
+
+var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.FuncMap{
+	"backendName": sanitizeBackendName,
+	"join":        strings.Join,
+	"joinCIDRs":   joinCIDRs,
+	"haDur":       formatHAProxyDuration,
+	"methodSlug":  methodSlug,
+}).Parse(haproxyTemplate))
 
 // Paths under stateDir for generated artifacts.
 func Paths(stateDir string) (haproxyDir, cfgPath, crtListPath string) {

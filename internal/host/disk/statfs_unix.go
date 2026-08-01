@@ -18,7 +18,7 @@ func statfsMount(path string) (Mount, fsID, error) {
 	}
 	pct := 0
 	if total > 0 {
-		pct = int((used * 100) / total)
+		pct = int((used * 100) / total) //nolint:gosec
 		if pct > 100 {
 			pct = 100
 		}

@@ -98,7 +98,7 @@ func validateFeedURLContext(ctx context.Context, rawURL string, allowed []netip.
 }
 
 func safeDialControl(allowed []netip.Prefix) func(network, address string, c syscall.RawConn) error {
-	return func(network, address string, _ syscall.RawConn) error {
+	return func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
 			return err

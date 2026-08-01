@@ -14,6 +14,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/audit"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/google/uuid"
+	// Register pgx stdlib driver for database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

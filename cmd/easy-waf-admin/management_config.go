@@ -26,6 +26,12 @@ func openStoreFromEnvFile(envFile, databaseURL string) (*store.Store, error) {
 }
 
 func managementConfig() {
+	if err := runManagementConfig(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runManagementConfig() error {
 	fs := flag.NewFlagSet("management-config", flag.ExitOnError)
 	envFile := fs.String("env-file", "/etc/easy-waf/easy-waf.env", "path to easy-waf.env (DATABASE_URL + listen variables)")
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
@@ -39,28 +45,29 @@ func managementConfig() {
 	_ = fs.Parse(os.Args[2:])
 
 	if *listenLoopback && *listenLAN {
-		log.Fatal("refusing: use only one of -listen-loopback or -listen-lan")
+		return fmt.Errorf("refusing: use only one of -listen-loopback or -listen-lan")
 	}
 	if *listenLoopback && (strings.TrimSpace(*listenHTTP) != "" || strings.TrimSpace(*listenHTTPS) != "") {
-		log.Fatal("refusing: do not combine -listen-loopback with -listen-http/-listen-https")
+		return fmt.Errorf("refusing: do not combine -listen-loopback with -listen-http/-listen-https")
 	}
 	if *listenLAN && (strings.TrimSpace(*listenHTTP) != "" || strings.TrimSpace(*listenHTTPS) != "") {
-		log.Fatal("refusing: do not combine -listen-lan with -listen-http/-listen-https")
+		return fmt.Errorf("refusing: do not combine -listen-lan with -listen-http/-listen-https")
 	}
 	if *defaultCIDRs && strings.TrimSpace(*managementCIDRs) != "" {
-		log.Fatal("refusing: use either -default-management-cidrs or -management-cidrs, not both")
+		return fmt.Errorf("refusing: use either -default-management-cidrs or -management-cidrs, not both")
 	}
 
 	st, err := openStoreFromEnvFile(*envFile, *databaseURL)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer st.Close()
 
 	ctx := context.Background()
 	eng := &engine.Engine{StateDir: *stateDir, Store: st}
 	if err := eng.LoadSettings(ctx); err != nil {
-		log.Fatalf("load settings: %v", err)
+		_ = st.Close()
+		return fmt.Errorf("load settings: %w", err)
 	}
 
 	envChanged := false
@@ -69,25 +76,25 @@ func managementConfig() {
 	switch {
 	case *listenLoopback:
 		if err := applyListenEnv(*envFile, "127.0.0.1:8000", "127.0.0.1:8443"); err != nil {
-			log.Fatal(err)
+			return err
 		}
 		envChanged = true
 	case *listenLAN:
 		if err := applyListenEnv(*envFile, "0.0.0.0:8000", "0.0.0.0:8443"); err != nil {
-			log.Fatal(err)
+			return err
 		}
 		envChanged = true
 	default:
 		if s := strings.TrimSpace(*listenHTTP); s != "" {
 			if err := admin.UpsertEnvKey(*envFile, "EASY_WAF_LISTEN_HTTP", s); err != nil {
-				log.Fatalf("update env file: %v", err)
+				return fmt.Errorf("update env file: %w", err)
 			}
 			_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 			envChanged = true
 		}
 		if s := strings.TrimSpace(*listenHTTPS); s != "" {
 			if err := admin.UpsertEnvKey(*envFile, "EASY_WAF_LISTEN_HTTPS", s); err != nil {
-				log.Fatalf("update env file: %v", err)
+				return fmt.Errorf("update env file: %w", err)
 			}
 			_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 			envChanged = true
@@ -97,27 +104,27 @@ func managementConfig() {
 	if *defaultCIDRs {
 		eng.Settings.ManagementAllowedCIDRs = append([]string(nil), config.DefaultManagementCIDRs()...)
 		if err := eng.SaveSettings(ctx); err != nil {
-			log.Fatalf("save settings: %v", err)
+			return fmt.Errorf("save settings: %w", err)
 		}
 		dbChanged = true
 	} else if strings.TrimSpace(*managementCIDRs) != "" {
 		list, err := splitCommaCIDRs(*managementCIDRs)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		if err := api.ValidateManagementCIDRs(list); err != nil {
-			log.Fatalf("management CIDRs: %v", err)
+			return fmt.Errorf("management CIDRs: %w", err)
 		}
 		eng.Settings.ManagementAllowedCIDRs = list
 		if err := eng.SaveSettings(ctx); err != nil {
-			log.Fatalf("save settings: %v", err)
+			return fmt.Errorf("save settings: %w", err)
 		}
 		dbChanged = true
 	}
 
 	if dbChanged {
 		if err := eng.LoadSettings(ctx); err != nil {
-			log.Fatalf("reload settings: %v", err)
+			return fmt.Errorf("reload settings: %w", err)
 		}
 	}
 
@@ -127,6 +134,7 @@ func managementConfig() {
 		fmt.Fprintln(os.Stderr)
 		log.Print("updated — restart easy-waf-api to apply: sudo systemctl restart easy-waf-api.service")
 	}
+	return nil
 }
 
 func applyListenEnv(envFile, httpAddr, httpsAddr string) error {
@@ -141,8 +149,9 @@ func applyListenEnv(envFile, httpAddr, httpsAddr string) error {
 }
 
 func splitCommaCIDRs(s string) ([]string, error) {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue

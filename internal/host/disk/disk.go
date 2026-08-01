@@ -23,7 +23,7 @@ func Usage(paths ...string) ([]Mount, error) {
 		paths = []string{"/", "/var"}
 	}
 	seen := make(map[fsID]struct{})
-	var out []Mount
+	out := make([]Mount, 0, len(paths))
 	for _, path := range paths {
 		m, id, err := statfsMount(path)
 		if err != nil {

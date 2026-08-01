@@ -181,7 +181,7 @@ func haproxyShowStat(socketPath string) ([]byte, error) {
 func ParseShowStatCSV(data []byte) (*HAProxyReport, error) {
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	var header []string
-	var rows [][]string
+	rows := make([][]string, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {

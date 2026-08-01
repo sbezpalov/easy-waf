@@ -6,11 +6,22 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func shortTempSock(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "h-")
+	if err != nil {
+		return filepath.Join(t.TempDir(), "h.sock")
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, "s.sock")
+}
 
 func resetAptUpgradeState() {
 	ResetAptUpgradeStateForTest()
@@ -32,7 +43,7 @@ func readStreamEvents(t *testing.T, r io.Reader) []streamEvent {
 
 func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("Setting up pkg-a")
 		_ = emit("Processing triggers")
 		return 0, nil
@@ -60,7 +71,7 @@ func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 
 func TestDispatchAptStream_autoremove(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+	SetAptActionStreamHookForTest(func(_ context.Context, action string, emit func(string) error) (int, error) {
 		if action != "autoremove" {
 			t.Fatalf("action: %q", action)
 		}
@@ -109,7 +120,7 @@ func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 	}()
 
 	started := make(chan struct{})
-	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+	SetAptActionStreamHookForTest(func(_ context.Context, action string, emit func(string) error) (int, error) {
 		if action != "upgrade" {
 			t.Fatalf("primary action: %q", action)
 		}
@@ -156,7 +167,7 @@ func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 	}()
 
 	started := make(chan struct{})
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		close(started)
 		_ = emit("primary-line")
 		time.Sleep(200 * time.Millisecond)
@@ -199,7 +210,7 @@ func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
 		resetAptUpgradeState()
 	}()
 
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		time.Sleep(200 * time.Millisecond)
 		_ = emit("done")
 		return 0, nil
@@ -225,7 +236,7 @@ func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
 func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T) {
 	resetAptUpgradeState()
 	hookDone := make(chan struct{})
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("line-one")
 		time.Sleep(50 * time.Millisecond)
 		_ = emit("line-two")
@@ -251,14 +262,15 @@ func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T)
 
 func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	defer func() { SetAptActionLogPathOverrideForTest("") }()
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("mock upgrade line")
 		return 0, nil
 	})
 	defer resetAptUpgradeState()
 
-	dir := t.TempDir()
-	sock := dir + "/hostd.sock"
+	sock := shortTempSock(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = Serve(ctx, sock) }()
@@ -291,15 +303,16 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 
 func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionStreamHookForTest(func(ctx context.Context, action string, emit func(string) error) (int, error) {
+	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	defer func() { SetAptActionLogPathOverrideForTest("") }()
+	SetAptActionStreamHookForTest(func(_ context.Context, action string, emit func(string) error) (int, error) {
 		_ = action
 		_ = emit("mock autoremove line")
 		return 0, nil
 	})
 	defer resetAptUpgradeState()
 
-	dir := t.TempDir()
-	sock := dir + "/hostd.sock"
+	sock := shortTempSock(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = Serve(ctx, sock) }()

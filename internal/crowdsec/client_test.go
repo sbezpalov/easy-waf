@@ -29,7 +29,7 @@ func TestDeleteDecision_Success(t *testing.T) {
 }
 
 func TestDeleteDecision_NotFound(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = io.WriteString(w, `{"message":"not found"}`)
 	}))

@@ -58,7 +58,7 @@ func ParseAutoremovePackages(output string) []string {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(matches))
-	var pkgs []string
+	pkgs := make([]string, 0, len(matches))
 	for _, m := range matches {
 		if len(m) < 2 {
 			continue

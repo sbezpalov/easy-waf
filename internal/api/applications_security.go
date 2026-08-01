@@ -11,7 +11,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/profiles"
 )
 
-func (s *Server) listSecurityModes(w http.ResponseWriter, r *http.Request) {
+func (s *Server) listSecurityModes(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, profiles.SecurityModeCatalog())
 }
 

@@ -65,7 +65,7 @@ func writeEnforceMapCore(ctx context.Context, prov GeoProvider, cache *MemoryCac
 		set[c] = struct{}{}
 	}
 
-	var lines []string
+	lines := make([]string, 0, len(blacklistCIDRs))
 	for _, cidr := range blacklistCIDRs {
 		cidr = strings.TrimSpace(cidr)
 		if cidr == "" || strings.HasPrefix(cidr, "#") {
@@ -132,7 +132,7 @@ func WriteDisabledEnforceMap(g config.GlobalSettings, stateDir string) error {
 
 func writeMapFile(path, body string) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o640); err != nil {
+	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

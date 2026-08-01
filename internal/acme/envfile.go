@@ -24,7 +24,7 @@ func ApplyEnvFromFile(path string) (cleanup func(), err error) {
 	for k := range m {
 		prev[k] = os.Getenv(k)
 	}
-	var applied []string
+	applied := make([]string, 0, len(m))
 	for k, v := range m {
 		if e := os.Setenv(k, v); e != nil {
 			for _, kk := range applied {

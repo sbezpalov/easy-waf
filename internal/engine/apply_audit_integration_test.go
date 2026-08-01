@@ -44,7 +44,7 @@ func writeTestBundlePEM(path string) error {
 	var buf bytes.Buffer
 	buf.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 	buf.Write(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
-	return os.WriteFile(path, buf.Bytes(), 0o640)
+	return os.WriteFile(path, buf.Bytes(), 0o600)
 }
 
 // TestApplyWritesAuditLogEntry checks that a successful Engine.Apply appends a row with action "apply".

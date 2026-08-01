@@ -8,7 +8,7 @@ import (
 )
 
 func TestRequireXHR_GET_Exempt(t *testing.T) {
-	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
@@ -20,7 +20,7 @@ func TestRequireXHR_GET_Exempt(t *testing.T) {
 }
 
 func TestRequireXHR_POST_Without_Header(t *testing.T) {
-	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/apply", strings.NewReader("{}"))
@@ -32,7 +32,7 @@ func TestRequireXHR_POST_Without_Header(t *testing.T) {
 }
 
 func TestRequireXHR_POST_With_Header(t *testing.T) {
-	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/apply", strings.NewReader("{}"))
@@ -45,7 +45,7 @@ func TestRequireXHR_POST_With_Header(t *testing.T) {
 }
 
 func TestRequireXHR_Health_Exempt(t *testing.T) {
-	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireXHR(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/health", nil)

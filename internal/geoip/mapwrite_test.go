@@ -13,7 +13,7 @@ import (
 
 type stubGeo map[string]string
 
-func (m stubGeo) Lookup(ctx context.Context, ip string) (string, error) {
+func (m stubGeo) Lookup(_ context.Context, ip string) (string, error) {
 	cc, ok := m[ip]
 	if !ok {
 		return "", fmt.Errorf("stub: unknown %s", ip)

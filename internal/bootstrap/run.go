@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -50,20 +51,26 @@ func mergeEnvIntoSettings(eng *engine.Engine) {
 
 // RunSyncSettingsOnly loads settings from PostgreSQL, merges env, saves — used by install.sh before first API start.
 func RunSyncSettingsOnly() {
+	if err := runSyncSettingsOnly(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runSyncSettingsOnly() error {
 	stateDir := strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_STATE_DIR"), "\r", ""))
 	if stateDir == "" {
 		stateDir = "/var/lib/easy-waf"
 	}
 	dsn := strings.TrimSpace(strings.ReplaceAll(os.Getenv("DATABASE_URL"), "\r", ""))
 	if dsn == "" {
-		log.Fatal("DATABASE_URL is required for -sync-settings-only")
+		return fmt.Errorf("DATABASE_URL is required for -sync-settings-only")
 	}
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	st, err := store.OpenPostgres(dsn)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer st.Close()
 	eng := &engine.Engine{StateDir: stateDir, Store: st}
@@ -72,9 +79,7 @@ func RunSyncSettingsOnly() {
 		eng.Settings = config.DefaultSettings(stateDir)
 	}
 	mergeEnvIntoSettings(eng)
-	if err := eng.SaveSettings(ctx); err != nil {
-		log.Fatal(err)
-	}
+	return eng.SaveSettings(ctx)
 }
 
 // RunAPI starts the management API and embedded UI (architecture C: control-plane service).
@@ -110,9 +115,15 @@ func RunAPI() {
 		log.Fatal(err)
 	}
 
+	if err := runAPIService(dsn, stateDir, listenHTTP, listenHTTPS, legacyListen); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *string) error {
 	st, err := store.OpenPostgres(dsn)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer st.Close()
 
@@ -130,11 +141,11 @@ func RunAPI() {
 
 	jwtSecret, err := auth.LoadJWTSecret(stateDir)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	created, err := st.EnsureDefaultAdmin(ctx)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if created {
 		log.Print("created default operator user admin/admin — must change password on first login")
@@ -183,18 +194,18 @@ func RunAPI() {
 
 	sub, err := fs.Sub(webui.Assets, "dist")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	r.Handle("/*", http.FileServer(http.FS(sub)))
 
 	if !httpsDisabled {
 		certPath, keyPath, err := mgmttls.EnsureSelfSigned(stateDir)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		tlsMgr := &mgmttls.Manager{}
 		if err := tlsMgr.LoadFromFiles(certPath, keyPath); err != nil {
-			log.Fatal(err)
+			return err
 		}
 		srv.MgmtTLS = tlsMgr
 		srv.MgmtTLSCertPath = certPath
@@ -225,7 +236,7 @@ func RunAPI() {
 	if acAddr := acmeInternalListenAddr(); acAddr != "" {
 		wr, err := acmeWebrootPath(stateDir, eng.Settings.ACMEWebrootPath)
 		if err != nil {
-			log.Fatalf("ACME webroot: %v", err)
+			return fmt.Errorf("ACME webroot: %w", err)
 		}
 		acmeInternalSrv = &http.Server{
 			Addr:              acAddr,
@@ -279,6 +290,7 @@ func RunAPI() {
 	if acmeInternalSrv != nil {
 		_ = acmeInternalSrv.Shutdown(ctx2)
 	}
+	return nil
 }
 
 func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string) {

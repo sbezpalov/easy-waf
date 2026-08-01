@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,13 +13,22 @@ import (
 	"github.com/easy-waf/easy-waf/internal/hostd"
 )
 
+func shortTempSock(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "h-")
+	if err != nil {
+		return filepath.Join(t.TempDir(), "h.sock")
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, "s.sock")
+}
+
 func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 	hostd.SetBypassPeerCheckForTest(true)
-	dir := t.TempDir()
-	sock := filepath.Join(dir, "hostd.sock")
+	sock := shortTempSock(t)
 
 	hostd.ResetAptUpgradeStateForTest()
-	hostd.SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	hostd.SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("alpha")
 		_ = emit("beta")
 		return 2, nil
@@ -60,11 +70,10 @@ func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 
 func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
 	hostd.SetBypassPeerCheckForTest(true)
-	dir := t.TempDir()
-	sock := filepath.Join(dir, "hostd.sock")
+	sock := shortTempSock(t)
 
 	hostd.ResetAptUpgradeStateForTest()
-	hostd.SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	hostd.SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("one")
 		_ = emit("two")
 		return 0, nil
@@ -77,7 +86,7 @@ func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	t.Setenv("EASY_WAF_HOSTD_SOCKET", sock)
 
-	err := PrivilegedStream(context.Background(), func(line []byte) error {
+	err := PrivilegedStream(context.Background(), func(_ []byte) error {
 		return io.ErrClosedPipe
 	}, "apt-upgrade-stream")
 	if err != nil {

@@ -34,7 +34,7 @@ func TestAcmeChallengeHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "test-token-abc"
-	if err := os.WriteFile(filepath.Join(challengeDir, token), []byte("challenge-body\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(challengeDir, token), []byte("challenge-body\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h := acmeChallengeHandler(root)

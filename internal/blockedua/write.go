@@ -24,7 +24,7 @@ func WriteMap(ctx context.Context, st *store.Store, outPath string) error {
 	if err != nil {
 		return err
 	}
-	var lines []string
+	lines := make([]string, 0, len(rows))
 	for _, e := range rows {
 		p := strings.TrimSpace(e.Pattern)
 		if p == "" || strings.HasPrefix(p, "#") {
@@ -41,7 +41,7 @@ func WriteMap(ctx context.Context, st *store.Store, outPath string) error {
 		b.WriteByte('\n')
 	}
 	tmp := outPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o640); err != nil {
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, outPath)

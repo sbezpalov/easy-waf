@@ -91,7 +91,7 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		}
 	}
 
-	var lines []string
+	lines := make([]string, 0, len(set))
 	for k := range set {
 		lines = append(lines, k)
 	}
@@ -105,7 +105,7 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 	}
 
 	tmp := outPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o640); err != nil {
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return SyncResult{}, err
 	}
 	if err := os.Rename(tmp, outPath); err != nil {
@@ -174,7 +174,7 @@ func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.Global
 			}
 		}
 	}
-	var lines []string
+	lines := make([]string, 0, len(set))
 	for k := range set {
 		lines = append(lines, k)
 	}

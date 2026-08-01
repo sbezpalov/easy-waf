@@ -6,7 +6,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/metrics"
 )
 
-func (s *Server) handleStatsHAProxy(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleStatsHAProxy(w http.ResponseWriter, _ *http.Request) {
 	if s.HAProxyMetrics == nil {
 		s.HAProxyMetrics = metrics.NewHAProxyCollector()
 	}
@@ -15,7 +15,7 @@ func (s *Server) handleStatsHAProxy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-func (s *Server) handleStatsSummary(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleStatsSummary(w http.ResponseWriter, _ *http.Request) {
 	if s.HAProxyMetrics == nil {
 		s.HAProxyMetrics = metrics.NewHAProxyCollector()
 	}

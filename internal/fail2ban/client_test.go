@@ -11,7 +11,7 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 	calls := 0
 	c := &Client{
 		Bin: "/usr/bin/fail2ban-client",
-		Run: func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+		Run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
 			calls++
 			switch strings.Join(args, " ") {
 			case "ping":
@@ -43,7 +43,7 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 func TestClient_run_usesInjectedRunner(t *testing.T) {
 	var got []string
 	c := &Client{
-		Run: func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+		Run: func(_ context.Context, bin string, args ...string) ([]byte, error) {
 			got = append([]string{bin}, args...)
 			return []byte("pong"), nil
 		},

@@ -27,7 +27,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "reset-control-panel-access":
-		resetControlPanelAccess()
+		resetManagementACLCLI()
 	case "management-config":
 		managementConfig()
 	case "reset-appliance":
@@ -155,40 +155,47 @@ func logPostBootstrapHints(credPath string) {
 	log.Print("hint: bootstrap did not change EASY_WAF_LISTEN_* — if GUI unreachable from LAN, set EASY_WAF_LISTEN_HTTP=0.0.0.0:8000 and EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 in easy-waf.env, then restart easy-waf-api")
 }
 
-func resetControlPanelAccess() {
-	fs := flag.NewFlagSet("reset-control-panel-access", flag.ExitOnError)
+func resetManagementACLCLI() {
+	if err := runResetManagementACLCLI(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runResetManagementACLCLI() error {
+	fs := flag.NewFlagSet("reset-management-acl", flag.ExitOnError)
 	envFile := fs.String("env-file", "/etc/easy-waf/easy-waf.env", "path to easy-waf.env")
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
 	_ = fs.Parse(os.Args[2:])
 
 	st, err := openStoreFromEnvFile(*envFile, "")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer st.Close()
 
 	ctx := context.Background()
 	eng := &engine.Engine{StateDir: *stateDir, Store: st}
 	if err := eng.LoadSettings(ctx); err != nil {
-		log.Fatalf("load settings: %v", err)
+		return fmt.Errorf("load settings: %w", err)
 	}
 	eng.Settings.ManagementAllowedCIDRs = config.DefaultManagementCIDRs()
 	if err := eng.SaveSettings(ctx); err != nil {
-		log.Fatalf("save settings: %v", err)
+		return fmt.Errorf("save settings: %w", err)
 	}
 	log.Print("reset management_allowed_cidrs to defaults in database")
 
 	if err := admin.UpsertEnvKey(*envFile, "EASY_WAF_LISTEN_HTTP", "127.0.0.1:8000"); err != nil {
-		log.Fatalf("update env file: %v", err)
+		return fmt.Errorf("update env file: %w", err)
 	}
 	if err := admin.UpsertEnvKey(*envFile, "EASY_WAF_LISTEN_HTTPS", "127.0.0.1:8443"); err != nil {
-		log.Fatalf("update env file: %v", err)
+		return fmt.Errorf("update env file: %w", err)
 	}
 	_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 	log.Printf("set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000 EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443 in %s", *envFile)
 	log.Print("next: systemctl restart easy-waf-api.service")
 	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTP/HTTPS to 0.0.0.0:8000 / 0.0.0.0:8443 (LAN) then restart easy-waf-api; align nftables (EASY_WAF_NFT_MGMT_LAN)")
 	log.Print("optional: review nftables ruleset at /etc/nftables/easy-waf.nft if management ports are too open")
+	return nil
 }
 
 const resetConfirmToken = "RESET"

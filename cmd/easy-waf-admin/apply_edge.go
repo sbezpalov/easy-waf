@@ -12,6 +12,12 @@ import (
 // applyEdgeCLI re-renders HAProxy config from the database and reloads haproxy (same path as POST /api/v1/apply).
 // Run as root on the appliance after template upgrades or before first haproxy start with the state-dir drop-in.
 func applyEdgeCLI() {
+	if err := runApplyEdge(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runApplyEdge() error {
 	fs := flag.NewFlagSet("apply-edge", flag.ExitOnError)
 	envFile := fs.String("env-file", "/etc/easy-waf/easy-waf.env", "path to easy-waf.env (DATABASE_URL)")
 	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory (EASY_WAF_STATE_DIR)")
@@ -22,20 +28,21 @@ func applyEdgeCLI() {
 	ctx := context.Background()
 	st, err := openStoreFromEnvFile(*envFile, *databaseURL)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer st.Close()
 
 	eng := &engine.Engine{StateDir: *stateDir, Store: st}
 	if err := eng.LoadSettings(ctx); err != nil {
-		log.Fatalf("load settings: %v", err)
+		return err
 	}
 	if err := eng.Apply(ctx, *label); err != nil {
-		log.Fatalf("apply: %v", err)
+		return err
 	}
 	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
 		log.Print("apply-edge: HAProxy config written from database (reload skipped; EASY_WAF_SKIP_RELOAD set)")
-		return
+		return nil
 	}
 	log.Print("apply-edge: HAProxy config written from database and service reloaded")
+	return nil
 }
