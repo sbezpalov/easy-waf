@@ -26,13 +26,17 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 				return
 			}
-			sub, err := ParseJWTSubject(jwtSecret, raw)
+			claims, err := ParseJWT(jwtSecret, raw)
 			if err != nil {
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			u, err := st.GetUserByUsername(r.Context(), sub)
+			u, err := st.GetUserByUsername(r.Context(), claims.Subject)
 			if err != nil || u == nil {
+				jsonErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if !SessionMatches(claims.SessionVersion, u.SessionVersion) {
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
