@@ -62,6 +62,26 @@ func validateAppHostnames(app *config.Application) error {
 	return nil
 }
 
+func validateBackendTLS(stateDir string, app *config.Application) error {
+	if app == nil {
+		return nil
+	}
+	v := strings.ToLower(strings.TrimSpace(app.BackendTLSVerify))
+	if v != "" && v != config.BackendTLSVerifyRequired && v != config.BackendTLSVerifyNone {
+		return fmt.Errorf("backend_tls_verify must be %q or %q", config.BackendTLSVerifyRequired, config.BackendTLSVerifyNone)
+	}
+	if err := config.ValidateBackendCAFile(stateDir, app.BackendTLSCAFile); err != nil {
+		return err
+	}
+	if err := config.ValidateBackendTLSServerName(app.BackendTLSServerName); err != nil {
+		return err
+	}
+	if app.BackendHTTPS && v == config.BackendTLSVerifyNone {
+		return nil
+	}
+	return nil
+}
+
 func validateHAProxyPath(field, path string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {

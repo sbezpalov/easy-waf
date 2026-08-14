@@ -78,18 +78,24 @@ func NormalizeApplicationSecurity(s *ApplicationSecurity) {
 
 // Application is a published hostname → backend mapping (source of truth fragment).
 type Application struct {
-	ID              string           `json:"id"`
-	Name            string           `json:"name"`
-	PublicHost      string           `json:"public_host"`
-	BackendHost     string           `json:"backend_host"`
-	BackendPort     int              `json:"backend_port"`
-	BackendHTTPS    bool             `json:"backend_https"`
-	WebSocket       bool             `json:"websocket"`
-	HealthPath      string           `json:"health_path,omitempty"`
-	PathPrefix      string           `json:"path_prefix,omitempty"`
-	RestrictedPaths []RestrictedPath `json:"restricted_paths,omitempty"`
-	Profile         string           `json:"profile"`
-	CertificateID   string           `json:"certificate_id,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	PublicHost   string `json:"public_host"`
+	BackendHost  string `json:"backend_host"`
+	BackendPort  int    `json:"backend_port"`
+	BackendHTTPS bool   `json:"backend_https"`
+	// BackendTLSVerify is "required" (default for new HTTPS backends) or "none" (legacy override).
+	BackendTLSVerify string `json:"backend_tls_verify,omitempty"`
+	// BackendTLSCAFile is an allowlisted CA bundle path; empty uses the Ubuntu system bundle.
+	BackendTLSCAFile string `json:"backend_tls_ca_file,omitempty"`
+	// BackendTLSServerName overrides SNI/verifyhost (DNS name or IP). Empty uses backend_host.
+	BackendTLSServerName string           `json:"backend_tls_server_name,omitempty"`
+	WebSocket            bool             `json:"websocket"`
+	HealthPath           string           `json:"health_path,omitempty"`
+	PathPrefix           string           `json:"path_prefix,omitempty"`
+	RestrictedPaths      []RestrictedPath `json:"restricted_paths,omitempty"`
+	Profile              string           `json:"profile"`
+	CertificateID        string           `json:"certificate_id,omitempty"`
 	// ListenMode controls publishing on fe_http / fe_https: https_only (default), http_only, http_and_https, redirect_to_https.
 	ListenMode string              `json:"listen_mode,omitempty"`
 	Enabled    bool                `json:"enabled"`

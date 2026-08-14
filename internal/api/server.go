@@ -60,7 +60,9 @@ func (s *Server) Router() chi.Router {
 	r.Handle("/metrics", s.metricsHandler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/auth/status", s.handleAuthStatus)
 		r.Post("/auth/login", s.handleLogin)
+		r.Post("/auth/enroll", s.handleEnroll)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Session(s.Eng.Store, s.JWTSecret))
 			r.Use(attachAuditRequestMeta)
@@ -219,6 +221,17 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if haveOld && strings.TrimSpace(a.BackendTLSVerify) == "" {
+		a.BackendTLSVerify = old.BackendTLSVerify
+		a.BackendTLSCAFile = old.BackendTLSCAFile
+		a.BackendTLSServerName = old.BackendTLSServerName
+	}
+	config.NormalizeBackendTLS(&a)
+	if err := validateBackendTLS(s.Eng.StateDir, &a); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -238,6 +251,21 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 			detail["severity"] = "warn"
 		}
 		_ = s.Eng.Store.AppendAudit(r.Context(), "app_listen_mode_changed", detail)
+	}
+	if a.BackendHTTPS && a.BackendTLSVerify == config.BackendTLSVerifyNone {
+		_ = s.Eng.Store.AppendAudit(r.Context(), "backend_tls_verify_disabled", map[string]any{
+			"app_id":   a.ID,
+			"app_name": a.Name,
+			"warning":  "HTTPS backend certificate verification is disabled (legacy override)",
+		})
+		writeJSON(w, http.StatusOK, struct {
+			config.Application
+			Warning string `json:"warning,omitempty"`
+		}{
+			Application: a,
+			Warning:     "HTTPS backend TLS verification is disabled (legacy override); prefer backend_tls_verify=required with a system or managed CA",
+		})
+		return
 	}
 	writeJSON(w, http.StatusOK, a)
 }
@@ -344,6 +372,9 @@ func (s *Server) crowdsecLAPIClient() crowdsec.Client {
 	}
 	if url == "" {
 		url = "http://127.0.0.1:8080/"
+	}
+	if _, err := crowdsec.ValidateLAPIURL(url, nil); err != nil {
+		return crowdsec.Client{BaseURL: "", APIKey: ""}
 	}
 	key := strings.TrimSpace(s.Eng.Settings.CrowdSecLAPIKey)
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
