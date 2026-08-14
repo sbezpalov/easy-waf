@@ -56,7 +56,7 @@ A common homelab/SMB pattern uses a **network firewall / NGFW** (e.g. **MikroTik
 1. **Internet** clients hit the **WAN** of the NGFW (often **80/tcp** and **443/tcp**).
 2. The NGFW applies **destination NAT / virtual IP / port forwarding** to the **WAF appliance** on the internal network (same ports or different — both sides are configurable).
 3. **Easy Home WAF** (HAProxy on the appliance) terminates TLS at the edge, applies host routing, CrowdSec SPOE, IPBL/maps, and forwards to **web** backends (Home Assistant, Synology DSM/UI, 3CX Web, Frigate, Nextcloud, etc.).
-4. **Management** (API/UI: **HTTP 8000**, **HTTPS 8443**) should **not** be forwarded from the WAN; use LAN, VPN, or SSH port-forward — align with `EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS`, `management_allowed_cidrs`, and **nftables** (see `/etc/nftables/easy-waf.nft`).
+4. **Management** (API/UI: **HTTPS 8443** by default; cleartext HTTP off unless loopback or `EASY_WAF_ALLOW_INSECURE_HTTP=1`) should **not** be forwarded from the WAN; use LAN, VPN, or SSH port-forward — align with `EASY_WAF_LISTEN_HTTP` / `EASY_WAF_LISTEN_HTTPS`, `management_allowed_cidrs`, and **nftables** (see `/etc/nftables/easy-waf.nft`).
 
 **Typical TLS/HTTP modes** (all first-class web traffic in this product):
 
@@ -64,7 +64,7 @@ A common homelab/SMB pattern uses a **network firewall / NGFW** (e.g. **MikroTik
 |--------------|---------------|--------|
 | HTTP | HTTP | Lab or behind external TLS terminator; redirect to HTTPS on WAF when possible. |
 | HTTPS | HTTP | Common: TLS only at WAF; backend plain HTTP on LAN. |
-| HTTPS | HTTPS | `BackendHTTPS` + verify policy (e.g. `verify none` on trusted LAN). |
+| HTTPS | HTTPS | `BackendHTTPS` + TLS verify (`required` with Ubuntu CA by default; `none` is an explicit legacy override). |
 | HTTP | HTTPS | Rare; useful only when something upstream forces HTTP to the WAF. |
 
 **Ports** on the NGFW public side and on the WAF **frontend** bind can differ from **backend** `host:port` (e.g. public 443 → WAF 443 → app **8123**). HAProxy maps **Host** (and TLS SNI) to the correct backend; DNAT only needs to reach the WAF listener.

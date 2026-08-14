@@ -39,7 +39,7 @@ func runManagementConfig() error {
 	listenHTTP := fs.String("listen-http", "", "write EASY_WAF_LISTEN_HTTP (e.g. 0.0.0.0:8000); empty = unchanged unless -listen-loopback/-listen-lan")
 	listenHTTPS := fs.String("listen-https", "", "write EASY_WAF_LISTEN_HTTPS (e.g. 0.0.0.0:8443)")
 	listenLoopback := fs.Bool("listen-loopback", false, "set listen to 127.0.0.1:8000 and 127.0.0.1:8443")
-	listenLAN := fs.Bool("listen-lan", false, "set listen to 0.0.0.0:8000 and 0.0.0.0:8443 (LAN GUI; restart easy-waf-api)")
+	listenLAN := fs.Bool("listen-lan", false, "set HTTPS listen to 0.0.0.0:8443 and disable management HTTP (LAN GUI over TLS; restart easy-waf-api)")
 	managementCIDRs := fs.String("management-cidrs", "", "comma-separated CIDRs for GUI/API ACL (replaces list in database)")
 	defaultCIDRs := fs.Bool("default-management-cidrs", false, "reset management_allowed_cidrs to RFC1918 + loopback defaults")
 	_ = fs.Parse(os.Args[2:])
@@ -80,7 +80,7 @@ func runManagementConfig() error {
 		}
 		envChanged = true
 	case *listenLAN:
-		if err := applyListenEnv(*envFile, "0.0.0.0:8000", "0.0.0.0:8443"); err != nil {
+		if err := applyListenEnv(*envFile, "off", "0.0.0.0:8443"); err != nil {
 			return err
 		}
 		envChanged = true
@@ -207,7 +207,7 @@ func printManagementConfiguration(out io.Writer, envFile string, eng *engine.Eng
 }
 
 func readListenFromEnvFile(envFile string) (httpListen, httpsListen, stateDir, legacyListen string) {
-	httpListen = "(unset — API default 0.0.0.0:8000)"
+	httpListen = "(unset — API default: management HTTP disabled)"
 	httpsListen = "(unset — API default 0.0.0.0:8443)"
 	if _, err := os.Stat(envFile); err != nil {
 		msg := fmt.Sprintf("(cannot read %s: %v)", envFile, err)

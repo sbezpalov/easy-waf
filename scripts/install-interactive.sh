@@ -108,7 +108,7 @@ main() {
         upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "127.0.0.1:8443"
         ;;
       lan_rfc1918|lan)
-        upsert_env_kv "EASY_WAF_LISTEN_HTTP" "0.0.0.0:8000"
+		upsert_env_kv "EASY_WAF_LISTEN_HTTP" "off"
         upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "0.0.0.0:8443"
         ;;
       *)

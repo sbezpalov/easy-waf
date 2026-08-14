@@ -42,7 +42,15 @@ func mergeEnvIntoSettings(eng *engine.Engine) {
 		eng.Settings.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
 	}
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
-		eng.Settings.CrowdSecLAPIURL = v
+		if _, err := crowdsec.ValidateLAPIURL(v, nil); err != nil {
+			log.Printf("CROWDSEC_LAPI_URL rejected by destination policy: %v (keeping previous/default local LAPI)", err)
+		} else {
+			eng.Settings.CrowdSecLAPIURL = v
+		}
+	}
+	if _, err := crowdsec.ValidateLAPIURL(eng.Settings.CrowdSecLAPIURL, nil); err != nil {
+		log.Printf("crowdsec_lapi_url rejected by destination policy: %v; falling back to %s", err, defaultCrowdSecLAPIURL)
+		eng.Settings.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
 	}
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
 		eng.Settings.CrowdSecLAPIKey = v
@@ -86,7 +94,7 @@ func runSyncSettingsOnly() error {
 // Listeners: plain HTTP (default :8000) and TLS HTTPS (default :8443, self-signed bootstrap cert under stateDir/secrets/).
 func RunAPI() {
 	syncOnly := flag.Bool("sync-settings-only", false, "merge /etc/easy-waf/easy-waf.env into PostgreSQL settings and exit (install.sh)")
-	listenHTTP := flag.String("listen-http", "", "plain HTTP listen (env EASY_WAF_LISTEN_HTTP; default 0.0.0.0:8000)")
+	listenHTTP := flag.String("listen-http", "", "plain HTTP listen (env EASY_WAF_LISTEN_HTTP; default off; loopback or EASY_WAF_ALLOW_INSECURE_HTTP=1 for non-loopback)")
 	listenHTTPS := flag.String("listen-https", "", "HTTPS listen (env EASY_WAF_LISTEN_HTTPS; default 0.0.0.0:8443)")
 	legacyListen := flag.String("listen", "", "deprecated: HTTP listen if -listen-http and EASY_WAF_LISTEN_HTTP are empty")
 	stateDirFlag := flag.String("state-dir", "", "State directory (env EASY_WAF_STATE_DIR; default /var/lib/easy-waf)")
@@ -143,39 +151,38 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	if err != nil {
 		return err
 	}
-	created, err := st.EnsureDefaultAdmin(ctx)
+	created, enrollPath, err := st.EnsureOperatorEnrollment(ctx, stateDir)
 	if err != nil {
 		return err
 	}
 	if created {
-		log.Print("created default operator user admin/admin — must change password on first login")
+		log.Printf("operator enrollment required; one-time secret written to %s (mode 0600). Print locally with: easy-waf-admin print-enrollment. Do not copy the secret into logs.", enrollPath)
+	} else if enrollPath != "" {
+		pending, _ := st.EnrollmentPending(ctx)
+		if pending {
+			log.Printf("operator enrollment still pending; secret file %s (not logged). Print locally with: easy-waf-admin print-enrollment", enrollPath)
+		}
 	}
 
-	httpAddr := strings.TrimSpace(*listenHTTP)
-	if httpAddr == "" {
-		httpAddr = strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_LISTEN_HTTP"), "\r", ""))
+	httpDec := ResolveManagementHTTP(*listenHTTP, *legacyListen)
+	if httpDec.Refused {
+		log.Print(httpDec.Warning)
 	}
-	if httpAddr == "" {
-		httpAddr = strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_LISTEN"), "\r", ""))
+	httpAddr := httpDec.Addr
+	if httpAddr != "" {
+		rejectUnexpandedSystemdArg("HTTP listen (-listen-http or EASY_WAF_LISTEN_HTTP)", httpAddr)
 	}
-	if httpAddr == "" && strings.TrimSpace(*legacyListen) != "" {
-		httpAddr = strings.TrimSpace(*legacyListen)
+	if httpDec.Warning != "" && httpDec.Insecure {
+		log.Print(httpDec.Warning)
 	}
-	if httpAddr == "" {
-		httpAddr = "0.0.0.0:8000"
-	}
-	rejectUnexpandedSystemdArg("HTTP listen (-listen-http or EASY_WAF_LISTEN_HTTP)", httpAddr)
 
 	httpsDisabled := strings.TrimSpace(os.Getenv("EASY_WAF_MANAGEMENT_HTTPS")) == "0"
-	httpsAddr := strings.TrimSpace(*listenHTTPS)
-	if httpsAddr == "" {
-		httpsAddr = strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_LISTEN_HTTPS"), "\r", ""))
-	}
-	if httpsAddr == "" {
-		httpsAddr = "0.0.0.0:8443"
-	}
-	if !httpsDisabled {
+	httpsAddr := ResolveManagementHTTPS(*listenHTTPS, httpsDisabled)
+	if httpsAddr != "" {
 		rejectUnexpandedSystemdArg("HTTPS listen (-listen-https or EASY_WAF_LISTEN_HTTPS)", httpsAddr)
+	}
+	if httpAddr == "" && httpsAddr == "" {
+		return fmt.Errorf("no management listener: enable HTTPS (default :8443) or set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000")
 	}
 
 	prom := metrics.NewPrometheusExporter()
@@ -198,7 +205,7 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	}
 	r.Handle("/*", http.FileServer(http.FS(sub)))
 
-	if !httpsDisabled {
+	if httpsAddr != "" {
 		certPath, keyPath, err := mgmttls.EnsureSelfSigned(stateDir)
 		if err != nil {
 			return err
@@ -217,20 +224,29 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 		log.Print("EASY_WAF_ADMIN_TOKEN is set — legacy API token auth enabled for automation")
 	}
 
-	httpSrv := &http.Server{
-		Addr:              httpAddr,
-		Handler:           r,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-	go func() {
-		log.Printf("easy-waf-api management HTTP on %s state=%s db=postgresql", httpAddr, stateDir)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+	var httpSrv *http.Server
+	if httpAddr != "" {
+		httpSrv = &http.Server{
+			Addr:              httpAddr,
+			Handler:           r,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
-	}()
+		go func() {
+			if httpDec.Loopback {
+				log.Printf("easy-waf-api management HTTP (loopback) on %s state=%s db=postgresql", httpAddr, stateDir)
+			} else {
+				log.Printf("easy-waf-api management HTTP (INSECURE legacy) on %s state=%s db=postgresql", httpAddr, stateDir)
+			}
+			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	} else {
+		log.Printf("easy-waf-api management HTTP disabled (default); use HTTPS or set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000. /health is on the HTTPS listener. ACME HTTP-01 stays on EASY_WAF_ACME_INTERNAL_HTTP.")
+	}
 
 	var acmeInternalSrv *http.Server
 	if acAddr := acmeInternalListenAddr(); acAddr != "" {
@@ -255,7 +271,7 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	}
 
 	var httpsSrv *http.Server
-	if !httpsDisabled {
+	if httpsAddr != "" {
 		tlsConf := &tls.Config{
 			MinVersion:     tls.VersionTLS12,
 			GetCertificate: srv.MgmtTLS.GetCertificate,
@@ -283,7 +299,9 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	stopPromRefresh()
 	ctx2, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	_ = httpSrv.Shutdown(ctx2)
+	if httpSrv != nil {
+		_ = httpSrv.Shutdown(ctx2)
+	}
 	if httpsSrv != nil {
 		_ = httpsSrv.Shutdown(ctx2)
 	}

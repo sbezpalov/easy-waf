@@ -16,6 +16,9 @@ easy_waf_fixup_management_listen_addrs() {
     val="${val#\"}"
     val="${val%\"}"
     [[ "$val" == *:* ]] || continue
+    case "${val,,}" in
+      off|disabled|none|false|0) continue ;;
+    esac
     host="${val%:*}"
     port="${val##*:}"
     case "$host" in
