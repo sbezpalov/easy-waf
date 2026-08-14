@@ -15,7 +15,7 @@ sudo bash scripts/install.sh
 This **by default** (full appliance — no extra flags):
 
 1. Installs **HAProxy, nftables**, **PostgreSQL**, **fail2ban** (starts if installed), and **CrowdSec + HAProxy SPOA bouncer** (LAPI bootstrap, bouncer keys in `easy-waf.env`).
-2. Creates `/etc/easy-waf/easy-waf.env` with **`0.0.0.0:8000` / `0.0.0.0:8443`**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0`.
+2. Creates `/etc/easy-waf/easy-waf.env` with **HTTPS `0.0.0.0:8443`** and **management HTTP off**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0` (HTTP still requires loopback or `EASY_WAF_ALLOW_INSECURE_HTTP=1`).
 3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-spoa-bouncer** when packages install successfully.
 
 **External PostgreSQL only** (no local `postgresql` package):
@@ -47,8 +47,8 @@ Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` duri
 
 ## After install
 
-- **UI (LAN):** by default **`EASY_WAF_LISTEN_HTTP=0.0.0.0:8000`** and **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Open **`http://<LAN-IP>:8000`** or **`https://<LAN-IP>:8443`**. Port **8443** starts with a **self-signed** certificate (`…/secrets/management.crt`); replace via the **Management TLS** block in the UI or `PUT /api/v1/settings/management-tls`. **`install.sh`** configures **nftables**: **8000 and 8443/tcp** only from **127.0.0.0/8** and **RFC1918** (when **`EASY_WAF_NFT_MGMT_LAN=1`**).
-- **Login:** `admin` / `admin`, then change password when prompted.
+- **UI (LAN):** by default **management HTTP is off** and **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Open **`https://<LAN-IP>:8443`**. Loopback HTTP: **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`**. Legacy cleartext LAN HTTP requires **`EASY_WAF_ALLOW_INSECURE_HTTP=1`** (discouraged). Port **8443** starts with a **self-signed** certificate (`…/secrets/management.crt`); replace via the **Management TLS** block in the UI or `PUT /api/v1/settings/management-tls`. **`install.sh`** configures **nftables**: **8000 and 8443/tcp** only from **127.0.0.0/8** and **RFC1918** (when **`EASY_WAF_NFT_MGMT_LAN=1`**). **`/health`** is on the HTTPS listener (and on HTTP only if you enabled it). ACME HTTP-01 stays on loopback **`127.0.0.1:8089`**.
+- **Login:** there is no default password. As root on the appliance run **`easy-waf-admin print-enrollment`**, then enroll in the UI (or `POST /api/v1/auth/enroll`) with that one-time secret.
 
 **Legacy `EASY_WAF_LISTEN=...` format:** set **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** in `/etc/easy-waf/easy-waf.env`, remove the **`EASY_WAF_LISTEN`** line, refresh the unit from `packaging/systemd/`, then:
 
@@ -58,7 +58,7 @@ and `sudo systemctl daemon-reload && sudo systemctl restart easy-waf-api`.
 
 **Loopback only:** `EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`** at install time.
 
-**No HTTPS:** `EASY_WAF_MANAGEMENT_HTTPS=0` — HTTP only (e.g. on 8000).
+**No HTTPS:** `EASY_WAF_MANAGEMENT_HTTPS=0` plus **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`** (or non-loopback with **`EASY_WAF_ALLOW_INSECURE_HTTP=1`**). The process will not start if both listeners are off.
 
 ## Interactive (LAN API, optional CrowdSec)
 

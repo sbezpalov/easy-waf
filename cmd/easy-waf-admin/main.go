@@ -16,6 +16,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/admin"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/enroll"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -36,6 +37,8 @@ func main() {
 		factoryReset()
 	case "apply-edge":
 		applyEdgeCLI()
+	case "print-enrollment":
+		printEnrollment()
 	default:
 		usage()
 		os.Exit(2)
@@ -52,9 +55,11 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "                -management-cidrs '10.0.0.0/8,...' | -default-management-cidrs")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin reset-appliance [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -confirm RESET")
 	fmt.Fprintln(os.Stderr, "      Factory reset: truncates DB config tables and clears generated state (preferred).")
-	fmt.Fprintln(os.Stderr, "      -bootstrap-credentials (root): new random 19-char DB password + EASY_WAF_ADMIN_TOKEN, updates env file, then wipes; GUI stays admin/admin after API start.")
+	fmt.Fprintln(os.Stderr, "      -bootstrap-credentials (root): new random 19-char DB password + EASY_WAF_ADMIN_TOKEN, updates env file, then wipes; GUI requires one-time enrollment after API start.")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin print-enrollment [-state-dir path]")
+	fmt.Fprintln(os.Stderr, "      Print the one-time operator enrollment secret from the root-only 0600 file (stdout only; never journal).")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin apply-edge [-env-file path] [-state-dir path] [-database-url URL] [-label text]")
 	fmt.Fprintln(os.Stderr, "      Re-render HAProxy config from PostgreSQL and reload-or-start haproxy (root; same as API POST /apply).")
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
@@ -135,7 +140,8 @@ func performBootstrapAndWipe(ctx context.Context, envFile, stateDir, credOut, da
 DATABASE_URL=%s
 EASY_WAF_ADMIN_TOKEN=%s
 
-GUI operator (after easy-waf-api starts): username admin / password admin — change immediately in the UI.
+GUI operator: after easy-waf-api starts, run: easy-waf-admin print-enrollment
+Then POST /api/v1/auth/enroll with that secret and a new password. Do not log the secret.
 
 Delete this file after copying secrets to your vault.
 `, time.Now().UTC().Format(time.RFC3339), newDSN, adminTok)
@@ -151,8 +157,8 @@ func logPostBootstrapHints(credPath string) {
 	}
 	log.Printf("credentials written to %s (mode 0600) — copy to your vault, then delete the file", credPath)
 	log.Print("next: systemctl restart easy-waf-api easy-waf-acmed")
-	log.Print("hint: first API start recreates GUI user admin / password admin — change password in the UI")
-	log.Print("hint: bootstrap did not change EASY_WAF_LISTEN_* — if GUI unreachable from LAN, set EASY_WAF_LISTEN_HTTP=0.0.0.0:8000 and EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 in easy-waf.env, then restart easy-waf-api")
+	log.Print("hint: first API start writes a one-time enrollment secret (0600); print it with: easy-waf-admin print-enrollment")
+	log.Print("hint: bootstrap did not change EASY_WAF_LISTEN_* — LAN GUI is HTTPS :8443 by default (management HTTP is off unless loopback or EASY_WAF_ALLOW_INSECURE_HTTP=1)")
 }
 
 func resetManagementACLCLI() {
@@ -193,7 +199,7 @@ func runResetManagementACLCLI() error {
 	_ = admin.RemoveEnvKey(*envFile, "EASY_WAF_LISTEN")
 	log.Printf("set EASY_WAF_LISTEN_HTTP=127.0.0.1:8000 EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443 in %s", *envFile)
 	log.Print("next: systemctl restart easy-waf-api.service")
-	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTP/HTTPS to 0.0.0.0:8000 / 0.0.0.0:8443 (LAN) then restart easy-waf-api; align nftables (EASY_WAF_NFT_MGMT_LAN)")
+	log.Print("note: management binds to loopback only — GUI from another host needs SSH tunnel, or set EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 (LAN TLS) then restart easy-waf-api; cleartext LAN HTTP requires EASY_WAF_ALLOW_INSECURE_HTTP=1 (discouraged); align nftables (EASY_WAF_NFT_MGMT_LAN)")
 	log.Print("optional: review nftables ruleset at /etc/nftables/easy-waf.nft if management ports are too open")
 	return nil
 }
@@ -240,7 +246,7 @@ func maybeChownStateDirToServiceUser(stateDir string) {
 func logPostWipeHints() {
 	log.Print("next: ensure DATABASE_URL in /etc/easy-waf/easy-waf.env matches PostgreSQL user password (see scripts/lib/db-password.sh if install rotated it)")
 	log.Print("next: systemctl restart easy-waf-api easy-waf-acmed")
-	log.Print("hint: first API start recreates default operator admin/admin — change password in the UI")
+	log.Print("hint: first API start writes a one-time enrollment secret; print it locally with easy-waf-admin print-enrollment")
 }
 
 func resetAppliance() {
@@ -307,4 +313,18 @@ func factoryReset() {
 
 	wipeApplianceData(ctx, st, *stateDir)
 	logPostWipeHints()
+}
+
+func printEnrollment() {
+	fs := flag.NewFlagSet("print-enrollment", flag.ExitOnError)
+	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	_ = fs.Parse(os.Args[2:])
+	secret, err := enroll.ReadFile(*stateDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Fatal("no pending enrollment secret (already consumed, or easy-waf-api has not issued one yet)")
+		}
+		log.Fatal(err)
+	}
+	fmt.Fprintln(os.Stdout, secret)
 }

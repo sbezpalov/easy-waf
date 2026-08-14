@@ -58,9 +58,9 @@ make build
 
 **Shell-скрипты:** только **Unix (LF)**. Bash на Linux падает на CRLF (`$'\r': command not found`). В репозитории задано `scripts/**/*.sh text eol=lf` в `.gitattributes`; на Windows — `git config core.autocrlf input` или режим «LF» в редакторе.
 
-**Установка appliance (VM Ubuntu 24.04 LTS):** `sudo bash scripts/install.sh` — полный стек: HAProxy, **PostgreSQL**, **CrowdSec + SPOA** (LAPI bootstrap по умолчанию), **fail2ban**, **nftables** (edge **80/443** + management **8000/8443** из RFC1918), **`easy-waf-api`** / **`easy-waf-acmed`**. UI слушает **`0.0.0.0:8000` / `0.0.0.0:8443`**; устаревшие bind на конкретный IP в env правятся при переустановке. Внешняя БД: `EASY_WAF_INSTALL_POSTGRES=0`. См. [QUICKSTART.md](docs/QUICKSTART.md).
+**Установка appliance (VM Ubuntu 24.04 LTS):** `sudo bash scripts/install.sh` — полный стек: HAProxy, **PostgreSQL**, **CrowdSec + SPOA** (LAPI bootstrap по умолчанию), **fail2ban**, **nftables** (edge **80/443** + management **8000/8443** из RFC1918), **`easy-waf-api`** / **`easy-waf-acmed`**. UI слушает **HTTPS `0.0.0.0:8443`** (HTTP management выключен по умолчанию); устаревшие bind на конкретный IP в env правятся при переустановке. Внешняя БД: `EASY_WAF_INSTALL_POSTGRES=0`. См. [QUICKSTART.md](docs/QUICKSTART.md).
 
-После клона выполните **`go mod tidy`** (создаёт `go.sum`), затем **`make build`**. Панель: вход **`admin` / `admin`** при первой установке, затем смена пароля по запросу.
+После клона выполните **`go mod tidy`** (создаёт `go.sum`), затем **`make build`**. Панель: одноразовый enrollment secret (`easy-waf-admin print-enrollment`), без пароля `admin`/`admin`.
 
 Для опционального **CrowdSec** + SPOA и дополнительных вопросов используйте **`scripts/install-interactive.sh`** (политика bind там тоже настраивается).
 

@@ -2,12 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
+	"github.com/easy-waf/easy-waf/internal/enroll"
+	"github.com/easy-waf/easy-waf/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -32,7 +35,115 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+type enrollRequest struct {
+	Secret   string `json:"secret"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 const maxLoginRequestBodyBytes int64 = 16 << 10
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	pending, err := s.Eng.Store.EnrollmentPending(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enrollment_required": pending,
+		"enrollment_file":     "stateDir/secrets/enrollment",
+	})
+}
+
+func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
+	ip, ipOK := clientIP(r)
+	ipStr := ""
+	if ipOK && ip.IsValid() {
+		ipStr = ip.String()
+	}
+	if s.LoginRL != nil && ipStr != "" {
+		allowed, retryAfter := s.LoginRL.Allow(ipStr)
+		if !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			_ = s.Eng.Store.AppendAudit(r.Context(), "enrollment_rate_limited", map[string]any{
+				"source_ip":   ipStr,
+				"retry_after": retryAfter,
+			})
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many enrollment attempts, try again later"})
+			return
+		}
+	}
+
+	var body enrollRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	secret := strings.TrimSpace(body.Secret)
+	user := strings.TrimSpace(body.Username)
+	if user == "" {
+		user = "admin"
+	}
+	if secret == "" || body.Password == "" {
+		http.Error(w, "secret and password required", http.StatusBadRequest)
+		return
+	}
+	if len(user) > 128 || len(body.Password) > 256 || len(secret) > 256 {
+		http.Error(w, "credentials are too long", http.StatusBadRequest)
+		return
+	}
+	if len(strings.TrimSpace(body.Password)) < 8 {
+		http.Error(w, "password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), 12)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	err = s.Eng.Store.ConsumeEnrollmentAndCreateUser(r.Context(), secret, user, string(hash))
+	if err != nil {
+		_ = s.Eng.Store.AppendAudit(r.Context(), "enrollment_failed", map[string]any{
+			"source_ip": ipStr,
+			"username":  user,
+		})
+		switch {
+		case errors.Is(err, store.ErrEnrollmentSecretMismatch), errors.Is(err, store.ErrEnrollmentNotPending):
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid enrollment secret"})
+		case errors.Is(err, store.ErrEnrollmentAlreadyCompleted):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "enrollment already completed"})
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	_ = enroll.RemoveFile(s.Eng.StateDir)
+	_ = s.Eng.Store.AppendAudit(r.Context(), "enrollment_completed", map[string]any{
+		"source_ip": ipStr,
+		"username":  user,
+	})
+	if s.LoginRL != nil && ipStr != "" {
+		s.LoginRL.RecordSuccess(ipStr)
+	}
+
+	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
+	if err != nil || u == nil {
+		http.Error(w, "enrollment succeeded but session could not be issued", http.StatusInternalServerError)
+		return
+	}
+	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, 24*time.Hour)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, loginResponse{
+		Token:              tok,
+		MustChangePassword: false,
+		ExpiresInSeconds:   int64((24 * time.Hour).Seconds()),
+	})
+}
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
@@ -70,10 +181,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
 	if err != nil || u == nil {
+		pending, _ := s.Eng.Store.EnrollmentPending(r.Context())
 		_ = s.Eng.Store.AppendAudit(r.Context(), "login_failed", map[string]any{
-			"source_ip": ipStr,
-			"username":  user,
+			"source_ip":           ipStr,
+			"username":            user,
+			"enrollment_required": pending,
 		})
+		if pending {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "enrollment required"})
+			return
+		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -85,7 +202,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	tok, err := auth.SignJWT(s.JWTSecret, u.Username, 24*time.Hour)
+	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, 24*time.Hour)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -151,11 +268,19 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tok, err := auth.SignJWT(s.JWTSecret, u.Username, 24*time.Hour)
+	u2, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
+	if err != nil || u2 == nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, 24*time.Hour)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "password_changed", map[string]any{
+		"username": u2.Username,
+	})
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
 		MustChangePassword: false,

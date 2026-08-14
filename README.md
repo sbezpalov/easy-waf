@@ -56,9 +56,9 @@ Do **not** commit Windows `.exe` / `.dll` artifacts. After code changes run **`m
 
 **Shell scripts:** must use **Unix (LF)** line endings. Bash on Linux fails on CRLF (`$'\r': command not found`). The repo sets `scripts/**/*.sh text eol=lf` in `.gitattributes`; on Windows use `git config core.autocrlf input` or your editor’s “LF” mode.
 
-**Appliance install (Ubuntu 24.04 LTS VM):** `sudo bash scripts/install.sh` — full stack: HAProxy, **PostgreSQL**, **CrowdSec + SPOA** (LAPI bootstrap by default), **fail2ban**, **nftables** (edge **80/443** + management **8000/8443** from RFC1918), **`easy-waf-api`** / **`easy-waf-acmed`**. Management UI binds **`0.0.0.0:8000` / `0.0.0.0:8443`**; stale per-IP binds in env are fixed on reinstall. External DB: `EASY_WAF_INSTALL_POSTGRES=0`. See [QUICKSTART.md](docs/QUICKSTART.md).
+**Appliance install (Ubuntu 24.04 LTS VM):** `sudo bash scripts/install.sh` — full stack: HAProxy, **PostgreSQL**, **CrowdSec + SPOA** (LAPI bootstrap by default), **fail2ban**, **nftables** (edge **80/443** + management **8000/8443** from RFC1918), **`easy-waf-api`** / **`easy-waf-acmed`**. Management UI binds **HTTPS `0.0.0.0:8443`** (cleartext HTTP off by default); stale per-IP binds in env are fixed on reinstall. External DB: `EASY_WAF_INSTALL_POSTGRES=0`. See [QUICKSTART.md](docs/QUICKSTART.md).
 
-After clone, run **`go mod tidy`** (generates `go.sum`) then **`make build`**. Management UI: sign in as **`admin` / `admin`** on first install and change the password when prompted.
+After clone, run **`go mod tidy`** (generates `go.sum`) then **`make build`**. Management UI: print the one-time enrollment secret with **`easy-waf-admin print-enrollment`** (root, local console) and enroll; there is no default `admin`/`admin` password.
 
 Use **`scripts/install-interactive.sh`** for optional **CrowdSec** + SPOA and extra prompts (bind policy still configurable there).
 

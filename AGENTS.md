@@ -65,7 +65,7 @@
 - Деструктивные операции над боевой БД (PostgreSQL) / сертификатами / edge-конфигом HAProxy — только с явным подтверждением и прогоном на копии; помни, что БД — единый source of truth.
 - **NEVER** коммитить Windows-бинарники: не добавляй `dist/*.exe` / `dist/*.dll` (проверяет `scripts/check-linux-artifacts.sh`).
 - **NEVER** ломать line endings: `scripts/**/*.sh` — только **Unix (LF)** (CRLF валит bash на Linux; см. `.gitattributes`).
-- Не ослабляй edge-политику без причины: nftables (edge 80/443, management 8000/8443 только из RFC1918), CrowdSec/SPOE, Fail2Ban, дефолтные креды панели `admin/admin` меняются при первом входе.
+- Не ослабляй edge-политику без причины: nftables (edge 80/443, management 8000/8443 только из RFC1918), CrowdSec/SPOE, Fail2Ban; первичная учётка панели создаётся через одноразовый enrollment secret (не `admin/admin`).
 - Не коммить артефакты из `.gitignore`; при отсутствии `bash`/`go` в среде — явно сообщи, а не обходи проверки.
 
 ## 7. Definition of Done

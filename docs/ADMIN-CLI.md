@@ -2,7 +2,17 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
+Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`print-enrollment`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
+
+## `print-enrollment`
+
+Print the one-time operator enrollment secret from **`$EASY_WAF_STATE_DIR/secrets/enrollment`** (mode **0600**) to **stdout only**. Run as root on the appliance console (or another local trusted channel). Do not paste the secret into journald, tickets, or the audit log.
+
+```bash
+sudo /usr/sbin/easy-waf-admin print-enrollment
+```
+
+Then enroll at **`POST /api/v1/auth/enroll`** (or the UI) with `{ "secret", "username", "password" }`. The file is deleted after a successful enrollment.
 
 ## Automated appliance reset (dev / lab)
 
@@ -14,7 +24,7 @@ Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc
 4. Truncates configuration tables and clears generated state under **`/var/lib/easy-waf`** (same as a normal reset).
 5. Writes **`/root/easy-waf-bootstrap-credentials.txt`** (mode **0600**) with the new **`DATABASE_URL`** and token — **copy, then delete** the file.
 
-The **GUI operator** is recreated on first **`easy-waf-api`** start as **`admin` / `admin`** (unchanged factory login) — change it in the UI.
+The **GUI operator** is **not** recreated as `admin`/`admin`. After **`easy-waf-api`** starts, print the one-time secret with **`easy-waf-admin print-enrollment`** and enroll.
 
 ```bash
 sudo /usr/sbin/easy-waf-admin reset-appliance -confirm RESET -bootstrap-credentials
@@ -47,8 +57,8 @@ sudo /usr/sbin/easy-waf-admin management-config -listen-lan
 # Loopback only (use SSH port-forward to reach the UI)
 sudo /usr/sbin/easy-waf-admin management-config -listen-loopback
 
-# Custom bind addresses
-sudo /usr/sbin/easy-waf-admin management-config -listen-http 0.0.0.0:8000 -listen-https 0.0.0.0:8443
+# Custom bind addresses (non-loopback HTTP also needs EASY_WAF_ALLOW_INSECURE_HTTP=1)
+sudo /usr/sbin/easy-waf-admin management-config -listen-http 127.0.0.1:8000 -listen-https 0.0.0.0:8443
 
 # Replace allowlist (comma-separated CIDRs; at least one required)
 sudo /usr/sbin/easy-waf-admin management-config \
@@ -122,7 +132,7 @@ cd ~/easy-waf && git pull && make build
 sudo install -m 0755 -t /usr/sbin dist/easy-waf-admin
 ```
 
-After a normal wipe (without **`-bootstrap-credentials`**), ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, the default operator **`admin` / `admin`** is recreated — change the password in the UI.
+After a normal wipe (without **`-bootstrap-credentials`**), ensure **`DATABASE_URL`** in `/etc/easy-waf/easy-waf.env` still matches the PostgreSQL **`easywaf`** role password (install may have rotated it — see `scripts/lib/db-password.sh`). On first **`easy-waf-api`** start with an empty **`users`** table, a one-time enrollment secret is written to **`$EASY_WAF_STATE_DIR/secrets/enrollment`** (mode **0600**). Print it with **`easy-waf-admin print-enrollment`** and enroll in the UI — there is no default `admin`/`admin` password.
 
 With **`-bootstrap-credentials`**, **`DATABASE_URL`** is already updated; only restart services and handle the credentials file as above.
 

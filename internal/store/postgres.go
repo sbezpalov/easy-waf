@@ -63,6 +63,15 @@ var migration014SQL string
 //go:embed migrations/015_acme_dns_resolvers.sql
 var migration015SQL string
 
+//go:embed migrations/016_user_session_version.sql
+var migration016SQL string
+
+//go:embed migrations/017_operator_enrollment.sql
+var migration017SQL string
+
+//go:embed migrations/018_backend_tls_verify.sql
+var migration018SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -92,6 +101,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL,
 		migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL,
 		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
+		migration016SQL, migration017SQL, migration018SQL,
 	} {
 		sqlText := stripSQLComments(raw)
 		parts := strings.Split(sqlText, ";")
@@ -130,10 +140,18 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 	var certID sql.NullString
 	var hp, pp sql.NullString
 	var rpJSON, secJSON []byte
+	var tlsCA, tlsSNI sql.NullString
 	if err := scan(&a.ID, &a.Name, &a.PublicHost, &a.BackendHost, &a.BackendPort,
-		&a.BackendHTTPS, &a.WebSocket, &hp, &pp, &rpJSON, &a.Profile, &certID, &a.ListenMode, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.BackendHTTPS, &a.BackendTLSVerify, &tlsCA, &tlsSNI, &a.WebSocket, &hp, &pp, &rpJSON, &a.Profile, &certID, &a.ListenMode, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return a, err
 	}
+	if tlsCA.Valid {
+		a.BackendTLSCAFile = tlsCA.String
+	}
+	if tlsSNI.Valid {
+		a.BackendTLSServerName = tlsSNI.String
+	}
+	config.NormalizeBackendTLS(&a)
 	if certID.Valid {
 		a.CertificateID = certID.String
 	}
@@ -161,7 +179,8 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 // ListApplications returns all apps.
 func (s *Store) ListApplications(ctx context.Context) ([]config.Application, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, public_host, backend_host, backend_port, backend_https, websocket,
+		SELECT id, name, public_host, backend_host, backend_port, backend_https,
+		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, websocket,
 		       health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications ORDER BY public_host`)
 	if err != nil {
@@ -182,7 +201,8 @@ func (s *Store) ListApplications(ctx context.Context) ([]config.Application, err
 // GetApplication returns one application by id.
 func (s *Store) GetApplication(ctx context.Context, id string) (config.Application, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, public_host, backend_host, backend_port, backend_https, websocket,
+		SELECT id, name, public_host, backend_host, backend_port, backend_https,
+		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, websocket,
 		       health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications WHERE id = $1`, id)
 	a, err := scanApplicationFromRow(row.Scan)
@@ -216,21 +236,26 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	}
 	config.NormalizeApplicationSecurity(&a.Security)
 	config.NormalizeListenMode(a)
+	config.NormalizeBackendTLS(a)
 	secJSON, err := json.Marshal(a.Security)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO applications (
-			id, name, public_host, backend_host, backend_port, backend_https, websocket,
+			id, name, public_host, backend_host, backend_port, backend_https,
+			backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, websocket,
 			health_path, path_prefix, restricted_paths, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			public_host = EXCLUDED.public_host,
 			backend_host = EXCLUDED.backend_host,
 			backend_port = EXCLUDED.backend_port,
 			backend_https = EXCLUDED.backend_https,
+			backend_tls_verify = EXCLUDED.backend_tls_verify,
+			backend_tls_ca_file = EXCLUDED.backend_tls_ca_file,
+			backend_tls_server_name = EXCLUDED.backend_tls_server_name,
 			websocket = EXCLUDED.websocket,
 			health_path = EXCLUDED.health_path,
 			path_prefix = EXCLUDED.path_prefix,
@@ -241,7 +266,8 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 			enabled = EXCLUDED.enabled,
 			security = EXCLUDED.security,
 			updated_at = EXCLUDED.updated_at
-	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS, a.WebSocket,
+	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS,
+		a.BackendTLSVerify, nullStrPtr(a.BackendTLSCAFile), nullStrPtr(a.BackendTLSServerName), a.WebSocket,
 		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, a.Profile, nullStrPtr(a.CertificateID), a.ListenMode, a.Enabled, secJSON, a.CreatedAt, a.UpdatedAt)
 	return err
 }
@@ -838,7 +864,7 @@ func (s *Store) DeleteBlockedUserAgent(ctx context.Context, id string) error {
 // FactoryReset removes all configuration rows (destructive). Schema is kept.
 func (s *Store) FactoryReset(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
-		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, blocked_user_agents, users
+		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, blocked_user_agents, users, operator_enrollment
 		RESTART IDENTITY CASCADE`)
 	return err
 }
