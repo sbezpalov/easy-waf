@@ -2,13 +2,13 @@ package api
 
 import (
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/crowdsec"
 )
 
 var haproxyIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
@@ -35,9 +35,8 @@ func validateRuntimeSettings(s config.GlobalSettings) error {
 		return err
 	}
 	if raw := strings.TrimSpace(s.CrowdSecLAPIURL); raw != "" {
-		u, err := url.Parse(raw)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return fmt.Errorf("crowdsec_lapi_url must be an http(s) URL without userinfo")
+		if _, err := crowdsec.ValidateLAPIURL(raw, nil); err != nil {
+			return fmt.Errorf("crowdsec_lapi_url: %w", err)
 		}
 	}
 	return nil

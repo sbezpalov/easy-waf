@@ -10,14 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Client is a minimal CrowdSec LAPI client for health and decisions (scaffolding).
 type Client struct {
-	BaseURL string
-	APIKey  string
-	HTTP    *http.Client
+	BaseURL        string
+	APIKey         string
+	HTTP           *http.Client
+	AllowedOrigins []Origin // optional extra origins (tests / explicit policy)
 }
 
 // setLAPIAuth sets the bouncer API key header (CrowdSec LAPI uses X-Api-Key, not Bearer JWT).
@@ -25,6 +25,39 @@ func setLAPIAuth(req *http.Request, apiKey string) {
 	if k := strings.TrimSpace(apiKey); k != "" {
 		req.Header.Set("X-Api-Key", k)
 	}
+}
+
+func (c *Client) lapiURL(pathQuery string) (string, error) {
+	if _, err := c.resolvedOrigin(); err != nil {
+		return "", err
+	}
+	base := strings.TrimSuffix(strings.TrimSpace(c.BaseURL), "/")
+	if !strings.HasPrefix(pathQuery, "/") {
+		pathQuery = "/" + pathQuery
+	}
+	return base + pathQuery, nil
+}
+
+func (c *Client) doLAPI(ctx context.Context, method, pathQuery string, body io.Reader, header http.Header) (*http.Response, error) {
+	u, err := c.lapiURL(pathQuery)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		return nil, redactErr(err)
+	}
+	for k, vs := range header {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+	setLAPIAuth(req, c.APIKey)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, redactErr(err)
+	}
+	return resp, nil
 }
 
 // Status holds a lightweight integration snapshot for the UI.
@@ -35,25 +68,18 @@ type Status struct {
 
 // Ping checks whether LAPI responds (no auth required for some versions; may 401).
 func (c *Client) Ping(ctx context.Context) Status {
-	if c.BaseURL == "" {
+	if strings.TrimSpace(c.BaseURL) == "" {
 		return Status{Reachable: false, LastMessage: "lapi url not configured"}
 	}
-	client := c.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: 3 * time.Second}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/watchers/login", nil)
-	if err != nil {
-		return Status{Reachable: false, LastMessage: err.Error()}
-	}
-	setLAPIAuth(req, c.APIKey)
-	resp, err := client.Do(req)
+	resp, err := c.doLAPI(ctx, http.MethodGet, "/v1/watchers/login", nil, nil)
 	if err != nil {
 		return Status{Reachable: false, LastMessage: err.Error()}
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	// Any HTTP response means TCP/TLS reached something
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return Status{Reachable: false, LastMessage: "lapi redirect refused"}
+	}
 	return Status{Reachable: true, LastMessage: fmt.Sprintf("http %d", resp.StatusCode)}
 }
 
@@ -62,18 +88,7 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return json.RawMessage(`[]`), nil
 	}
-	client := c.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: 8 * time.Second}
-	}
-	base := strings.TrimSuffix(strings.TrimSpace(c.BaseURL), "/")
-	u := base + "/v1/decisions?limit=100"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	setLAPIAuth(req, c.APIKey)
-	resp, err := client.Do(req)
+	resp, err := c.doLAPI(ctx, http.MethodGet, "/v1/decisions?limit=100", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +97,11 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, fmt.Errorf("crowdsec lapi decisions: redirect refused")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("crowdsec lapi decisions: http %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("crowdsec lapi decisions: http %d", resp.StatusCode)
 	}
 	return json.RawMessage(b), nil
 }
@@ -115,30 +133,22 @@ func (c *Client) DeleteDecision(ctx context.Context, decisionID string) error {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return fmt.Errorf("crowdsec: lapi url not configured")
 	}
-	client := c.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
-	}
-	base := strings.TrimSuffix(strings.TrimSpace(c.BaseURL), "/")
-	u := base + "/v1/decisions/" + url.PathEscape(decisionID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
-	if err != nil {
-		return err
-	}
-	setLAPIAuth(req, c.APIKey)
-	resp, err := client.Do(req)
+	resp, err := c.doLAPI(ctx, http.MethodDelete, "/v1/decisions/"+url.PathEscape(decisionID), nil, nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	_, _ = io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusNoContent:
 		return nil
 	case http.StatusNotFound:
 		return ErrDecisionNotFound
 	default:
-		return fmt.Errorf("crowdsec lapi delete decision: http %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			return fmt.Errorf("crowdsec lapi delete decision: redirect refused")
+		}
+		return fmt.Errorf("crowdsec lapi delete decision: http %d", resp.StatusCode)
 	}
 }
 
@@ -179,26 +189,19 @@ func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error 
 	if err != nil {
 		return err
 	}
-	client := c.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
-	}
-	base := strings.TrimSuffix(strings.TrimSpace(c.BaseURL), "/")
-	u := base + "/v1/decisions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	setLAPIAuth(httpReq, c.APIKey)
-	resp, err := client.Do(httpReq)
+	hdr := make(http.Header)
+	hdr.Set("Content-Type", "application/json")
+	resp, err := c.doLAPI(ctx, http.MethodPost, "/v1/decisions", bytes.NewReader(body), hdr)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	_, _ = io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("crowdsec lapi add decision: redirect refused")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("crowdsec lapi add decision: http %d: %s", resp.StatusCode, strings.TrimSpace(string(rb)))
+		return fmt.Errorf("crowdsec lapi add decision: http %d", resp.StatusCode)
 	}
 	return nil
 }

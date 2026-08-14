@@ -49,7 +49,7 @@ func TestTrustedRealIP_TrustsHeaderFromLoopbackPeer(t *testing.T) {
 
 func TestTrustedRealIP_UsesProxyAppendedRightmostAddress(t *testing.T) {
 	var got string
-	h := TrustedRealIP(defaultTrustedProxyCIDRs())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := TrustedRealIP(defaultTrustedProxyCIDRs())(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		ip, _ := clientIP(r)
 		got = ip.String()
 	}))

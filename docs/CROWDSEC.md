@@ -70,6 +70,7 @@ For advanced behaviour (CAPTCHA, ban pages, AppSec), follow upstream docs: addit
 ## Variables
 
 - **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in `/etc/easy-waf/easy-waf.env` — used by **easy-waf-api** to reach LAPI (bouncer key from `cscli bouncers add -o raw`). LAPI expects header **`X-Api-Key`**, not `Authorization: Bearer`.
+- Destination policy: only **`http`/`https`**, no URL userinfo, default allowlist **`http://127.0.0.1:8080`** and **`http://[::1]:8080`**. Extra origins: **`CROWDSEC_LAPI_ALLOWED_ORIGINS`** (comma-separated). The client does not follow redirects (so **`X-Api-Key` is never forwarded** to another origin). Errors never include the API key.
 
 ## Management API (UI)
 
