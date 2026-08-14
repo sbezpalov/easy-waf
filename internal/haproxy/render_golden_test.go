@@ -32,6 +32,12 @@ var goldenScenarioNames = []string{
 	"http-only-reverse-proxy",
 	"backend-by-hostname",
 	"backend-by-ip",
+	"listen-http-only-full-sec",
+	"listen-https-only-full-sec",
+	"listen-http-and-https-full-sec",
+	"backend-tls-verify-required",
+	"backend-tls-custom-ca",
+	"backend-tls-verify-none",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -506,9 +512,72 @@ func goldenFixture(name string) RenderInput {
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/backend-by-ip.crt-list.txt",
 		}
+	case "listen-http-only-full-sec":
+		return goldenListenModeFullSec("http_only", "plain-sec.example.local", "", false)
+	case "listen-https-only-full-sec":
+		return goldenListenModeFullSec("https_only", "tls-sec.example.local", certA, false)
+	case "listen-http-and-https-full-sec":
+		return goldenListenModeFullSec("http_and_https", "both-sec.example.local", certA, false)
+	case "backend-tls-verify-required":
+		return goldenListenModeFullSec("https_only", "verify.example.local", certA, true)
+	case "backend-tls-custom-ca":
+		in := goldenListenModeFullSec("https_only", "customca.example.local", certA, true)
+		in.Applications[0].BackendTLSCAFile = "/etc/easy-waf/ca/lab.pem"
+		in.Applications[0].BackendTLSServerName = "backend.lab.internal"
+		in.CRTListPath = "testdata/golden/backend-tls-custom-ca.crt-list.txt"
+		return in
+	case "backend-tls-verify-none":
+		in := goldenListenModeFullSec("https_only", "insecure.example.local", certA, true)
+		in.Applications[0].BackendTLSVerify = config.BackendTLSVerifyNone
+		in.CRTListPath = "testdata/golden/backend-tls-verify-none.crt-list.txt"
+		return in
 	default:
 		return RenderInput{}
 	}
+}
+
+func goldenListenModeFullSec(listenMode, host, certPath string, backendHTTPS bool) RenderInput {
+	sec := config.DefaultApplicationSecurity()
+	sec.GeoIPEnabled = false
+	app := config.Application{
+		ID: "sec1", Name: "Sec", PublicHost: host, BackendHost: "10.0.9.9", BackendPort: 443,
+		Profile: "strict", Enabled: true, ListenMode: listenMode, Security: sec,
+		RestrictedPaths: []config.RestrictedPath{{PathPrefix: "/admin", AllowedCIDRs: []string{"10.0.0.0/8"}}},
+	}
+	if backendHTTPS {
+		app.BackendHTTPS = true
+		app.BackendTLSVerify = config.BackendTLSVerifyRequired
+	} else {
+		app.BackendPort = 8080
+	}
+	in := RenderInput{
+		Settings:           goldenGlobalSettings("testdata/golden/spoe/minimal-spoe.cfg", "crowdsec"),
+		UseIPBlacklist:     true,
+		UseIPAllowlist:     true,
+		IPBlacklistMapPath: "testdata/golden/ipbl/test.map",
+		IPAllowlistMapPath: "testdata/golden/ipbl/test.map",
+		Applications:       []config.Application{app},
+		Certificates:       map[string]config.Certificate{},
+		CRTListPath:        "testdata/golden/listen-" + strings.ReplaceAll(listenMode, "_", "-") + "-full-sec.crt-list.txt",
+	}
+	in.Settings.BlockEmptyUA = true
+	if certPath != "" {
+		in.Applications[0].CertificateID = "c1"
+		in.Certificates["c1"] = config.Certificate{ID: "c1", BundlePath: certPath}
+	}
+	switch listenMode {
+	case "http_only":
+		in.CRTListPath = "testdata/golden/listen-http-only-full-sec.crt-list.txt"
+	case "https_only":
+		if backendHTTPS && host == "verify.example.local" {
+			in.CRTListPath = "testdata/golden/backend-tls-verify-required.crt-list.txt"
+		} else {
+			in.CRTListPath = "testdata/golden/listen-https-only-full-sec.crt-list.txt"
+		}
+	case "http_and_https":
+		in.CRTListPath = "testdata/golden/listen-http-and-https-full-sec.crt-list.txt"
+	}
+	return in
 }
 
 func normalizeGoldenNewlines(s string) string {
