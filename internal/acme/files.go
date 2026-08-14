@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/go-acme/lego/v4/certificate"
 )
 
@@ -15,6 +16,9 @@ import (
 func WriteCertificateResource(stateDir, certID string, res *certificate.Resource) (fullchainPath, keyPath string, notBefore, notAfter time.Time, err error) {
 	if res == nil {
 		return "", "", time.Time{}, time.Time{}, fmt.Errorf("nil resource")
+	}
+	if err := config.ValidateResourceID("certificate", certID); err != nil {
+		return "", "", time.Time{}, time.Time{}, err
 	}
 	dir := filepath.Join(stateDir, "certs", certID)
 	if err := os.MkdirAll(dir, 0o750); err != nil {

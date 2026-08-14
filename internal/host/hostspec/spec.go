@@ -80,22 +80,26 @@ func ValidUsername(name string) bool {
 	return usernameRE.MatchString(name)
 }
 
-// DeletableUsername rejects protected accounts.
-func DeletableUsername(name string) bool {
+// ManageableUsername rejects protected accounts for privileged user operations.
+func ManageableUsername(name string) bool {
 	if !ValidUsername(name) {
 		return false
 	}
 	return name != "root" && name != "easy-waf"
 }
 
+// DeletableUsername is kept as the API-specific name for account deletion.
+func DeletableUsername(name string) bool { return ManageableUsername(name) }
+
 // ValidStagedPath accepts only files under /var/lib/easy-waf/staging/.
 func ValidStagedPath(path string) bool {
-	clean := filepath.ToSlash(filepath.Clean(path))
-	prefix := filepath.ToSlash(filepath.Clean(StagingDirPrefix))
-	if !strings.HasPrefix(clean, prefix) {
+	clean := filepath.Clean(path)
+	prefix := filepath.Clean(StagingDirPrefix)
+	rel, err := filepath.Rel(prefix, clean)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
 		return false
 	}
-	return !strings.Contains(clean, "..")
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // ValidRollbackTimeout is a decimal seconds string in [30, 600].

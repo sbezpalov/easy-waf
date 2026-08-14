@@ -520,8 +520,8 @@ func (s *Server) hostDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if !hostspec.ValidUsername(name) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid username"})
+	if !hostspec.ManageableUsername(name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user is protected or invalid"})
 		return
 	}
 	var body struct {

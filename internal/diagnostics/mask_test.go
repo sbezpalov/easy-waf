@@ -10,6 +10,9 @@ func TestMaskEasyWAFEnvLine_secrets(t *testing.T) {
 		{"CROWDSEC_LAPI_KEY=secret123", "CROWDSEC_LAPI_KEY=***MASKED***"},
 		{"EASY_WAF_JWT_SECRET=abc", "EASY_WAF_JWT_SECRET=***MASKED***"},
 		{"EASY_WAF_ADMIN_TOKEN=tok", "EASY_WAF_ADMIN_TOKEN=***MASKED***"},
+		{"GEOIP_IPINFO_TOKEN=geo", "GEOIP_IPINFO_TOKEN=***MASKED***"},
+		{"AWS_SECRET_ACCESS_KEY=aws", "AWS_SECRET_ACCESS_KEY=***MASKED***"},
+		{"CUSTOM_API_KEY=custom", "CUSTOM_API_KEY=***MASKED***"},
 		{"FOO=bar", "FOO=bar"},
 		{"# comment", "# comment"},
 	}

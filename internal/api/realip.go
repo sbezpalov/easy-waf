@@ -8,9 +8,7 @@ import (
 )
 
 var (
-	trueClientIPHdr  = http.CanonicalHeaderKey("True-Client-IP")
 	xForwardedForHdr = http.CanonicalHeaderKey("X-Forwarded-For")
-	xRealIPHdr       = http.CanonicalHeaderKey("X-Real-IP")
 )
 
 // defaultTrustedProxyCIDRs are TCP peers allowed to set client IP via forwarding headers.
@@ -40,21 +38,16 @@ func TrustedProxyCIDRs() []string {
 	return out
 }
 
-// clientIPFromForwardingHeaders mirrors chi middleware.RealIP header precedence.
+// clientIPFromForwardingHeaders trusts only X-Forwarded-For and takes its
+// rightmost value. The trusted reverse proxy must overwrite this header with
+// the direct client IP rather than append to a client-supplied chain.
 func clientIPFromForwardingHeaders(r *http.Request) string {
-	var ip string
-	if tcip := r.Header.Get(trueClientIPHdr); tcip != "" {
-		ip = strings.TrimSpace(tcip)
-	} else if xrip := r.Header.Get(xRealIPHdr); xrip != "" {
-		ip = strings.TrimSpace(xrip)
-	} else if xff := r.Header.Get(xForwardedForHdr); xff != "" {
-		xff = strings.TrimSpace(xff)
-		if i := strings.Index(xff, ","); i >= 0 {
-			ip = strings.TrimSpace(xff[:i])
-		} else {
-			ip = xff
-		}
+	xff := strings.TrimSpace(r.Header.Get(xForwardedForHdr))
+	if xff == "" {
+		return ""
 	}
+	parts := strings.Split(xff, ",")
+	ip := strings.TrimSpace(parts[len(parts)-1])
 	if ip == "" || net.ParseIP(ip) == nil {
 		return ""
 	}

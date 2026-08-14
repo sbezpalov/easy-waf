@@ -87,6 +87,7 @@ mask_env_to() {
     -e 's/^(CROWDSEC_LAPI_KEY=).*/\1***MASKED***/' \
     -e 's/^(EASY_WAF_JWT_SECRET=).*/\1***MASKED***/' \
     -e 's/^(EASY_WAF_ADMIN_TOKEN=).*/\1***MASKED***/' \
+    -e 's/^([A-Za-z_][A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|ACCESS_KEY|LICENSE_KEY)[A-Za-z0-9_]*=).*/\1***MASKED***/I' \
     "$src" >"$dst"
 }
 

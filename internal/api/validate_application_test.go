@@ -38,3 +38,29 @@ func TestValidateAppHostnames_InvalidPort(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateAppHostnames_rejectsHAProxyInjection(t *testing.T) {
+	base := config.Application{
+		ID: "app-1", Name: "safe", PublicHost: "app.example.test",
+		BackendHost: "192.0.2.10", BackendPort: 8080,
+	}
+	cases := []config.Application{
+		func() config.Application { a := base; a.Name = "safe\nbackend injected"; return a }(),
+		func() config.Application { a := base; a.HealthPath = "/ok\nserver evil"; return a }(),
+		func() config.Application {
+			a := base
+			a.RestrictedPaths = []config.RestrictedPath{{PathPrefix: "/admin\nhttp-request allow", AllowedCIDRs: []string{"10.0.0.0/8"}}}
+			return a
+		}(),
+		func() config.Application {
+			a := base
+			a.RestrictedPaths = []config.RestrictedPath{{PathPrefix: "/admin", AllowedCIDRs: []string{"10.0.0.0/8\nhttp-request allow"}}}
+			return a
+		}(),
+	}
+	for i := range cases {
+		if err := validateAppHostnames(&cases[i]); err == nil {
+			t.Fatalf("case %d: expected rejection", i)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -219,17 +220,31 @@ func fetchPlainList(ctx context.Context, client *http.Client, u string) ([]strin
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("http %d", resp.StatusCode)
 	}
+	const (
+		maxFeedBytes   = 16 << 20
+		maxFeedEntries = 250_000
+		maxLineBytes   = 64 << 10
+	)
+	limited := &io.LimitedReader{R: resp.Body, N: maxFeedBytes + 1}
 	var lines []string
-	sc := bufio.NewScanner(resp.Body)
-	const maxLine = 1 << 20
+	sc := bufio.NewScanner(limited)
 	buf := make([]byte, 0, 64*1024)
-	sc.Buffer(buf, maxLine)
+	sc.Buffer(buf, maxLineBytes)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		lines = append(lines, line)
+		if len(lines) > maxFeedEntries {
+			return nil, fmt.Errorf("feed exceeds %d entries", maxFeedEntries)
+		}
 	}
-	return lines, sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if limited.N == 0 {
+		return nil, fmt.Errorf("feed exceeds %d bytes", maxFeedBytes)
+	}
+	return lines, nil
 }

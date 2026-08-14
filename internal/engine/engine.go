@@ -168,6 +168,9 @@ func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) 
 	cm := map[string]config.Certificate{}
 	for i := range certs {
 		c := certs[i]
+		if err := config.ValidateResourceID("certificate", c.ID); err != nil {
+			return haproxy.Rendered{}, err
+		}
 		if c.FullchainPath != "" && c.PEMKeyPath != "" {
 			if st, err := os.Stat(c.FullchainPath); err == nil && st.Size() > 0 {
 				if st2, err2 := os.Stat(c.PEMKeyPath); err2 == nil && st2.Size() > 0 {

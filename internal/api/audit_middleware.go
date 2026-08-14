@@ -10,6 +10,10 @@ type statusCapture struct {
 	code int
 }
 
+// Unwrap lets http.ResponseController retain streaming and connection features
+// provided by the original ResponseWriter.
+func (s *statusCapture) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 func (s *statusCapture) WriteHeader(c int) {
 	s.code = c
 	s.ResponseWriter.WriteHeader(c)

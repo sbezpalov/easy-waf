@@ -1232,8 +1232,8 @@
     wrap.style.maxWidth = '100%';
     wrap.innerHTML = `
       <div class="row" style="align-items:flex-start">
-        <label>Path prefix<br /><input class="rp-prefix" type="text" placeholder="/api" value="${prefix || ''}" style="min-width:8rem" /></label>
-        <label style="flex:1">Allowed CIDRs (one per line)<br /><textarea class="rp-cidrs" rows="4" style="width:100%;min-width:14rem;font-family:monospace;font-size:12px" placeholder="192.168.0.0/16">${cidrsText || ''}</textarea></label>
+        <label>Path prefix<br /><input class="rp-prefix" type="text" placeholder="/api" value="${esc(prefix || '')}" style="min-width:8rem" /></label>
+        <label style="flex:1">Allowed CIDRs (one per line)<br /><textarea class="rp-cidrs" rows="4" style="width:100%;min-width:14rem;font-family:monospace;font-size:12px" placeholder="192.168.0.0/16">${esc(cidrsText || '')}</textarea></label>
         <button type="button" class="secondary btn-rp-remove">Remove</button>
       </div>`;
     wrap.querySelector('.btn-rp-remove').onclick = () => wrap.remove();

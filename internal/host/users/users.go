@@ -3,9 +3,12 @@ package users
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
@@ -34,7 +37,8 @@ func List() ([]Account, error) {
 			continue
 		}
 		uid := parts[2]
-		if uid < "1000" && uid != "0" {
+		uidNum, err := strconv.Atoi(uid)
+		if err != nil || (uidNum < 1000 && uidNum != 0) {
 			continue
 		}
 		if parts[0] == "nobody" {
@@ -70,18 +74,27 @@ func readAuthorizedKeys(home string) []string {
 
 // CreateUser adds a login user.
 func CreateUser(ctx context.Context, username string) error {
+	if !hostspec.ManageableUsername(username) {
+		return fmt.Errorf("user is protected")
+	}
 	_, err := runner.Privileged(ctx, "useradd", username)
 	return err
 }
 
 // DeleteUser removes a login user.
 func DeleteUser(ctx context.Context, username string) error {
+	if !hostspec.ManageableUsername(username) {
+		return fmt.Errorf("user is protected")
+	}
 	_, err := runner.Privileged(ctx, "userdel", username)
 	return err
 }
 
 // SetSSHKeys replaces authorized_keys for the user.
 func SetSSHKeys(ctx context.Context, username string, keys []string) error {
+	if !hostspec.ManageableUsername(username) {
+		return fmt.Errorf("user is protected")
+	}
 	if err := ValidateSSHPublicKeys(keys); err != nil {
 		return err
 	}

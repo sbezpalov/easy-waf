@@ -47,6 +47,30 @@ func TestTrustedRealIP_TrustsHeaderFromLoopbackPeer(t *testing.T) {
 	}
 }
 
+func TestTrustedRealIP_UsesProxyAppendedRightmostAddress(t *testing.T) {
+	var got string
+	h := TrustedRealIP(defaultTrustedProxyCIDRs())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _ := clientIP(r)
+		got = ip.String()
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "127.0.0.1, 192.168.1.50")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "192.168.1.50" {
+		t.Fatalf("expected proxy-provided rightmost IP, got %q", got)
+	}
+}
+
+func TestTrustedRealIP_IgnoresAlternateClientIPHeaders(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("True-Client-IP", "127.0.0.1")
+	req.Header.Set("X-Real-IP", "127.0.0.1")
+	if got := clientIPFromForwardingHeaders(req); got != "" {
+		t.Fatalf("unexpected client IP %q", got)
+	}
+}
+
 func TestManagementACL_RejectsSpoofedXFFFromWAN(t *testing.T) {
 	eng := &engine.Engine{
 		Settings: config.GlobalSettings{

@@ -97,12 +97,15 @@ func revertNetplan(token string) error {
 }
 
 func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, token string) Response {
-	if !hostspec.ValidStagedPath(staged) {
-		return failResp("invalid staged path", 1)
-	}
 	if !hostspec.ValidToken(token) || !hostspec.ValidRollbackTimeout(timeoutStr) {
 		return failResp("invalid token or timeout", 1)
 	}
+	stagedCopy, cleanup, err := materializeStagedFile(staged)
+	if err != nil {
+		return failResp("invalid staged path: "+err.Error(), 1)
+	}
+	defer cleanup()
+	staged = stagedCopy
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	if err := ensureDir(rollbackDir); err != nil {
 		return failResp(err.Error(), 1)
@@ -144,12 +147,15 @@ func nftCommit(ctx context.Context, r CommandRunner, token string) Response {
 }
 
 func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, token string) Response {
-	if !hostspec.ValidStagedPath(staged) {
-		return failResp("invalid staged path", 1)
-	}
 	if !hostspec.ValidToken(token) || !hostspec.ValidRollbackTimeout(timeoutStr) {
 		return failResp("invalid token or timeout", 1)
 	}
+	stagedCopy, cleanup, err := materializeStagedFile(staged)
+	if err != nil {
+		return failResp("invalid staged path: "+err.Error(), 1)
+	}
+	defer cleanup()
+	staged = stagedCopy
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	if err := ensureDir(rollbackDir); err != nil {
 		return failResp(err.Error(), 1)

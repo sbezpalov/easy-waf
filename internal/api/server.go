@@ -45,6 +45,8 @@ type Server struct {
 func (s *Server) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(securityHeaders)
+	r.Use(limitRequestBody(maxAPIRequestBodyBytes))
 	// Forwarding headers apply only when the TCP peer is a trusted proxy (loopback by default); see docs/SECURITY.md.
 	r.Use(TrustedRealIP(TrustedProxyCIDRs()))
 	r.Use(s.managementACL)
@@ -302,6 +304,12 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if c.ID != "" {
+		if err := config.ValidateResourceID("certificate", c.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -439,6 +447,10 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := validateGeoIPSettings(gs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateRuntimeSettings(gs); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

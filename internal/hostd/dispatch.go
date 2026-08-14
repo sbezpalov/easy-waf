@@ -3,7 +3,6 @@ package hostd
 import (
 	"context"
 	"os"
-	"os/user"
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
@@ -63,10 +62,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(stdout, stderr, code)
 
 	case "nft-install":
-		if len(argv) != 2 || !hostspec.ValidStagedPath(argv[1]) {
+		if len(argv) != 2 {
 			return failResp("nft-install: invalid staged path", 1)
 		}
-		src := argv[1]
+		src, cleanup, err := materializeStagedFile(argv[1])
+		if err != nil {
+			return failResp("nft-install: "+err.Error(), 1)
+		}
+		defer cleanup()
 		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", src)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
@@ -112,10 +115,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(stdout, stderr, code)
 
 	case "netplan-install":
-		if len(argv) != 2 || !hostspec.ValidStagedPath(argv[1]) {
+		if len(argv) != 2 {
 			return failResp("netplan-install: invalid staged path", 1)
 		}
-		if err := copyFile(argv[1], netplanPath, 0o600); err != nil {
+		src, cleanup, err := materializeStagedFile(argv[1])
+		if err != nil {
+			return failResp("netplan-install: "+err.Error(), 1)
+		}
+		defer cleanup()
+		if err := copyFile(src, netplanPath, 0o600); err != nil {
 			return failResp(err.Error(), 1)
 		}
 		stdout, stderr, code, err := runCmd(ctx, r, "netplan", "apply")
@@ -217,7 +225,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(stdout, stderr, code)
 
 	case "useradd":
-		if len(argv) != 2 || !hostspec.ValidUsername(argv[1]) {
+		if len(argv) != 2 || !hostspec.ManageableUsername(argv[1]) {
 			return failResp("useradd: invalid username", 1)
 		}
 		stdout, stderr, code, err := runCmd(ctx, r, "useradd", "-m", "-s", "/bin/bash", argv[1])
@@ -230,6 +238,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if len(argv) != 2 || !hostspec.DeletableUsername(argv[1]) {
 			return failResp("userdel: not allowed", 1)
 		}
+		if _, err := lookupManagedUser(argv[1]); err != nil {
+			return failResp("userdel: "+err.Error(), 1)
+		}
 		stdout, stderr, code, err := runCmd(ctx, r, "userdel", "-r", argv[1])
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
@@ -237,10 +248,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(stdout, stderr, code)
 
 	case "ssh-authorized-keys":
-		if len(argv) != 3 || !hostspec.ValidUsername(argv[1]) || !hostspec.ValidStagedPath(argv[2]) {
+		if len(argv) != 3 || !hostspec.ManageableUsername(argv[1]) {
 			return failResp("ssh-authorized-keys: invalid args", 1)
 		}
-		return sshAuthorizedKeys(ctx, r, argv[1], argv[2])
+		src, cleanup, err := materializeStagedFile(argv[2])
+		if err != nil {
+			return failResp("ssh-authorized-keys: "+err.Error(), 1)
+		}
+		defer cleanup()
+		return sshAuthorizedKeys(ctx, r, argv[1], src)
 
 	case "fail2ban":
 		return dispatchFail2ban(ctx, r, argv[1:])
@@ -251,7 +267,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 }
 
 func sshAuthorizedKeys(ctx context.Context, r CommandRunner, username, tmp string) Response {
-	u, err := user.Lookup(username)
+	u, err := lookupManagedUser(username)
 	if err != nil {
 		return failResp("user not found", 1)
 	}

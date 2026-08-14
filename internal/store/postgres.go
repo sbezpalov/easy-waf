@@ -144,10 +144,14 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 		a.PathPrefix = pp.String
 	}
 	if len(rpJSON) > 0 && string(rpJSON) != "null" {
-		_ = json.Unmarshal(rpJSON, &a.RestrictedPaths)
+		if err := json.Unmarshal(rpJSON, &a.RestrictedPaths); err != nil {
+			return a, fmt.Errorf("decode application %q restricted_paths: %w", a.ID, err)
+		}
 	}
 	if len(secJSON) > 0 && string(secJSON) != "null" {
-		_ = json.Unmarshal(secJSON, &a.Security)
+		if err := json.Unmarshal(secJSON, &a.Security); err != nil {
+			return a, fmt.Errorf("decode application %q security: %w", a.ID, err)
+		}
 	}
 	config.NormalizeApplicationSecurity(&a.Security)
 	config.NormalizeListenMode(&a)
@@ -458,7 +462,9 @@ func scanCertificates(rows *sql.Rows) ([]config.Certificate, error) {
 			return nil, err
 		}
 		if len(san) > 0 {
-			_ = json.Unmarshal(san, &c.SAN)
+			if err := json.Unmarshal(san, &c.SAN); err != nil {
+				return nil, fmt.Errorf("decode certificate %q san_json: %w", c.ID, err)
+			}
 		}
 		if acmeSt.Valid {
 			c.ACMEStatus = acmeSt.String

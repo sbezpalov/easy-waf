@@ -32,7 +32,10 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+const maxLoginRequestBodyBytes int64 = 16 << 10
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
 	ip, ipOK := clientIP(r)
 	ipStr := ""
 	if ipOK && ip.IsValid() {
@@ -59,6 +62,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	user := strings.TrimSpace(body.Username)
 	if user == "" || body.Password == "" {
 		http.Error(w, "username and password required", http.StatusBadRequest)
+		return
+	}
+	if len(user) > 128 || len(body.Password) > 256 {
+		http.Error(w, "credentials are too long", http.StatusBadRequest)
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)

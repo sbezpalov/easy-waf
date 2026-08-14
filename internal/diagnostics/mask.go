@@ -17,14 +17,25 @@ func MaskEasyWAFEnvLine(line string) string {
 	}
 	key = strings.TrimSpace(key)
 	val = strings.TrimSpace(val)
-	switch key {
-	case "CROWDSEC_LAPI_KEY", "EASY_WAF_JWT_SECRET", "EASY_WAF_ADMIN_TOKEN":
+	if secretEnvKey(key) {
 		return key + "=***MASKED***"
+	}
+	switch key {
 	case "DATABASE_URL":
 		return key + "=" + maskDatabaseURL(val)
 	default:
 		return line
 	}
+}
+
+func secretEnvKey(key string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(key))
+	for _, marker := range []string{"PASSWORD", "SECRET", "TOKEN", "CREDENTIAL", "PRIVATE_KEY", "API_KEY", "ACCESS_KEY", "LICENSE_KEY"} {
+		if strings.Contains(upper, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func maskDatabaseURL(s string) string {

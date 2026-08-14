@@ -147,12 +147,12 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		}
 	}
 
-	cfgPath := strings.TrimSpace(p.Settings.HAProxyConfigPath)
-	if cfgPath == "" {
-		_, def, _ := haproxy.Paths(p.StateDir)
-		cfgPath = def
-	}
-	if raw, err := os.ReadFile(cfgPath); err == nil {
+	cfgPath, cfgPathErr := managedHAProxyConfigPath(p.StateDir, p.Settings.HAProxyConfigPath)
+	if cfgPathErr != nil {
+		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", []byte("(refused unsafe configured path: "+cfgPathErr.Error()+")\n"), 0o644); err != nil {
+			return err
+		}
+	} else if raw, err := os.ReadFile(cfgPath); err == nil {
 		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", raw, 0o640); err != nil {
 			return err
 		}
@@ -182,14 +182,16 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		return err
 	}
 
-	hb := strings.TrimSpace(p.Settings.HAProxyBinary)
-	if hb == "" {
-		hb = "haproxy"
-	}
+	const hb = "/usr/sbin/haproxy"
 	_ = run("validation/haproxy-vv.txt", 15*time.Second, hb, "-vv")
-	ctx2, cancel = context.WithTimeout(ctx, 30*time.Second)
-	haproxyCheckOut, _ := exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
-	cancel()
+	var haproxyCheckOut []byte
+	if cfgPathErr != nil {
+		haproxyCheckOut = []byte("validation skipped: " + cfgPathErr.Error() + "\n")
+	} else {
+		ctx2, cancel = context.WithTimeout(ctx, 30*time.Second)
+		haproxyCheckOut, _ = exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
+		cancel()
+	}
 	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", haproxyCheckOut, 0o644); err != nil {
 		return err
 	}
@@ -215,6 +217,43 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		_ = addTarBytes(tw, prefix+"firewall/easy-waf.nft", raw, 0o644)
 	}
 
+	return nil
+}
+
+func managedHAProxyConfigPath(stateDir, configured string) (string, error) {
+	managedDir, err := filepath.Abs(filepath.Join(stateDir, "haproxy"))
+	if err != nil {
+		return "", err
+	}
+	candidate := strings.TrimSpace(configured)
+	if candidate == "" {
+		_, candidate, _ = haproxy.Paths(stateDir)
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return "", err
+	}
+	if err := requirePathWithin(managedDir, candidate); err != nil {
+		return "", err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(candidate); resolveErr == nil {
+		resolvedDir := managedDir
+		if dir, dirErr := filepath.EvalSymlinks(managedDir); dirErr == nil {
+			resolvedDir = dir
+		}
+		if err := requirePathWithin(resolvedDir, resolved); err != nil {
+			return "", err
+		}
+		candidate = resolved
+	}
+	return candidate, nil
+}
+
+func requirePathWithin(base, candidate string) error {
+	rel, err := filepath.Rel(base, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("path is outside managed HAProxy directory")
+	}
 	return nil
 }
 

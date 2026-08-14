@@ -35,12 +35,26 @@ func TestDeletableUsername(t *testing.T) {
 	}
 }
 
+func TestManageableUsername(t *testing.T) {
+	for _, name := range []string{"root", "easy-waf", "Bad Name"} {
+		if ManageableUsername(name) {
+			t.Fatalf("%q must be protected", name)
+		}
+	}
+	if !ManageableUsername("alice") {
+		t.Fatal("alice")
+	}
+}
+
 func TestValidStagedPath(t *testing.T) {
 	if !ValidStagedPath("/var/lib/easy-waf/staging/foo.yaml") {
 		t.Fatal("ok")
 	}
 	if ValidStagedPath("/etc/passwd") {
 		t.Fatal("reject")
+	}
+	if ValidStagedPath("/var/lib/easy-waf/staging-evil/foo.yaml") {
+		t.Fatal("reject sibling prefix")
 	}
 }
 

@@ -9,6 +9,11 @@
 #      EASY_WAF_ADMIN_TOKEN — if unset, read from restored / merged env after file copy (see below)
 
 set -euo pipefail
+umask 077
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh"
 
 ARCHIVE="${1:?usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-*.tar.gz}"
 if [[ "$ARCHIVE" != /* ]]; then
@@ -63,11 +68,9 @@ if [[ ! -f "$REST_ENV" ]]; then
   exit 1
 fi
 
-# shellcheck disable=SC1090
-set -a
-source "$REST_ENV"
-set +a
-if [[ -z "${DATABASE_URL:-}" ]]; then
+DATABASE_URL="$(easy_waf_read_env_value "$REST_ENV" DATABASE_URL)"
+export DATABASE_URL
+if [[ -z "$DATABASE_URL" ]]; then
   echo "ERROR: DATABASE_URL empty in backup env $REST_ENV" >&2
   exit 1
 fi
@@ -93,16 +96,9 @@ if command -v restorecon &>/dev/null; then
   restorecon -RF "$CFG" 2>/dev/null || true
 fi
 
-REST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if command -v semanage &>/dev/null && [[ -f "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
-  EASY_WAF_STATE_DIR="$STATE" bash "${REST_SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
+if command -v semanage &>/dev/null && [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
+  EASY_WAF_STATE_DIR="$STATE" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
 fi
-
-# Re-read env from disk (restored tokens / URLs)
-# shellcheck disable=SC1090
-set -a
-source "$ENV_FILE"
-set +a
 
 echo "[easy-waf-restore] starting services…"
 systemctl daemon-reload 2>/dev/null || true
@@ -114,6 +110,9 @@ systemctl start easy-waf-acmed.service 2>/dev/null || true
 sleep 2
 
 TOK="${EASY_WAF_ADMIN_TOKEN:-}"
+if [[ -z "$TOK" && -f "$ENV_FILE" ]]; then
+  TOK="$(easy_waf_read_env_value "$ENV_FILE" EASY_WAF_ADMIN_TOKEN)"
+fi
 if [[ -z "$TOK" ]]; then
   echo "[easy-waf-restore] EASY_WAF_ADMIN_TOKEN unset — cannot POST apply (set env or add token to $ENV_FILE)" >&2
 elif [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then
