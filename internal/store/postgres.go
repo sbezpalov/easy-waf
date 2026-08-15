@@ -135,6 +135,12 @@ func stripSQLComments(s string) string {
 // Close releases the pool.
 func (s *Store) Close() error { return s.db.Close() }
 
+// Ping verifies connectivity to the underlying PostgreSQL database.
+func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+// RawDB returns the underlying *sql.DB for advanced diagnostic queries.
+func (s *Store) RawDB() *sql.DB { return s.db }
+
 func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, error) {
 	var a config.Application
 	var certID sql.NullString

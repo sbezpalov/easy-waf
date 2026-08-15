@@ -39,6 +39,8 @@ func main() {
 		applyEdgeCLI()
 	case "print-enrollment":
 		printEnrollment()
+	case "doctor":
+		runDoctorCLI()
 	default:
 		usage()
 		os.Exit(2)
@@ -62,6 +64,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "      Print the one-time operator enrollment secret from the root-only 0600 file (stdout only; never journal).")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin apply-edge [-env-file path] [-state-dir path] [-database-url URL] [-label text]")
 	fmt.Fprintln(os.Stderr, "      Re-render HAProxy config from PostgreSQL and reload-or-start haproxy (root; same as API POST /apply).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin doctor [-env-file path] [-state-dir path] [-database-url URL] [-json]")
+	fmt.Fprintln(os.Stderr, "      Run full appliance diagnostic check (database, haproxy, systemd services, storage, geoip, certs).")
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 
@@ -327,4 +331,33 @@ func printEnrollment() {
 		log.Fatal(err)
 	}
 	fmt.Fprintln(os.Stdout, secret)
+}
+
+func runDoctorCLI() {
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	envFile := fs.String("env-file", "/etc/easy-waf/easy-waf.env", "environment file")
+	stateDir := fs.String("state-dir", "/var/lib/easy-waf", "state directory")
+	databaseURL := fs.String("database-url", "", "PostgreSQL URL")
+	jsonOutput := fs.Bool("json", false, "output report as JSON")
+	_ = fs.Parse(os.Args[2:])
+
+	opts := admin.DoctorOptions{
+		StateDir:    *stateDir,
+		EnvFile:     *envFile,
+		DatabaseURL: *databaseURL,
+	}
+
+	report := admin.RunDoctor(context.Background(), opts)
+
+	if *jsonOutput {
+		if err := admin.PrintJSONReport(os.Stdout, report); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		admin.PrintHumanReport(os.Stdout, report)
+	}
+
+	if report.Failed > 0 {
+		os.Exit(1)
+	}
 }

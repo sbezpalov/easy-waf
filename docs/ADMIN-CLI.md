@@ -14,6 +14,27 @@ sudo /usr/sbin/easy-waf-admin print-enrollment
 
 Then enroll at **`POST /api/v1/auth/enroll`** (or the UI) with `{ "secret", "username", "password" }`. The file is deleted after a successful enrollment.
 
+## `doctor`
+
+Runs a full health and self-diagnostic check across the appliance components:
+
+1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions, checks available filesystem space and inodes.
+2. **Database (PostgreSQL)**: Tests connection, validates `schema_migrations` records, and counts configured entities (applications, certs, operators).
+3. **HAProxy Edge**: Verifies binary presence, validates edge configuration syntax (`haproxy -c`), and tests stats socket responsiveness.
+4. **Services (systemd)**: Checks active status of `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, and `fail2ban`.
+5. **GeoIP**: Checks MaxMind MMDB file presence and freshness.
+6. **TLS Certificates**: Checks expiration dates for all active certificates in the certs directory.
+
+```bash
+# Human-readable output
+sudo /usr/sbin/easy-waf-admin doctor
+
+# Machine-readable JSON output (for monitoring / CI scripts)
+sudo /usr/sbin/easy-waf-admin doctor -json
+```
+
+Exits with `0` if all checks pass or only non-critical warnings exist, and `1` if any critical errors are detected.
+
 ## Automated appliance reset (dev / lab)
 
 **`-bootstrap-credentials`** (run as **root** via `sudo`): one command to align PostgreSQL and easy-waf after a broken or unknown DB password:

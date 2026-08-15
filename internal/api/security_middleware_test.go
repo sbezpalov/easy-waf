@@ -14,10 +14,29 @@ func TestSecurityHeaders(t *testing.T) {
 	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})).ServeHTTP(rec, req)
-	for _, header := range []string{"Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy"} {
+
+	for _, header := range []string{
+		"Content-Security-Policy",
+		"X-Frame-Options",
+		"X-Content-Type-Options",
+		"Referrer-Policy",
+		"Permissions-Policy",
+		"X-Permitted-Cross-Domain-Policies",
+	} {
 		if rec.Header().Get(header) == "" {
 			t.Fatalf("missing %s", header)
 		}
+	}
+
+	// Test HSTS on HTTPS forwarded header
+	recHTTPS := httptest.NewRecorder()
+	reqHTTPS := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqHTTPS.Header.Set("X-Forwarded-Proto", "https")
+	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(recHTTPS, reqHTTPS)
+	if hsts := recHTTPS.Header().Get("Strict-Transport-Security"); hsts == "" {
+		t.Fatalf("expected Strict-Transport-Security header on HTTPS request")
 	}
 }
 
