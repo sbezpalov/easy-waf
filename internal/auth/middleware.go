@@ -1,9 +1,7 @@
 package auth
 
 import (
-	"crypto/subtle"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -12,7 +10,7 @@ import (
 // Session validates Authorization: Bearer — JWT (HS256) or legacy EASY_WAF_ADMIN_TOKEN.
 // On success, attaches Principal to the request context.
 func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler {
-	legacyTok := strings.TrimSpace(os.Getenv("EASY_WAF_ADMIN_TOKEN"))
+	legacy := loadLegacyToken()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -21,7 +19,7 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			if legacyTok != "" && len(raw) == len(legacyTok) && subtle.ConstantTimeCompare([]byte(raw), []byte(legacyTok)) == 1 {
+			if legacy.matches(raw) {
 				p := &Principal{Username: "automation", IsLegacyToken: true}
 				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 				return

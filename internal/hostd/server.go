@@ -14,6 +14,9 @@ import (
 // DefaultSocket is the unix socket path (root:easy-waf 0660).
 const DefaultSocket = "/run/easy-waf/hostd.sock"
 
+// easyWafUID is the uid easy-waf-api runs as. It stays -1 when the account cannot
+// be resolved, in which case allowPeer accepts root only — an unresolvable
+// service account must not turn the peer check into a no-op.
 var easyWafUID = -1
 
 func init() {
@@ -63,12 +66,17 @@ func Serve(ctx context.Context, sockPath string) error {
 
 func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 	defer c.Close()
-	if uc, ok := c.(*net.UnixConn); ok && easyWafUID >= 0 {
-		if err := allowPeer(uc); err != nil {
-			logOp("reject peer: %v", err)
-			_ = writeResponse(c, failResp("peer not allowed", 1))
-			return
-		}
+	// Fail closed: anything that is not a verifiable unix peer is rejected.
+	uc, ok := c.(*net.UnixConn)
+	if !ok {
+		logOp("reject peer: not a unix connection")
+		_ = writeResponse(c, failResp("peer not allowed", 1))
+		return
+	}
+	if err := allowPeer(uc); err != nil {
+		logOp("reject peer: %v", err)
+		_ = writeResponse(c, failResp("peer not allowed", 1))
+		return
 	}
 	_ = c.SetDeadline(time.Now().Add(2 * time.Minute))
 	var req Request
