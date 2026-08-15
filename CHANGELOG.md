@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`easy-waf-admin doctor`**: Comprehensive appliance diagnostic command and self-test suite (storage permissions, PostgreSQL connectivity & schema migrations, HAProxy edge syntax `haproxy -c`, systemd services status, GeoIP MMDB freshness, TLS certificate expiry) with human-readable colorized and `--json` outputs.
+- **`easy-waf-admin doctor`**: Comprehensive appliance diagnostic command and self-test suite (storage permissions and space, read-only PostgreSQL connectivity and security-schema checks, HAProxy edge syntax `haproxy -c`, systemd services status, GeoIP MMDB freshness, TLS certificate expiry) with human-readable and `--json` outputs.
 - Comprehensive unit test suites for previously untested packages: `internal/apply`, `internal/audit`, `internal/blockedua`, `internal/mgmttls`, `internal/pemutil`, and `internal/admin`.
 
 ### Security

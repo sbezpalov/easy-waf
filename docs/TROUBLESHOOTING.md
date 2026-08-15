@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This document matches release branch **1.0.0** (see [`VERSION`](../VERSION)).
+This document matches release **1.1.0** (see [`VERSION`](../VERSION)).
 
 ## `systemctl`: no `crowdsec.service` / SPOA bouncer unit
 
@@ -166,7 +166,8 @@ sudo systemctl restart haproxy
 The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`**. If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply:
 
 ```bash
-curl -fsS -X PATCH "http://127.0.0.1:8000/api/v1/settings" \
+curl --cacert /var/lib/easy-waf/secrets/management.crt -fsS -X PATCH \
+  "https://127.0.0.1:8443/api/v1/settings" \
   -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Requested-With: XMLHttpRequest" \
@@ -243,4 +244,3 @@ After `git pull` + `make build`: reinstall API binary and `sudo systemctl restar
    - Output by default: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz`
 
 Details, layout, and what is **not** included: [DIAGNOSTICS.md](DIAGNOSTICS.md).
-

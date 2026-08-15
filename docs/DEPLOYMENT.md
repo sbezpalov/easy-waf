@@ -1,6 +1,6 @@
 # Deployment: Ubuntu 24.04 LTS — Deployment, OVF/OVA, Distribution
 
-**Version:** root [`VERSION`](../VERSION) (**1.0.0** for the current release); the installer uses it when fetching release artifacts.
+**Version:** root [`VERSION`](../VERSION) (**1.1.0** for the current release); the installer uses it when fetching release artifacts.
 
 ## Development (Windows) vs deployment (Linux)
 

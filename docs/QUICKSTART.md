@@ -2,7 +2,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.0.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
+**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.1.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
 ## One-command install
 
@@ -56,15 +56,19 @@ Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` duri
 
 and `sudo systemctl daemon-reload && sudo systemctl restart easy-waf-api`.
 
-**Loopback only:** `EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`** at install time.
+**HTTPS-only loopback (interactive default):** `EASY_WAF_LISTEN_HTTP=off`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`**. Use an SSH port-forward when administering remotely.
+
+**Legacy loopback HTTP + HTTPS:** `EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`, `EASY_WAF_LISTEN_HTTPS=127.0.0.1:8443`, **`EASY_WAF_NFT_MGMT_LAN=0`**.
 
 **No HTTPS:** `EASY_WAF_MANAGEMENT_HTTPS=0` plus **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`** (or non-loopback with **`EASY_WAF_ALLOW_INSECURE_HTTP=1`**). The process will not start if both listeners are off.
 
-## Interactive (LAN API, optional CrowdSec)
+## Interactive installer
 
 ```bash
 sudo bash scripts/install-interactive.sh
 ```
+
+The default mode is **`https_loopback`** (HTTPS-only on `127.0.0.1:8443`). Select **`lan_rfc1918`** for HTTPS on `0.0.0.0:8443` with the management nftables policy, or explicit legacy **`loopback`** only when cleartext loopback HTTP is still required. Non-interactive override: `EASY_WAF_MGMT_MODE=https_loopback|lan_rfc1918|loopback`.
 
 ## First application
 

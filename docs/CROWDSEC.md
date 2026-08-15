@@ -53,7 +53,7 @@ sudo bash scripts/crowdsec-bootstrap-lapi.sh
 
 Re-running **`install.sh`** with **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** on a host that already had the agent installed is safe (bouncers are deleted and recreated). For manual `cscli bouncers add`, remove duplicates with `cscli bouncers delete <name>` first.
 
-Non-interactive hints for **`install-interactive.sh`**: see `scripts/install-interactive.sh` header — e.g. `EASY_WAF_MGMT_MODE=loopback` or `lan_rfc1918`, `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`, `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...`.
+Non-interactive hints for **`install-interactive.sh`**: see `scripts/install-interactive.sh` header — `EASY_WAF_MGMT_MODE=https_loopback` is the secure default; use `lan_rfc1918` for HTTPS LAN access or explicit legacy `loopback` for HTTP+HTTPS. CrowdSec overrides include `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1` and `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...`.
 
 ## SPOE paths and naming
 

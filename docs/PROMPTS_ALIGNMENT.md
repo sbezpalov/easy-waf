@@ -1,7 +1,7 @@
 # Alignment with `prompts.md` (Easy Home WAF)
 
 **Last updated:** 2026-04-20  
-**Current VERSION:** 1.0.0 (see root `VERSION` file)  
+**Current VERSION:** 1.1.0 (see root `VERSION` file)
 **Summary for §2–§3 table rows:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
 
 This document **maps** requirements from [prompts.md](../prompts.md) to repository code and docs. Statuses: **Done** | **Partial** | **Missing** | **N/A** (out of MVP / deferred).

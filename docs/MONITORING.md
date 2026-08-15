@@ -12,7 +12,7 @@ Enable the toggle in the UI (**Settings → Monitoring**) or `PATCH /api/v1/sett
 
 ## Prometheus scrape configuration
 
-Scrape the **management HTTP or HTTPS** listener from an address allowed by `management_allowed_cidr` (often a private network or VPN).
+Scrape the **management HTTPS** listener from an address allowed by `management_allowed_cidrs` (often a private network or VPN). Cleartext HTTP is disabled by default and should only be used when an explicit legacy listener is configured.
 
 Example `prometheus.yml` fragment:
 
@@ -20,15 +20,16 @@ Example `prometheus.yml` fragment:
 scrape_configs:
   - job_name: easy-waf
     scrape_interval: 30s
+    scheme: https
     metrics_path: /metrics
     static_configs:
       - targets:
-          - "192.168.1.10:8000"
-        # Or TLS management port:
-        # - "192.168.1.10:8443"
-    # tls_config:
-    #   insecure_skip_verify: true   # only if using bootstrap self-signed management cert
+          - "192.168.1.10:8443"
+    tls_config:
+      insecure_skip_verify: true # bootstrap self-signed cert only
 ```
+
+Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after installing a management certificate that covers the scrape hostname. When Prometheus runs on the appliance, `127.0.0.1:8443` is also available in both installer defaults; copy the required CA/certificate to a Prometheus-readable path instead of granting access to the Easy WAF secrets directory.
 
 ## Grafana
 

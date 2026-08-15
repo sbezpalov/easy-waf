@@ -2,7 +2,7 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`print-enrollment`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
+Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`doctor`**, **`print-enrollment`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
 
 ## `print-enrollment`
 
@@ -18,7 +18,7 @@ Then enroll at **`POST /api/v1/auth/enroll`** (or the UI) with `{ "secret", "use
 
 Runs a full health and self-diagnostic check across the appliance components:
 
-1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions, checks available filesystem space and inodes.
+1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions and checks available filesystem space.
 2. **Database (PostgreSQL)**: Uses a non-migrating connection and read-only transaction to test connectivity, verify the security schema from migrations 016-018, and count configured entities (applications, certs, operators).
 3. **HAProxy Edge**: Verifies binary presence, validates edge configuration syntax (`haproxy -c`), and tests stats socket responsiveness.
 4. **Services (systemd)**: Checks active status of `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, and `fail2ban`.

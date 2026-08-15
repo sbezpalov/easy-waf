@@ -52,7 +52,9 @@ Environment variables for **`scripts/update-geoip-db.sh`**:
 |----------|----------|---------|
 | `MAXMIND_LICENSE_KEY` | yes | MaxMind license key for the download URL |
 | `EASY_WAF_GEOIP_DIR` | no | Destination directory (default `/var/lib/easy-waf/geoip`) |
-| `EASY_WAF_API_URL` | no | API base (default `http://127.0.0.1:8000`) |
+| `EASY_WAF_API_URL` | no | API base (default `https://127.0.0.1:8443`) |
+| `EASY_WAF_API_CA_CERT` | no | CA/certificate used to verify management HTTPS (default `$EASY_WAF_STATE_DIR/secrets/management.crt`) |
+| `EASY_WAF_CURL_INSECURE` | no | Set to `1` only for explicit recovery with TLS verification disabled |
 | `EASY_WAF_ADMIN_TOKEN` | no | If set, triggers **`/api/v1/geoip/reload`** |
 
 ## Real-time lookup vs batch map

@@ -12,7 +12,7 @@
 
 Implementation: profile metadata lives in `internal/profiles`. The HAProxy template (`internal/haproxy/render.go`) applies **per published application**:
 
-- **Frontend (`fe_https`):** when the app’s `path_acl_enabled` / `method_filter_enabled` toggles are on, `BlockPaths` and `ExtraBlockedMethods` from the profile are enforced for that host; other layers (WAF, bot checks, IPBL, GeoIP, CrowdSec) are also gated by per-app toggles (see [APPLICATION_SECURITY.md](APPLICATION_SECURITY.md)).
+- **Enabled frontends (`fe_http` / `fe_https`):** when the app’s `path_acl_enabled` / `method_filter_enabled` toggles are on, `BlockPaths` and `ExtraBlockedMethods` from the profile are enforced for that host; other layers (WAF, bot checks, IPBL, GeoIP, CrowdSec) are also gated by per-app toggles (see [APPLICATION_SECURITY.md](APPLICATION_SECURITY.md)).
 - **Backend:** `ConnectTimeout`, `ServerTimeout`, `HTTPKeepAlive`, optional stick-table rate limit vs **`RateLimitBurst`** (with optional per-app overrides), plus WebSocket/health/`server` lines.
 
 ## Per-application security layers

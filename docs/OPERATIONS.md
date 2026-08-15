@@ -2,7 +2,7 @@
 
 This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting generated config, manual validation, and toggles used during debugging.
 
-**Version:** [`VERSION`](../VERSION) — **1.0.0**.
+**Version:** [`VERSION`](../VERSION) — **1.1.0**.
 
 ## Layout (defaults)
 
@@ -70,18 +70,20 @@ Hard-refresh the browser: **Ctrl+F5** (bypass cache). An old `easy-waf-api` proc
 ### Dashboard: “Core services (systemd)” empty or “unavailable”
 
 1. **Sign in to the UI** and open the **Dashboard** tab. The request uses JWT; with an expired session the dashboard may only partially load — sign in again.
-2. **Check the API response on the host** (use the port from `EASY_WAF_LISTEN_HTTP` in `/etc/easy-waf/easy-waf.env`, often `8000`):
+2. **Check the API response on the host** using the enabled listener from `/etc/easy-waf/easy-waf.env`. The bootstrap certificate covers `127.0.0.1`, so the default local HTTPS check can verify it directly:
    ```bash
-   curl -sS -X POST "http://127.0.0.1:8000/api/v1/auth/login" \
+   curl --cacert /var/lib/easy-waf/secrets/management.crt -sS -X POST \
+     "https://127.0.0.1:8443/api/v1/auth/login" \
      -H "Content-Type: application/json" \
      -H "X-Requested-With: XMLHttpRequest" \
      -d '{"username":"YOUR_LOGIN","password":"YOUR_PASSWORD"}'
    ```
    Copy `token` from the JSON, then:
    ```bash
-   curl -sS -o /tmp/svc.json -w "HTTP %{http_code}\n" \
+   curl --cacert /var/lib/easy-waf/secrets/management.crt -sS \
+     -o /tmp/svc.json -w "HTTP %{http_code}\n" \
      -H "Authorization: Bearer TOKEN" \
-     "http://127.0.0.1:8000/api/v1/system/services"
+     "https://127.0.0.1:8443/api/v1/system/services"
    cat /tmp/svc.json
    ```
    - **404** — old `easy-waf-api` on disk without the route: rebuild and reinstall the binary, **`systemctl restart easy-waf-api`**, then **Ctrl+F5** in the browser.
@@ -95,7 +97,7 @@ Changes only in **`scripts/install.sh`** (e.g. `ensure_haproxy_systemd_enabled`)
 
 Security profiles (`internal/profiles`) drive per‑application behaviour in the generated config:
 
-- **Frontend `fe_https`:** path blocks from the profile, scoped by `Host` (plus global `/.git` and `/.env`), extra blocked methods, IP block map, CrowdSec SPOE.
+- **Enabled frontends `fe_http` / `fe_https`:** the same per-host security block covers paths, methods, IP lists, GeoIP, bot/User-Agent checks, basic WAF, restricted paths, and CrowdSec SPOE. ACME HTTP-01 challenges are excluded on port 80.
 - **Each backend:** `timeout connect` / `timeout server`, keep-alive vs server-close, **stick-table** + `http_req_rate(10s)` vs `RateLimitBurst`, WebSocket tunnel and health checks as before.
 
 See [SECURITY_PROFILES.md](SECURITY_PROFILES.md).

@@ -4,7 +4,8 @@
 #   sudo RUN_BACKUP_RESTORE_E2E=1 bash scripts/test-backup-restore.sh
 #
 # Requires: curl, easy-waf-api, DATABASE_URL + EASY_WAF_ADMIN_TOKEN in /etc/easy-waf/easy-waf.env
-# Optional: EASY_WAF_API_BASE, EASY_WAF_STATE_DIR, EASY_WAF_CURL_INSECURE=1 for https self-signed
+# Optional: EASY_WAF_API_BASE, EASY_WAF_STATE_DIR, EASY_WAF_API_CA_CERT,
+#           EASY_WAF_CURL_INSECURE=1 for an explicit insecure recovery test
 
 set -euo pipefail
 
@@ -22,8 +23,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 ENV_FILE="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
-API_BASE="${EASY_WAF_API_BASE:-http://127.0.0.1:8000}"
+API_BASE="${EASY_WAF_API_BASE:-https://127.0.0.1:8443}"
 BASE="${API_BASE%/}"
+API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
 ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
 CERT_SRC="${EASY_WAF_E2E_CERT_PEM:-${REPO_ROOT}/internal/haproxy/testdata/golden/certs/bundle-a.pem}"
 BACKUP_PATH="${EASY_WAF_E2E_BACKUP_PATH:-/tmp/easy-waf-e2e-backup-$$.tar.gz}"
@@ -44,7 +46,13 @@ set +a
 [[ -n "${EASY_WAF_ADMIN_TOKEN:-}" ]] || die "EASY_WAF_ADMIN_TOKEN not set in $ENV_FILE (needed for API apply)"
 
 CURL_EXTRA=()
-[[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]] && CURL_EXTRA=( -k )
+if [[ "$API_BASE" == https://* ]]; then
+  if [[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]]; then
+    CURL_EXTRA=(--insecure)
+  elif [[ -f "$API_CA_CERT" ]]; then
+    CURL_EXTRA=(--cacert "$API_CA_CERT")
+  fi
+fi
 
 api_get() {
   curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" "$1"

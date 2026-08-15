@@ -33,7 +33,7 @@ Disable external merging with global setting `ipbl_external_enabled: false` (SME
 
 ### Allowlist
 
-When **`ipwl_enabled`** is `true` and the allowlist map file has at least one valid line, the HTTPS frontend (and each app backend for rate limiting) includes rules so trusted sources are not blocked by the IP blacklist or per-app HTTP rate limits:
+When **`ipwl_enabled`** is `true` and the allowlist map file has at least one valid line, every enabled application frontend (and each app backend for rate limiting) includes rules so trusted sources are not blocked by the IP blacklist or per-app HTTP rate limits:
 
 ```text
 acl ipwl_white src -f /path/to/ip_allowlist.map

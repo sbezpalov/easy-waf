@@ -1,6 +1,6 @@
 # Easy Home WAF — Architecture
 
-**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.0.0**). Acceptance matrix **AC-01…AC-10:** [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9.
+**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.1.0**). Acceptance matrix **AC-01…AC-10:** [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9.
 
 ## Product / technical vision
 
@@ -80,9 +80,9 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 ## Data flow (request)
 
-1. TLS terminates on HAProxy; SNI / Host routes to backend.
+1. HAProxy terminates TLS for HTTPS applications; SNI / Host routes HTTP or HTTPS to the backend.
 2. SPOE asks CrowdSec bouncer for decision (engine name aligned with SPOE file).
-3. ACLs enforce rate limits, path blocks, optional **basic WAF** regex ACLs on `fe_https` (`waf_basic_rules_enabled`, SQLi/XSS/traversal), geo (via stick-table / maps populated by `easy-wafd` or Lua-less patterns—MVP uses ACL + external map files refreshed periodically).
+3. A reusable per-application block enforces IP lists, GeoIP, bot/User-Agent checks, optional **basic WAF** regex ACLs, methods, paths, restricted paths, and CrowdSec on every enabled HTTP/HTTPS frontend. Backend rate limiting runs once per request.
 4. HAProxy logs to files/socket; CrowdSec parses; decisions feed bouncer.
 5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists, and **IPWL** allowlist map from `ipwl_local`, before each HAProxy render.
 
@@ -183,7 +183,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 ## Local UI flow
 
-- Browser → `https://<appliance-lan>:8443` or HTTP on LAN (default policy in settings).
+- Browser → management HTTPS. `install.sh` defaults to `0.0.0.0:8443` for LAN access; `install-interactive.sh` defaults to HTTPS-only `127.0.0.1:8443` for SSH port-forwarding. Cleartext management HTTP is an explicit legacy option, not a default.
 - Static assets embedded in binary; API under `/api/v1`.
 
 ## Update / backup / restore
@@ -199,8 +199,8 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 - **Cache**: in-memory **LRU + TTL** (`internal/geoip/cache.go`); stats: hits, misses, size — exposed at **`GET /api/v1/geoip/stats`**.
 - **API**: **`GET /api/v1/geoip/lookup?ip=`** → `{ ip, country, cached }` for diagnostics (uses current `geoip_provider` / cache).
 - **Settings** (global JSON / migration `007`): `geoip_enabled`, `geoip_provider` (`ipinfo`|`maxmind`), `geoip_default_policy` (`allow` = allow-list, `deny` = deny-list), `geoip_country_list` (alpha-2 codes), `geoip_enforce_map_path` (optional override).
-- **HAProxy (batch MVP)**: on **Apply** / IPBL **Sync**, when `geoip_enabled`, each blacklist CIDR’s **network address** is resolved once → `geoip_enforce.map` lists CIDRs to **deny** (subset matching policy vs country list). `fe_https` uses `acl geo_enforce src -f …` and `http-request deny deny_status 403 if geo_enforce`. Not real-time per connection (cf. CrowdSec); map refreshes on sync/apply.
-- **Future**: MaxMind GeoLite2 **MMDB** behind the same interface (`maxmind` stub today).
+- **HAProxy (batch MVP)**: on **Apply** / IPBL **Sync**, when `geoip_enabled`, each blacklist CIDR’s **network address** is resolved once → `geoip_enforce.map` lists CIDRs to **deny** (subset matching policy vs country list). The generated rule is included on every enabled application frontend. This is not a real-time lookup per connection (cf. CrowdSec); maps refresh on sync/apply.
+- **MaxMind**: GeoLite2 Country **MMDB** is supported by the same provider interface and can be hot-reloaded with `POST /api/v1/geoip/reload` after replacing the file.
 
 ## Risks and contentious areas
 

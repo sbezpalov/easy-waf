@@ -60,16 +60,18 @@ Environment:
 |----------|---------|--------|
 | `EASY_WAF_STATE_DIR` | `/var/lib/easy-waf` | Restore target for state |
 | `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Used after restore to source tokens |
-| `EASY_WAF_API_BASE` | `http://127.0.0.1:8000` | Base URL for apply |
+| `EASY_WAF_API_BASE` | `https://127.0.0.1:8443` | Base URL for apply; override for an explicitly enabled legacy HTTP listener |
+| `EASY_WAF_API_CA_CERT` | `$EASY_WAF_STATE_DIR/secrets/management.crt` | CA/certificate used to verify management HTTPS |
 | `EASY_WAF_ADMIN_TOKEN` | *(from env file)* | Bearer for apply; export before restore if not in env file |
-| `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip the apply HTTP call (e.g. API not listening on HTTP) |
-| `EASY_WAF_CURL_INSECURE` | *(unset)* | Set to **`1`** in **`scripts/test-backup-restore.sh`** only (not restore.sh) for `curl -k` in tests |
+| `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip the apply API call when the management listener is unavailable |
+| `EASY_WAF_CURL_INSECURE` | `0` | Explicit recovery-only override for `curl --insecure`; prefer a matching API URL and `EASY_WAF_API_CA_CERT` |
 
 If apply fails, run manually after fixing connectivity:
 
 ```bash
 sudo systemctl restart easy-waf-api easy-waf-acmed
-curl -fsS -X POST http://127.0.0.1:8000/api/v1/apply \
+curl --cacert /var/lib/easy-waf/secrets/management.crt -fsS \
+  -X POST https://127.0.0.1:8443/api/v1/apply \
   -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Requested-With: XMLHttpRequest" \
@@ -94,6 +96,8 @@ sudo RUN_BACKUP_RESTORE_E2E=1 bash scripts/test-backup-restore.sh
 ```
 
 Without **`RUN_BACKUP_RESTORE_E2E=1`**, the script exits **0** immediately (safe for accidental invocations).
+
+Both restore scripts still accept an explicit `http://127.0.0.1:8000` API base for appliances where legacy loopback HTTP is intentionally enabled. Their default follows the secure HTTPS-only management policy.
 
 ## Legacy archives
 

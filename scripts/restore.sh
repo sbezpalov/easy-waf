@@ -4,7 +4,9 @@
 #
 # Usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
 # Env: EASY_WAF_STATE_DIR, EASY_WAF_ENV_FILE (defaults as in backup.sh)
-#      EASY_WAF_API_BASE — default http://127.0.0.1:8000 (for POST /api/v1/apply after restore)
+#      EASY_WAF_API_BASE — default https://127.0.0.1:8443 (for POST /api/v1/apply after restore)
+#      EASY_WAF_API_CA_CERT — CA/certificate for management HTTPS (default: state management.crt)
+#      EASY_WAF_CURL_INSECURE=1 — explicitly disable TLS verification (recovery only)
 #      EASY_WAF_SKIP_APPLY=1 — do not call API apply (regenerate HAProxy yourself)
 #      EASY_WAF_ADMIN_TOKEN — if unset, read from restored / merged env after file copy (see below)
 
@@ -22,7 +24,16 @@ fi
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 CFG="/etc/easy-waf"
 ENV_FILE="${EASY_WAF_ENV_FILE:-${CFG}/easy-waf.env}"
-API_BASE="${EASY_WAF_API_BASE:-http://127.0.0.1:8000}"
+API_BASE="${EASY_WAF_API_BASE:-https://127.0.0.1:8443}"
+API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
+CURL_TLS_ARGS=()
+if [[ "$API_BASE" == https://* ]]; then
+  if [[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]]; then
+    CURL_TLS_ARGS=(--insecure)
+  elif [[ -f "$API_CA_CERT" ]]; then
+    CURL_TLS_ARGS=(--cacert "$API_CA_CERT")
+  fi
+fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash $0 $ARCHIVE" >&2
@@ -119,7 +130,7 @@ elif [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then
   echo "[easy-waf-restore] EASY_WAF_SKIP_APPLY=1 — skipping API apply"
 else
   echo "[easy-waf-restore] POST $API_BASE/api/v1/apply (regenerate HAProxy)…"
-  if curl -fsS -o /dev/null -X POST "${API_BASE%/}/api/v1/apply" \
+  if curl "${CURL_TLS_ARGS[@]}" -fsS -o /dev/null -X POST "${API_BASE%/}/api/v1/apply" \
     -H "Authorization: Bearer ${TOK}" \
     -H "Content-Type: application/json" \
     -H "X-Requested-With: XMLHttpRequest" \

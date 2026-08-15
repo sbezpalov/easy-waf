@@ -9,14 +9,26 @@
 # Environment:
 #   MAXMIND_LICENSE_KEY   (required) from https://www.maxmind.com/en/accounts/current/license-key
 #   EASY_WAF_GEOIP_DIR    destination directory (default /var/lib/easy-waf/geoip)
-#   EASY_WAF_API_URL      default http://127.0.0.1:8000
+#   EASY_WAF_API_URL      default https://127.0.0.1:8443
+#   EASY_WAF_API_CA_CERT  CA/certificate for management HTTPS (default: state management.crt)
+#   EASY_WAF_CURL_INSECURE=1 explicitly disable API TLS verification (recovery only)
 #   EASY_WAF_ADMIN_TOKEN  optional; if set, triggers MMDB hot-reload in the API process
 
 set -euo pipefail
 
 KEY="${MAXMIND_LICENSE_KEY:?MAXMIND_LICENSE_KEY is required}"
 DEST="${EASY_WAF_GEOIP_DIR:-/var/lib/easy-waf/geoip}"
-API="${EASY_WAF_API_URL:-http://127.0.0.1:8000}"
+STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
+API="${EASY_WAF_API_URL:-https://127.0.0.1:8443}"
+API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
+CURL_TLS_ARGS=()
+if [[ "$API" == https://* ]]; then
+  if [[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]]; then
+    CURL_TLS_ARGS=(--insecure)
+  elif [[ -f "$API_CA_CERT" ]]; then
+    CURL_TLS_ARGS=(--cacert "$API_CA_CERT")
+  fi
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -39,7 +51,7 @@ echo "[update-geoip-db] installed → $DEST/GeoLite2-Country.mmdb"
 
 if [[ -n "${EASY_WAF_ADMIN_TOKEN:-}" ]]; then
   echo "[update-geoip-db] POST $API/api/v1/geoip/reload"
-  curl -fsS -X POST "$API/api/v1/geoip/reload" \
+  curl "${CURL_TLS_ARGS[@]}" -fsS -X POST "${API%/}/api/v1/geoip/reload" \
     -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -H "X-Requested-With: XMLHttpRequest" \

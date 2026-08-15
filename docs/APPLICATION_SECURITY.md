@@ -1,6 +1,6 @@
 # Per-application security
 
-Each published application carries a `security` object (see `internal/config/types.go`) with a **mode preset** (`full`, `balanced`, `trusted-lan`, `reverse-proxy-only`, `custom`) and **per-layer toggles**. It also has **`listen_mode`** (see below) for **where** traffic is accepted (`fe_http` / `fe_https`). HAProxy ACL stacks for protection layers are emitted **per application** on `fe_https` when the app is TLS-published; plain HTTP apps use a reduced edge on `:80` today (rate limit and restricted paths in backend — see `internal/haproxy/render.go`).
+Each published application carries a `security` object (see `internal/config/types.go`) with a **mode preset** (`full`, `balanced`, `trusted-lan`, `reverse-proxy-only`, `custom`) and **per-layer toggles**. It also has **`listen_mode`** (see below) for **where** traffic is accepted (`fe_http` / `fe_https`). The HAProxy template emits the same reusable per-application security block on every enabled frontend: IP lists, GeoIP, bot/User-Agent checks, basic WAF, method and path ACLs, restricted paths, and CrowdSec/SPOE. Rate limiting remains in the shared backend and runs once per request.
 
 ## Listen mode (protocol)
 
@@ -16,10 +16,12 @@ Each published application carries a `security` object (see `internal/config/typ
 Notes:
 
 - **`http_only`** means traffic to that host on port 80 is **not encrypted** at the edge — suitable for **LAN**, **IoT**, or **debugging**, not for untrusted networks.
-- **`http_only` + `full`** (or `balanced`) is valid: you can still get **rate limiting**, **WAF**, **IPBL**, etc. where those layers are wired for that path (see template; HTTP edge may lag HTTPS feature parity).
+- **`http_only` + `full`** (or `balanced`) is valid: the same enabled security layers apply on HTTP and HTTPS. HTTP remains cleartext, so policy parity does not provide transport confidentiality.
 - For **internet-facing** services, prefer **`https_only`** (or `redirect_to_https`).
 
-## Rule order on `fe_https` (per app)
+## Rule order on enabled frontends (per app)
+
+The sequence below is shared by `fe_http` and `fe_https`. On port 80, HAProxy handles `/.well-known/acme-challenge/` before application rules so ACME HTTP-01 is not blocked by WAF or path policy.
 
 1. Host match (`acl app_<id>_host hdr(host) -i …`)
 2. **Allowlist bypass** — `http-request allow` when global IP allowlist is enabled, the app allows it, and the source matches the map (short-circuits further rules for that request in the ruleset phase).

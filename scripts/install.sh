@@ -780,7 +780,7 @@ main() {
     log "Using external DB — ensure $CFG_DIR/easy-waf.env DATABASE_URL is correct"
   fi
   easy_waf_post_install_summary
-  log "Done. UI: http://<lan-ip>:8000 and https://<lan-ip>:8443 (self-signed TLS; nftables: RFC1918 on mgmt ports when NFT_MGMT_LAN=1)"
+  log "Done. Management UI: use the EASY_WAF_LISTEN_HTTPS address from $CFG_DIR/easy-waf.env; cleartext HTTP is off unless explicitly enabled"
   log "HAProxy edge: tcp 80+443 via nftables (disable with EASY_WAF_NFT_EDGE=0)"
 }
 
