@@ -77,7 +77,13 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Supply chain
 
-- Build binaries in **reproducible** CI; publish **SHA256** checksums with releases.
+- Build binaries in **reproducible** CI; publish **SHA256** checksums with releases. `release.yml` uploads **`SHA256SUMS`** next to every release tarball.
+- **Downloads are verified, not just TLS-protected.** `scripts/install.sh` and `scripts/download-release.sh` fetch `SHA256SUMS` from the same release and refuse any artifact whose digest is missing or does not match — release binaries are installed to `/usr/sbin` as root, so a typosquatted `EASY_WAF_GITHUB_REPO`, a poisoned asset or a TLS-stripping proxy would otherwise mean root code execution. On failure the installer **builds from source** instead.
+  - `curl` runs with `--proto '=https' --proto-redir '=https' --tlsv1.2`: no plaintext hop, not even through a redirect.
+  - Artifacts are downloaded into `mktemp -d`, never a predictable `/tmp` path (root `curl -o` follows symlinks).
+  - `EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1` overrides the check (mirrors without `SHA256SUMS`) — logs a loud warning; do not use in production.
+  - `EASY_WAF_RELEASE_URL` requires an explicit `EASY_WAF_RELEASE_SHA256=<hex>`.
+  - Offline regression tests for the verifier: `make test-release-verify`.
 - For OVF/OVA: verify image checksum after download; do not run golden images past EOL without patching.
 
 ## Quick checklist (production)

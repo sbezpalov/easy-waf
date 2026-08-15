@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`easy-waf-admin doctor`**: Comprehensive appliance diagnostic command and self-test suite (storage permissions and space, read-only PostgreSQL connectivity and security-schema checks, HAProxy edge syntax `haproxy -c`, systemd services status, GeoIP MMDB freshness, TLS certificate expiry) with human-readable and `--json` outputs.
 - Comprehensive unit test suites for previously untested packages: `internal/apply`, `internal/audit`, `internal/blockedua`, `internal/mgmttls`, `internal/pemutil`, and `internal/admin`.
+- `scripts/lib/release-verify.sh`: shared SHA-256 verification helper for downloaded release artifacts, with offline regression tests (`make test-release-verify`, wired into `make verify`).
 
 ### Security
 
+- **Release artifacts are now integrity-checked before installation.** `scripts/install.sh` and `scripts/download-release.sh` fetch `SHA256SUMS` from the same GitHub release and refuse any tarball with a missing or mismatched digest (installer falls back to building from source); `EASY_WAF_RELEASE_URL` requires an explicit `EASY_WAF_RELEASE_SHA256`. Previously TLS was the only control on binaries installed to `/usr/sbin` as root. Override for mirrors without checksums: `EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1`.
+- Release downloads use `curl --proto '=https' --proto-redir '=https' --tlsv1.2` — no plaintext hop, including through redirects.
+- Release tarballs are downloaded into `mktemp -d` instead of predictable `/tmp/easy-waf-rel.tgz`, `/tmp/easy-waf-release.tgz` and `/tmp/easy-waf.tgz`: root `curl -o` follows symlinks, so a local user could pre-create those paths and have root truncate an arbitrary file.
+- `scripts/lib/db-password.sh` no longer prints the rotated PostgreSQL password to stdout (install logs are commonly redirected to files); it now verifies it can persist the value *before* `ALTER USER`, falls back to `sed` when `python3` is absent, and as a last resort stores the password in a `0600` file, logging only the path.
 - Management API/UI security headers hardened in `internal/api/security_middleware.go`: added `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `X-Permitted-Cross-Domain-Policies: none`, and `Strict-Transport-Security: max-age=31536000; includeSubDomains` (on HTTPS/TLS requests).
 - Standardized security-restricted file write permissions (`0o600`) across all sensitive configuration and credential files.
 - Made backend TLS migration 018 repeat-safe so service restarts cannot silently change operator-selected `verify required` to `verify none`.

@@ -15,6 +15,7 @@
 #   EASY_WAF_REPO_ROOT=/path         — root of git checkout (default: parent of scripts/)
 #   EASY_WAF_RELEASE_VERSION=x.y.z   — try GitHub release before building (overrides VERSION file)
 #   EASY_WAF_SKIP_BINARY_FETCH=1     — do not download or build; require EASY_WAF_DIST_DIR with binaries
+#   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — install a release tarball whose SHA256SUMS entry is missing or mismatched (discouraged; default: refuse and build from source)
 #   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via apt before source build
 #   EASY_WAF_NFT_MGMT_LAN=0         — skip nftables rules for management ports from RFC1918 (default: 1)
 #   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
@@ -411,10 +412,19 @@ acquire_dist_binaries() {
 
   if [[ -n "$ver" ]] && [[ "$ver" != "0.0.0-dev" ]] && command -v curl &>/dev/null; then
     local gh="${EASY_WAF_GITHUB_REPO:-easy-waf/easy-waf}"
-    local url="https://github.com/${gh}/releases/download/v${ver}/easy-waf_${ver}_linux_amd64.tar.gz"
+    local base="https://github.com/${gh}/releases/download/v${ver}"
+    local name="easy-waf_${ver}_linux_amd64.tar.gz"
+    local url="${base}/${name}"
+    # shellcheck source=lib/release-verify.sh
+    source "${SCRIPT_DIR}/lib/release-verify.sh"
+    local tmpd tgz
+    tmpd="$(mktemp -d)" || die "mktemp -d failed"
+    tgz="${tmpd}/${name}"
     log "Trying GitHub release download: $url"
-    if curl -fsSL -o /tmp/easy-waf-rel.tgz "$url" 2>/dev/null; then
-      tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" 2>/dev/null || tar -xzf /tmp/easy-waf-rel.tgz -C "$DIST_DIR" --strip-components=1 2>/dev/null || true
+    # Binaries land in /usr/sbin as root: never unpack an artifact we could not verify.
+    if easy_waf_curl_https -o "$tgz" "$url" 2>/dev/null &&
+      easy_waf_verify_release_artifact "$tgz" "$name" "${base}/SHA256SUMS"; then
+      tar -xzf "$tgz" -C "$DIST_DIR" 2>/dev/null || tar -xzf "$tgz" -C "$DIST_DIR" --strip-components=1 2>/dev/null || true
       # GitHub release tarball layout: dist/<binaries> (see .github/workflows/release.yml)
       if [[ -f "${DIST_DIR}/dist/easy-waf-api" ]]; then
         for b in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
@@ -422,13 +432,14 @@ acquire_dist_binaries() {
         done
         rmdir "${DIST_DIR}/dist" 2>/dev/null || true
       fi
-      rm -f /tmp/easy-waf-rel.tgz
+      rm -rf "$tmpd"
       if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
-        log "Downloaded release v${ver} → $DIST_DIR"
+        log "Downloaded and verified release v${ver} → $DIST_DIR"
         return 0
       fi
     fi
-    log "Release v${ver} not found — building from source..."
+    rm -rf "$tmpd"
+    log "No verified release v${ver} — building from source..."
   else
     log "No public release version (see VERSION / EASY_WAF_RELEASE_VERSION) — building from source..."
   fi
