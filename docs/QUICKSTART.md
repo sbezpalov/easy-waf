@@ -2,7 +2,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.1.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
+**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.2.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
 ## One-command install
 
