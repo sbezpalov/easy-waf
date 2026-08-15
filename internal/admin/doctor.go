@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -231,7 +232,7 @@ func checkDatabase(ctx context.Context, dsn string) []CheckResult {
 		return checks
 	}
 
-	st, err := store.OpenPostgres(dsn)
+	st, err := store.OpenPostgresForDiagnostics(dsn)
 	if err != nil {
 		checks = append(checks, CheckResult{
 			Category: "Database",
@@ -263,30 +264,83 @@ func checkDatabase(ctx context.Context, dsn string) []CheckResult {
 		Message:  "Database connected and responsive",
 	})
 
-	// Check migrations
-	var migrationCount int
-	err = st.RawDB().QueryRowContext(ctxTimeout, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrationCount)
+	tx, err := st.BeginReadOnly(ctxTimeout)
 	if err != nil {
 		checks = append(checks, CheckResult{
 			Category: "Database",
-			Name:     "Schema Migrations",
-			Status:   StatusWarn,
-			Message:  fmt.Sprintf("Could not verify schema_migrations table: %v", err),
+			Name:     "Read-only Diagnostics",
+			Status:   StatusFail,
+			Message:  fmt.Sprintf("Could not start read-only diagnostics: %v", err),
 		})
-	} else {
+		return checks
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// The repository intentionally has no migration ledger. Verify the security-critical
+	// schema objects introduced by migrations 016-018 instead of querying a fictitious table.
+	var hasSessionVersion, hasEnrollment, hasTLSVerify, hasTLSCA, hasTLSServerName bool
+	err = tx.QueryRowContext(ctxTimeout, `
+		SELECT
+			EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'session_version'),
+			to_regclass(current_schema() || '.operator_enrollment') IS NOT NULL,
+			EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'applications' AND column_name = 'backend_tls_verify'),
+			EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'applications' AND column_name = 'backend_tls_ca_file'),
+			EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'applications' AND column_name = 'backend_tls_server_name')`).
+		Scan(&hasSessionVersion, &hasEnrollment, &hasTLSVerify, &hasTLSCA, &hasTLSServerName)
+	if err != nil {
 		checks = append(checks, CheckResult{
 			Category: "Database",
-			Name:     "Schema Migrations",
-			Status:   StatusOK,
-			Message:  fmt.Sprintf("%d database migrations recorded", migrationCount),
+			Name:     "Security Schema",
+			Status:   StatusFail,
+			Message:  fmt.Sprintf("Could not verify security schema: %v", err),
 		})
+		return checks
 	}
+	missing := make([]string, 0, 5)
+	for name, present := range map[string]bool{
+		"applications.backend_tls_ca_file":     hasTLSCA,
+		"applications.backend_tls_server_name": hasTLSServerName,
+		"applications.backend_tls_verify":      hasTLSVerify,
+		"operator_enrollment":                  hasEnrollment,
+		"users.session_version":                hasSessionVersion,
+	} {
+		if !present {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		checks = append(checks, CheckResult{
+			Category: "Database",
+			Name:     "Security Schema",
+			Status:   StatusFail,
+			Message:  "Missing required schema objects: " + strings.Join(missing, ", "),
+		})
+		return checks
+	}
+	checks = append(checks, CheckResult{
+		Category: "Database",
+		Name:     "Security Schema",
+		Status:   StatusOK,
+		Message:  "Security migrations 016-018 are present",
+	})
 
 	// Check table counts
 	var appCount, certCount, userCount int
-	_ = st.RawDB().QueryRowContext(ctxTimeout, `SELECT COUNT(*) FROM applications`).Scan(&appCount)
-	_ = st.RawDB().QueryRowContext(ctxTimeout, `SELECT COUNT(*) FROM certificates`).Scan(&certCount)
-	_ = st.RawDB().QueryRowContext(ctxTimeout, `SELECT COUNT(*) FROM users`).Scan(&userCount)
+	err = tx.QueryRowContext(ctxTimeout, `
+		SELECT
+			(SELECT COUNT(*) FROM applications),
+			(SELECT COUNT(*) FROM certificates),
+			(SELECT COUNT(*) FROM users)`).Scan(&appCount, &certCount, &userCount)
+	if err != nil {
+		checks = append(checks, CheckResult{
+			Category: "Database",
+			Name:     "Data Entities",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("Could not count configured objects: %v", err),
+		})
+		return checks
+	}
 
 	checks = append(checks, CheckResult{
 		Category: "Database",

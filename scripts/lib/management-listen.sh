@@ -1,6 +1,34 @@
 #!/usr/bin/env bash
 # Management API listen addresses in easy-waf.env — fix stale per-IP binds after DHCP / VM clone.
 
+# easy_waf_default_management_mode
+# The installer default keeps cleartext management HTTP disabled.
+easy_waf_default_management_mode() {
+  printf '%s\n' 'https_loopback'
+}
+
+# easy_waf_management_mode_listeners MODE
+# Prints HTTP|HTTPS listen values for install-interactive.sh. The secure default is
+# https_loopback; legacy loopback HTTP remains available only when explicitly selected.
+easy_waf_management_mode_listeners() {
+  local mode
+  mode="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$mode" in
+    https_loopback|secure_loopback)
+      printf '%s\n' 'off|127.0.0.1:8443'
+      ;;
+    loopback|lo|local)
+      printf '%s\n' '127.0.0.1:8000|127.0.0.1:8443'
+      ;;
+    lan_rfc1918|lan)
+      printf '%s\n' 'off|0.0.0.0:8443'
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+}
+
 # easy_waf_fixup_management_listen_addrs
 # If EASY_WAF_LISTEN_HTTP/HTTPS bind to an IPv4 not on any local interface, rewrite to 0.0.0.0:port.
 easy_waf_fixup_management_listen_addrs() {

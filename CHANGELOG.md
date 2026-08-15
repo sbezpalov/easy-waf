@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Management API/UI security headers hardened in `internal/api/security_middleware.go`: added `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `X-Permitted-Cross-Domain-Policies: none`, and `Strict-Transport-Security: max-age=31536000; includeSubDomains` (on HTTPS/TLS requests).
 - Standardized security-restricted file write permissions (`0o600`) across all sensitive configuration and credential files.
+- Made backend TLS migration 018 repeat-safe so service restarts cannot silently change operator-selected `verify required` to `verify none`.
+- Made `easy-waf-admin doctor` use a non-migrating connection and PostgreSQL read-only transaction; the installer now defaults to HTTPS-only loopback management.
 
 ### Performance
 

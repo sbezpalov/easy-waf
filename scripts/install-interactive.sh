@@ -6,7 +6,7 @@
 # optional CrowdSec Console enrollment key, then runs scripts/install.sh.
 #
 # Non-interactive overrides (optional):
-#   EASY_WAF_MGMT_MODE=loopback|lan_rfc1918
+#   EASY_WAF_MGMT_MODE=https_loopback|loopback|lan_rfc1918
 #   EASY_WAF_LISTEN_HTTP / EASY_WAF_LISTEN_HTTPS — if unset, derived from mgmt_mode (8000 / 8443)
 #   EASY_WAF_INSTALL_CROWDSEC=0|1       — skip CrowdSec packages when 0 (default 1 in install.sh on dnf/apt)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — if set, skips prompt; else TTY prompt for LAPI bootstrap
@@ -33,6 +33,8 @@ done
 source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
 # shellcheck source=lib/db-password.sh
 source "${SCRIPT_DIR}/lib/db-password.sh"
+# shellcheck source=lib/management-listen.sh
+source "${SCRIPT_DIR}/lib/management-listen.sh"
 
 log() { echo "[easy-waf] $*"; }
 die() { echo "[easy-waf] ERROR: $*" >&2; exit 1; }
@@ -95,26 +97,19 @@ main() {
   local fw_ports="${EASY_WAF_NFT_MGMT_PORTS:-${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}}"
 
   if [[ -z "$mgmt_mode" ]]; then
-    mgmt_mode="$(prompt "Management UI bind: loopback (127.0.0.1:8000+8443) or lan_rfc1918 (0.0.0.0 + nftables on 8000/8443)" "loopback")"
+    mgmt_mode="$(prompt "Management UI bind: https_loopback (HTTPS-only), loopback (legacy HTTP+HTTPS), or lan_rfc1918 (HTTPS + nftables)" "$(easy_waf_default_management_mode)")"
   fi
   mgmt_mode="${mgmt_mode,,}"
 
   ensure_env_template
 
   if [[ -z "${EASY_WAF_LISTEN_HTTP:-}" ]]; then
-    case "$mgmt_mode" in
-      loopback|lo|local)
-        upsert_env_kv "EASY_WAF_LISTEN_HTTP" "127.0.0.1:8000"
-        upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "127.0.0.1:8443"
-        ;;
-      lan_rfc1918|lan)
-		upsert_env_kv "EASY_WAF_LISTEN_HTTP" "off"
-        upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "0.0.0.0:8443"
-        ;;
-      *)
-        die "unknown EASY_WAF_MGMT_MODE=$mgmt_mode (use loopback or lan_rfc1918)"
-        ;;
-    esac
+    local listen_pair listen_http listen_https
+    listen_pair="$(easy_waf_management_mode_listeners "$mgmt_mode")" ||
+      die "unknown EASY_WAF_MGMT_MODE=$mgmt_mode (use https_loopback, loopback, or lan_rfc1918)"
+    IFS='|' read -r listen_http listen_https <<<"$listen_pair"
+    upsert_env_kv "EASY_WAF_LISTEN_HTTP" "$listen_http"
+    upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "$listen_https"
   elif [[ -z "${EASY_WAF_LISTEN_HTTPS:-}" ]]; then
     upsert_env_kv "EASY_WAF_LISTEN_HTTPS" "0.0.0.0:8443"
   fi
@@ -165,10 +160,15 @@ main() {
       export EASY_WAF_NFT_MGMT_LAN=1
       easy_waf_nft_configure_appliance 1 "$fw_ports" "${EASY_WAF_NFT_EDGE:-1}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
       ;;
-    *)
+    loopback|lo|local)
       export EASY_WAF_NFT_MGMT_LAN=0
       easy_waf_nft_configure_appliance 0 "$fw_ports" "${EASY_WAF_NFT_EDGE:-1}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
       log "Management: loopback-only — UI on 127.0.0.1:8000 (http) and :8443 (https); use SSH port-forward if needed."
+      ;;
+    *)
+      export EASY_WAF_NFT_MGMT_LAN=0
+      easy_waf_nft_configure_appliance 0 "$fw_ports" "${EASY_WAF_NFT_EDGE:-1}" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
+      log "Management: HTTPS-only loopback — UI on 127.0.0.1:8443; use SSH port-forward if needed."
       ;;
   esac
 

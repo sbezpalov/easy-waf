@@ -79,7 +79,17 @@ type Store struct {
 
 // OpenPostgres connects using DATABASE_URL (postgres://user:pass@host:port/db?sslmode=disable).
 func OpenPostgres(dsn string) (*Store, error) {
-	db, err := sql.Open("pgx", dsn)
+	return openPostgres("pgx", dsn, true)
+}
+
+// OpenPostgresForDiagnostics connects without applying migrations.
+// Diagnostic callers should issue their queries in a read-only transaction.
+func OpenPostgresForDiagnostics(dsn string) (*Store, error) {
+	return openPostgres("pgx", dsn, false)
+}
+
+func openPostgres(driverName, dsn string, runMigrations bool) (*Store, error) {
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +97,9 @@ func OpenPostgres(dsn string) (*Store, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
 	s := &Store{db: db}
+	if !runMigrations {
+		return s, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := s.migrate(ctx); err != nil {
@@ -138,8 +151,10 @@ func (s *Store) Close() error { return s.db.Close() }
 // Ping verifies connectivity to the underlying PostgreSQL database.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
-// RawDB returns the underlying *sql.DB for advanced diagnostic queries.
-func (s *Store) RawDB() *sql.DB { return s.db }
+// BeginReadOnly starts a database-enforced read-only transaction for diagnostics.
+func (s *Store) BeginReadOnly(ctx context.Context) (*sql.Tx, error) {
+	return s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+}
 
 func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, error) {
 	var a config.Application

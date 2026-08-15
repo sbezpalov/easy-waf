@@ -19,7 +19,7 @@ Then enroll at **`POST /api/v1/auth/enroll`** (or the UI) with `{ "secret", "use
 Runs a full health and self-diagnostic check across the appliance components:
 
 1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions, checks available filesystem space and inodes.
-2. **Database (PostgreSQL)**: Tests connection, validates `schema_migrations` records, and counts configured entities (applications, certs, operators).
+2. **Database (PostgreSQL)**: Uses a non-migrating connection and read-only transaction to test connectivity, verify the security schema from migrations 016-018, and count configured entities (applications, certs, operators).
 3. **HAProxy Edge**: Verifies binary presence, validates edge configuration syntax (`haproxy -c`), and tests stats socket responsiveness.
 4. **Services (systemd)**: Checks active status of `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, and `fail2ban`.
 5. **GeoIP**: Checks MaxMind MMDB file presence and freshness.
