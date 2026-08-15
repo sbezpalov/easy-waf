@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`easy-waf-admin doctor`**: Comprehensive appliance diagnostic command and self-test suite (storage permissions, PostgreSQL connectivity & schema migrations, HAProxy edge syntax `haproxy -c`, systemd services status, GeoIP MMDB freshness, TLS certificate expiry) with human-readable colorized and `--json` outputs.
+- Comprehensive unit test suites for previously untested packages: `internal/apply`, `internal/audit`, `internal/blockedua`, `internal/mgmttls`, `internal/pemutil`, and `internal/admin`.
+
+### Security
+
+- Management API/UI security headers hardened in `internal/api/security_middleware.go`: added `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `X-Permitted-Cross-Domain-Policies: none`, and `Strict-Transport-Security: max-age=31536000; includeSubDomains` (on HTTPS/TLS requests).
+- Standardized security-restricted file write permissions (`0o600`) across all sensitive configuration and credential files.
+
+### Performance
+
+- Pre-compiled HAProxy configuration text templates (`template.Must`) in `internal/haproxy/render.go` to eliminate template parsing overhead on edge config rendering.
+- Pre-allocated memory slice buffer capacities across key rendering and processing routines (`haproxy`, `ipbl`, `ipwl`, `geoip`, `admin`, `host/apt`, `metrics`).
+
+### Fixed
+
+- macOS (`darwin`) Unix domain socket path length limitation in runner and hostd test suites via short temp socket helper.
+- Resolved all `revive`, `gocritic`, `gosec`, and `prealloc` linter warnings across core binaries and test files.
+
 ## [1.1.0] - 2026-07-11
 
 ### Added
