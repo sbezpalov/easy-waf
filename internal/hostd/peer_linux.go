@@ -23,7 +23,9 @@ func allowPeer(conn *net.UnixConn) error {
 		return err
 	}
 	uid := int(ucred.Uid)
-	if uid != 0 && uid != easyWafUID {
+	// easyWafUID < 0 means the service account could not be resolved at startup:
+	// accept root only, instead of letting the check degrade into "allow anyone".
+	if uid != 0 && (easyWafUID < 0 || uid != easyWafUID) {
 		return fmt.Errorf("uid %d", uid)
 	}
 	return nil

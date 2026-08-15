@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **`easy-waf-hostd` no longer lets SSH key management escalate to root.** The broker now re-validates `authorized_keys` content itself (`hostspec.ValidateAuthorizedKeysContent`) instead of trusting the API-side check, rejecting option-bearing lines (`command=`, `environment=`, `permitopen=`) that execute code on every login, plus size and line-count limits. Accounts in a root-equivalent group (`root`, `sudo`, `admin`, `wheel`) are refused unless the operator sets `EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1` in the root-owned `easy-waf-hostd` unit; an unreadable `/etc/group` fails closed.
+- `authorized_keys` writes no longer follow symlinks: `~/.ssh` and the key file are opened relative to the home directory with `openat2` (`RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`), ownership and mode are applied through the descriptor, and the file is swapped in with `renameat`. The previous `install -d -o user ~/.ssh` resolved the destination as root, so a local account could redirect a root-side `chown`/write into another directory.
+- Broker peer authentication fails closed: when the `easy-waf` account cannot be resolved at startup, `SO_PEERCRED` checking used to be skipped for every connection — now only root is accepted, and a non-unix connection is rejected outright.
+- **Per-application HAProxy ACL tags are no longer ambiguous.** `-` and `_` both collapsed to `_`, so applications `pay-api` and `pay_api` shared one ACL name; HAProxy ORs same-named ACLs, which silently applied one application's IP blacklist, GeoIP, WAF and routing rules to the other application's host. Identifiers now preserve `-`, making the mapping injective over the validated ID charset (generated backend names change accordingly, e.g. `bk_waf_on_example_com` → `bk_waf-on_example_com`).
+- Legacy `EASY_WAF_ADMIN_TOKEN` is compared as a fixed-width SHA-256 digest instead of `len(raw) == len(token)` followed by a constant-time compare, which leaked the token length; tokens shorter than 24 characters are now ignored with a startup warning rather than accepted.
+
+### Changed
+
+- `internal/host/users.ValidateSSHPublicKeys` delegates to `hostspec` so the API and the broker cannot drift apart.
+- The `easy-waf-hostd` unit documents that its `ProtectHome=true` hides `/home` from the broker, so `PUT /host/users/{name}/ssh-keys` cannot write keys until that is relaxed.
+
 ## [1.2.0] - 2026-08-15
 
 ### Added

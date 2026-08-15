@@ -10,6 +10,16 @@ Group=easy-waf
 RuntimeDirectory=easy-waf
 RuntimeDirectoryMode=0750
 ExecStart=/usr/sbin/easy-waf-hostd
+# SSH key management is refused for accounts in a root-equivalent group
+# (root/sudo/admin/wheel): writing into a sudoer's authorized_keys turns a
+# compromised easy-waf-api into root on this appliance. Uncomment only if you
+# manage such an account's keys from the UI and accept that trade-off. The switch
+# lives here, in a root-owned unit, precisely so easy-waf-api cannot flip it.
+#Environment=EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1
+#
+# NOTE: ProtectHome=true below hides /home from this service, so PUT
+# /host/users/{name}/ssh-keys cannot write authorized_keys at all. Set
+# ProtectHome=false (or add a drop-in) if you use that endpoint.
 Restart=on-failure
 RestartSec=2
 ProtectHome=true

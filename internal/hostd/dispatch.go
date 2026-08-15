@@ -256,7 +256,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 			return failResp("ssh-authorized-keys: "+err.Error(), 1)
 		}
 		defer cleanup()
-		return sshAuthorizedKeys(ctx, r, argv[1], src)
+		// Implemented in sshkeys.go: re-validates the key material, refuses
+		// root-equivalent accounts and writes without following symlinks.
+		return sshAuthorizedKeys(argv[1], src)
 
 	case "fail2ban":
 		return dispatchFail2ban(ctx, r, argv[1:])
@@ -264,22 +266,4 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	default:
 		return failResp("unknown op: "+op, 1)
 	}
-}
-
-func sshAuthorizedKeys(ctx context.Context, r CommandRunner, username, tmp string) Response {
-	u, err := lookupManagedUser(username)
-	if err != nil {
-		return failResp("user not found", 1)
-	}
-	dir := u.HomeDir + "/.ssh"
-	stdout, stderr, code, err := runCmd(ctx, r, "install", "-d", "-m", "0700", "-o", username, "-g", username, dir)
-	if err != nil || code != 0 {
-		return failExec(stdout, stderr, code, err)
-	}
-	dest := dir + "/authorized_keys"
-	stdout, stderr, code, err = runCmd(ctx, r, "install", "-m", "0600", "-o", username, "-g", username, tmp, dest)
-	if err != nil || code != 0 {
-		return failExec(stdout, stderr, code, err)
-	}
-	return okResp(stdout, stderr, code)
 }

@@ -214,28 +214,41 @@ func buildCRTList(in RenderInput) []string {
 	return lines
 }
 
-func sanitizeBackendName(host string) string {
-	h := strings.ReplaceAll(host, ".", "_")
-	h = strings.ReplaceAll(h, "-", "_")
-	return "bk_" + h
-}
-
-func sanitizeAppACLTag(id, publicHost string) string {
-	s := strings.TrimSpace(id)
-	if s == "" {
-		s = strings.TrimPrefix(sanitizeBackendName(publicHost), "bk_")
-	}
-	s = strings.ReplaceAll(s, ".", "_")
-	s = strings.ReplaceAll(s, "-", "_")
-	s = strings.Map(func(r rune) rune {
+// sanitizeHAProxyIdent maps a name into the characters HAProxy accepts in proxy
+// and ACL names. '-' is preserved (HAProxy allows it); everything outside
+// [A-Za-z0-9_-], including '.', becomes '_'.
+//
+// Preserving '-' is a security fix, not cosmetics. This used to collapse '-'
+// into '_' as well, which made the mapping non-injective over the application-ID
+// charset ([A-Za-z0-9_-], see config.ValidateResourceID): "pay-api" and
+// "pay_api" are two distinct rows that produced a single ACL tag, and HAProxy
+// silently ORs same-named ACLs. One application's IP blacklist, GeoIP, WAF and
+// routing rules then also applied to the other application's host, in whichever
+// direction the first match happened to win. Hostnames cannot contain '_', so
+// mapping '.' to '_' stays injective for the host-derived fallback.
+func sanitizeHAProxyIdent(s string) string {
+	return strings.Map(func(r rune) rune {
 		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-':
 			return r
 		default:
 			return '_'
 		}
 	}, s)
-	if strings.Trim(s, "_") == "" {
+}
+
+func sanitizeBackendName(host string) string {
+	return "bk_" + sanitizeHAProxyIdent(host)
+}
+
+func sanitizeAppACLTag(id, publicHost string) string {
+	s := strings.TrimSpace(id)
+	if s == "" {
+		s = publicHost
+	}
+	s = sanitizeHAProxyIdent(s)
+	if strings.Trim(s, "_-") == "" {
 		return "app"
 	}
 	return s
