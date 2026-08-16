@@ -39,20 +39,39 @@ func writeAuthorizedKeys(home string, uid, gid int, content []byte) error {
 		return fmt.Errorf("chown .ssh: %w", err)
 	}
 
-	path := filepath.Join(sshDir, "authorized_keys")
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	tmpPath := filepath.Join(sshDir, ".authorized_keys.easy-waf")
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return fmt.Errorf("open authorized_keys: %w", err)
+		return fmt.Errorf("open authorized_keys tmp: %w", err)
 	}
-	defer f.Close()
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+	}
 	if _, err := f.Write(content); err != nil {
+		cleanup()
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 	if err := f.Chown(uid, gid); err != nil {
+		cleanup()
 		return fmt.Errorf("chown authorized_keys: %w", err)
 	}
 	if err := f.Chmod(0o600); err != nil {
+		cleanup()
 		return fmt.Errorf("chmod authorized_keys: %w", err)
 	}
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("sync authorized_keys: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close authorized_keys: %w", err)
+	}
+	finalPath := filepath.Join(sshDir, "authorized_keys")
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename authorized_keys: %w", err)
+	}
+	return nil
 }
