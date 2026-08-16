@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-08-16
+
+### Upgrade note
+
+This is the first release with a `.deb`, so the appliance you are upgrading was installed by the script. Back up first (`sudo bash scripts/backup.sh`), then `sudo bash scripts/install.sh` from a 1.4.0 checkout — it downloads and verifies the package, installs it, and retires the units the old script left in `/etc/systemd/system`. Afterwards, upgrades are `apt install ./easy-waf_<version>_amd64.deb`. Verify with `sudo bash scripts/smoke-appliance.sh`.
+
+Two behaviour changes to know before you run it: the installer no longer compiles on the appliance when a release artifact fails to verify (it stops and explains; `EASY_WAF_BUILD_FROM_SOURCE=1` restores the old behaviour), and `easy-wafd` is no longer shipped — disable `easy-wafd.service` if you ever enabled it.
 
 ### Added
 

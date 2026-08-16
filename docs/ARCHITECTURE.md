@@ -1,6 +1,6 @@
 # Easy Home WAF — Architecture
 
-**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.3.0**). Acceptance matrix **AC-01…AC-10:** [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9.
+**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.4.0**). Acceptance matrix **AC-01…AC-10:** [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9.
 
 ## Product / technical vision
 

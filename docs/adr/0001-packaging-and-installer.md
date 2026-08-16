@@ -5,7 +5,7 @@
 - **Deciders:** repository maintainer
 - **Context version:** 1.3.0
 - **Implemented in:** `packaging/nfpm.yaml`, `packaging/deb/`, `make deb`,
-  `release.yml`, `scripts/install.sh` (unreleased at the time of writing)
+  `release.yml`, `scripts/install.sh` — released in 1.4.0
 
 ## Context
 

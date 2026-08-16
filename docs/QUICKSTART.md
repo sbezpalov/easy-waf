@@ -2,7 +2,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.3.0**); `scripts/install.sh` uses it to fetch the matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).
+**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.4.0**); `scripts/install.sh` uses it to fetch the matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).
 
 ## One-command install
 
@@ -25,10 +25,10 @@ If PostgreSQL, nftables and CrowdSec are already how you want them, install the
 package on its own and take over from there:
 
 ```bash
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.3.0/easy-waf_1.3.0_amd64.deb
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.3.0/SHA256SUMS
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.0/easy-waf_1.4.0_amd64.deb
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.0/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS        # do not skip this
-sudo apt install ./easy-waf_1.3.0_amd64.deb
+sudo apt install ./easy-waf_1.4.0_amd64.deb
 ```
 
 The package installs enabled but **not started**: set `DATABASE_URL` in
