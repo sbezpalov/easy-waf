@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **[ADR 0002](docs/adr/0002-mcp-server.md): an MCP server for management and diagnostic verbs.** Proposed, no code — the record exists so the design is settled before anything opens a second way into the control plane. The decision is a separate `easy-waf-mcpd` process on its own loopback port that **calls the REST API as an ordinary client**, so there is still exactly one authorization path and one set of validators; an MCP server holding its own database handle would bypass every check that lives in the API handler, which is the bug class 1.2.1 and 1.4.0 were both spent on. Off unless switched on, read-only by default with mutation behind a separate flag, its own 32-character credential, audited as a distinct actor, and with everything that reaches `easy-waf-hostd` — netplan, nftables, systemd, packages, accounts, SSH keys — permanently out of scope, because the broker exists precisely because the API is assumed compromised.
+
 ## [1.4.0] - 2026-08-16
 
 ### Security

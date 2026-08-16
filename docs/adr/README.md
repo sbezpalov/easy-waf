@@ -11,6 +11,7 @@ rather than editing it, so the history of *why* stays readable.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-packaging-and-installer.md) | Packaging: how Easy Home WAF gets onto an appliance | accepted |
+| [0002](0002-mcp-server.md) | An MCP server for management and diagnostic verbs | proposed |
 
 Earlier architectural context that predates this directory:
 
