@@ -78,7 +78,7 @@ fi
 # api <method> <path> [data] — prints "<status>\n<body>"; uses the legacy token.
 api() {
   local method="$1" path="$2" data="${3:-}"
-  local args=("${CURL_TLS[@]}" -sS -o /tmp/.smoke-body.$$ -w '%{http_code}'
+  local args=("${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/body" -w '%{http_code}'
     -X "$method" "${BASE}${path}"
     -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN:-}"
     -H "X-Requested-With: XMLHttpRequest")
@@ -88,8 +88,7 @@ api() {
   local code
   code="$(curl "${args[@]}" 2>/dev/null)"
   printf '%s\n' "$code"
-  cat /tmp/.smoke-body.$$ 2>/dev/null
-  rm -f /tmp/.smoke-body.$$
+  cat "${SMOKE_TMPDIR}/body" 2>/dev/null
 }
 
 status_of() { head -1 <<<"$1"; }
@@ -127,13 +126,12 @@ fi
 
 section "appliance diagnostics (easy-waf-admin doctor)"
 if [[ -x "$ADMIN_BIN" ]]; then
-  if "$ADMIN_BIN" doctor >/tmp/.smoke-doctor.$$ 2>&1; then
+  if "$ADMIN_BIN" doctor >"${SMOKE_TMPDIR}/doctor" 2>&1; then
     pass "doctor reported no failures"
   else
     fail "doctor reported problems:"
-    sed 's/^/        /' /tmp/.smoke-doctor.$$ >&2
+    sed 's/^/        /' "${SMOKE_TMPDIR}/doctor" >&2
   fi
-  rm -f /tmp/.smoke-doctor.$$
 else
   skip "$ADMIN_BIN not found"
 fi
@@ -190,13 +188,12 @@ fi
 
 CFG="${STATE}/haproxy/haproxy.cfg"
 if [[ -f "$CFG" ]] && command -v haproxy &>/dev/null; then
-  if haproxy -c -f "$CFG" >/tmp/.smoke-hap.$$ 2>&1; then
+  if haproxy -c -f "$CFG" >"${SMOKE_TMPDIR}/haproxy" 2>&1; then
     pass "haproxy -c on the live config"
   else
     fail "haproxy -c failed:"
-    sed 's/^/        /' /tmp/.smoke-hap.$$ >&2
+    sed 's/^/        /' "${SMOKE_TMPDIR}/haproxy" >&2
   fi
-  rm -f /tmp/.smoke-hap.$$
 else
   skip "live config or haproxy binary not found"
 fi
@@ -235,18 +232,17 @@ if [[ -n "${EASY_WAF_SMOKE_MMDB:-}" ]]; then
   elif [[ -z "$tok" ]]; then
     skip "GeoIP upload needs EASY_WAF_ADMIN_TOKEN"
   else
-    code="$(curl "${CURL_TLS[@]}" -sS -o /tmp/.smoke-geo.$$ -w '%{http_code}' \
+    code="$(curl "${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/geoip" -w '%{http_code}' \
       -X POST "${BASE}/api/v1/geoip/database" \
       -H "Authorization: Bearer ${tok}" \
       -H "X-Requested-With: XMLHttpRequest" \
       -H "Content-Type: application/octet-stream" \
       --data-binary "@${EASY_WAF_SMOKE_MMDB}" 2>/dev/null)"
     if [[ "$code" == "200" ]]; then
-      pass "GeoIP upload -> 200: $(tr -d '\n' </tmp/.smoke-geo.$$ | head -c 200)"
+      pass "GeoIP upload -> 200: $(tr -d '\n' <"${SMOKE_TMPDIR}/geoip" | head -c 200)"
     else
-      fail "GeoIP upload -> $code: $(head -c 300 /tmp/.smoke-geo.$$)"
+      fail "GeoIP upload -> $code: $(head -c 300 "${SMOKE_TMPDIR}/geoip")"
     fi
-    rm -f /tmp/.smoke-geo.$$
   fi
 else
   skip "no EASY_WAF_SMOKE_MMDB — upload not exercised"

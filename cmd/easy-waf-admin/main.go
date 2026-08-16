@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/admin"
+	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/enroll"
@@ -119,7 +120,10 @@ func performBootstrapAndWipe(ctx context.Context, envFile, stateDir, credOut, da
 	if err != nil {
 		return err
 	}
-	adminTok, err := admin.RandomAlphanumericPassword(19)
+	// Must clear auth.MinLegacyTokenLen, or the API ignores the token it just
+	// wrote and the recovery path hands the operator a credential that can never
+	// authenticate. It generated 19 characters against a floor of 24.
+	adminTok, err := admin.RandomAlphanumericPassword(auth.MinLegacyTokenLen + 8)
 	if err != nil {
 		return err
 	}

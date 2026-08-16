@@ -55,10 +55,20 @@ trap cleanup EXIT
 echo "[easy-waf-restore] extracting archive…"
 # The archive is operator-supplied and this runs as root: refuse absolute paths
 # and ".." members, and never restore the archive's own uid/gid.
-if tar -tzf "$ARCHIVE" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+#
+# The listing is materialised and matched with a here-string, never through a
+# pipe. Under `set -o pipefail`, `tar … | grep -q` made this guard fail *open*:
+# grep exits at the first match, the writer dies of SIGPIPE, the pipeline reports
+# failure, the `if` is false, and the malicious archive is extracted. Verified
+# against an archive whose first member is "../escaped" followed by enough
+# padding to keep tar writing. A here-string keeps the producer out of
+# PIPESTATUS, so only grep's own result decides.
+archive_members="$(tar -tzf "$ARCHIVE")"
+if grep -qE '^/|(^|/)\.\.(/|$)' <<<"$archive_members"; then
   echo "ERROR: archive contains absolute or parent-relative paths — refusing to extract" >&2
   exit 1
 fi
+unset archive_members
 tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$WORKDIR"
 
 ROOT="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
