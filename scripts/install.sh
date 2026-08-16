@@ -16,6 +16,7 @@
 #   EASY_WAF_RELEASE_VERSION=x.y.z   — try GitHub release before building (overrides VERSION file)
 #   EASY_WAF_SKIP_BINARY_FETCH=1     — do not download or build; require EASY_WAF_DIST_DIR with binaries
 #   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — install a release tarball whose SHA256SUMS entry is missing or mismatched (discouraged; default: refuse and build from source)
+#   EASY_WAF_GITHUB_REPO=owner/name  — where release artifacts come from (default: the origin remote of this checkout, else easy-waf/easy-waf)
 #   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via apt before source build
 #   EASY_WAF_NFT_MGMT_LAN=0         — skip nftables rules for management ports from RFC1918 (default: 1)
 #   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
@@ -414,7 +415,10 @@ acquire_dist_binaries() {
   fi
 
   if [[ -n "$ver" ]] && [[ "$ver" != "0.0.0-dev" ]] && command -v curl &>/dev/null; then
-    local gh="${EASY_WAF_GITHUB_REPO:-easy-waf/easy-waf}"
+    # shellcheck source=lib/github-repo.sh
+    source "${SCRIPT_DIR}/lib/github-repo.sh"
+    local gh
+    gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
     local base="https://github.com/${gh}/releases/download/v${ver}"
     local name="easy-waf_${ver}_linux_amd64.tar.gz"
     local url="${base}/${name}"

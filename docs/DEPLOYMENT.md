@@ -75,6 +75,8 @@ See [packaging/ovf/README.md](../packaging/ovf/README.md) for a minimal checklis
 
 Automated GitHub Release build and publish: workflow **[`.github/workflows/release.yml`](../.github/workflows/release.yml)** (trigger — push of tag `v*`: `make build`, tarball, `SHA256SUMS`, release notes from the matching [`CHANGELOG.md`](../CHANGELOG.md) section).
 
+**Which repository artifacts come from:** `install.sh` and `download-release.sh` derive `owner/name` from the **origin remote of the checkout they run from**, falling back to `easy-waf/easy-waf`. Override with **`EASY_WAF_GITHUB_REPO`** (installer) or **`GITHUB_REPOSITORY`** (download script). This matters on a fork or after a rename: with a wrong repository every download 404s and the installer quietly builds from source, which also means the `SHA256SUMS` verification never runs.
+
 Archive `easy-waf_<version>_linux_amd64.tar.gz` contains:
 
 ```

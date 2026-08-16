@@ -51,7 +51,9 @@ if [[ -n "${EASY_WAF_RELEASE_URL:-}" ]]; then
 fi
 
 VERSION="${EASY_WAF_VERSION:?set EASY_WAF_VERSION or EASY_WAF_RELEASE_URL}"
-GH="${GITHUB_REPOSITORY:-easy-waf/easy-waf}"
+# shellcheck source=lib/github-repo.sh
+source "${SCRIPT_DIR}/lib/github-repo.sh"
+GH="$(easy_waf_github_repo "$REPO_ROOT" "${GITHUB_REPOSITORY:-}")"
 BASE="https://github.com/${GH}/releases/download/v${VERSION}"
 NAME="easy-waf_${VERSION}_linux_amd64.tar.gz"
 URL="${BASE}/${NAME}"
