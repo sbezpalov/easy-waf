@@ -3,7 +3,6 @@ package acme
 import (
 	"context"
 	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -112,16 +111,34 @@ func IssueHTTP01Webroot(ctx context.Context, email string, domains []string, web
 	return res, nil
 }
 
+// acmeAccountKeyType is the single policy for ACME account keys. The two
+// branches below used to generate keys in different ways — certcrypto in one,
+// a raw rsa.GenerateKey in the other — so changing the policy meant changing it
+// in two places and noticing both.
+const acmeAccountKeyType = certcrypto.RSA2048
+
+func generateACMEAccountKey() (*rsa.PrivateKey, error) {
+	k, err := certcrypto.GeneratePrivateKey(acmeAccountKeyType)
+	if err != nil {
+		return nil, err
+	}
+	rk, ok := k.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("acme: unexpected account key type %T", k)
+	}
+	return rk, nil
+}
+
 func loadOrCreatePrivateKey(path string) (crypto.PrivateKey, error) {
 	if path == "" {
-		return certcrypto.GeneratePrivateKey(certcrypto.RSA2048)
+		return generateACMEAccountKey()
 	}
 	if b, err := os.ReadFile(path); err == nil {
 		return certcrypto.ParsePEMPrivateKey(b)
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := generateACMEAccountKey()
 	if err != nil {
 		return nil, err
 	}

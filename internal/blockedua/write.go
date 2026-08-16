@@ -24,15 +24,11 @@ func WriteMap(ctx context.Context, st *store.Store, outPath string) error {
 	if err != nil {
 		return err
 	}
-	lines := make([]string, 0, len(rows))
+	patterns := make([]string, 0, len(rows))
 	for _, e := range rows {
-		p := strings.TrimSpace(e.Pattern)
-		if p == "" || strings.HasPrefix(p, "#") {
-			continue
-		}
-		lines = append(lines, p)
+		patterns = append(patterns, e.Pattern)
 	}
-	sort.Strings(lines)
+	lines := normalizePatterns(patterns)
 
 	var b strings.Builder
 	b.WriteString("# easy-waf blocked User-Agent substrings — generated; do not edit by hand\n")
@@ -45,6 +41,30 @@ func WriteMap(ctx context.Context, st *store.Store, outPath string) error {
 		return err
 	}
 	return os.Rename(tmp, outPath)
+}
+
+// normalizePatterns trims, drops empty and comment lines, removes duplicates and
+// sorts what is left.
+//
+// Deduplication matches what the ipbl/ipwl generators already do: the map file is
+// regenerated from the database on every apply, so duplicate rows would emit
+// duplicate lines that grow the file each time an operator re-adds a pattern.
+func normalizePatterns(patterns []string) []string {
+	seen := make(map[string]struct{}, len(patterns))
+	out := make([]string, 0, len(patterns))
+	for _, p := range patterns {
+		p = strings.TrimSpace(p)
+		if p == "" || strings.HasPrefix(p, "#") {
+			continue
+		}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // MapPath resolves output path from settings.

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/mapfile"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -63,17 +64,8 @@ func validateCIDRLine(s string) error {
 }
 
 // FileHasEntries returns true if data contains at least one non-comment line.
-func FileHasEntries(data []byte) bool {
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		return true
-	}
-	return false
-}
+// Thin wrapper over mapfile.HasEntries, kept for the existing callers.
+func FileHasEntries(data []byte) bool { return mapfile.HasEntries(data) }
 
 // UseInRender is true when allowlist should appear in HAProxy config (enabled + non-empty map file).
 func UseInRender(enabled bool, mapPath string) bool {

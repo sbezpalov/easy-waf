@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/mapfile"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -183,18 +184,10 @@ func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.Global
 	return lines, nil
 }
 
-// FileHasEntries returns true if data contains at least one non-comment line (used before enabling HAProxy ACL).
-func FileHasEntries(data []byte) bool {
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		return true
-	}
-	return false
-}
+// FileHasEntries returns true if data contains at least one non-comment line
+// (used before enabling a HAProxy ACL). Thin wrapper over mapfile.HasEntries,
+// kept for the existing callers.
+func FileHasEntries(data []byte) bool { return mapfile.HasEntries(data) }
 
 func validateCIDRLine(s string) error {
 	if strings.Contains(s, "/") {

@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `limitRequestBody` takes an exemption list so a single large-artifact route can opt out of the global 4 MiB cap while still enforcing its own limit in the handler.
 - `scripts/install.sh` creates `<state>/geoip` owned by `easy-waf`, and `scripts/update-geoip-db.sh` restores that ownership when it runs as root — otherwise a root-created directory would block UI uploads.
+- **Migrations are split by a real SQL scanner** instead of `strings.Split(sql, ";")`. The old splitter would have executed the first migration containing a dollar-quoted block (`DO $$ … END IF; … $$;`), a semicolon inside a string literal, or a quoted identifier as several broken fragments. The scanner tracks string literals, quoted identifiers, dollar quotes (including tagged ones), line comments and nested block comments. A test asserts the new splitter yields byte-identical statements for all 18 shipped migrations, so upgrading an existing appliance changes nothing.
+- `easy-waf-hostd` copies files atomically (temp file plus rename). The previous read-then-write left a window where the live nftables ruleset or netplan configuration was truncated — during rollback, which is when it is least recoverable.
+- `internal/mapfile.HasEntries` replaces the identical copies in `ipbl` and `ipwl`, so "map file is empty" cannot drift between the generators.
+- `blockedua` deduplicates patterns like the other map generators; duplicate rows previously produced duplicate map lines on every apply.
+- ACME account keys are generated through one policy constant; the two branches of `loadOrCreatePrivateKey` used different code paths for the same decision.
 
 ## [1.2.1] - 2026-08-16
 
