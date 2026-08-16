@@ -88,7 +88,7 @@ func TestSessionRejectsStaleJWTAfterPasswordChange(t *testing.T) {
 		t.Fatalf("new token: %d", rr3.Code)
 	}
 
-	t.Setenv("EASY_WAF_ADMIN_TOKEN", "legacy-automation-token")
+	t.Setenv("EASY_WAF_ADMIN_TOKEN", "legacy-automation-token-01234")
 	hLegacy := auth.Session(st, secret)(ok)
 	reqL := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	reqL.Header.Set("Authorization", "Bearer legacy-automation-token")

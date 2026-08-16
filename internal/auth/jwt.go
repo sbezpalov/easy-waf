@@ -13,9 +13,14 @@ type SessionClaims struct {
 	jwt.RegisteredClaims
 }
 
+// minSigningKeyLen bounds both signing and verification. Verifying with a key
+// too short to sign with is worse than useless: nothing can issue a token, but
+// a guessed key still forges one.
+const minSigningKeyLen = 16
+
 // SignJWT issues an HS256 JWT for the given subject and session epoch.
 func SignJWT(secret []byte, username string, sessionVersion int, ttl time.Duration) (string, error) {
-	if len(secret) < 16 {
+	if len(secret) < minSigningKeyLen {
 		return "", fmt.Errorf("jwt secret too short")
 	}
 	if sessionVersion < 1 {
@@ -36,6 +41,9 @@ func SignJWT(secret []byte, username string, sessionVersion int, ttl time.Durati
 
 // ParseJWT returns session claims or an error. Tokens without sv or exp fail closed.
 func ParseJWT(secret []byte, token string) (*SessionClaims, error) {
+	if len(secret) < minSigningKeyLen {
+		return nil, fmt.Errorf("jwt secret too short")
+	}
 	t, err := jwt.ParseWithClaims(token, &SessionClaims{}, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method")
