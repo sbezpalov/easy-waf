@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2026-08-16
 
 ### Added
 
@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `internal/host/users.ValidateSSHPublicKeys` delegates to `hostspec` so the API and the broker cannot drift apart.
-- The `easy-waf-hostd` unit documents that its `ProtectHome=true` hides `/home` from the broker, so `PUT /host/users/{name}/ssh-keys` cannot write keys until that is relaxed.
+- The `easy-waf-hostd` unit now sets `ProtectHome=false` with an explanation. `ProtectHome=true` makes `/home` appear empty to the service, so `PUT /host/users/{name}/ssh-keys` could never write a key — the endpoint was silently inoperative. That path is guarded by the three controls above instead of by hiding the directory; set it back to `true` if you never manage keys from the UI.
 
 ## [1.2.0] - 2026-08-15
 

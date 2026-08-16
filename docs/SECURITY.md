@@ -1,6 +1,6 @@
 # Security Guide
 
-Applies to the release from root [`VERSION`](../VERSION) (**1.2.0**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
+Applies to the release from root [`VERSION`](../VERSION) (**1.2.1**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
 
 ## Principles
 
@@ -62,7 +62,7 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 - **SSH keys:** `PUT /host/users/{name}/ssh-keys` validates each line (`ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-*` + base64); invalid or multiline payloads are rejected before writing `authorized_keys`. The **broker repeats the same validation** (`hostspec.ValidateAuthorizedKeysContent`) — the API-side check is advisory, since a compromised `easy-waf-api` can talk to the socket directly. A line may not begin with an options field (`command=`, `environment=`, `permitopen=`, …), because options execute code as the account owner on every login.
   - **Privileged targets are refused by default:** an account in `root`, `sudo`, `admin` or `wheel` cannot receive keys, since that would convert control of `easy-waf-api` into root on the appliance. Opt in with `Environment=EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1` in the **`easy-waf-hostd`** unit (root-owned — the API cannot set it). An unreadable `/etc/group` fails closed.
   - Writes never follow a symlink: `~/.ssh` and `authorized_keys` are opened relative to the home directory with `openat2` (`RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`), ownership and mode are set through the descriptor, and the key file is replaced by `renameat` so a failed write cannot truncate it. Previously `install -d -o user ~/.ssh` resolved the path as root, so an account could point its own `~/.ssh` at another directory and have root chown it.
-  - **Note:** the shipped `easy-waf-hostd` unit sets `ProtectHome=true`, which hides `/home` from the broker — so this endpoint cannot write keys until you relax that setting for the unit. Keeping `ProtectHome=true` and managing `authorized_keys` over SSH is the more conservative choice.
+  - The `easy-waf-hostd` unit ships with **`ProtectHome=false`** because the broker has to reach `~/.ssh`; with `ProtectHome=true` systemd shows `/home` as empty to the service and this endpoint silently cannot write anything. The exposure is covered by the three controls above (broker-side validation, refusal of root-equivalent targets, symlink-free writes) rather than by hiding the directory. If you never manage keys from the UI, setting `ProtectHome=true` back is a safe extra layer.
 - **Power / apt / nft / netplan:** only fixed opcodes via **`easy-waf-hostd`** (no arbitrary shell).
 - **Fail2ban:** `GET/POST /api/v1/integrations/fail2ban/*` uses broker opcode **`fail2ban`** with a strict allowlist (`ping`, `status`, `status <jail>`, `set <jail> unbanip <ip>`); jail/IP validated in **`internal/host/hostspec`**. Legacy fail2ban group/socket/sudoers access is retired.
 
