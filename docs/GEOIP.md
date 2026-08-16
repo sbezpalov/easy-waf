@@ -34,7 +34,7 @@ What the appliance does with the uploaded file:
 - Before anything is replaced, the uploaded file is opened as a MaxMind database, its type is checked for country data, and it must answer a lookup for `8.8.8.8`. Only then is it renamed into place — **a rejected upload leaves the running database untouched**.
 - If the provider is already **maxmind** *and* `geoip_mmdb_path` already points at the file that was just installed (the normal case for a weekly refresh), the reader is hot-swapped and the lookup cache cleared — no restart, no `POST /geoip/reload`. That is reported as `"reloaded": true`.
 - On a first install the path is not configured yet, so the response is `"reloaded": false` with an `activate_hint`: the runtime resolves its reader from `geoip_mmdb_path`, so the database only goes live after you **Save GeoIP settings**. The UI fills the path field for you.
-- Accepted size is capped at **128 MiB** (decompressed), and each install is recorded in the audit log as `geoip_database_uploaded`.
+- The request body is capped at **128 MiB**, and so is the database member that gets installed. Note the current limit: other members of a `.tar.gz` are skipped without their decompressed size being counted, so a crafted archive can still make the appliance inflate far more than it stores. That is CPU and I/O, not disk — nothing outsized is written or installed — but it is a denial-of-service avenue for an authenticated operator, and it is being fixed. Each install is recorded in the audit log as `geoip_database_uploaded`.
 
 ### Installing GeoLite2 from a shell
 
