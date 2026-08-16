@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a capability or a change in behaviour
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Easy Home WAF targets **Ubuntu 24.04 LTS only** and keeps its dependency
+        set deliberately small — see the scope notes in
+        [CONTRIBUTING.md](../../blob/main/CONTRIBUTING.md) before writing code.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried or considered instead
+      description: Existing settings, a reverse proxy in front, a manual workaround.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Management UI
+        - Management API
+        - HAProxy edge / per-application security
+        - Certificates (ACME, DNS-01)
+        - CrowdSec / Fail2Ban / IP lists / GeoIP
+        - Host management (network, firewall, updates)
+        - Installer / packaging / upgrades
+        - Documentation
+        - Other
+    validations:
+      required: true

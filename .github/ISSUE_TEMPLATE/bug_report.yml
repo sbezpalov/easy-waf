@@ -1,0 +1,67 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report security vulnerabilities here.** Use
+        [Security → Advisories → Report a vulnerability](../../security/advisories/new)
+        — see [SECURITY.md](../../blob/main/SECURITY.md).
+
+        Please redact tokens, passwords, certificates and public IP addresses
+        before pasting logs or configuration.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Contents of `VERSION`, or the release tag / commit you run.
+      placeholder: "1.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - scripts/install.sh (from a clone)
+        - scripts/install-interactive.sh
+        - GitHub release tarball
+        - built from source manually
+        - other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. In the UI …
+        2. Apply
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Useful, in order: `sudo easy-waf-admin doctor`, the relevant part of
+        `journalctl -u easy-waf-api -n 200`, and — if the edge is involved —
+        `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked [docs/TROUBLESHOOTING.md](../../blob/main/docs/TROUBLESHOOTING.md)
+        - label: I removed secrets and public IP addresses from anything I pasted
+          required: true
