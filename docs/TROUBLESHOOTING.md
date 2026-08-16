@@ -188,6 +188,29 @@ HAProxy listens on **`*:80`** and **`*:443`**; if **`ss -tlnp`** shows **`haprox
 
 **Fix:** `sudo systemctl start easy-waf-api` (or `restart`) after upgrading. To disable the helper (only if you serve challenges another way), set **`EASY_WAF_ACME_INTERNAL_HTTP=0`** in **`/etc/easy-waf/easy-waf.env`** and restart **`easy-waf-api`**. See [ACME.md](ACME.md).
 
+## Apply fails: "application … is unsafe to render" / "settings are unsafe to render"
+
+`POST /api/v1/apply` re-validates every stored value that reaches the generated
+configuration, and refuses rather than writing a file `haproxy -c` would accept.
+The message names the row and the field. This is deliberate: a check in the API
+handler is advisory, because a value can reach the database another way — a
+restored backup, a direct `UPDATE`, an older version that had no validator.
+
+Most common after upgrading to 1.4.0:
+
+- **`public_host must be lowercase`** or **invalid characters** — rename the
+  application's public host to lowercase with no `_` (see
+  [ARCHITECTURE.md](ARCHITECTURE.md)), then apply again.
+- **`backend_tls_ca_file` / certificate path / settings path** — the value has a
+  space, newline, `#`, quote or `$` in it. Absolute paths made of
+  `A-Z a-z 0-9 . _ ~ + @ : - /` are accepted; anything else could add or alter a
+  directive in the generated config.
+- **"both render as backend `bk_…`"** — two enabled applications map onto one
+  HAProxy identifier. The message names both; change one `public_host`.
+
+Fix the row through the UI or API and re-apply. Nothing is written to HAProxy
+until the whole render succeeds, so the running edge is unaffected meanwhile.
+
 ## HAProxy fails to reload
 
 1. `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`
