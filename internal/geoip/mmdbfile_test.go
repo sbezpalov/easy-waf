@@ -209,7 +209,7 @@ func TestValidateMMDBFile_rejectsUnusableDatabase(t *testing.T) {
 	dir := t.TempDir()
 	raw := buildCountryMMDB(t, "GeoLite2-Country", "1.1.1.1", "AU")
 	p := filepath.Join(dir, "no-probe.mmdb")
-	if err := os.WriteFile(p, raw, 0o644); err != nil {
+	if err := os.WriteFile(p, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ValidateMMDBFile(p); err == nil {
@@ -219,7 +219,7 @@ func TestValidateMMDBFile_rejectsUnusableDatabase(t *testing.T) {
 	// Wrong database type (e.g. an ASN database) has no country data.
 	raw = buildCountryMMDB(t, "GeoLite2-ASN", "8.8.8.8", "US")
 	p = filepath.Join(dir, "asn.mmdb")
-	if err := os.WriteFile(p, raw, 0o644); err != nil {
+	if err := os.WriteFile(p, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ValidateMMDBFile(p); err == nil {
@@ -232,7 +232,7 @@ func TestInstallMMDB_keepsPreviousDatabaseOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	good := buildCountryMMDB(t, "GeoLite2-Country", "8.8.8.8", "US")
 	live := filepath.Join(dir, "GeoLite2-Country.mmdb")
-	if err := os.WriteFile(live, good, 0o644); err != nil {
+	if err := os.WriteFile(live, good, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

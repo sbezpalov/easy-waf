@@ -204,9 +204,9 @@ func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 
 func TestDispatchAptUpgradeStream_heartbeat(t *testing.T) {
 	resetAptUpgradeState()
-	aptActionHeartbeatInterval = 50 * time.Millisecond
+	setAptActionHeartbeatIntervalForTest(50 * time.Millisecond)
 	defer func() {
-		aptActionHeartbeatInterval = 15 * time.Second
+		setAptActionHeartbeatIntervalForTest(15 * time.Second)
 		resetAptUpgradeState()
 	}()
 

@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `blockedua` deduplicates patterns like the other map generators; duplicate rows previously produced duplicate map lines on every apply.
 - ACME account keys are generated through one policy constant; the two branches of `loadOrCreatePrivateKey` used different code paths for the same decision.
 
+### Fixed
+
+- **CI is green again.** Two of the three jobs had been failing since before this release series. `haproxy-config-test` could not pass anywhere except the appliance the fixtures were written for: `backend-tls-custom-ca.cfg` records the operator CA path `/etc/easy-waf/ca/lab.pem` and `haproxy -c` opens `ca-file` for real — the integration test now redirects `ca-file` at a committed certificate fixture, like it already did for the stats socket, and all 25 golden configs validate. `go test -race` reported a genuine data race on `aptActionHeartbeatInterval`, a package variable a test restored while the heartbeat goroutine still read it; it is an atomic now.
+- Remaining `gosec`/`revive` findings cleared, so `golangci-lint run ./...` with the pinned v1.62.2 is clean: the nftables revert writes through `writeFileAtomic` with the same mode constant the apply path uses (atomic, no permission drift), `openatBeneath` takes `uint64` flags, and the MMDB build epoch is bounds-checked before conversion.
+
 ## [1.2.1] - 2026-08-16
 
 ### Added

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,8 +29,23 @@ func aptActionLogPath() string {
 	return defaultAptActionLogPath
 }
 
-// aptActionHeartbeatInterval is overridable in tests.
-var aptActionHeartbeatInterval = 15 * time.Second
+// aptActionHeartbeatIntervalNanos is the heartbeat period, overridable in tests.
+//
+// Stored atomically: the heartbeat goroutine outlives the request that started
+// it by a moment, so a test restoring the default while that goroutine still
+// reads the value is a genuine data race (caught by `go test -race`).
+var aptActionHeartbeatIntervalNanos atomic.Int64
+
+func init() { aptActionHeartbeatIntervalNanos.Store(int64(15 * time.Second)) }
+
+func aptActionHeartbeatInterval() time.Duration {
+	return time.Duration(aptActionHeartbeatIntervalNanos.Load())
+}
+
+// setAptActionHeartbeatIntervalForTest overrides the heartbeat period.
+func setAptActionHeartbeatIntervalForTest(d time.Duration) {
+	aptActionHeartbeatIntervalNanos.Store(int64(d))
+}
 
 // streamEvent is one NDJSON line on the broker socket for streaming ops.
 type streamEvent struct {
@@ -379,7 +395,7 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 }
 
 func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
-	ticker := time.NewTicker(aptActionHeartbeatInterval)
+	ticker := time.NewTicker(aptActionHeartbeatInterval())
 	defer ticker.Stop()
 	for {
 		select {
@@ -391,7 +407,7 @@ func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.
 			lastLineMu.Lock()
 			silent := time.Since(*lastLineAt)
 			lastLineMu.Unlock()
-			if silent < aptActionHeartbeatInterval {
+			if silent < aptActionHeartbeatInterval() {
 				continue
 			}
 			elapsed := time.Since(started).Round(time.Second)

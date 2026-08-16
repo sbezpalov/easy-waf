@@ -14,7 +14,7 @@ func TestCopyFile_atomicReplace(t *testing.T) {
 	if err := os.WriteFile(src, []byte("table inet easy_waf {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dst, []byte("old ruleset\n"), 0o644); err != nil {
+	if err := os.WriteFile(dst, []byte("old ruleset\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,7 +53,7 @@ func TestCopyFile_atomicReplace(t *testing.T) {
 func TestCopyFile_keepsDestinationWhenSourceMissing(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "dst")
-	if err := os.WriteFile(dst, []byte("old ruleset\n"), 0o644); err != nil {
+	if err := os.WriteFile(dst, []byte("old ruleset\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyFile(filepath.Join(dir, "missing"), dst, 0o644); err == nil {

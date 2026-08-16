@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -65,7 +66,9 @@ func ValidateMMDBFile(path string) (MMDBInfo, error) {
 	info.DatabaseType = rd.Metadata.DatabaseType
 	info.NodeCount = rd.Metadata.NodeCount
 	info.IPVersion = rd.Metadata.IPVersion
-	info.BuildEpoch = time.Unix(int64(rd.Metadata.BuildEpoch), 0).UTC()
+	if be := rd.Metadata.BuildEpoch; be <= math.MaxInt64 {
+		info.BuildEpoch = time.Unix(int64(be), 0).UTC()
+	}
 
 	if !strings.Contains(strings.ToLower(info.DatabaseType), "country") &&
 		!strings.Contains(strings.ToLower(info.DatabaseType), "city") {
