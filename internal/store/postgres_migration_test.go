@@ -71,7 +71,7 @@ func TestApplicationStoreOpenStillRunsMigrations(t *testing.T) {
 func TestMigration018LegacyBackfillDoesNotDowngradeRequired(t *testing.T) {
 	t.Parallel()
 
-	statements := strings.Split(stripSQLComments(migration018SQL), ";")
+	statements := splitSQLStatements(migration018SQL)
 	foundLegacyBackfill := false
 	for _, statement := range statements {
 		normalized := strings.ToLower(strings.Join(strings.Fields(statement), " "))

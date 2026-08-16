@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // CommandRunner runs subprocesses without a shell.
@@ -61,15 +62,41 @@ func failExec(stdout, stderr []byte, code int, err error) Response {
 	return Response{OK: false, Stdout: string(stdout), Stderr: string(stderr), Code: code, Error: msg}
 }
 
+// copyFile writes src to dst atomically: a temporary file in the destination
+// directory, then a rename.
+//
+// The previous read-then-write left a window in which dst was truncated or only
+// partly written. What this copies is the live nftables ruleset and the netplan
+// configuration, so a crash or a full disk inside that window would leave the
+// appliance with a firewall or network file that no longer parses — and it is
+// used by the rollback path, i.e. exactly when things are already going wrong.
 func copyFile(src, dst string, mode os.FileMode) error {
 	b, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, b, mode); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".easy-waf-*.tmp")
+	if err != nil {
 		return err
 	}
-	return nil
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName) // no-op once the rename has succeeded
+	}()
+	if _, err := tmp.Write(b); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, dst)
 }
 
 func touchEmpty(path string) error {

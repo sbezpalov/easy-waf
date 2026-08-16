@@ -116,33 +116,13 @@ func (s *Store) migrate(ctx context.Context) error {
 		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
 		migration016SQL, migration017SQL, migration018SQL,
 	} {
-		sqlText := stripSQLComments(raw)
-		parts := strings.Split(sqlText, ";")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if _, err := s.db.ExecContext(ctx, p); err != nil {
+		for _, stmt := range splitSQLStatements(raw) {
+			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 				return fmt.Errorf("migrate: %w", err)
 			}
 		}
 	}
 	return nil
-}
-
-func stripSQLComments(s string) string {
-	lines := strings.Split(s, "\n")
-	var b strings.Builder
-	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "--") {
-			continue
-		}
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	return b.String()
 }
 
 // Close releases the pool.
