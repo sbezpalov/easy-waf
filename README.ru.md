@@ -4,83 +4,167 @@
 
 [![CI](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml)
 [![Release](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Self-hosted **защищённый reverse proxy / домашний WAF-appliance** для публикации локальных сервисов (Home Assistant, Frigate, Nextcloud, …) через единый HAProxy-edge с ACME, CrowdSec (SPOE), Fail2Ban и локальной панелью управления.
+Self-hosted **WAF и защищённый reverse proxy** для публикации локальных сервисов
+— Home Assistant, Frigate, Nextcloud, Node-RED, Grafana — через единый
+защищённый HAProxy-edge, управляемый из локальной веб-панели, а не правкой
+конфигов руками.
 
-**Целевая платформа:** только **Ubuntu 24.04 LTS**, HAProxy 3.x (пакет дистрибутива), systemd, хостовый firewall **nftables**; сеть — netplan.
+Он для тех, у кого дома или в небольшом офисе стоит хозяйство за NAT, кто хочет
+открыть наружу два порта вместо десяти и предпочёл бы не становиться экспертом
+по HAProxy ради корректных сертификатов, гео-фильтрации и блокировки ботов.
 
-**Релиз / инсталлятор:** корневой файл [`VERSION`](VERSION) задаёт номер для GitHub Releases и документов; релизы собирает workflow [`release.yml`](.github/workflows/release.yml) (тег `v*`, см. [`CHANGELOG.md`](CHANGELOG.md)).
+## Что он умеет
+
+- **Один edge на всё.** У каждого приложения есть имя хоста, backend и профиль
+  безопасности; конфигурация HAProxy генерируется, проверяется через
+  `haproxy -c` и перечитывается — руками её никто не правит.
+- **Слои защиты на каждое приложение**, переключаемые по хосту: rate limiting,
+  базовые WAF-правила (SQLi/XSS/traversal), CrowdSec через SPOE, списки
+  разрешённых и заблокированных IP с внешними фидами, GeoIP-фильтрация по
+  странам, блокировка ботов и User-Agent, ограничения методов и путей, пути
+  только для LAN. Пресеты — от *полной защиты* до *чистого reverse proxy*.
+- **Сертификаты без церемоний.** ACME HTTP-01 и DNS-01 (Cloudflare, CloudNS,
+  Route53, webhook), автоматическое продление, проверка TLS у HTTPS-бэкендов.
+- **Управление хостом из той же панели:** сеть и nftables с **откатом по
+  таймеру**, чтобы неудачное правило файрвола вернулось само, а не заперло вас
+  снаружи; обновления системы с живым логом; сервисы, journal, локальные
+  учётные записи.
+- **Эксплуатационная безопасность:** каждый apply — это ревизия, к которой можно
+  откатиться, привилегированные действия пишутся в аудит, `easy-waf-admin doctor`
+  диагностирует appliance, а backup/restore покрывает базу, состояние и
+  конфигурацию.
+
+## Модель безопасности
+
+Это appliance, который терминирует TLS на границе сети, поэтому дизайн исходит
+из того, что часть компонентов будут атаковать и однажды один из них проиграет:
+
+- `easy-waf-api` работает без привилегий (`NoNewPrivileges`, `ProtectSystem=strict`).
+  Любая привилегированная операция идёт через **`easy-waf-hostd`** — root-брокер
+  на unix-сокете, который проверяет пира через `SO_PEERCRED`, обрабатывает только
+  разрешённые опкоды и **сам заново валидирует каждый аргумент**: в модели угроз
+  скомпрометированный API учтён явно.
+- **Пароля по умолчанию нет.** Первый оператор проходит enrollment по одноразовому
+  CSPRNG-секрету, который читается только с локальной консоли.
+- В сессии зашит `session_version`: смена пароля или выход отзывают все уже
+  выданные токены.
+- Значения, попадающие в сгенерированный конфиг, валидируются **повторно на этапе
+  рендера** — потому что ошибка вида config injection даёт файл, который
+  `haproxy -c` спокойно примет.
+- Исходящие запросы (фиды блоклистов, CrowdSec LAPI) перепроверяют разрешённый IP
+  в момент подключения — это закрывает DNS rebinding — и не следуют редиректам.
+- Артефакты релиза проверяются по `SHA256SUMS` до того, как что-либо будет
+  распаковано.
+
+Сами меры и рассуждения за ними: [docs/SECURITY.md](docs/SECURITY.md).
+Как сообщить об уязвимости: [SECURITY.md](SECURITY.md).
+
+## Требования
+
+- **Ubuntu 24.04 LTS** — единственная поддерживаемая платформа, и это осознанно
+  (см. [CONTRIBUTING.md](CONTRIBUTING.md#what-this-project-is-and-is-not))
+- root на appliance, systemd, nftables
+- PostgreSQL — ставится автоматически либо подключается внешний
+- 2 vCPU / 2 ГБ RAM — комфортный минимум, подробнее в
+  [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md)
+
+## Установка
+
+На чистой виртуальной машине с Ubuntu 24.04:
+
+```bash
+git clone https://github.com/sbezpalov/easy-waf.git
+cd easy-waf
+sudo bash scripts/install.sh
+```
+
+Установщик поставит HAProxy, PostgreSQL, CrowdSec + SPOA bouncer, fail2ban и
+правила nftables, затем запустит `easy-waf-api` и `easy-waf-acmed`. Бинарники
+берутся из соответствующего GitHub-релиза, если он есть — с проверкой по
+`SHA256SUMS`, и установщик откажется ставить то, что проверку не прошло, — иначе
+собираются из исходников.
+
+Дальше — вход. Пароля по умолчанию нет:
+
+```bash
+sudo easy-waf-admin print-enrollment      # одноразовый секрет, печатается локально
+```
+
+Откройте `https://<ip-appliance>:8443`, пройдите enrollment, добавьте первое
+приложение. Полный разбор: [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
+> Упаковка переделывается: основным способом установки вместо «клонировать и
+> запустить» станет нативный `.deb` — см.
+> [ADR 0001](docs/adr/0001-packaging-and-installer.md).
 
 ## Документация
 
-Документы в `docs/` ведутся на **английском** (канон). Ниже — краткие описания на русском.
+Документы в `docs/` ведутся на **английском** (канон); ниже — что в них искать.
 
-| Документ | Описание |
-|----------|----------|
-| [docs/DEV_HOST.md](docs/DEV_HOST.md) | Пилот-хост по SSH: **`waf-dev`**, Remote SSH, `.vscode/settings.json` |
-| [docs/PROMPTS_ALIGNMENT.md](docs/PROMPTS_ALIGNMENT.md) | Требования [prompts.md](prompts.md) ↔ код (MVP gap matrix) |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Компоненты, потоки данных, жизненный цикл конфига, риски |
-| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Установка и первое приложение |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Инсталлятор (apt), OVF/OVA, релизы |
-| [docs/HOST-API.md](docs/HOST-API.md) | Host management API (сеть, nftables, apt, …) |
-| [docs/SECURITY.md](docs/SECURITY.md) | Hardening, AppArmor, nftables, секреты, чеклист |
-| [docs/ACME.md](docs/ACME.md) | Сертификаты и DNS-провайдеры |
-| [docs/DNS01.md](docs/DNS01.md) | DNS-01: Cloudflare, CloudNS (по умолчанию), Route53, webhook |
-| [docs/CROWDSEC.md](docs/CROWDSEC.md) | SPOE, bouncer, логи |
-| [docs/FAIL2BAN.md](docs/FAIL2BAN.md) | Статус Fail2Ban и unban через API/UI |
-| [docs/IPBL.md](docs/IPBL.md) | IP blacklist: локальный + внешние фиды → карта HAProxy |
-| [docs/GEOIP.md](docs/GEOIP.md) | GeoIP: ipinfo vs MaxMind MMDB, обновления, batch vs lookup API |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Типичные сбои |
-| [docs/ADMIN-CLI.md](docs/ADMIN-CLI.md) | Аварийно: сброс доступа к панели, factory reset |
-| [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md) | ESXi / QEMU–KVM: vCPU, RAM, диск, NIC |
+**С чего начать**
 
-## Архитектура C (текущая)
+| Документ | Что внутри |
+|----------|------------|
+| [QUICKSTART](docs/QUICKSTART.md) | Установка, первый вход, первое приложение |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | Компоненты, потоки данных, жизненный цикл конфигурации |
+| [OPERATIONS](docs/OPERATIONS.md) | День второй: ручная проверка, переключатели, smoke-тест после обновления |
+| [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) | Когда что-то не работает |
 
-- **PostgreSQL** — единый source of truth (SME / будущий HA / реплики).
-- **`easy-waf-api`** — REST API, встроенный UI, рендер/apply HAProxy.
-- **`easy-waf-acmed`** — ACME-воркер (Lego HTTP-01): выпуск и продление сертификатов.
-- **`easy-wafd`** — legacy-энтрипойнт; тот же код, что у `easy-waf-api`.
+**Безопасность и слои защиты**
 
-**IPBL**: локальные + опциональные внешние блоклисты → объединённая map-файл для HAProxy (`docs/IPBL.md`).
+| Документ | Что внутри |
+|----------|------------|
+| [SECURITY](docs/SECURITY.md) | Hardening, модель привилегий, цепочка поставки, чеклист |
+| [APPLICATION_SECURITY](docs/APPLICATION_SECURITY.md) · [SECURITY_PROFILES](docs/SECURITY_PROFILES.md) | Слои защиты приложения и пресеты |
+| [CROWDSEC](docs/CROWDSEC.md) · [FAIL2BAN](docs/FAIL2BAN.md) | Поведенческая блокировка |
+| [IPBL](docs/IPBL.md) · [GEOIP](docs/GEOIP.md) | Списки IP, внешние фиды, фильтрация по странам |
 
-## Быстрая сборка (разработчик, Linux или WSL)
+**Сертификаты, хост, эксплуатация**
 
-```bash
-cd easy-waf
-export DATABASE_URL='postgres://easywaf:easywaf@127.0.0.1:5432/easywaf?sslmode=disable'
-# docker compose up -d   # поднимает PostgreSQL из docker-compose.yml
-make build
-./dist/easy-waf-api -state-dir ./data -listen-http 127.0.0.1:8000 -listen-https 127.0.0.1:8443
-# ./dist/easy-waf-acmed   # опционально; задайте EASY_WAF_STATE_DIR и тот же DATABASE_URL
-```
+| Документ | Что внутри |
+|----------|------------|
+| [ACME](docs/ACME.md) · [DNS01](docs/DNS01.md) · [DNS](docs/DNS.md) | Выпуск и продление |
+| [HOST-API](docs/HOST-API.md) | Сеть, nftables, обновления, учётные записи |
+| [BACKUP_RESTORE](docs/BACKUP_RESTORE.md) · [ADMIN-CLI](docs/ADMIN-CLI.md) | Резервные копии и аварийное восстановление |
+| [MONITORING](docs/MONITORING.md) · [DIAGNOSTICS](docs/DIAGNOSTICS.md) | Метрики и диагностика |
+| [DEPLOYMENT](docs/DEPLOYMENT.md) · [VM-REQUIREMENTS](docs/VM-REQUIREMENTS.md) | Развёртывание, OVF/OVA, сайзинг |
+| [adr/](docs/adr/) | Архитектурные решения (ADR) |
 
-**Не коммитьте** Windows-артефакты `.exe` / `.dll`. После правок кода запускайте **`make ci`** (`go vet`, `golangci-lint`, `go test ./...`, `bash scripts/check-linux-artifacts.sh`) или как минимум `bash scripts/check-linux-artifacts.sh && go test ./...`. Для шага lint установите [golangci-lint](https://golangci-lint.run/welcome/install/). Cursor подхватывает [`.cursor/rules/easy-waf-verify-after-edits.mdc`](.cursor/rules/easy-waf-verify-after-edits.mdc), чтобы агент прогонял проверки после правок.
-
-**Shell-скрипты:** только **Unix (LF)**. Bash на Linux падает на CRLF (`$'\r': command not found`). В репозитории задано `scripts/**/*.sh text eol=lf` в `.gitattributes`; на Windows — `git config core.autocrlf input` или режим «LF» в редакторе.
-
-**Установка appliance (VM Ubuntu 24.04 LTS):** `sudo bash scripts/install.sh` — полный стек: HAProxy, **PostgreSQL**, **CrowdSec + SPOA** (LAPI bootstrap по умолчанию), **fail2ban**, **nftables** (edge **80/443** + management **8000/8443** из RFC1918), **`easy-waf-api`** / **`easy-waf-acmed`**. UI слушает **HTTPS `0.0.0.0:8443`** (HTTP management выключен по умолчанию); устаревшие bind на конкретный IP в env правятся при переустановке. Внешняя БД: `EASY_WAF_INSTALL_POSTGRES=0`. См. [QUICKSTART.md](docs/QUICKSTART.md).
-
-После клона выполните **`go mod tidy`** (создаёт `go.sum`), затем **`make build`**. Панель: одноразовый enrollment secret (`easy-waf-admin print-enrollment`), без пароля `admin`/`admin`.
-
-Для опционального **CrowdSec** + SPOA и дополнительных вопросов используйте **`scripts/install-interactive.sh`** (политика bind там тоже настраивается).
-
-## Структура репозитория
+## Как это устроено
 
 ```
-cmd/easy-waf-api/    # Management API + UI
-cmd/easy-waf-acmed/  # ACME-воркер (Lego)
-cmd/easy-wafd/       # Alias-энтрипойнт → тот же код, что easy-waf-api
-internal/            # store (PostgreSQL), haproxy, acme, api, ipbl, …
-internal/store/migrations/  # SQL-схема
-internal/webui/dist/ # Встроенная статика UI
-configs/             # Примеры дефолтов (haproxy, фрагменты crowdsec)
-scripts/             # install, upgrade, backup, restore, check-linux-artifacts
-packaging/           # systemd-юниты для api + acmed
-docs/                # Архитектура и гайды (английский)
-examples/            # Примеры определений приложений
-docker-compose.yml   # Только dev-PostgreSQL
+cmd/easy-waf-api/     Management API + встроенный UI, рендер и apply HAProxy
+cmd/easy-waf-acmed/   ACME-воркер (Lego)
+cmd/easy-waf-hostd/   Root-брокер: разрешённые привилегированные операции на хосте
+cmd/easy-waf-admin/   CLI: диагностика, enrollment, аварийное восстановление доступа
+internal/             store (PostgreSQL), haproxy, api, auth, acme, ipbl, geoip, …
+scripts/              install, upgrade, backup/restore, smoke-тест appliance
+packaging/systemd/    Unit-файлы
+docs/                 Руководства и ADR
 ```
+
+PostgreSQL — единый source of truth. API рендерит из него конфигурацию HAProxy,
+проверяет, применяет и хранит каждую ревизию для отката.
+
+## Участие в проекте
+
+Баг-репорты, исправления и правки документации приветствуются — начните с
+[CONTRIBUTING.md](CONTRIBUTING.md): там написано, что входит в область проекта и
+как прогнать те же проверки, что запускает CI.
+
+**Никогда не сообщайте об уязвимости в публичном issue.** Используйте
+[приватный канал](SECURITY.md).
+
+## Статус
+
+Автор использует проект в продакшене на домашней сети; описанные здесь интерфейсы
+стабильны, а всё, что их ломает, проходит через `CHANGELOG.md` с примечанием об
+обновлении. Это молодой проект, который ведёт один человек — прочитайте
+[docs/SECURITY.md](docs/SECURITY.md), прежде чем ставить его перед тем, что вам
+жалко потерять, и держите бэкапы (`scripts/backup.sh`).
 
 ## Лицензия
 
-Apache-2.0 (см. LICENSE).
+[Apache-2.0](LICENSE).
