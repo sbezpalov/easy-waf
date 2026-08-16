@@ -14,7 +14,7 @@ Typical workflow for this project:
 
 The **source of truth** for “will it ship?” is what passes on **Linux**, not only ad-hoc commands in PowerShell without `bash`/`go`.
 
-Pilot SSH host alias **`waf-dev`** (dev/test): see **[DEV_HOST.md](DEV_HOST.md)** and workspace **`.vscode/settings.json`**.
+Setting up a Linux host for development and pre-release testing: see **[DEV_HOST.md](DEV_HOST.md)**.
 
 ## What the installer does
 

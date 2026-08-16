@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture decision records** in [`docs/adr/`](docs/adr/), starting with [ADR 0001](docs/adr/0001-packaging-and-installer.md): packaging — the problems with clone-and-run (a Go toolchain left on a security appliance, no dependency declaration, undefined upgrade/uninstall, an unprotected `easy-waf.env`), the options weighed, and the decision to make a native `.deb` the primary install and upgrade path. Proposed; no code yet.
 - **`scripts/smoke-appliance.sh`** (`make smoke-appliance`): post-upgrade checks against a live appliance — the things CI structurally cannot prove. Services back up, `easy-waf-admin doctor`, database reachable and migrations applied, `POST /apply` followed by `haproxy -c` on the live config and HAProxy still running, plus the upgrade deltas that only bite a host which ran an older version: units not reloaded (`ProtectHome` on the broker), an `EASY_WAF_ADMIN_TOKEN` under 24 characters that 1.2.1 now ignores, and a root-owned `<state>/geoip` that blocks UI uploads. Optionally exercises the GeoLite2 upload (`EASY_WAF_SMOKE_MMDB`) and verifies that sign-out really revokes a session (`EASY_WAF_SMOKE_USER`/`_PASSWORD`). Read-mostly; non-zero exit on any failure.
 
+### Changed
+
+- **`docs/DEV_HOST.md` no longer documents one specific machine.** It described a pilot host by internal IP and internal DNS name, which is free reconnaissance in a public repository and useless to everyone else. Rewritten as a generic guide to setting up a Linux development host — SSH config with placeholder addresses, Remote-SSH, and the two checks only a real Linux host can run (`haproxy -c` on the golden configurations, `smoke-appliance.sh` on a live appliance). Concrete addresses belong in `~/.ssh/config`.
+
+### Removed
+
+- **AI working documents (`.ai/artifacts/*`) are no longer tracked**, and the artifact directories of the other tools are ignored too. They are review plans and closure notes: useful while the work is in flight, actively misleading afterwards, since a finding closed in 1.2.1 still reads as open to whoever finds the file later.
+- **`.vscode/settings.json` is no longer tracked.** Its only content was a Remote-SSH platform mapping for one developer's host alias; `docs/DEV_HOST.md` now shows where that belongs (user settings).
+
 ### Fixed
 
 - **Release downloads pointed at the wrong repository.** `install.sh` and `download-release.sh` hardcoded `easy-waf/easy-waf`, so on a fork or after a rename every artifact request 404s and the installer quietly builds from source — which also means the `SHA256SUMS` verification added in 1.2.0 never actually ran. Both now derive `owner/name` from the origin remote of the checkout they run from (`scripts/lib/github-repo.sh`), still overridable via `EASY_WAF_GITHUB_REPO` / `GITHUB_REPOSITORY`, and fall back to the previous default.
