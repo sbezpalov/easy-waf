@@ -5,30 +5,32 @@ package hostd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"golang.org/x/sys/unix"
 )
 
+// openStagedFile opens a file the API staged for a privileged operation.
+//
+// The anchor is the state directory, not the staging directory. Opening
+// /var/lib/easy-waf/staging directly resolved that component the normal way, and
+// the easy-waf account owns it: RESOLVE_BENEATH constrains only what happens
+// *below* an already-open descriptor, it cannot undo a symlink followed while
+// obtaining that descriptor. `rm -rf staging && ln -s /etc staging` was
+// therefore enough to make this read any root-owned file, with the contents
+// echoed back to the caller through the nft or netplan parse error. Anchoring
+// one level up closes it, because /var/lib is root-owned and the state directory
+// entry itself cannot be swapped. See statefile.go.
 func openStagedFile(path string) (*os.File, error) {
-	if !hostspec.ValidStagedPath(path) {
-		return nil, fmt.Errorf("invalid staged path")
-	}
-	root := filepath.Clean(hostspec.StagingDirPrefix)
-	rel, err := filepath.Rel(root, filepath.Clean(path))
+	rel, err := stateStagingRel(path)
 	if err != nil {
 		return nil, err
 	}
-	dirFD, err := unix.Open(root, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY, 0)
+	anchorFD, err := stateAnchorFD()
 	if err != nil {
 		return nil, err
 	}
-	defer unix.Close(dirFD)
-	fd, err := unix.Openat2(dirFD, rel, &unix.OpenHow{
-		Flags:   unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW,
-		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
-	})
+	defer unix.Close(anchorFD)
+	fd, err := openatBeneath(anchorFD, rel, unix.O_RDONLY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open staged file: %w", err)
 	}

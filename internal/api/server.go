@@ -349,11 +349,11 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if c.ID != "" {
-		if err := config.ValidateResourceID("certificate", c.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	// Paths as well as the ID: they are written into the crt-list, where a
+	// newline is a second entry and an SNI filter on it can capture every vhost.
+	if err := config.ValidateCertificateRenderSafety(&c); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
