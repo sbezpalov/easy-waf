@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`scripts/smoke-appliance.sh`** (`make smoke-appliance`): post-upgrade checks against a live appliance — the things CI structurally cannot prove. Services back up, `easy-waf-admin doctor`, database reachable and migrations applied, `POST /apply` followed by `haproxy -c` on the live config and HAProxy still running, plus the upgrade deltas that only bite a host which ran an older version: units not reloaded (`ProtectHome` on the broker), an `EASY_WAF_ADMIN_TOKEN` under 24 characters that 1.2.1 now ignores, and a root-owned `<state>/geoip` that blocks UI uploads. Optionally exercises the GeoLite2 upload (`EASY_WAF_SMOKE_MMDB`) and verifies that sign-out really revokes a session (`EASY_WAF_SMOKE_USER`/`_PASSWORD`). Read-mostly; non-zero exit on any failure.
+
+### Fixed
+
+- **Release downloads pointed at the wrong repository.** `install.sh` and `download-release.sh` hardcoded `easy-waf/easy-waf`, so on a fork or after a rename every artifact request 404s and the installer quietly builds from source — which also means the `SHA256SUMS` verification added in 1.2.0 never actually ran. Both now derive `owner/name` from the origin remote of the checkout they run from (`scripts/lib/github-repo.sh`), still overridable via `EASY_WAF_GITHUB_REPO` / `GITHUB_REPOSITORY`, and fall back to the previous default.
+
 ## [1.3.0] - 2026-08-16
 
 ### Added
