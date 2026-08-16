@@ -1,5 +1,7 @@
 # Quick Start
 
+[English](QUICKSTART.md) | [Русский](QUICKSTART.ru.md)
+
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
 **Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.4.0**); `scripts/install.sh` uses it to fetch the matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+[English](TROUBLESHOOTING.md) | [Русский](TROUBLESHOOTING.ru.md)
+
 This document matches release **1.4.0** (see [`VERSION`](../VERSION)).
 
 ## `systemctl`: no `crowdsec.service` / SPOA bouncer unit

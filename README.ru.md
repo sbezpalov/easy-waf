@@ -58,7 +58,7 @@ Self-hosted **WAF и защищённый reverse proxy** для публика�
 - Артефакты релиза проверяются по `SHA256SUMS` до того, как что-либо будет
   распаковано.
 
-Сами меры и рассуждения за ними: [docs/SECURITY.md](docs/SECURITY.md).
+Сами меры и рассуждения за ними: [docs/SECURITY.ru.md](docs/SECURITY.ru.md).
 Как сообщить об уязвимости: [SECURITY.md](SECURITY.md).
 
 ## Требования
@@ -92,7 +92,7 @@ sudo easy-waf-admin print-enrollment      # одноразовый секрет,
 ```
 
 Откройте `https://<ip-appliance>:8443`, пройдите enrollment, добавьте первое
-приложение. Полный разбор: [docs/QUICKSTART.md](docs/QUICKSTART.md).
+приложение. Полный разбор: [docs/QUICKSTART.ru.md](docs/QUICKSTART.ru.md).
 
 Если PostgreSQL, nftables и CrowdSec уже настроены как надо, пакет ставится сам
 по себе — сначала проверьте контрольную сумму:
@@ -108,22 +108,22 @@ sudo apt install ./easy-waf_<version>_amd64.deb
 
 ## Документация
 
-Документы в `docs/` ведутся на **английском** (канон); ниже — что в них искать.
+Документы в `docs/` ведутся на **английском** — это канон. Три из них переведены на русский и помечены 🇷🇺; при расхождении верна английская версия.
 
 **С чего начать**
 
 | Документ | Что внутри |
 |----------|------------|
-| [QUICKSTART](docs/QUICKSTART.md) | Установка, первый вход, первое приложение |
+| [QUICKSTART](docs/QUICKSTART.ru.md) 🇷🇺 | Установка, первый вход, первое приложение |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | Компоненты, потоки данных, жизненный цикл конфигурации |
 | [OPERATIONS](docs/OPERATIONS.md) | День второй: ручная проверка, переключатели, smoke-тест после обновления |
-| [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) | Когда что-то не работает |
+| [TROUBLESHOOTING](docs/TROUBLESHOOTING.ru.md) 🇷🇺 | Когда что-то не работает |
 
 **Безопасность и слои защиты**
 
 | Документ | Что внутри |
 |----------|------------|
-| [SECURITY](docs/SECURITY.md) | Hardening, модель привилегий, цепочка поставки, чеклист |
+| [SECURITY](docs/SECURITY.ru.md) 🇷🇺 | Hardening, модель привилегий, цепочка поставок, чеклист |
 | [APPLICATION_SECURITY](docs/APPLICATION_SECURITY.md) · [SECURITY_PROFILES](docs/SECURITY_PROFILES.md) | Слои защиты приложения и пресеты |
 | [CROWDSEC](docs/CROWDSEC.md) · [FAIL2BAN](docs/FAIL2BAN.md) | Поведенческая блокировка |
 | [IPBL](docs/IPBL.md) · [GEOIP](docs/GEOIP.md) | Списки IP, внешние фиды, фильтрация по странам |

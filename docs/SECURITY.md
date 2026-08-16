@@ -1,5 +1,7 @@
 # Security Guide
 
+[English](SECURITY.md) | [Русский](SECURITY.ru.md)
+
 Applies to the release from root [`VERSION`](../VERSION) (**1.4.0**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
 
 ## Principles
@@ -89,7 +91,7 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 ## Supply chain
 
 - Build binaries in **reproducible** CI; publish **SHA256** checksums with releases. `release.yml` uploads **`SHA256SUMS`** next to every release tarball.
-- **Downloads are verified, not just TLS-protected.** `scripts/install.sh` and `scripts/download-release.sh` fetch `SHA256SUMS` from the same release and refuse any artifact whose digest is missing or does not match — release binaries are installed to `/usr/sbin` as root, so a typosquatted `EASY_WAF_GITHUB_REPO`, a poisoned asset or a TLS-stripping proxy would otherwise mean root code execution. On failure the installer **builds from source** instead.
+- **Downloads are verified, not just TLS-protected.** `scripts/install.sh` and `scripts/download-release.sh` fetch `SHA256SUMS` from the same release and refuse any artifact whose digest is missing or does not match — release binaries are installed to `/usr/sbin` as root, so a typosquatted `EASY_WAF_GITHUB_REPO`, a poisoned asset or a TLS-stripping proxy would otherwise mean root code execution. On failure the installer **stops** — since 1.4.0 it no longer falls back to compiling on the appliance, because an artifact that will not verify means the release is missing, the repository is wrong, or something other than GitHub answered, and none of those is a reason to install a Go toolchain on a machine that terminates TLS. `EASY_WAF_BUILD_FROM_SOURCE=1` opts back in.
   - `curl` runs with `--proto '=https' --proto-redir '=https' --tlsv1.2`: no plaintext hop, not even through a redirect.
   - Artifacts are downloaded into `mktemp -d`, never a predictable `/tmp` path (root `curl -o` follows symlinks). The same applies to every root-executed script: **`scripts/smoke-appliance.sh`** writes its scratch files into `mktemp -d` with a cleanup trap, because `postinst` tells the operator to run it after each upgrade and PID-suffixed `/tmp` names are cheap to pre-create as symlinks.
   - **`scripts/restore.sh`** refuses an archive containing absolute or `..` member paths, and matches the listing with a here-string rather than a pipe. `tar -tzf … | grep -q` under `set -o pipefail` fails **open**: grep exits at the first match, tar dies of SIGPIPE, the pipeline reports failure, and the malicious archive is extracted anyway.
