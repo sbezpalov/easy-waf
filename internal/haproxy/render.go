@@ -64,6 +64,17 @@ func Render(in RenderInput) (Rendered, error) {
 	if strings.TrimSpace(in.StateDir) == "" && strings.TrimSpace(in.Settings.HAProxyConfigPath) != "" {
 		in.StateDir = filepath.Clean(filepath.Join(filepath.Dir(in.Settings.HAProxyConfigPath), ".."))
 	}
+	// Settings and certificates get the same treatment as applications below:
+	// re-checked here, not only where they were written.
+	if err := config.ValidateSettingsRenderSafety(&in.Settings); err != nil {
+		return Rendered{}, fmt.Errorf("settings are unsafe to render: %w", err)
+	}
+	for id := range in.Certificates {
+		c := in.Certificates[id]
+		if err := config.ValidateCertificateRenderSafety(&c); err != nil {
+			return Rendered{}, fmt.Errorf("certificate %q is unsafe to render: %w", id, err)
+		}
+	}
 	in.UseCrowdSecFilter = strings.TrimSpace(in.Settings.SPOEConfigPath) != ""
 	if in.UseCrowdSecFilter {
 		in.UseCrowdSecFilter = false
@@ -89,6 +100,9 @@ func Render(in RenderInput) (Rendered, error) {
 		if err := config.ValidateApplicationRenderSafety(&in.Applications[i]); err != nil {
 			return Rendered{}, fmt.Errorf("application %q is unsafe to render: %w", in.Applications[i].ID, err)
 		}
+	}
+	if err := checkIdentifierCollisions(in.Applications); err != nil {
+		return Rendered{}, err
 	}
 	apps := make([]AppRender, 0, len(in.Applications))
 	for _, app := range in.Applications {
@@ -230,8 +244,12 @@ func buildCRTList(in RenderInput) []string {
 // "pay_api" are two distinct rows that produced a single ACL tag, and HAProxy
 // silently ORs same-named ACLs. One application's IP blacklist, GeoIP, WAF and
 // routing rules then also applied to the other application's host, in whichever
-// direction the first match happened to win. Hostnames cannot contain '_', so
-// mapping '.' to '_' stays injective for the host-derived fallback.
+// direction the first match happened to win.
+//
+// The host-derived fallback maps '.' to '_', which is injective only because
+// config.validHostnameRe excludes '_' from public_host — it did not, once, and
+// "a.b.com" and "a_b.com" both produced bk_a_b_com. checkIdentifierCollisions is
+// the backstop if that ever slips again.
 func sanitizeHAProxyIdent(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -558,4 +576,44 @@ func LiveCfgPath(stateDir, settingsHAProxyConfigPath string) string {
 	}
 	_, cfg, _ := Paths(stateDir)
 	return cfg
+}
+
+// checkIdentifierCollisions refuses to render when two enabled applications map
+// onto one HAProxy identifier.
+//
+// The value of this is the error message. HAProxy rejects a duplicate proxy
+// name, so a collision already stopped the apply — but with a message about
+// `bk_a_b_com` rather than about the two rows that produced it, and every
+// subsequent apply, including auto-apply, stayed wedged until somebody worked
+// out which row to delete. Naming both applications turns a mystery into a
+// two-minute fix.
+//
+// The public-host validator now rules out the ways a collision was reachable
+// (uppercase, and '_'), so this is a backstop for whatever the next one is.
+func checkIdentifierCollisions(apps []config.Application) error {
+	type owner struct{ id, host string }
+	backends := map[string]owner{}
+	tags := map[string]owner{}
+	for _, app := range apps {
+		if !app.Enabled {
+			continue
+		}
+		if name := sanitizeBackendName(app.PublicHost); name != "" {
+			if prev, dup := backends[name]; dup {
+				return fmt.Errorf("applications %q (%s) and %q (%s) both render as backend %s — "+
+					"HAProxy rejects duplicate proxy names, so nothing can be applied until one of them changes",
+					prev.id, prev.host, app.ID, app.PublicHost, name)
+			}
+			backends[name] = owner{app.ID, app.PublicHost}
+		}
+		if tag := sanitizeAppACLTag(app.ID, app.PublicHost); tag != "" {
+			if prev, dup := tags[tag]; dup {
+				return fmt.Errorf("applications %q (%s) and %q (%s) both render as ACL tag %s — "+
+					"HAProxy silently ORs same-named ACLs, so one application's rules would also apply to the other's traffic",
+					prev.id, prev.host, app.ID, app.PublicHost, tag)
+			}
+			tags[tag] = owner{app.ID, app.PublicHost}
+		}
+	}
+	return nil
 }

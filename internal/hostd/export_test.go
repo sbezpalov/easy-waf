@@ -22,3 +22,11 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(code)
 }
+
+// SetStateDirForTest points the state-directory helpers at a temporary tree and
+// returns a function that restores the real path.
+func SetStateDirForTest(dir string) func() {
+	prev := stateDir
+	stateDir = dir
+	return func() { stateDir = prev }
+}

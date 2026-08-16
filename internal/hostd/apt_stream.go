@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -178,8 +177,7 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 	}
 
 	logPath := aptActionLogPath()
-	_ = os.MkdirAll(filepath.Dir(logPath), 0o750)
-	logFile, err := os.Create(logPath)
+	logFile, err := createAptActionLog(logPath)
 	if err != nil {
 		logOp("apt-stream %s: log file: %v", action, err)
 	}
@@ -259,7 +257,7 @@ func dispatchAptActionAttach(sc *aptStreamConn) {
 }
 
 func readAptActionLogFrom(offset int64) (lines []string, newOffset int64, err error) {
-	f, err := os.Open(aptActionLogPath())
+	f, err := openAptActionLog(aptActionLogPath())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, 0, nil
@@ -302,9 +300,9 @@ func dispatchAptUpgradeStatus() Response {
 
 // dispatchAptActionLog returns the current apt action log (read-only).
 func dispatchAptActionLog() Response {
-	b, err := os.ReadFile(aptActionLogPath())
+	b, err := readAptActionLog(aptActionLogPath())
 	if err != nil && os.IsNotExist(err) {
-		b, err = os.ReadFile(defaultAptUpgradeLogPath)
+		b, err = readAptActionLog(defaultAptUpgradeLogPath)
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
