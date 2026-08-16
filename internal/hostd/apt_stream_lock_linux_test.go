@@ -11,7 +11,7 @@ import (
 
 func TestDispatchAptUpgradeStream_dpkgLockHint(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, _ func(string) error) (int, error) {
 		return 0, nil
 	})
 	dpkgLockBusyHook = func() bool { return true }

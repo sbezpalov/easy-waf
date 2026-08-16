@@ -153,12 +153,12 @@ func TestWriteAuthorizedKeys(t *testing.T) {
 // A home directory that is a symlink is the classic root-chown primitive: refuse it.
 func TestWriteAuthorizedKeys_refusesSymlinkedHome(t *testing.T) {
 	base := t.TempDir()
-	real := filepath.Join(base, "real")
-	if err := os.Mkdir(real, 0o700); err != nil {
+	target := filepath.Join(base, "real")
+	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(base, "home-link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	if err := writeAuthorizedKeys(link, os.Getuid(), os.Getgid(), []byte(validKey+"\n")); err == nil {

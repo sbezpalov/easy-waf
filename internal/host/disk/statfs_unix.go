@@ -9,7 +9,7 @@ func statfsMount(path string) (Mount, fsID, error) {
 	if err := unix.Statfs(path, &st); err != nil {
 		return Mount{}, fsID{}, err
 	}
-	bsize := uint64(st.Bsize)
+	bsize := uint64(st.Bsize) //nolint:gosec // block size reported by the kernel is never negative
 	total := uint64(st.Blocks) * bsize
 	free := uint64(st.Bavail) * bsize
 	var used uint64

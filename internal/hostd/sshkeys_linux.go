@@ -96,9 +96,9 @@ func writeAuthorizedKeys(home string, uid, gid int, content []byte) error {
 
 // openatBeneath opens name relative to dirFD, refusing symlinks and any escape
 // from the directory.
-func openatBeneath(dirFD int, name string, flags int, mode uint64) (int, error) {
+func openatBeneath(dirFD int, name string, flags, mode uint64) (int, error) {
 	return unix.Openat2(dirFD, name, &unix.OpenHow{
-		Flags:   uint64(flags) | unix.O_NOFOLLOW,
+		Flags:   flags | unix.O_NOFOLLOW,
 		Mode:    mode,
 		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
 	})

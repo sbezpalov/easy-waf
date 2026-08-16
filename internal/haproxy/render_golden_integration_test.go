@@ -33,6 +33,9 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			d := t.TempDir()
 			absSock := filepath.Join(d, "s.sock")
 			cfgBody := rewriteStatsSocketPathForHAProxyCheck(raw, absSock)
+			// Backend-TLS fixtures record an operator CA path that exists only on the
+			// appliance they were written for, and haproxy -c opens ca-file for real.
+			cfgBody = rewriteCAFilePathForHAProxyCheck(cfgBody, goldenCAFileForCheck(t, d))
 			cfgBody = augmentGoldenHAProxyCfgForHaproxyCheck(cfgBody)
 			tmp := filepath.Join(d, "c.cfg")
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
@@ -43,4 +46,20 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+// goldenCAFileForCheck materializes a CA bundle for `haproxy -c` to open,
+// reusing a committed certificate fixture so no key material is generated here.
+func goldenCAFileForCheck(t *testing.T, dir string) string {
+	t.Helper()
+	src := filepath.Join("testdata", "golden", "certs", "bundle-a.pem")
+	pem, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read CA fixture %s: %v", src, err)
+	}
+	dst := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(dst, pem, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dst
 }

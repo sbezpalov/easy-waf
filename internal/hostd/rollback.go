@@ -15,6 +15,12 @@ const (
 	nftRulesPath = "/etc/nftables/easy-waf.nft"
 	netplanPath  = "/etc/netplan/99-easy-waf.yaml"
 	hostdBin     = "/usr/sbin/easy-waf-hostd"
+
+	// nftRulesMode matches what the apply path writes, so a revert cannot leave
+	// the ruleset file with different permissions than a normal apply.
+	nftRulesMode os.FileMode = 0o644
+	// netplanMode: netplan warns about world-readable configuration.
+	netplanMode os.FileMode = 0o600
 )
 
 func rollbackBackupPath(kind, token string) string {
@@ -65,10 +71,10 @@ func revertNft(token string) error {
 	// meant to undo them, including the rollback that fires when the operator
 	// locks themselves out. revertNetplan already handles the empty case.
 	if sz, _ := fileSize(bak); sz > 0 {
-		if err := copyFile(bak, nftRulesPath, 0o644); err != nil {
+		if err := copyFile(bak, nftRulesPath, nftRulesMode); err != nil {
 			return err
 		}
-	} else if err := os.WriteFile(nftRulesPath, []byte("flush ruleset\n"), 0o644); err != nil {
+	} else if err := writeFileAtomic(nftRulesPath, []byte("flush ruleset\n"), nftRulesMode); err != nil {
 		return err
 	}
 	ctx := context.Background()
@@ -87,7 +93,7 @@ func revertNetplan(token string) error {
 		return nil
 	}
 	if sz, _ := fileSize(bak); sz > 0 {
-		if err := copyFile(bak, netplanPath, 0o600); err != nil {
+		if err := copyFile(bak, netplanPath, netplanMode); err != nil {
 			return err
 		}
 	} else {

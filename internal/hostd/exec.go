@@ -99,6 +99,33 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return os.Rename(tmpName, dst)
 }
 
+// writeFileAtomic writes data to path through a temporary file and a rename, so
+// a reader never observes a partially written file. Same reasoning as copyFile.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".easy-waf-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName) // no-op once the rename has succeeded
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
 func touchEmpty(path string) error {
 	return os.WriteFile(path, nil, 0o600)
 }
