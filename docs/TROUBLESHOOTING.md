@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This document matches release **1.3.0** (see [`VERSION`](../VERSION)).
+This document matches release **1.4.0** (see [`VERSION`](../VERSION)).
 
 ## `systemctl`: no `crowdsec.service` / SPOA bouncer unit
 
