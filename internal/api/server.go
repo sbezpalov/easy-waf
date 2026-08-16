@@ -46,7 +46,7 @@ func (s *Server) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(securityHeaders)
-	r.Use(limitRequestBody(maxAPIRequestBodyBytes))
+	r.Use(limitRequestBody(maxAPIRequestBodyBytes, geoipDatabaseUploadPath))
 	// Forwarding headers apply only when the TCP peer is a trusted proxy (loopback by default); see docs/SECURITY.md.
 	r.Use(TrustedRealIP(TrustedProxyCIDRs()))
 	r.Use(s.managementACL)
@@ -122,6 +122,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/geoip/stats", s.geoipStats)
 				r.Get("/geoip/providers", s.geoipListProviders)
 				r.Post("/geoip/reload", s.geoipReload)
+				r.Post("/geoip/database", s.geoipUploadDatabase)
 
 				r.Get("/stats/haproxy", s.handleStatsHAProxy)
 				r.Get("/stats/summary", s.handleStatsSummary)

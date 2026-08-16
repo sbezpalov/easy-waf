@@ -57,6 +57,11 @@ if [[ -z "$MMDB" ]]; then
 fi
 
 mkdir -p "$DEST"
+# Keep the directory owned by easy-waf so the API can still install uploads there
+# (POST /api/v1/geoip/database renames a file into this directory).
+if id easy-waf &>/dev/null && [[ "$(id -u)" == "0" ]]; then
+  chown easy-waf:easy-waf "$DEST" 2>/dev/null || true
+fi
 install -m 0644 "$MMDB" "$DEST/GeoLite2-Country.mmdb"
 echo "[update-geoip-db] installed → $DEST/GeoLite2-Country.mmdb"
 

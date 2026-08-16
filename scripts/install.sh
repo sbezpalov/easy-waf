@@ -82,6 +82,7 @@ create_user_and_layout() {
     "${STATE_DIR}/revisions" \
     "${STATE_DIR}/certs" \
     "${STATE_DIR}/acme" \
+    "${STATE_DIR}/geoip" \
     "$ACME_WEBROOT" \
     "$SECRETS_DIR" \
     "$CFG_DIR"
@@ -92,7 +93,9 @@ create_user_and_layout() {
   chmod 0700 "$SECRETS_DIR" || true
   chmod 0755 "$ACME_WEBROOT" || true
   chown -R easy-waf:easy-waf "$STATE_DIR" || true
-  chmod 0750 "${STATE_DIR}/haproxy" "${STATE_DIR}/certs" "${STATE_DIR}/revisions" 2>/dev/null || true
+  # geoip/ must stay writable by easy-waf: the API installs uploaded GeoLite2
+  # databases there (POST /api/v1/geoip/database) by renaming into this directory.
+  chmod 0750 "${STATE_DIR}/haproxy" "${STATE_DIR}/certs" "${STATE_DIR}/revisions" "${STATE_DIR}/geoip" 2>/dev/null || true
   if id haproxy &>/dev/null; then
     if ! id -nG haproxy | grep -qw easy-waf; then
       usermod -aG easy-waf haproxy

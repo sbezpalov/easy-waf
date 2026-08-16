@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **GeoLite2 database upload from the UI** (**Security → GeoIP → Upload & install**, `POST /api/v1/geoip/database`): accepts a `.mmdb` file or the `.tar.gz` MaxMind publishes, installs it into `<state>/geoip/` and hot-swaps the reader — no shell access, no `scp`, no restart. Previously the file had to be placed on the appliance by hand or by the cron script, and the UI could only point at an existing path.
+  - The archive format is detected from the content, not from a file name; `.tar.gz` member paths are ignored, so a crafted archive cannot choose where bytes land.
+  - The destination name comes from the database's own metadata (`GeoLite2-Country.mmdb` / `GeoLite2-City.mmdb`), never from the request.
+  - The upload must open as a MaxMind database with country data and answer a lookup for `8.8.8.8` before an atomic rename installs it — **a rejected upload leaves the running database in place**.
+  - Decompressed size is capped at 128 MiB, installs are serialized, and each one is recorded in the audit log as `geoip_database_uploaded`.
+  - A refresh of an already-configured database (`geoip_mmdb_path` already points at the installed file) hot-swaps the reader and clears the lookup cache — `"reloaded": true`. A first install reports `"reloaded": false` with an `activate_hint`, because the runtime resolves its reader from `geoip_mmdb_path`; the UI fills the path in and prompts to save.
+- `internal/geoip`: `ValidateMMDBFile`, `ExtractMMDB` and `InstallMMDB` for reuse outside the API handler.
+
+### Changed
+
+- `limitRequestBody` takes an exemption list so a single large-artifact route can opt out of the global 4 MiB cap while still enforcing its own limit in the handler.
+- `scripts/install.sh` creates `<state>/geoip` owned by `easy-waf`, and `scripts/update-geoip-db.sh` restores that ownership when it runs as root — otherwise a root-created directory would block UI uploads.
+
 ## [1.2.1] - 2026-08-16
 
 ### Added
