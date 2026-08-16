@@ -497,6 +497,13 @@
           </label>
           <button type="button" class="secondary" id="btn-geoip-validate-mm">Validate (8.8.8.8)</button>
         </div>
+        <div id="geoip-upload-row" class="row hidden" style="flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.35rem">
+          <label>Upload database
+            <input id="geoip-mmdb-file" type="file" accept=".mmdb,.gz,.tgz,application/gzip,application/octet-stream" />
+          </label>
+          <button type="button" class="secondary" id="btn-geoip-upload">Upload &amp; install</button>
+          <small class="dash-note">GeoLite2 <code>.mmdb</code> or the MaxMind <code>.tar.gz</code>. Installed only after it opens and answers a test lookup.</small>
+        </div>
         <label>Country codes (ISO alpha-2, comma-separated)<br />
           <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
         </label>
@@ -1582,7 +1589,10 @@
     const row = document.getElementById('geoip-maxmind-row');
     const sel = document.getElementById('geoip-provider');
     if (!row || !sel) return;
-    row.classList.toggle('hidden', sel.value !== 'maxmind');
+    const isMaxMind = sel.value !== 'maxmind' ? false : true;
+    row.classList.toggle('hidden', !isMaxMind);
+    const up = document.getElementById('geoip-upload-row');
+    if (up) up.classList.toggle('hidden', !isMaxMind);
   }
 
   async function refreshGeoIPProvidersNote() {
@@ -2354,6 +2364,50 @@
       out.textContent = JSON.stringify(JSON.parse(txt), null, 2);
     } catch {
       out.textContent = txt;
+    }
+  };
+
+  document.getElementById('btn-geoip-upload').onclick = async () => {
+    const out = document.getElementById('geoip-lookup-out');
+    const msg = document.getElementById('security-geo-msg');
+    const input = document.getElementById('geoip-mmdb-file');
+    const btn = document.getElementById('btn-geoip-upload');
+    const file = input && input.files && input.files[0];
+    out.textContent = '';
+    if (!file) { msg.textContent = 'Choose a .mmdb or .tar.gz file first.'; return; }
+
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    msg.textContent = 'Uploading ' + file.name + ' (' + mb + ' MB)…';
+    btn.disabled = true;
+    try {
+      // Raw body, not multipart: the server detects .mmdb vs .tar.gz from the
+      // content and never trusts the file name.
+      const r = await fetch('/api/v1/geoip/database', {
+        method: 'POST',
+        headers: hdr({ 'Content-Type': 'application/octet-stream' }),
+        body: file,
+      });
+      const txt = await r.text();
+      let data = null;
+      try { data = JSON.parse(txt); } catch { /* keep raw text */ }
+      out.textContent = data ? JSON.stringify(data, null, 2) : txt;
+      if (!r.ok) {
+        msg.textContent = 'Upload rejected — the previous database is still active.';
+        return;
+      }
+      const pathEl = document.getElementById('geoip-mmdb-path');
+      if (pathEl && data && data.path) pathEl.value = data.path;
+      msg.textContent =
+        'Installed ' + (data && data.database_type ? data.database_type : 'database') +
+        (data && data.reloaded
+          ? ' — live now, lookup cache cleared.'
+          : ' — press "Save GeoIP settings" to activate this path.');
+      input.value = '';
+      await refreshGeoIPProvidersNote();
+    } catch (e) {
+      msg.textContent = 'Upload failed: ' + e;
+    } finally {
+      btn.disabled = false;
     }
   };
 

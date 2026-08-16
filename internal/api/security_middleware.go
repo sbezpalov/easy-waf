@@ -19,9 +19,23 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func limitRequestBody(maxBytes int64) func(http.Handler) http.Handler {
+// limitRequestBody caps request bodies for the whole API.
+//
+// exemptPaths lists the few routes that receive a large binary artifact (a GeoIP
+// database is tens of megabytes). Those routes are skipped here and must apply
+// their own, larger MaxBytesReader in the handler — an exemption without a
+// handler-side limit would leave the route unbounded.
+func limitRequestBody(maxBytes int64, exemptPaths ...string) func(http.Handler) http.Handler {
+	exempt := make(map[string]struct{}, len(exemptPaths))
+	for _, p := range exemptPaths {
+		exempt[p] = struct{}{}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, skip := exempt[r.URL.Path]; skip {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if r.Body != nil {
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			}
