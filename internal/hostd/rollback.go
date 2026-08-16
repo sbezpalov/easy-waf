@@ -59,15 +59,22 @@ func revertNft(token string) error {
 	if _, err := os.Stat(bak); os.IsNotExist(err) {
 		return nil
 	}
+	// An empty backup means no managed ruleset existed before this change, so a
+	// revert has to flush back to empty. Skipping the reload in that case — as
+	// this used to — left the newly applied firewall rules live after a rollback
+	// meant to undo them, including the rollback that fires when the operator
+	// locks themselves out. revertNetplan already handles the empty case.
 	if sz, _ := fileSize(bak); sz > 0 {
 		if err := copyFile(bak, nftRulesPath, 0o644); err != nil {
 			return err
 		}
-		ctx := context.Background()
-		_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", nftRulesPath)
-		if err != nil || code != 0 {
-			return fmt.Errorf("nft -f: %s", string(stderr))
-		}
+	} else if err := os.WriteFile(nftRulesPath, []byte("flush ruleset\n"), 0o644); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", nftRulesPath)
+	if err != nil || code != 0 {
+		return fmt.Errorf("nft -f: %s", string(stderr))
 	}
 	_ = os.Remove(bak)
 	logOp("nft reverted (token %s)", token)

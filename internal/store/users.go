@@ -68,6 +68,19 @@ func (s *Store) UpdateUserPassword(ctx context.Context, userID, passwordHash str
 	return err
 }
 
+// RevokeUserSessions increments session_version, invalidating every JWT already
+// issued to the user. Sign-out uses it so logging out is enforced server-side
+// rather than by clearing the token in the browser and hoping nobody kept a copy.
+func (s *Store) RevokeUserSessions(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users
+		SET session_version = session_version + 1,
+		    updated_at = $2
+		WHERE id = $1`,
+		userID, time.Now().UTC())
+	return err
+}
+
 // EnsureOperatorEnrollment issues a one-time enrollment secret when the users table is empty.
 // It never writes the secret to application logs. Existing operators are not reset.
 func (s *Store) EnsureOperatorEnrollment(ctx context.Context, stateDir string) (created bool, path string, err error) {

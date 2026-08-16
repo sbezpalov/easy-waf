@@ -53,7 +53,13 @@ cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
 echo "[easy-waf-restore] extracting archive…"
-tar -xzf "$ARCHIVE" -C "$WORKDIR"
+# The archive is operator-supplied and this runs as root: refuse absolute paths
+# and ".." members, and never restore the archive's own uid/gid.
+if tar -tzf "$ARCHIVE" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+  echo "ERROR: archive contains absolute or parent-relative paths — refusing to extract" >&2
+  exit 1
+fi
+tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$WORKDIR"
 
 ROOT="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
 if [[ -z "$ROOT" ]] || [[ ! -d "$ROOT" ]]; then
@@ -91,10 +97,10 @@ pg_restore --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/eas
 
 mkdir -p "$STATE" "$CFG"
 echo "[easy-waf-restore] restoring $STATE from backup…"
-tar -C "$ROOT/state" -cf - . | tar -C "$STATE" -xf -
+tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 
 echo "[easy-waf-restore] restoring $CFG from backup…"
-tar -C "$ROOT/etc" -cf - . | tar -C "$CFG" -xf -
+tar -C "$ROOT/etc" -cf - . | tar --no-same-owner -C "$CFG" -xf -
 
 chown -R easy-waf:easy-waf "$STATE" 2>/dev/null || true
 find "$CFG" -type d -exec chmod 0750 {} + 2>/dev/null || true

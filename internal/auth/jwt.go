@@ -34,14 +34,19 @@ func SignJWT(secret []byte, username string, sessionVersion int, ttl time.Durati
 	return t.SignedString(secret)
 }
 
-// ParseJWT returns session claims or an error. Tokens without sv fail closed.
+// ParseJWT returns session claims or an error. Tokens without sv or exp fail closed.
 func ParseJWT(secret []byte, token string) (*SessionClaims, error) {
 	t, err := jwt.ParseWithClaims(token, &SessionClaims{}, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 		return secret, nil
-	})
+	},
+		// exp is otherwise validated only when present, so a signed token that
+		// carries no exp claim would never expire.
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+	)
 	if err != nil {
 		return nil, err
 	}

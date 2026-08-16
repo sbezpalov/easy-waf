@@ -10,6 +10,14 @@ type loginAttempt struct {
 	attempts []time.Time
 }
 
+// maxTrackedIPs caps the per-IP table. Without a cap, a spray from spoofed or
+// distributed source addresses grows the map unboundedly between the one-minute
+// sweeps, so the limiter meant to absorb abuse becomes the memory leak. On
+// overflow the least recently seen entry is evicted: refusing new entries
+// instead would let an attacker fill the table and switch rate limiting off for
+// everyone else.
+const maxTrackedIPs = 10000
+
 // LoginRateLimiter implements a sliding-window per-IP rate limit for authentication endpoints.
 type LoginRateLimiter struct {
 	mu       sync.Mutex
@@ -47,6 +55,12 @@ func (rl *LoginRateLimiter) Allow(ip string) (bool, int) {
 	now := time.Now()
 	entry, exists := rl.ips[ip]
 	if !exists {
+		if len(rl.ips) >= maxTrackedIPs {
+			rl.pruneLocked(now)
+		}
+		if len(rl.ips) >= maxTrackedIPs {
+			rl.evictOldestLocked()
+		}
 		entry = &loginAttempt{}
 		rl.ips[ip] = entry
 	}
@@ -100,7 +114,13 @@ func (rl *LoginRateLimiter) RecordSuccess(ip string) {
 func (rl *LoginRateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	cutoff := time.Now().Add(-(rl.window + rl.lockout))
+	rl.pruneLocked(time.Now())
+}
+
+// pruneLocked drops attempts older than window+lockout and any IP left empty.
+// Caller holds rl.mu.
+func (rl *LoginRateLimiter) pruneLocked(now time.Time) {
+	cutoff := now.Add(-(rl.window + rl.lockout))
 	for ip, entry := range rl.ips {
 		fresh := entry.attempts[:0]
 		for _, t := range entry.attempts {
@@ -113,5 +133,26 @@ func (rl *LoginRateLimiter) cleanup() {
 		} else {
 			entry.attempts = fresh
 		}
+	}
+}
+
+// evictOldestLocked removes the entry whose most recent attempt is the oldest,
+// so an active attacker's own entry is the last thing dropped. Caller holds rl.mu.
+func (rl *LoginRateLimiter) evictOldestLocked() {
+	var oldestIP string
+	var oldest time.Time
+	for ip, entry := range rl.ips {
+		var last time.Time
+		for _, t := range entry.attempts {
+			if t.After(last) {
+				last = t
+			}
+		}
+		if oldestIP == "" || last.Before(oldest) {
+			oldestIP, oldest = ip, last
+		}
+	}
+	if oldestIP != "" {
+		delete(rl.ips, oldestIP)
 	}
 }

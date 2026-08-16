@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /api/v1/auth/logout`** revokes every JWT issued to the operator (increments `users.session_version`); the UI calls it before clearing the local token, so signing out is enforced server-side instead of only in the browser.
+- Optional **`EASY_WAF_METRICS_TOKEN`** (≥16 characters) locks `/metrics` behind a bearer token for Prometheus, which cannot present a session JWT. Without it the endpoint remains protected only by `management_allowed_cidrs` (RFC1918 by default).
+
 ### Security
 
 - **`easy-waf-hostd` no longer lets SSH key management escalate to root.** The broker now re-validates `authorized_keys` content itself (`hostspec.ValidateAuthorizedKeysContent`) instead of trusting the API-side check, rejecting option-bearing lines (`command=`, `environment=`, `permitopen=`) that execute code on every login, plus size and line-count limits. Accounts in a root-equivalent group (`root`, `sudo`, `admin`, `wheel`) are refused unless the operator sets `EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1` in the root-owned `easy-waf-hostd` unit; an unreadable `/etc/group` fails closed.
@@ -14,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Broker peer authentication fails closed: when the `easy-waf` account cannot be resolved at startup, `SO_PEERCRED` checking used to be skipped for every connection — now only root is accepted, and a non-unix connection is rejected outright.
 - **Per-application HAProxy ACL tags are no longer ambiguous.** `-` and `_` both collapsed to `_`, so applications `pay-api` and `pay_api` shared one ACL name; HAProxy ORs same-named ACLs, which silently applied one application's IP blacklist, GeoIP, WAF and routing rules to the other application's host. Identifiers now preserve `-`, making the mapping injective over the validated ID charset (generated backend names change accordingly, e.g. `bk_waf_on_example_com` → `bk_waf-on_example_com`).
 - Legacy `EASY_WAF_ADMIN_TOKEN` is compared as a fixed-width SHA-256 digest instead of `len(raw) == len(token)` followed by a constant-time compare, which leaked the token length; tokens shorter than 24 characters are now ignored with a startup warning rather than accepted.
+- **Application fields are re-validated at render time** (`config.ValidateApplicationRenderSafety`), not only in the API handler. `public_host`, `backend_host`, `name`, paths, restricted-path CIDRs and `backend_tls_server_name` are interpolated straight into HAProxy directives, where a newline injects a rule that `haproxy -c` still accepts; the generator no longer assumes the API handler was the only way a row could be stored.
+- `backend_tls_server_name` is restricted to DNS/IP characters — parentheses previously broke the generated `sni str(<name>)` expression and made the whole edge config fail to load.
+- Session JWTs are parsed with `WithExpirationRequired()` and `WithIssuedAt()`: a signed token without `exp` used to be accepted and never expire.
+- `POST /api/v1/auth/change-password` is rate-limited per IP like login — it verifies `current_password`, so it was an unthrottled password oracle for a session holder.
+- Login no longer answers faster for unknown usernames: a dummy bcrypt comparison equalizes the timing that revealed which operator names exist.
+- The login rate limiter caps its per-IP table at 10 000 entries and evicts the least recently seen address; a spray of distinct source IPs previously grew the map unboundedly between the one-minute sweeps.
+- `easy-waf-hostd` rollback flushes the ruleset when the nftables backup is empty. A revert after "no managed ruleset existed" used to leave the newly applied rules live — including the automatic revert that fires when an operator locks themselves out.
+- `scripts/update-geoip-db.sh` passes the MaxMind license key and the API bearer token through `curl --config -` instead of argv, where any local user could read them from `ps`.
+- `scripts/restore.sh` refuses archives containing absolute or `..` paths and extracts with `--no-same-owner --no-same-permissions`, so an operator-supplied backup cannot restore attacker-chosen ownership as root.
 
 ### Changed
 

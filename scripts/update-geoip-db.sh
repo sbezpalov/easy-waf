@@ -35,7 +35,18 @@ trap 'rm -rf "$TMP"' EXIT
 
 URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${KEY}&suffix=tar.gz"
 echo "[update-geoip-db] downloading…"
-curl -fsSL -o "$TMP/GeoLite2-Country.tar.gz" "$URL"
+# The URL carries the license key, so it goes through a config file on stdin
+# instead of argv: command lines are readable by any local user via ps//proc.
+curl --config - <<CURLRC
+url = "${URL}"
+output = "${TMP}/GeoLite2-Country.tar.gz"
+silent
+show-error
+fail
+location
+proto = "=https"
+proto-redir = "=https"
+CURLRC
 
 mkdir -p "$TMP/ex"
 tar -xzf "$TMP/GeoLite2-Country.tar.gz" -C "$TMP/ex"
@@ -51,11 +62,18 @@ echo "[update-geoip-db] installed → $DEST/GeoLite2-Country.mmdb"
 
 if [[ -n "${EASY_WAF_ADMIN_TOKEN:-}" ]]; then
   echo "[update-geoip-db] POST $API/api/v1/geoip/reload"
-  curl "${CURL_TLS_ARGS[@]}" -fsS -X POST "${API%/}/api/v1/geoip/reload" \
-    -H "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -H "X-Requested-With: XMLHttpRequest" \
-    -d "{\"mmdb_path\":\"$DEST/GeoLite2-Country.mmdb\"}" || {
+  # Same reason as above: the bearer token must not appear in the command line.
+  curl "${CURL_TLS_ARGS[@]}" --config - <<CURLRC || {
+url = "${API%/}/api/v1/geoip/reload"
+request = "POST"
+header = "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}"
+header = "Content-Type: application/json"
+header = "X-Requested-With: XMLHttpRequest"
+data = "{\"mmdb_path\":\"${DEST}/GeoLite2-Country.mmdb\"}"
+silent
+show-error
+fail
+CURLRC
     echo "[update-geoip-db] WARNING: reload request failed (API down or token invalid?)" >&2
   }
 else

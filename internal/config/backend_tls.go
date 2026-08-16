@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -72,17 +73,24 @@ func ValidateBackendCAFile(stateDir, path string) error {
 	return fmt.Errorf("backend_tls_ca_file is not an allowlisted CA path")
 }
 
+// backendTLSServerNameRe restricts SNI/verifyhost to DNS-name and IP characters.
+//
+// The value is rendered as `sni str(<name>) verifyhost <name>`, so anything
+// outside this set — parentheses in particular — breaks the str() expression and
+// makes the whole edge configuration fail to load.
+var backendTLSServerNameRe = regexp.MustCompile(`^[A-Za-z0-9*]([A-Za-z0-9._:*-]{0,251}[A-Za-z0-9.])?$`)
+
 // ValidateBackendTLSServerName allows a DNS name or IP for SNI/verifyhost.
 func ValidateBackendTLSServerName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
-	if strings.ContainsAny(name, " \t\r\n#;") {
-		return fmt.Errorf("backend_tls_server_name contains unsupported characters")
-	}
 	if len(name) > 253 {
 		return fmt.Errorf("backend_tls_server_name is too long")
+	}
+	if !backendTLSServerNameRe.MatchString(name) {
+		return fmt.Errorf("backend_tls_server_name must be a DNS name or IP")
 	}
 	return nil
 }
