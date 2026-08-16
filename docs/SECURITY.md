@@ -1,6 +1,6 @@
 # Security Guide
 
-Applies to the release from root [`VERSION`](../VERSION) (**1.2.1**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
+Applies to the release from root [`VERSION`](../VERSION) (**1.3.0**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
 
 ## Principles
 

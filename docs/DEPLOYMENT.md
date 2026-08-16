@@ -1,6 +1,6 @@
 # Deployment: Ubuntu 24.04 LTS — Deployment, OVF/OVA, Distribution
 
-**Version:** root [`VERSION`](../VERSION) (**1.2.1** for the current release); the installer uses it when fetching release artifacts. Artifacts are checked against `SHA256SUMS` from the same release before anything is unpacked — see [SECURITY.md](SECURITY.md#supply-chain).
+**Version:** root [`VERSION`](../VERSION) (**1.3.0** for the current release); the installer uses it when fetching release artifacts. Artifacts are checked against `SHA256SUMS` from the same release before anything is unpacked — see [SECURITY.md](SECURITY.md#supply-chain).
 
 ## Development (Windows) vs deployment (Linux)
 
