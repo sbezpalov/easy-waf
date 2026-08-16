@@ -11,6 +11,20 @@ Thumbs.db
 $RECYCLE.BIN/
 .env
 .idea/
-# .vscode/ — в репозитории общие настройки проекта (Remote SSH → waf-dev); личные launch.json можно в .git/info/exclude
 .claude/settings.local.json
 .DS_Store
+
+# Personal IDE setup. Remote-SSH host mappings name a real machine on someone's
+# network, so they belong in user settings — see docs/DEV_HOST.md.
+.vscode/
+
+# AI working documents: plans, research and review notes. Useful while the work
+# is in flight, misleading once it is done — a closed finding still reads as an
+# open one to anybody who finds the file later.
+.ai/artifacts/*
+!.ai/artifacts/.gitkeep
+.cursor/artifacts/*
+!.cursor/artifacts/.gitkeep
+.claude/artifacts/
+.antigravity/artifacts/
+.perplexity/artifacts/
