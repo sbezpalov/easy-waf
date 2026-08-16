@@ -29,6 +29,24 @@ jobs:
       - name: make build
         run: make build
 
+      # The tag is what release artifacts are named after, so it has to agree
+      # with VERSION — otherwise install.sh looks for a file that is not there.
+      - name: Check VERSION matches the tag
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(head -1 VERSION | tr -d '[:space:]')"
+          if [[ "$VERSION" != "$FILE_VERSION" ]]; then
+            echo "tag ${GITHUB_REF_NAME} does not match VERSION (${FILE_VERSION})" >&2
+            exit 1
+          fi
+
+      - name: Build the Debian package
+        run: |
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
+          PATH="$(go env GOPATH)/bin:$PATH" make deb
+
       - name: Create tarball and SHA256SUMS
         run: |
           set -euo pipefail
@@ -42,8 +60,13 @@ jobs:
           cp -a scripts/fix-haproxy-easy-waf-dropin.sh "${STAGE}/scripts/"
           cp -a scripts/lib/selinux-easy-waf-haproxy.sh "${STAGE}/scripts/lib/"
           NAME="easy-waf_${VERSION}_linux_amd64.tar.gz"
+          DEB="easy-waf_${VERSION}_amd64.deb"
           tar -czf "${NAME}" -C "${STAGE}" .
-          sha256sum "${NAME}" > SHA256SUMS
+          mv "dist/${DEB}" .
+          # Both artifacts in one SHA256SUMS: scripts/lib/release-verify.sh looks
+          # the file up by name, and installing an unverified .deb would be root
+          # code execution just like an unverified tarball.
+          sha256sum "${NAME}" "${DEB}" > SHA256SUMS
 
       - name: Release notes from CHANGELOG
         run: |
@@ -63,6 +86,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            easy-waf_*_amd64.deb
             easy-waf_*_linux_amd64.tar.gz
             SHA256SUMS
           body_path: release_notes.md

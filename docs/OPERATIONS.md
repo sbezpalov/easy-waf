@@ -68,6 +68,39 @@ It also prints a note when generated backend names contain `-`: 1.3.0 stopped co
 
 Exit code is non-zero if any check fails; `EASY_WAF_SMOKE_SKIP_APPLY=1` leaves the edge untouched.
 
+## Package lifecycle: what `remove` and `purge` actually do
+
+Easy Home WAF ships as a Debian package ([ADR 0001](adr/0001-packaging-and-installer.md)),
+so `dpkg -l easy-waf` answers "which version is on this appliance" and removal is
+a defined operation rather than a hunt for files.
+
+| Command | Binaries and units | `/etc/easy-waf` | `/var/lib/easy-waf` | PostgreSQL | nftables |
+|---|---|---|---|---|---|
+| `apt install ./easy-waf_X.Y.Z_amd64.deb` | replaced | conffile preserved | untouched | untouched | untouched |
+| `apt remove easy-waf` | removed; services stopped and disabled | kept | kept | untouched | untouched |
+| `apt purge easy-waf` | removed | **deleted** | kept | untouched | untouched |
+
+Three consequences worth knowing before you need them:
+
+- **`purge` does not delete appliance state.** `/var/lib/easy-waf` holds TLS
+  private keys, certificates issued through rate-limited ACME accounts, the JWT
+  signing secret and the revision history used for rollback. dpkg cannot tell
+  "done with this host" from "reinstalling", so `postrm` prints the path and the
+  command instead of guessing. Remove it yourself when you are sure:
+  `tar -czf easy-waf-state.tar.gz /var/lib/easy-waf && rm -rf /var/lib/easy-waf`.
+- **The database survives everything.** The package never created the `easywaf`
+  role or database, so it never drops them. Reinstalling onto the same host picks
+  up the existing schema; migrations are applied by the API on start.
+- **The `easy-waf` account is kept on purge**, so the remaining state does not end
+  up owned by a recycled UID. Use `deluser --system easy-waf` after removing the
+  state directory.
+
+Upgrading an appliance that was installed by the script, before packaging existed:
+`install.sh` renames any `/etc/systemd/system/easy-waf-*.service` it finds to
+`*.replaced-by-package`. Those files override the packaged units in `/lib`, and
+left in place they make an upgrade look applied while systemd keeps starting the
+old definition. If you removed them by hand, run `systemctl daemon-reload`.
+
 ## Environment toggles (service unit)
 
 | Variable | Effect |

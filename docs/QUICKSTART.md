@@ -2,7 +2,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.3.0**); `scripts/install.sh` uses it when trying to download pre-built binaries from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Downloaded tarballs are verified against **`SHA256SUMS`** from the same release; an artifact that fails verification is discarded and the installer **builds from source** (see [SECURITY.md](SECURITY.md#supply-chain)).
+**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.3.0**); `scripts/install.sh` uses it to fetch the matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).
 
 ## One-command install
 
@@ -15,8 +15,34 @@ sudo bash scripts/install.sh
 This **by default** (full appliance — no extra flags):
 
 1. Installs **HAProxy, nftables**, **PostgreSQL**, **fail2ban** (starts if installed), and **CrowdSec + HAProxy SPOA bouncer** (LAPI bootstrap, bouncer keys in `easy-waf.env`).
-2. Creates `/etc/easy-waf/easy-waf.env` with **HTTPS `0.0.0.0:8443`** and **management HTTP off**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0` (HTTP still requires loopback or `EASY_WAF_ALLOW_INSECURE_HTTP=1`).
-3. Builds or downloads **easy-waf** binaries, installs systemd units, and **starts** `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-spoa-bouncer** when packages install successfully.
+2. Installs the **`easy-waf` Debian package** for the version in `VERSION` — binaries in `/usr/sbin`, systemd units in `/lib/systemd/system`, `/etc/easy-waf/easy-waf.env` as a **dpkg conffile** so later upgrades keep your edits.
+3. Sets the env file to **HTTPS `0.0.0.0:8443`** with **management HTTP off**; if an old env binds a stale LAN IP, install rewrites it to `0.0.0.0` (HTTP still requires loopback or `EASY_WAF_ALLOW_INSECURE_HTTP=1`).
+4. **Starts** `easy-waf-hostd`, `easy-waf-api`, `easy-waf-acmed`, **crowdsec**, and **crowdsec-spoa-bouncer** when packages install successfully.
+
+### Package only, without the provisioning
+
+If PostgreSQL, nftables and CrowdSec are already how you want them, install the
+package on its own and take over from there:
+
+```bash
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.3.0/easy-waf_1.3.0_amd64.deb
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.3.0/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS        # do not skip this
+sudo apt install ./easy-waf_1.3.0_amd64.deb
+```
+
+The package installs enabled but **not started**: set `DATABASE_URL` in
+`/etc/easy-waf/easy-waf.env`, then `sudo systemctl start easy-waf-hostd
+easy-waf-api easy-waf-acmed`.
+
+### No network to GitHub
+
+If neither the package nor the tarball can be downloaded and verified, the
+installer **stops** rather than compiling on the appliance — a build would leave
+Go, make and git installed on a machine that terminates TLS. Either point it at
+artifacts you already have (`sudo EASY_WAF_DIST_DIR=/path/to/dist bash
+scripts/install.sh`) or opt in explicitly with
+`sudo EASY_WAF_BUILD_FROM_SOURCE=1 bash scripts/install.sh`.
 
 **External PostgreSQL only** (no local `postgresql` package):
 

@@ -1,8 +1,11 @@
-.PHONY: build test lint check-linux verify verify. shellcheck-sh test-env-file test-management-listen test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
+.PHONY: build deb test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
 GOLANGCI_LINT_VER ?= v1.62.2
+# Debian package builder. Keep in sync with .github/workflows/release.yml.
+NFPM_VER ?= v2.41.1
+EASY_WAF_VERSION ?= $(shell head -1 VERSION | tr -d '[:space:]')
 
 install-help:
 	@echo "Production install (Ubuntu 24.04 LTS, as root) — plug-and-play:"
@@ -21,6 +24,18 @@ build:
 	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-admin ./cmd/easy-waf-admin
 	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-hostd ./cmd/easy-waf-hostd
 
+# Debian package — the primary way the appliance is installed and upgraded.
+# Why: docs/adr/0001-packaging-and-installer.md
+deb: build
+	@mkdir -p $(DIST)
+	@if command -v nfpm >/dev/null 2>&1; then \
+		EASY_WAF_VERSION=$(EASY_WAF_VERSION) nfpm package --config packaging/nfpm.yaml --packager deb --target $(DIST)/; \
+	else \
+		echo >&2 "nfpm not in PATH; using go run $(NFPM_VER) (install: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER))"; \
+		EASY_WAF_VERSION=$(EASY_WAF_VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER) package --config packaging/nfpm.yaml --packager deb --target $(DIST)/; \
+	fi
+	@echo "Built $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb"
+
 check-linux:
 	bash scripts/check-linux-artifacts.sh
 
@@ -30,6 +45,15 @@ shellcheck-sh:
 		cd scripts && shellcheck -x install.sh install-interactive.sh download-release.sh smoke-appliance.sh test-backup-restore.sh test-env-file.sh test-management-listen.sh test-release-verify.sh backup.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh lib/env-file.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. apt install shellcheck)"; \
+	fi
+
+# Maintainer scripts run as root at install time — same review standard as the
+# broker, so they are linted like the rest. POSIX sh, not bash.
+shellcheck-deb:
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck packaging/deb/preinst packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm; \
+	else \
+		echo "[easy-waf] verify: shellcheck not in PATH — skip packaging/deb"; \
 	fi
 
 test-env-file:
@@ -46,7 +70,7 @@ test-release-verify:
 smoke-appliance:
 	bash scripts/smoke-appliance.sh
 
-verify: check-linux shellcheck-sh test-env-file test-management-listen test-release-verify
+verify: check-linux shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify
 
 # Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
 verify.:

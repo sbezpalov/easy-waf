@@ -1,0 +1,139 @@
+#!/bin/sh
+# easy-waf — post-installation.
+#
+# Runs as root at install time, which puts it in the same review class as
+# easy-waf-hostd: everything here is idempotent, does no network access, and
+# touches only paths this package owns.
+#
+# What it deliberately does NOT do: provision PostgreSQL, write nftables policy,
+# bootstrap CrowdSec, or start the services on a first install. A control plane
+# with no DATABASE_URL would restart-loop and bury the real message in the
+# journal. scripts/install.sh does that provisioning and then starts everything.
+
+set -e
+
+STATE_DIR=/var/lib/easy-waf
+CFG_DIR=/etc/easy-waf
+UNITS="easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service"
+
+info() { echo "[easy-waf] $*"; }
+
+# Mirrors create_user_and_layout() in scripts/install.sh. Kept in both places on
+# purpose: the package must be installable on its own, and the installer must
+# still work on a host where the package is not used.
+create_layout() {
+	mkdir -p \
+		"${STATE_DIR}/haproxy" \
+		"${STATE_DIR}/revisions" \
+		"${STATE_DIR}/certs" \
+		"${STATE_DIR}/acme/webroot" \
+		"${STATE_DIR}/geoip" \
+		"${STATE_DIR}/secrets" \
+		"${CFG_DIR}"
+
+	chown -R easy-waf:easy-waf "$STATE_DIR" 2>/dev/null || true
+	chmod 0750 "$STATE_DIR" 2>/dev/null || true
+	chmod 0700 "${STATE_DIR}/secrets" 2>/dev/null || true
+	chmod 0755 "${STATE_DIR}/acme/webroot" 2>/dev/null || true
+	# geoip/ has to stay writable by easy-waf: the API installs uploaded GeoLite2
+	# databases by renaming into this directory (POST /api/v1/geoip/database).
+	chmod 0750 "${STATE_DIR}/haproxy" "${STATE_DIR}/certs" \
+		"${STATE_DIR}/revisions" "${STATE_DIR}/geoip" 2>/dev/null || true
+
+	if [ -f "${CFG_DIR}/easy-waf.env" ]; then
+		chown root:easy-waf "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
+		chmod 0640 "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
+	fi
+}
+
+# HAProxy reads the generated configuration and the certificates; easy-waf reads
+# the HAProxy stats socket under /run/haproxy. Neither is a privilege grant
+# beyond those two directories.
+link_haproxy_groups() {
+	if ! getent passwd haproxy >/dev/null 2>&1; then
+		return 0
+	fi
+	if ! id -nG haproxy 2>/dev/null | grep -qw easy-waf; then
+		usermod -aG easy-waf haproxy 2>/dev/null || true
+	fi
+	if ! id -nG easy-waf 2>/dev/null | grep -qw haproxy; then
+		usermod -aG haproxy easy-waf 2>/dev/null || true
+	fi
+}
+
+systemd_available() {
+	command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
+
+# Units installed by an older scripts/install.sh live in /etc/systemd/system and
+# take precedence over the packaged ones in /lib. Silently shadowing the package
+# is exactly the failure that makes an upgrade look applied when it is not.
+warn_shadowing_units() {
+	shadowed=""
+	for u in $UNITS; do
+		if [ -f "/etc/systemd/system/${u}" ]; then
+			shadowed="${shadowed} ${u}"
+		fi
+	done
+	if [ -n "$shadowed" ]; then
+		info "WARNING: these units exist in /etc/systemd/system and override the packaged ones:${shadowed}"
+		info "         They are left in place because this package does not own them."
+		info "         Remove them to use the packaged units:"
+		for u in $shadowed; do
+			info "           rm /etc/systemd/system/${u}"
+		done
+		info "         then: systemctl daemon-reload"
+	fi
+	if systemd_available && systemctl is-enabled easy-wafd.service >/dev/null 2>&1; then
+		info "WARNING: easy-wafd.service is enabled. It is the legacy alias of easy-waf-api"
+		info "         and is no longer shipped; two control planes would fight over the"
+		info "         same state. Disable it: systemctl disable --now easy-wafd.service"
+	fi
+}
+
+case "$1" in
+configure)
+	create_layout
+	link_haproxy_groups
+	warn_shadowing_units
+
+	if systemd_available; then
+		systemctl daemon-reload || true
+	fi
+
+	if [ -z "$2" ]; then
+		# First install. Enable, but do not start: without a DATABASE_URL in
+		# /etc/easy-waf/easy-waf.env the API cannot come up, and a restart loop
+		# is a worse first impression than an explicit next step.
+		if systemd_available; then
+			# shellcheck disable=SC2086  # UNITS is a deliberate word list
+			systemctl enable $UNITS >/dev/null 2>&1 || true
+		fi
+		info "Installed. The appliance is not started yet — it needs a database and"
+		info "an edge configuration first:"
+		info "  sudo bash scripts/install.sh          # provisions PostgreSQL, nftables, CrowdSec"
+		info "or, with an external database, edit DATABASE_URL in ${CFG_DIR}/easy-waf.env and:"
+		info "  sudo systemctl start easy-waf-hostd easy-waf-api easy-waf-acmed"
+		info "  sudo easy-waf-admin print-enrollment  # one-time login secret; there is no default password"
+	else
+		# Upgrade. Restart only what was already running, so a deliberately
+		# stopped unit stays stopped.
+		if systemd_available; then
+			for u in $UNITS; do
+				if systemctl is-active --quiet "$u"; then
+					systemctl restart "$u" || info "WARNING: failed to restart ${u} — check: journalctl -u ${u} -n 40"
+				fi
+			done
+		fi
+		info "Upgraded from ${2}. Verify with: sudo easy-waf-admin doctor"
+		info "Post-upgrade checks against this live appliance: sudo bash scripts/smoke-appliance.sh"
+	fi
+	;;
+abort-upgrade | abort-remove | abort-deconfigure) ;;
+*)
+	echo "postinst called with unknown argument '$1'" >&2
+	exit 1
+	;;
+esac
+
+exit 0

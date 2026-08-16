@@ -81,10 +81,9 @@ sudo bash scripts/install.sh
 ```
 
 Установщик поставит HAProxy, PostgreSQL, CrowdSec + SPOA bouncer, fail2ban и
-правила nftables, затем запустит `easy-waf-api` и `easy-waf-acmed`. Бинарники
-берутся из соответствующего GitHub-релиза, если он есть — с проверкой по
-`SHA256SUMS`, и установщик откажется ставить то, что проверку не прошло, — иначе
-собираются из исходников.
+правила nftables, установит пакет `easy-waf` из соответствующего GitHub-релиза —
+**с проверкой по `SHA256SUMS`**, и откажется ставить то, что проверку не прошло, —
+затем запустит сервисы.
 
 Дальше — вход. Пароля по умолчанию нет:
 
@@ -95,9 +94,17 @@ sudo easy-waf-admin print-enrollment      # одноразовый секрет,
 Откройте `https://<ip-appliance>:8443`, пройдите enrollment, добавьте первое
 приложение. Полный разбор: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
-> Упаковка переделывается: основным способом установки вместо «клонировать и
-> запустить» станет нативный `.deb` — см.
-> [ADR 0001](docs/adr/0001-packaging-and-installer.md).
+Если PostgreSQL, nftables и CrowdSec уже настроены как надо, пакет ставится сам
+по себе — сначала проверьте контрольную сумму:
+
+```bash
+sudo apt install ./easy-waf_<version>_amd64.deb
+```
+
+Обновление — это `apt install` более нового пакета; ваш
+`/etc/easy-waf/easy-waf.env` объявлен conffile, поэтому он сохраняется, а не
+перезаписывается. Почему упаковано именно так:
+[ADR 0001](docs/adr/0001-packaging-and-installer.md).
 
 ## Документация
 

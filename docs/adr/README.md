@@ -10,7 +10,7 @@ rather than editing it, so the history of *why* stays readable.
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [0001](0001-packaging-and-installer.md) | Packaging: how Easy Home WAF gets onto an appliance | proposed |
+| [0001](0001-packaging-and-installer.md) | Packaging: how Easy Home WAF gets onto an appliance | accepted |
 
 Earlier architectural context that predates this directory:
 
