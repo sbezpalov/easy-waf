@@ -77,10 +77,9 @@ sudo bash scripts/install.sh
 ```
 
 This installs HAProxy, PostgreSQL, CrowdSec + SPOA bouncer, fail2ban and nftables
-rules, then starts `easy-waf-api` and `easy-waf-acmed`. Binaries come from the
-matching GitHub release when one exists — verified against `SHA256SUMS`, and the
-installer refuses anything that fails verification — otherwise they are built from
-source.
+rules, installs the `easy-waf` package from the matching GitHub release —
+**verified against `SHA256SUMS`**, and it refuses anything that fails
+verification — then starts the services.
 
 Then log in. There is no default password:
 
@@ -91,8 +90,16 @@ sudo easy-waf-admin print-enrollment      # one-time secret, printed locally
 Open `https://<appliance-ip>:8443`, enroll, add your first application. Full
 walkthrough: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
-> Packaging is being reworked: a native `.deb` will replace clone-and-run as the
-> primary path — see [ADR 0001](docs/adr/0001-packaging-and-installer.md).
+If PostgreSQL, nftables and CrowdSec are already set up the way you want, the
+package installs on its own — verify the checksum first:
+
+```bash
+sudo apt install ./easy-waf_<version>_amd64.deb
+```
+
+Upgrades are `apt install` of a newer package; your `/etc/easy-waf/easy-waf.env`
+is a dpkg conffile, so it is preserved rather than overwritten. Why it is packaged
+this way: [ADR 0001](docs/adr/0001-packaging-and-installer.md).
 
 ## Documentation
 

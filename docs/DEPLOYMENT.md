@@ -21,9 +21,8 @@ Setting up a Linux host for development and pre-release testing: see **[DEV_HOST
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):
 
 1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).
-2. Installs **`easy-waf-api`**, **`easy-waf-acmed`**, optionally **`easy-wafd`** from `dist/` (or `EASY_WAF_DIST_DIR`).
-3. Copies [`configs/defaults/easy-waf.env.example`](../configs/defaults/easy-waf.env.example) to `/etc/easy-waf/easy-waf.env` if missing.
-4. Copies **systemd** units from `packaging/systemd/` to `/etc/systemd/system/` and runs `daemon-reload` (unless `EASY_WAF_SKIP_SYSTEMD=1`).
+2. **Installs the `easy-waf` Debian package** for the version in [`VERSION`](../VERSION) — downloaded from the matching GitHub release and verified against `SHA256SUMS`, then `apt install`ed. The package owns `/usr/sbin/easy-waf-{api,acmed,hostd,admin}`, `/usr/sbin/easy-waf-diagnostics`, the units in `/lib/systemd/system/`, and `/etc/easy-waf/easy-waf.env` as a **conffile**. Fallback order and the `EASY_WAF_BUILD_FROM_SOURCE` opt-in: [ADR 0001](adr/0001-packaging-and-installer.md).
+3. Only when the package was not used: copies binaries from `dist/` (or `EASY_WAF_DIST_DIR`), copies [`configs/defaults/easy-waf.env.example`](../configs/defaults/easy-waf.env.example) to `/etc/easy-waf/easy-waf.env` if missing, and installs **systemd** units from `packaging/systemd/` into `/etc/systemd/system/` (unless `EASY_WAF_SKIP_SYSTEMD=1`). Units left in `/etc/systemd/system/` by an earlier script install are renamed to `*.replaced-by-package` when the package takes over, because `/etc` overrides `/lib` and would silently keep the old definition.
 5. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs base packages via **apt** (Ubuntu 24.04+): HAProxy, **nftables**, fail2ban, netplan, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
 6. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (ensures password auth for `DATABASE_URL`), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
 7. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
@@ -77,6 +76,10 @@ Automated GitHub Release build and publish: workflow **[`.github/workflows/relea
 
 **Which repository artifacts come from:** `install.sh` and `download-release.sh` derive `owner/name` from the **origin remote of the checkout they run from**, falling back to `easy-waf/easy-waf`. Override with **`EASY_WAF_GITHUB_REPO`** (installer) or **`GITHUB_REPOSITORY`** (download script). This matters on a fork or after a rename: with a wrong repository every download 404s and the installer quietly builds from source, which also means the `SHA256SUMS` verification never runs.
 
+A release publishes **three** assets: `easy-waf_<version>_amd64.deb` (the primary
+install and upgrade path), `easy-waf_<version>_linux_amd64.tar.gz` (binaries for
+developers and manual placement), and `SHA256SUMS` covering both.
+
 Archive `easy-waf_<version>_linux_amd64.tar.gz` contains:
 
 ```
@@ -92,4 +95,32 @@ When unpacking into `repo/dist/`, **`scripts/install.sh`** and **`scripts/downlo
 
 ## Upgrades
 
-Use [`scripts/upgrade.sh`](../scripts/upgrade.sh) with a directory or `.tar.gz` containing new binaries; it reuses `install.sh` and restarts units.
+**Package path (preferred).** Back up first ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)), then:
+
+```bash
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/vX.Y.Z/easy-waf_X.Y.Z_amd64.deb
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/vX.Y.Z/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+sudo apt install ./easy-waf_X.Y.Z_amd64.deb
+sudo bash scripts/smoke-appliance.sh
+```
+
+`postinst` restarts **only the units that were already running**, so a
+deliberately stopped service stays stopped. Database migrations still run when
+the API starts. Your `/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as
+a conffile, and if a release changes the shipped default you get a prompt with
+the usual `Y/I/N/O/D/Z` options rather than a silent overwrite.
+
+**Rollback** is `apt install ./easy-waf_<previous>_amd64.deb`, with the caveats
+that already apply to any downgrade: additive migration columns are not removed,
+so an older binary must tolerate them — check the upgrade note in
+[`CHANGELOG.md`](../CHANGELOG.md) for the version you are leaving.
+
+**Removal.** `apt remove` deletes binaries and units and leaves configuration and
+state; `apt purge` additionally deletes `/etc/easy-waf`. Neither touches
+`/var/lib/easy-waf` (TLS keys, certificates, revisions, JWT secret), the
+PostgreSQL database, or the nftables policy — `postrm` prints how to remove the
+state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
+
+**Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
+directory or `.tar.gz` of new binaries; it reuses `install.sh` and restarts units.

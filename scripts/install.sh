@@ -15,9 +15,20 @@
 #   EASY_WAF_REPO_ROOT=/path         — root of git checkout (default: parent of scripts/)
 #   EASY_WAF_RELEASE_VERSION=x.y.z   — try GitHub release before building (overrides VERSION file)
 #   EASY_WAF_SKIP_BINARY_FETCH=1     — do not download or build; require EASY_WAF_DIST_DIR with binaries
-#   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — install a release tarball whose SHA256SUMS entry is missing or mismatched (discouraged; default: refuse and build from source)
+#   EASY_WAF_INSTALL_FROM_PACKAGE=0  — do not use the release .deb; fall back to the tarball (default: 1)
+#   EASY_WAF_BUILD_FROM_SOURCE=1     — allow compiling on this host when no verified release artifact is found (default: 0 = refuse; see below)
+#   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — install a release artifact whose SHA256SUMS entry is missing or mismatched (discouraged; default: refuse)
 #   EASY_WAF_GITHUB_REPO=owner/name  — where release artifacts come from (default: the origin remote of this checkout, else easy-waf/easy-waf)
 #   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via apt before source build
+#
+# How binaries are obtained, in order (docs/adr/0001-packaging-and-installer.md):
+#   1. EASY_WAF_DIST_DIR, if it already holds binaries;
+#   2. the release .deb for this version, verified against SHA256SUMS, via apt;
+#   3. the release tarball for this version, verified against SHA256SUMS;
+#   4. a source build — only for a development checkout (no release version), or
+#      when EASY_WAF_BUILD_FROM_SOURCE=1. It installs a Go toolchain, make and git
+#      on this host and leaves them there, which is a large permanent attack
+#      surface on a machine that terminates TLS. That is why it is not automatic.
 #   EASY_WAF_NFT_MGMT_LAN=0         — skip nftables rules for management ports from RFC1918 (default: 1)
 #   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
 #   EASY_WAF_EXTRA_LAN_CIDR=         — optional extra source CIDR for management ports
@@ -45,8 +56,23 @@ REPO_ROOT="${EASY_WAF_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 DIST_DIR="${EASY_WAF_DIST_DIR:-${REPO_ROOT}/dist}"
 SYSTEMD_SRC="${REPO_ROOT}/packaging/systemd"
 
+# Set once the easy-waf .deb has been installed; the steps that place binaries
+# and units by hand then step aside and let dpkg own those files.
+EASY_WAF_PKG_INSTALLED=0
+
 log() { echo "[easy-waf] $*"; }
 die() { echo "[easy-waf] ERROR: $*" >&2; exit 1; }
+
+# Version this install targets: explicit override, else the VERSION file.
+# Empty or 0.0.0-dev means "development checkout, no release to fetch".
+easy_waf_target_version() {
+  local ver="${EASY_WAF_RELEASE_VERSION:-}"
+  if [[ -z "$ver" ]] && [[ -f "${REPO_ROOT}/VERSION" ]]; then
+    ver="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+' "${REPO_ROOT}/VERSION" | head -1 | tr -d '[:space:]')"
+  fi
+  [[ "$ver" == "0.0.0-dev" ]] && ver=""
+  printf '%s' "$ver"
+}
 
 # Windows CRLF in scripts/lib/*.sh breaks bash on Linux ($'\r': command not found).
 normalize_lib_scripts_lf() {
@@ -393,8 +419,104 @@ setup_local_postgres_database() {
   fi
 }
 
+# Install the release .deb — the primary path (docs/adr/0001-packaging-and-installer.md).
+#
+# What this buys over unpacking a tarball: apt resolves haproxy/nftables/fail2ban
+# itself, /etc/easy-waf/easy-waf.env becomes a dpkg conffile (preserved on
+# upgrade instead of silently overwritten), `apt remove` and `apt purge` become
+# real operations, and `dpkg -l easy-waf` answers "what is installed".
+#
+# Returns 0 only when the package is installed; every failure is non-fatal and
+# falls through to the tarball path.
+install_release_package() {
+  if [[ "${EASY_WAF_INSTALL_FROM_PACKAGE:-1}" != "1" ]]; then
+    return 1
+  fi
+  if [[ -n "${EASY_WAF_DIST_DIR:-}" ]] && [[ -f "${EASY_WAF_DIST_DIR}/easy-waf-api" ]]; then
+    log "EASY_WAF_DIST_DIR holds binaries — skipping the release package"
+    return 1
+  fi
+  if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
+    return 1
+  fi
+  if [[ "${EASY_WAF_PKG_MGR:-}" != "apt" ]] || ! command -v dpkg &>/dev/null; then
+    return 1
+  fi
+  command -v curl &>/dev/null || return 1
+
+  local ver
+  ver="$(easy_waf_target_version)"
+  [[ -n "$ver" ]] || return 1
+
+  local deb="${REPO_ROOT}/dist/easy-waf_${ver}_amd64.deb"
+  local tmpd=""
+  if [[ -f "$deb" ]]; then
+    log "Using local package: $deb"
+  else
+    # shellcheck source=lib/github-repo.sh
+    source "${SCRIPT_DIR}/lib/github-repo.sh"
+    local gh base name url
+    gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
+    base="https://github.com/${gh}/releases/download/v${ver}"
+    name="easy-waf_${ver}_amd64.deb"
+    url="${base}/${name}"
+    # shellcheck source=lib/release-verify.sh
+    source "${SCRIPT_DIR}/lib/release-verify.sh"
+    tmpd="$(mktemp -d)" || return 1
+    deb="${tmpd}/${name}"
+    log "Trying release package: $url"
+    # dpkg runs maintainer scripts as root, so an unverified package is root code
+    # execution. Same fail-closed rule as the tarball.
+    if ! easy_waf_curl_https -o "$deb" "$url" 2>/dev/null ||
+      ! easy_waf_verify_release_artifact "$deb" "$name" "${base}/SHA256SUMS"; then
+      rm -rf "$tmpd"
+      log "No verified release package for v${ver}"
+      return 1
+    fi
+  fi
+
+  local rc=0
+  easy_waf_apt_get_update
+  if DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"; then
+    EASY_WAF_PKG_INSTALLED=1
+    log "Installed easy-waf ${ver} from the Debian package"
+  else
+    rc=1
+    log "apt-get install of the package failed — falling back to the release tarball"
+  fi
+
+  if [[ -n "$tmpd" ]]; then
+    rm -rf "$tmpd"
+  fi
+  return "$rc"
+}
+
+# Units installed into /etc/systemd/system by an older run of this script take
+# precedence over the packaged ones in /lib. Left alone, an upgrade would look
+# applied while systemd kept starting the previous unit definition.
+retire_script_installed_units() {
+  if [[ "$EASY_WAF_PKG_INSTALLED" != "1" ]] || [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
+    return 0
+  fi
+  local u moved=0
+  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service; do
+    if [[ -f "/etc/systemd/system/${u}" ]]; then
+      mv -f "/etc/systemd/system/${u}" "/etc/systemd/system/${u}.replaced-by-package"
+      log "Retired /etc/systemd/system/${u} (the package unit in /lib now applies)"
+      moved=1
+    fi
+  done
+  if [[ "$moved" == "1" ]]; then
+    systemctl daemon-reload || true
+  fi
+}
+
 # Plug-and-play: populate REPO_ROOT/dist — try GitHub release, else install toolchain + make build.
 acquire_dist_binaries() {
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
+    return 0
+  fi
+
   mkdir -p "${REPO_ROOT}/dist"
 
   if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
@@ -409,12 +531,10 @@ acquire_dist_binaries() {
 
   DIST_DIR="${REPO_ROOT}/dist"
 
-  local ver="${EASY_WAF_RELEASE_VERSION:-}"
-  if [[ -z "$ver" ]] && [[ -f "${REPO_ROOT}/VERSION" ]]; then
-    ver="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+' "${REPO_ROOT}/VERSION" | head -1 | tr -d '[:space:]')"
-  fi
+  local ver
+  ver="$(easy_waf_target_version)"
 
-  if [[ -n "$ver" ]] && [[ "$ver" != "0.0.0-dev" ]] && command -v curl &>/dev/null; then
+  if [[ -n "$ver" ]] && command -v curl &>/dev/null; then
     # shellcheck source=lib/github-repo.sh
     source "${SCRIPT_DIR}/lib/github-repo.sh"
     local gh
@@ -446,7 +566,33 @@ acquire_dist_binaries() {
       fi
     fi
     rm -rf "$tmpd"
-    log "No verified release v${ver} — building from source..."
+    # A released version with no verified artifact is a supply-chain event, not a
+    # cue to compile: it means the release is missing, the repository is wrong, or
+    # something answered instead of GitHub. Building would install a Go toolchain
+    # on the appliance and leave it there, so that stays opt-in.
+    if [[ "${EASY_WAF_BUILD_FROM_SOURCE:-0}" != "1" ]]; then
+      cat >&2 <<EOF
+
+[easy-waf] ERROR: no verified release artifact for v${ver}
+
+Neither easy-waf_${ver}_amd64.deb nor easy-waf_${ver}_linux_amd64.tar.gz could be
+downloaded and matched against SHA256SUMS.
+
+Check first:
+  * does the release exist?  https://github.com/$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")/releases/tag/v${ver}
+  * is EASY_WAF_GITHUB_REPO / the origin remote of this checkout correct?
+  * can this host reach github.com over HTTPS?
+
+Then pick one:
+  * install a package or binaries you already have:
+      sudo EASY_WAF_DIST_DIR=/path/to/dist bash $0
+  * build on this host — installs Go, make and git and leaves them installed:
+      sudo EASY_WAF_BUILD_FROM_SOURCE=1 bash $0
+
+EOF
+      exit 1
+    fi
+    log "EASY_WAF_BUILD_FROM_SOURCE=1 — building v${ver} from source on this host..."
   else
     log "No public release version (see VERSION / EASY_WAF_RELEASE_VERSION) — building from source..."
   fi
@@ -489,6 +635,10 @@ acquire_dist_binaries() {
 }
 
 install_binaries() {
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
+    log "Binaries come from the easy-waf package (dpkg -L easy-waf)"
+    return 0
+  fi
   local found=0
   if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
     install -m 0755 "${DIST_DIR}/easy-waf-api" "$API_BIN"
@@ -540,6 +690,10 @@ EOF
 install_systemd_units() {
   if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
     log "Skipping systemd (EASY_WAF_SKIP_SYSTEMD=1)"
+    return 0
+  fi
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
+    log "systemd units come from the easy-waf package (/lib/systemd/system)"
     return 0
   fi
   [[ -d "$SYSTEMD_SRC" ]] || die "missing systemd units: $SYSTEMD_SRC"
@@ -617,6 +771,9 @@ cleanup_legacy_fail2ban_access() {
 }
 
 install_hostd_binary() {
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
+    return 0
+  fi
   if [[ -f "${DIST_DIR}/easy-waf-hostd" ]]; then
     install -m 0755 "${DIST_DIR}/easy-waf-hostd" /usr/sbin/easy-waf-hostd
     log "Installed /usr/sbin/easy-waf-hostd"
@@ -753,6 +910,10 @@ main() {
   log "repo root: $REPO_ROOT (package manager: ${EASY_WAF_PKG_MGR:-none})"
   install_os_packages
   ensure_haproxy_systemd_enabled
+  # Before create_user_and_layout and install_env_file on purpose: dpkg ships
+  # /etc/easy-waf/easy-waf.env as a conffile, and it can only take ownership of a
+  # path that is not already occupied by a file it did not install.
+  install_release_package || true
   create_user_and_layout
   ensure_haproxy_run_dir
   install_env_file
@@ -769,6 +930,7 @@ main() {
   install_binaries
   easy_waf_sync_settings_to_db
   install_systemd_units
+  retire_script_installed_units
   install_polkit_rules
   cleanup_legacy_host_privilege
   install_hostd_binary
@@ -805,6 +967,11 @@ main() {
 # Print appliance health after install (non-fatal; guides operator).
 easy_waf_post_install_summary() {
   log "=== Post-install summary ==="
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]] && command -v dpkg-query &>/dev/null; then
+    log "  package: easy-waf $(dpkg-query -W -f='${Version}' easy-waf 2>/dev/null || echo unknown) (apt remove / apt purge to uninstall)"
+  else
+    log "  package: not installed via dpkg — binaries placed by this script"
+  fi
   local u
   for u in easy-waf-hostd easy-waf-api easy-waf-acmed haproxy postgresql nftables; do
     if systemctl list-unit-files "${u}.service" &>/dev/null; then

@@ -1,9 +1,11 @@
 # ADR 0001 — Packaging: how Easy Home WAF gets onto an appliance
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-08-16
 - **Deciders:** repository maintainer
 - **Context version:** 1.3.0
+- **Implemented in:** `packaging/nfpm.yaml`, `packaging/deb/`, `make deb`,
+  `release.yml`, `scripts/install.sh` (unreleased at the time of writing)
 
 ## Context
 
@@ -166,11 +168,33 @@ Negative / accepted cost:
    version, edit the env file and upgrade again to confirm the conffile prompt,
    then `apt purge` and check what is left. `scripts/smoke-appliance.sh` after each.
 
-## Open questions
+## Open questions, as resolved during implementation
 
-- Does the source-build fallback stay at all, or does a missing package become a
-  hard failure with instructions? (Leaning: keep it, but only behind an explicit
-  `EASY_WAF_BUILD_FROM_SOURCE=1`.)
-- Package signing: release-asset checksums are enough for now; a signed apt
-  repository changes the trust model and deserves its own decision.
-- Whether `easy-wafd` (the legacy alias binary) ships in the package at all.
+- **Does the source-build fallback stay?** Yes, behind `EASY_WAF_BUILD_FROM_SOURCE=1`.
+  When `VERSION` names a release and neither the `.deb` nor the tarball can be
+  downloaded and matched against `SHA256SUMS`, the installer now stops and says
+  why. Silently compiling in that situation is the wrong reflex: it means the
+  release is missing, the repository is wrong, or something other than GitHub
+  answered — and the response was to install a toolchain and run a build. A
+  development checkout (no release version) still builds without a flag.
+- **Package signing:** unchanged — release-asset checksums for now. A signed apt
+  repository changes the trust model and gets its own record.
+- **Does `easy-wafd` ship in the package?** No. It is the same binary as
+  `easy-waf-api` under a second name; packaging it would put an enable-able
+  second copy of the control plane on every new install, and two of them sharing
+  one state directory is a failure mode with no upside. Existing appliances keep
+  the file `install.sh` gave them — the package does not own it — and `postinst`
+  warns if `easy-wafd.service` is enabled.
+- **What `apt purge` removes** was not in the original sketch and had to be
+  decided: configuration yes, `/var/lib/easy-waf` no. dpkg cannot distinguish
+  "done with this appliance" from "reinstalling" or "moving hosts", and that
+  directory holds TLS private keys, certificates from rate-limited ACME accounts,
+  the JWT signing secret and the rollback history. `postrm` prints the path and
+  the command instead. Same call PostgreSQL makes about its clusters.
+
+## Follow-ups this record does not cover
+
+- Narrowing `scripts/install.sh` to provisioning only, once the package path has
+  been exercised on real upgrades.
+- An OVA built by installing the package (option E), rather than by running the
+  installer inside the image.

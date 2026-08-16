@@ -1,0 +1,118 @@
+# Easy Home WAF — Debian package definition (nfpm).
+#
+# Build:  make deb           (or: EASY_WAF_VERSION=1.3.0 nfpm package -f packaging/nfpm.yaml -p deb -t dist/)
+# Why a package at all: docs/adr/0001-packaging-and-installer.md
+#
+# The package owns binaries, systemd units and defaults. It deliberately does
+# NOT own the appliance's runtime state (/var/lib/easy-waf), the PostgreSQL
+# database, nftables policy or the CrowdSec bootstrap — those are provisioned by
+# scripts/install.sh, which runs before and after dpkg.
+
+name: easy-waf
+arch: amd64
+platform: linux
+version: ${EASY_WAF_VERSION}
+version_schema: none
+section: net
+priority: optional
+maintainer: Sergey Bezpalov <https://github.com/sbezpalov>
+description: |
+  Self-hosted WAF and secure reverse proxy appliance.
+  Publishes local services through a single hardened HAProxy edge with ACME
+  certificates, CrowdSec, Fail2Ban, IP and GeoIP filtering, managed from a local
+  web UI. Privileged host operations go through a separate root broker
+  (easy-waf-hostd) so the management API can run unprivileged.
+homepage: https://github.com/sbezpalov/easy-waf
+license: Apache-2.0
+
+depends:
+  - haproxy
+  - nftables
+  - ca-certificates
+  - curl
+  # adduser: the maintainer scripts create the easy-waf system account.
+  - adduser
+recommends:
+  # An external database is a supported shape, so PostgreSQL is not a hard
+  # dependency — DATABASE_URL may point anywhere.
+  - postgresql
+  - fail2ban
+suggests:
+  - crowdsec
+
+# easy-wafd (the legacy alias entrypoint) is deliberately not packaged: it is the
+# same binary as easy-waf-api under another name, and shipping it would carry a
+# second, enable-able copy of the control plane into every new install.
+
+contents:
+  - src: dist/easy-waf-api
+    dst: /usr/sbin/easy-waf-api
+    file_info: { mode: 0755 }
+  - src: dist/easy-waf-acmed
+    dst: /usr/sbin/easy-waf-acmed
+    file_info: { mode: 0755 }
+  - src: dist/easy-waf-hostd
+    dst: /usr/sbin/easy-waf-hostd
+    file_info: { mode: 0755 }
+  - src: dist/easy-waf-admin
+    dst: /usr/sbin/easy-waf-admin
+    file_info: { mode: 0755 }
+  - src: scripts/diagnostics.sh
+    dst: /usr/sbin/easy-waf-diagnostics
+    file_info: { mode: 0755 }
+
+  - src: packaging/systemd/easy-waf-api.service
+    dst: /lib/systemd/system/easy-waf-api.service
+    file_info: { mode: 0644 }
+  - src: packaging/systemd/easy-waf-acmed.service
+    dst: /lib/systemd/system/easy-waf-acmed.service
+    file_info: { mode: 0644 }
+  - src: packaging/systemd/easy-waf-hostd.service
+    dst: /lib/systemd/system/easy-waf-hostd.service
+    file_info: { mode: 0644 }
+
+  # Reference material the installer and the operator copy from. Not active
+  # configuration: nothing reads these paths at runtime.
+  - src: configs/defaults/easy-waf.env.example
+    dst: /usr/share/easy-waf/easy-waf.env.example
+    file_info: { mode: 0644 }
+  - src: configs/defaults/haproxy-bootstrap.cfg
+    dst: /usr/share/easy-waf/haproxy-bootstrap.cfg
+    file_info: { mode: 0644 }
+  - src: packaging/systemd/haproxy-easy-waf-dropin.conf
+    dst: /usr/share/easy-waf/haproxy-easy-waf-dropin.conf
+    file_info: { mode: 0644 }
+  - src: packaging/polkit/99-easy-waf-haproxy.rules
+    dst: /usr/share/easy-waf/99-easy-waf-haproxy.rules
+    file_info: { mode: 0644 }
+
+  # The single most valuable property of packaging this: dpkg treats the
+  # environment file as a conffile. It holds DATABASE_URL with a password and
+  # the management listener policy, so an upgrade that silently overwrote it
+  # would take the appliance offline. `config|noreplace` keeps local edits and
+  # leaves the new default alongside as .dpkg-dist.
+  - src: configs/defaults/easy-waf.env.example
+    dst: /etc/easy-waf/easy-waf.env
+    type: config|noreplace
+    file_info:
+      mode: 0640
+      owner: root
+      group: easy-waf
+
+# Maintainer scripts. nfpm's generic names map onto dpkg's: preinstall→preinst,
+# postinstall→postinst, preremove→prerm, postremove→postrm. They are written
+# against dpkg's argument conventions ($1 = configure/remove/purge/upgrade), so
+# they are declared per-format rather than globally.
+overrides:
+  deb:
+    scripts:
+      preinstall: packaging/deb/preinst
+      postinstall: packaging/deb/postinst
+      preremove: packaging/deb/prerm
+      postremove: packaging/deb/postrm
+
+deb:
+  # /etc/easy-waf/easy-waf.env is listed above as a conffile; dpkg records it in
+  # the package's conffiles list and prompts on conflict.
+  fields:
+    Bugs: https://github.com/sbezpalov/easy-waf/issues

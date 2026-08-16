@@ -1,0 +1,59 @@
+#!/bin/sh
+# easy-waf — post-removal.
+#
+# On purge, dpkg has already deleted the conffile (/etc/easy-waf/easy-waf.env).
+# What this script decides is what happens to everything else.
+#
+# /var/lib/easy-waf is NOT deleted, on purpose. It holds TLS private keys and
+# certificates obtained through rate-limited ACME accounts, the revision history
+# used for rollback, and the JWT signing secret. dpkg cannot tell "I am done with
+# this appliance" from "I am reinstalling" or "I am moving this host", and the
+# irreversible reading of that ambiguity is the expensive one. Same reasoning as
+# PostgreSQL leaving its clusters behind. The path is printed instead, so the
+# operator removes it deliberately.
+#
+# The easy-waf account is kept for the same reason: deleting it would leave the
+# remaining state owned by a recycled numeric UID.
+
+set -e
+
+STATE_DIR=/var/lib/easy-waf
+CFG_DIR=/etc/easy-waf
+
+info() { echo "[easy-waf] $*"; }
+
+case "$1" in
+remove)
+	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+	fi
+	;;
+purge)
+	# Only the directory, and only when the operator left nothing else in it.
+	rmdir "$CFG_DIR" 2>/dev/null || true
+
+	if [ -d "$STATE_DIR" ]; then
+		info "Appliance state was NOT removed: ${STATE_DIR}"
+		info "  It contains TLS private keys, certificates, the JWT secret and the"
+		info "  revision history. Back it up before deleting:"
+		info "    tar -czf easy-waf-state.tar.gz ${STATE_DIR} && rm -rf ${STATE_DIR}"
+	fi
+	if [ -d "$CFG_DIR" ]; then
+		info "Kept ${CFG_DIR}: it still contains files this package did not install."
+	fi
+	info "The PostgreSQL database and role were not touched — this package never created them."
+	info "The easy-waf system account was kept so the remaining state does not end up"
+	info "  owned by a recycled UID. Remove it with: deluser --system easy-waf"
+
+	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+	fi
+	;;
+upgrade | failed-upgrade | abort-install | abort-upgrade | disappear) ;;
+*)
+	echo "postrm called with unknown argument '$1'" >&2
+	exit 1
+	;;
+esac
+
+exit 0

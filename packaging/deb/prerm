@@ -1,0 +1,28 @@
+#!/bin/sh
+# easy-waf — pre-removal.
+#
+# Stop the services before the binaries disappear. On an upgrade dpkg calls this
+# with "upgrade": leave everything running, postinst restarts what was active.
+
+set -e
+
+UNITS="easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service"
+
+case "$1" in
+remove | deconfigure)
+	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		for u in $UNITS; do
+			systemctl stop "$u" >/dev/null 2>&1 || true
+		done
+		# shellcheck disable=SC2086  # UNITS is a deliberate word list
+		systemctl disable $UNITS >/dev/null 2>&1 || true
+	fi
+	;;
+upgrade | failed-upgrade) ;;
+*)
+	echo "prerm called with unknown argument '$1'" >&2
+	exit 1
+	;;
+esac
+
+exit 0

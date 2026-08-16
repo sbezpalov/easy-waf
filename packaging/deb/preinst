@@ -1,0 +1,49 @@
+#!/bin/sh
+# easy-waf — pre-installation.
+#
+# The only job here is creating the system account, and it has to happen before
+# dpkg unpacks: /etc/easy-waf/easy-waf.env ships as root:easy-waf, and dpkg
+# resolves that group name at unpack time. A missing group is an unpack failure,
+# not a warning.
+#
+# No network access, no service manipulation, idempotent.
+
+set -e
+
+EASY_WAF_HOME=/var/lib/easy-waf
+
+create_account() {
+	if getent group easy-waf >/dev/null 2>&1; then
+		:
+	elif command -v addgroup >/dev/null 2>&1; then
+		addgroup --system easy-waf
+	else
+		groupadd --system easy-waf
+	fi
+
+	if getent passwd easy-waf >/dev/null 2>&1; then
+		return 0
+	fi
+
+	if command -v adduser >/dev/null 2>&1; then
+		adduser --system --ingroup easy-waf --home "$EASY_WAF_HOME" \
+			--no-create-home --gecos "Easy Home WAF" --shell /usr/sbin/nologin \
+			easy-waf
+	else
+		useradd --system --gid easy-waf --home-dir "$EASY_WAF_HOME" \
+			--shell /usr/sbin/nologin --comment "Easy Home WAF" easy-waf
+	fi
+}
+
+case "$1" in
+install | upgrade)
+	create_account
+	;;
+abort-upgrade) ;;
+*)
+	echo "preinst called with unknown argument '$1'" >&2
+	exit 1
+	;;
+esac
+
+exit 0
