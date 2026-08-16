@@ -41,7 +41,7 @@ Exits with `0` if all checks pass or only non-critical warnings exist, and `1` i
 
 1. Reads **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (override path with **`-env-file`**).
 2. Runs **`ALTER USER … PASSWORD`** as the OS **`postgres`** superuser (`runuser -u postgres psql` — local cluster only; host in the URL must be **`127.0.0.1`**, **`localhost`**, **`::1`**, or empty for socket).
-3. Generates two random **19-character** secrets (alphanumeric): new **database role password** and new **`EASY_WAF_ADMIN_TOKEN`**, writes them into the env file.
+3. Generates two random alphanumeric secrets and writes them into the env file: a new **database role password** (19 characters) and a new **`EASY_WAF_ADMIN_TOKEN`** (**32 characters**). The token length is tied to **`auth.MinLegacyTokenLen`** on purpose — it used to be 19 against a floor of 24, so this command handed you a credential the API always rejected while logging that legacy token auth was enabled.
 4. Truncates configuration tables and clears generated state under **`/var/lib/easy-waf`** (same as a normal reset).
 5. Writes **`/root/easy-waf-bootstrap-credentials.txt`** (mode **0600**) with the new **`DATABASE_URL`** and token — **copy, then delete** the file.
 
