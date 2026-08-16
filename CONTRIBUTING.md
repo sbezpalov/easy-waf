@@ -31,6 +31,23 @@ Worth opening an issue **before** writing code:
   and needs a design discussion first;
 - UI features (the UI is embedded and hand-written, without a build step).
 
+## Documentation and translations
+
+`docs/` is written in **English**, and English is canonical: when a translation
+and the English text disagree, the English one is right. Three documents also
+exist in Russian — `QUICKSTART.ru.md`, `SECURITY.ru.md`, `TROUBLESHOOTING.ru.md`
+— because they are the ones an operator reads while something is broken.
+
+If you change one of those three, either update the Russian file in the same pull
+request or say in the PR that it now lags. A translation that quietly drifts is
+worse than none, particularly in `SECURITY.ru.md`, where the difference between
+"is rejected" and "is currently not checked" is the whole point of the sentence.
+Each translated file carries the version it was translated from in its header
+line; bump it when you refresh the text.
+
+Translations of the other documents are welcome, but each one is a maintenance
+commitment — open an issue first.
+
 ## Development setup
 
 You need Go (version in [`go.mod`](go.mod)), `make`, and a PostgreSQL for anything

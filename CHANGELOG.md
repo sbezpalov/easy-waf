@@ -23,6 +23,11 @@ Documentation follows the code: the `public_host` constraint is in [ARCHITECTURE
 
 **On upgrade:** an application whose `public_host` contains an uppercase letter or `_` will now fail `POST /apply` with a message naming the application and the field — deliberate fail-closed behaviour, same as 1.2.1 introduced for other stored values. Fix the row and apply again.
 
+### Documentation
+
+- **Three documents are now also in Russian**: [QUICKSTART.ru.md](docs/QUICKSTART.ru.md), [SECURITY.ru.md](docs/SECURITY.ru.md) and [TROUBLESHOOTING.ru.md](docs/TROUBLESHOOTING.ru.md) — the ones an operator reads while installing or while something is broken. English stays canonical and each translated file says so in its header, along with the version it was translated from; `CONTRIBUTING.md` states what a contributor owes when they change one of the three. Code, paths, environment variables and literal error strings are left in English on purpose, because those are what people search for.
+- **Two stale claims in the English docs**, both surfaced by translating them: `docs/SECURITY.md` and `docs/DEPLOYMENT.md` still said the installer builds from source when an artifact fails verification — it stops now — and `docs/GEOIP.md` claimed the 128 MiB upload cap applies to decompressed size, which it does not for archive members that are skipped rather than installed.
+
 ### Upgrade note
 
 This is the first release with a `.deb`, so the appliance you are upgrading was installed by the script. Back up first (`sudo bash scripts/backup.sh`), then `sudo bash scripts/install.sh` from a 1.4.0 checkout — it downloads and verifies the package, installs it, and retires the units the old script left in `/etc/systemd/system`. Afterwards, upgrades are `apt install ./easy-waf_<version>_amd64.deb`. Verify with `sudo bash scripts/smoke-appliance.sh`.
