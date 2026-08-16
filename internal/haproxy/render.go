@@ -83,6 +83,12 @@ func Render(in RenderInput) (Rendered, error) {
 		if _, err := profiles.Resolve(in.Applications[i].Profile); err != nil {
 			return Rendered{}, err
 		}
+		// Re-validate on every render, not just on write: these fields are
+		// interpolated into config lines, so the generator must not depend on
+		// the API handler having been the only way the row was stored.
+		if err := config.ValidateApplicationRenderSafety(&in.Applications[i]); err != nil {
+			return Rendered{}, fmt.Errorf("application %q is unsafe to render: %w", in.Applications[i].ID, err)
+		}
 	}
 	apps := make([]AppRender, 0, len(in.Applications))
 	for _, app := range in.Applications {

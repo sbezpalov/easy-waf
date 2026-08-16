@@ -68,6 +68,7 @@ func (s *Server) Router() chi.Router {
 			r.Use(attachAuditRequestMeta)
 			r.Use(s.auditHTTPMutations)
 			r.Get("/auth/me", s.handleAuthMe)
+			r.Post("/auth/logout", s.handleLogout)
 			r.Post("/auth/change-password", s.handleChangePassword)
 			r.Group(func(r chi.Router) {
 				r.Use(auth.PasswordChangeGate)
@@ -138,6 +139,14 @@ func (s *Server) Router() chi.Router {
 	return r
 }
 
+// metricsToken optionally locks /metrics behind a dedicated bearer token.
+//
+// The endpoint is otherwise protected only by the management source-CIDR
+// allowlist, which defaults to all of RFC1918 — every host on the LAN can read
+// appliance metrics. Prometheus cannot present a session JWT, hence a separate
+// static token rather than the normal auth middleware.
+var metricsToken = auth.LoadStaticToken("EASY_WAF_METRICS_TOKEN", 16)
+
 func (s *Server) metricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -147,6 +156,13 @@ func (s *Server) metricsHandler() http.Handler {
 		if !s.Eng.Settings.PrometheusEnabled || s.Prom == nil {
 			http.NotFound(w, r)
 			return
+		}
+		if metricsToken.Enabled() {
+			raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			if !metricsToken.Matches(raw) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		s.Prom.Handler().ServeHTTP(w, r)
 	})

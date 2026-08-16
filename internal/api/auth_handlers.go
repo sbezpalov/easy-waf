@@ -43,6 +43,24 @@ type enrollRequest struct {
 
 const maxLoginRequestBodyBytes int64 = 16 << 10
 
+// sessionTTL is how long an issued management JWT stays valid.
+const sessionTTL = 24 * time.Hour
+
+// bcryptCost is the work factor for operator password hashes.
+const bcryptCost = 12
+
+// dummyBcryptHash is compared against when the username does not exist, so that
+// "unknown user" and "wrong password" take the same time. Without it the absence
+// of a bcrypt comparison makes unknown usernames answer measurably faster, which
+// tells an attacker which operator names are real. It is a bcrypt hash of a
+// random value that no one holds.
+const dummyBcryptHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEe.7oJv6yEqZ4dHkPzZQeGkOTBRvCr1nWu"
+
+// equalizeLoginTiming burns the same work as a real password check.
+func equalizeLoginTiming(password string) {
+	_ = bcrypt.CompareHashAndPassword([]byte(dummyBcryptHash), []byte(password))
+}
+
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	pending, err := s.Eng.Store.EnrollmentPending(r.Context())
 	if err != nil {
@@ -98,7 +116,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcryptCost)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -133,7 +151,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "enrollment succeeded but session could not be issued", http.StatusInternalServerError)
 		return
 	}
-	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, 24*time.Hour)
+	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -141,7 +159,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
 		MustChangePassword: false,
-		ExpiresInSeconds:   int64((24 * time.Hour).Seconds()),
+		ExpiresInSeconds:   int64(sessionTTL.Seconds()),
 	})
 }
 
@@ -181,12 +199,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
 	if err != nil || u == nil {
+		// Same work as a real check: returning early here would make unknown
+		// usernames answer faster and turn login into a name oracle.
+		equalizeLoginTiming(body.Password)
 		pending, _ := s.Eng.Store.EnrollmentPending(r.Context())
 		_ = s.Eng.Store.AppendAudit(r.Context(), "login_failed", map[string]any{
 			"source_ip":           ipStr,
 			"username":            user,
 			"enrollment_required": pending,
 		})
+		// "enrollment required" describes appliance-wide state that
+		// GET /auth/status already returns unauthenticated, so it leaks nothing
+		// extra; any other failure stays indistinguishable.
 		if pending {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "enrollment required"})
 			return
@@ -202,7 +226,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, 24*time.Hour)
+	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -213,7 +237,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
 		MustChangePassword: u.MustChangePassword,
-		ExpiresInSeconds:   int64((24 * time.Hour).Seconds()),
+		ExpiresInSeconds:   int64(sessionTTL.Seconds()),
 	})
 }
 
@@ -235,11 +259,51 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword})
 }
 
+// handleLogout invalidates every session token issued to the caller.
+//
+// Clearing the token in the browser is not a sign-out: the JWT stays valid for
+// its full TTL, so a copy taken from a shared machine or a proxy log keeps
+// working. Bumping session_version revokes them all immediately.
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	p, ok := auth.PrincipalFrom(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if p.IsLegacyToken {
+		http.Error(w, "legacy automation token has no session to revoke", http.StatusBadRequest)
+		return
+	}
+	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
+	if err != nil || u == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := s.Eng.Store.RevokeUserSessions(r.Context(), u.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = s.Eng.Store.AppendAudit(r.Context(), "logout", map[string]any{
+		"username": u.Username,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"revoked": true})
+}
+
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
 	p, ok := auth.PrincipalFrom(r.Context())
 	if !ok || p.IsLegacyToken {
 		http.Error(w, "use local user session to change password", http.StatusBadRequest)
 		return
+	}
+	// current_password is checked here too, so this endpoint gets the same
+	// per-IP limiter as login instead of offering an unthrottled oracle.
+	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
+		if allowed, retryAfter := s.LoginRL.Allow(ip.String()); !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
+			return
+		}
 	}
 	var body changePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -259,7 +323,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "current password incorrect", http.StatusUnauthorized)
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcryptCost)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -273,7 +337,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, 24*time.Hour)
+	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, sessionTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -284,6 +348,6 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
 		MustChangePassword: false,
-		ExpiresInSeconds:   int64((24 * time.Hour).Seconds()),
+		ExpiresInSeconds:   int64(sessionTTL.Seconds()),
 	})
 }

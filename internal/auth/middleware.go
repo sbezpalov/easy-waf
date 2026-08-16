@@ -19,7 +19,7 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			if legacy.matches(raw) {
+			if legacy.Matches(raw) {
 				p := &Principal{Username: "automation", IsLegacyToken: true}
 				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 				return
