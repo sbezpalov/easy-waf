@@ -124,16 +124,61 @@ not an operator session: revoking it does not sign anybody out, and signing out
 does not revoke it. The token authenticates the *server*; it does not grant the
 caller anything the API would not grant the corresponding operator.
 
-**Read-only by default, mutation is a separate switch.** Two tiers, and the
-boundary is the whole point:
+**Read-only by default; no mutating verb executes on its own authority.** Two
+tiers, and the boundary is the whole point:
 
 | Tier | Verbs | Gate |
 |------|-------|------|
 | **Diagnostics** (read-only) | `status`, `doctor`, `list_applications`, `describe_application`, `haproxy_check`, `config_revisions`, `certificate_expiry`, `geoip_status`, `why_blocked` (correlate an address across IPBL, GeoIP, CrowdSec and Fail2Ban), `recent_events`, `journal_tail` | on when the server runs |
-| **Management** (mutating) | `apply`, `rollback_to_revision`, `set_application_enabled`, `blocklist_add` / `blocklist_remove`, `allowlist_add` / `allowlist_remove`, `issue_certificate`, `reload_haproxy` | `EASY_WAF_MCP_ALLOW_MUTATION=1` |
+| **Management** (mutating) | `apply`, `rollback_to_revision`, `set_application_enabled`, `blocklist_add` / `blocklist_remove`, `allowlist_add` / `allowlist_remove`, `issue_certificate`, `reload_haproxy` | `EASY_WAF_MCP_ALLOW_MUTATION=1` **and** per-action human confirmation |
 
 `why_blocked` is the verb that justifies the whole exercise: today it is four
 lookups and a correlation the operator does in their head.
+
+**Mutating verbs propose; a human confirms the specific change.** A call to
+`apply` does not apply. It returns a **pending change** — an ID, a rendered diff,
+and the revision the diff was computed against — and nothing happens until the
+operator confirms that ID in the UI or from the console.
+
+This is the answer to prompt injection, and it is worth being precise about why
+the two obvious alternatives are not.
+
+- A static `EASY_WAF_MCP_ALLOW_MUTATION=1` is **ambient authority**: set once,
+  forgotten, and every later tool call rides on it.
+- A short-lived confirmation token minted in the UI only narrows the window. The
+  operator mints it exactly when the agent is about to do work — which is exactly
+  when the agent is processing the untrusted text that carries the injection. It
+  also has a failure mode of its own: if confirming is tedious, operators mint
+  long-lived tokens or leave the flag on, and the control is back to ambient
+  authority with extra steps. Controls that irritate get routed around.
+
+Binding the permission to a *specific diff* instead of to an interval is what
+actually closes it. Injected text can make the agent propose anything, which is
+harmless and, more to the point, visible. It cannot make the change happen,
+because happening requires a human who has read the diff.
+
+The shape is not new here: `firewall/apply-rollback` + `commit` and the revision
+history are already "act and confirm separately". This extends an existing idea
+to a new surface rather than inventing one.
+
+Two details this does not work without:
+
+- **The confirmation is bound to the state the diff was computed against.**
+  Otherwise it is a TOCTOU: the agent proposes against revision A, the operator
+  reads the diff of A, state moves to B, and confirm applies to B. A pending
+  change carries the revision it was built on and is refused if state has moved.
+- **Pending changes expire** (15 minutes) and are single-use, which also supplies
+  idempotency: repeated identical calls return the same pending ID rather than
+  stacking.
+
+`EASY_WAF_MCP_ALLOW_MUTATION` stays, but as a **kill switch, not an
+authorization**: off means the mutating verbs are not registered in the tool
+registry at all. That is worth having independently of confirmation.
+
+Cost note, since the first draft of this record got it wrong: the confirmation
+token and propose/confirm cost about the same to build — both need UI, storage
+and a revocation or expiry path. Propose/confirm is not the expensive option, it
+is the one that works.
 
 **Verbs that are never exposed, at any tier.** Anything that reaches
 `easy-waf-hostd`: netplan, nftables, systemd unit control, package upgrades,
@@ -148,10 +193,19 @@ actor kind so `mcp` is distinguishable from `operator` and `automation` after th
 fact. Mutating verbs additionally record the tool name and arguments. An operator
 must be able to answer "did the assistant do this?" without inference.
 
-**Destructive verbs carry an idempotency key and echo a diff.** `apply` and
-`rollback_to_revision` return what changed *before* the change is committed where
-the API allows it, so the calling agent can surface it. Repeated identical calls
-must not stack.
+**`journal_tail` stays, redacted.** It is the one read-only verb that can return
+a secret an operator pasted into a log line, so it reuses the masking the
+diagnostics bundle already applies (`CROWDSEC_LAPI_KEY`, `EASY_WAF_JWT_SECRET`,
+`EASY_WAF_ADMIN_TOKEN` — see [DIAGNOSTICS.md](../DIAGNOSTICS.md)) and caps the
+number of lines returned. Dropping it would remove most of the diagnostic value;
+masking is the same trade the bundle already makes.
+
+**Read-only is safer, not safe, and the record should not pretend otherwise.**
+`why_blocked`, `recent_events` and `journal_tail` pull attacker-influenced text —
+a User-Agent, a request path, a log line — into the agent's context. That is the
+injection *vector*, and it exists at the diagnostics tier too. It cannot be
+removed without removing the verbs that make this worth building. What can be
+removed is the payoff, which is what propose/confirm does.
 
 ## Consequences
 
@@ -171,9 +225,14 @@ Negative / accepted cost:
   documentation. On an appliance sized at 2 vCPU / 2 GB that is not free.
 - A new credential in `easy-waf.env`, which is already the file most likely to be
   mishandled.
-- Prompt injection stays a live risk for the mutating tier however carefully the
-  verbs are scoped. Read-only is genuinely safer here; "read-only by default" is
-  a real control, not a formality.
+- Prompt injection is not solved, only defanged. The agent still reads
+  attacker-influenced text, and propose/confirm removes the payoff rather than
+  the vector. An operator who confirms without reading the diff has opted back
+  into the original problem, and no design here can stop that.
+- Confirmation is friction in exactly the moment somebody wants speed — during an
+  incident. That is the cost being accepted, and it is the reason the diagnostics
+  tier has to be genuinely useful on its own: most of the value should arrive
+  without anyone confirming anything.
 - Latency and error fidelity: the extra hop makes some failures read as an HTTP
   status rather than as the underlying reason. Verb implementations should
   unwrap the API error, not pass it through.
@@ -188,21 +247,21 @@ Negative / accepted cost:
    path compiled in reach of the registry.
 3. Audit actor kind (`operator` / `automation` / `mcp`) — a migration, and the
    one piece that touches existing code.
-4. Mutation tier behind `EASY_WAF_MCP_ALLOW_MUTATION=1`, starting with `apply`
-   and `rollback_to_revision`, each with an idempotency key.
-5. `packaging/systemd/easy-waf-mcpd.service` (not enabled), nfpm contents,
+4. Pending changes: storage with a 15-minute expiry, the revision the diff was
+   built against, a confirm endpoint, and the UI surface that shows a diff and
+   confirms it. This is the prerequisite for step 5, not a follow-up to it.
+5. Mutation tier behind `EASY_WAF_MCP_ALLOW_MUTATION=1`, starting with `apply`
+   and `rollback_to_revision`. **Do not ship an interim static-flag version**: a
+   temporary ambient-authority design is the kind that becomes permanent, and
+   there would be no forcing function to replace it once it works.
+6. `packaging/systemd/easy-waf-mcpd.service` (not enabled), nfpm contents,
    `docs/MCP.md`, and a `scripts/smoke-appliance.sh` check that the listener is
    absent unless configured.
-6. Review gate: the tool registry gets the same review standard as the broker's
+7. Review gate: the tool registry gets the same review standard as the broker's
    opcode switch. A new verb is a new privilege.
 
 ## Open questions
 
-- Should the mutating tier require a **human confirmation token** minted in the
-  UI and valid for minutes, rather than a static env switch? That is the design
-  that actually answers prompt injection, and it is more work.
-- Does `journal_tail` belong in diagnostics at all? It is the one read-only verb
-  that can return secrets an operator pasted into a log line.
 - Per-verb scoping in the token (a capability list) versus the two flat tiers
   here. Tiers are simpler to reason about and simpler to get wrong in the safe
   direction; scopes are more precise and more to maintain.
