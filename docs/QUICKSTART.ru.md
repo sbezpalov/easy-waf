@@ -1,9 +1,9 @@
 # Быстрый старт
-[English](QUICKSTART.md) | **Русский** · канонический документ — английский; при расхождении верна английская версия. Переведено с 1.4.0.
+[English](QUICKSTART.md) | **Русский** · канонический документ — английский; при расхождении верна английская версия. Переведено с 1.4.1.
 
 **Целевая система:** Ubuntu 24.04 LTS (server), права **root** на аплаенсе.
 
-**Версия поставки:** см. файл [`VERSION`](../VERSION) в корне репозитория (**1.4.0**); `scripts/install.sh` берёт её оттуда, чтобы скачать соответствующие артефакты из GitHub Releases (см. [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Каждый артефакт проверяется по **`SHA256SUMS`** из того же релиза до того, как хоть что-то будет установлено, — см. [SECURITY.ru.md](SECURITY.ru.md#цепочка-поставок) и [ADR 0001](adr/0001-packaging-and-installer.md).
+**Версия поставки:** см. файл [`VERSION`](../VERSION) в корне репозитория (**1.4.1**); `scripts/install.sh` берёт её оттуда, чтобы скачать соответствующие артефакты из GitHub Releases (см. [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Каждый артефакт проверяется по **`SHA256SUMS`** из того же релиза до того, как хоть что-то будет установлено, — см. [SECURITY.ru.md](SECURITY.ru.md#цепочка-поставок) и [ADR 0001](adr/0001-packaging-and-installer.md).
 
 ## Установка одной командой
 
@@ -26,10 +26,10 @@ sudo bash scripts/install.sh
 пакет отдельно и дальше действуйте сами:
 
 ```bash
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.0/easy-waf_1.4.0_amd64.deb
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.0/SHA256SUMS
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.1/easy-waf_1.4.1_amd64.deb
+curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.4.1/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS        # do not skip this
-sudo apt install ./easy-waf_1.4.0_amd64.deb
+sudo apt install ./easy-waf_1.4.1_amd64.deb
 ```
 
 Пакет ставится с включёнными юнитами, но **не запускает** их: задайте `DATABASE_URL` в

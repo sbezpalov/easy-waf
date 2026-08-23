@@ -2,7 +2,7 @@
 
 [English](SECURITY.md) | [Русский](SECURITY.ru.md)
 
-Applies to the release from root [`VERSION`](../VERSION) (**1.4.0**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
+Applies to the release from root [`VERSION`](../VERSION) (**1.4.1**). Acceptance criteria for ACL / host firewall: [PROMPTS_ALIGNMENT.md](PROMPTS_ALIGNMENT.md) §9 (AC-01, AC-08).
 
 ## Principles
 

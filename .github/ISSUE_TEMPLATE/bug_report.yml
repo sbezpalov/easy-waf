@@ -16,7 +16,7 @@ body:
     attributes:
       label: Version
       description: Contents of `VERSION`, or the release tag / commit you run.
-      placeholder: "1.4.0"
+      placeholder: "1.4.1"
     validations:
       required: true
   - type: dropdown
