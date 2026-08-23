@@ -117,12 +117,24 @@ covered by the same `management_allowed_cidrs` policy and nftables rules as the
 management API. Remote use is expected to go through the VPN or SSH forward that
 [docs/SECURITY.md](../SECURITY.md) already assumes for `:8443`.
 
+The TLS requirement there is doing two jobs, and only one of them is
+confidentiality. Loopback makes it obvious which appliance is being addressed;
+off loopback it stops being obvious, and an assistant that manages more than one
+box needs to know it is talking to the right one — a stale DNS record or a
+mistyped port otherwise sends "unblock 1.2.3.4" to somebody else's edge. Clients
+should pin the appliance's management certificate, not merely accept it.
+
 **Its own credential, with a floor.** `EASY_WAF_MCP_TOKEN`, minimum 32
 characters, refused below that — the same fail-closed rule as
 `EASY_WAF_JWT_SECRET` and `EASY_WAF_ADMIN_TOKEN`, and for the same reason. It is
 not an operator session: revoking it does not sign anybody out, and signing out
 does not revoke it. The token authenticates the *server*; it does not grant the
 caller anything the API would not grant the corresponding operator.
+
+One shared secret means one implicit identity — "somebody holding the token".
+That is honest for a single appliance with a single caller, and it is the first
+thing that breaks with a second one. See the open questions: the decision is
+deferred, but the audit schema below is shaped so that deferring it stays cheap.
 
 **Read-only by default; no mutating verb executes on its own authority.** Two
 tiers, and the boundary is the whole point:
@@ -245,8 +257,11 @@ Negative / accepted cost:
    REST client that carries the token and nothing else.
 2. Diagnostics tier only, behind `EASY_WAF_MCP_LISTEN`, loopback, no mutation
    path compiled in reach of the registry.
-3. Audit actor kind (`operator` / `automation` / `mcp`) — a migration, and the
-   one piece that touches existing code.
+3. Audit actor as a **pair**: kind (`operator` / `automation` / `mcp`) *and* a
+   name. A migration, and the one piece that touches existing code — which is
+   exactly why the name goes in now. Today it is a constant; the day there is a
+   second caller it is a column that already exists rather than a second
+   migration against a live appliance. Half an hour now, a change window later.
 4. Pending changes: storage with a 15-minute expiry, the revision the diff was
    built against, a confirm endpoint, and the UI surface that shows a diff and
    confirms it. This is the prerequisite for step 5, not a follow-up to it.
@@ -262,8 +277,68 @@ Negative / accepted cost:
 
 ## Open questions
 
-- Per-verb scoping in the token (a capability list) versus the two flat tiers
-  here. Tiers are simpler to reason about and simpler to get wrong in the safe
-  direction; scopes are more precise and more to maintain.
-- Whether a second appliance-to-appliance use case exists, which would change the
-  authentication story from "one token" to something with identity.
+Both are deferred deliberately, and both have a trigger. An open question with no
+trigger is just an unfinished sentence — it gets revisited when somebody
+remembers it rather than when the situation calls for it.
+
+### Per-verb scopes versus flat tiers
+
+Should the token carry a capability list, so different callers get different
+verbs, instead of the two tiers here?
+
+The case for is ordinary least privilege: a monitoring assistant that only needs
+`status` and `doctor` should not hold a credential that can also touch the block
+lists.
+
+The case against is that **per-action confirmation has already absorbed most of
+what scopes would buy on the mutating side.** Once a human approves each diff,
+"which mutating verbs may this token *propose*" is a question about noise, not
+about damage — a proposal is not an action.
+
+Where scopes would genuinely earn their place is the opposite end from where the
+instinct points: *inside diagnostics*, which has no confirmation gate and is
+where information disclosure lives. `journal_tail` is categorically more
+sensitive than `status`.
+
+So the cheaper answer, if that need appears, is not a capability system but a
+**third flat tier — "sensitive reads"** (`journal_tail`, `recent_events` with
+request detail, anything returning raw attacker-controlled text), off by default.
+One more switch of a shape that already exists, against a capability list that
+needs a schema, a minting UI, validation, and a decision for every new verb about
+whether existing tokens include it. That last one is the trap: it is a decision
+made repeatedly, quietly, and under time pressure.
+
+General scopes also have a presentation problem. A token narrowed to nine verbs
+out of eleven *feels* controlled, while the two that remain may be the entire
+attack surface. Tiers are coarser and harder to fool yourself with.
+
+**Trigger:** a second caller at a different level of trust, or the first
+complaint that `journal_tail` is visible to something it should not be.
+
+### Identity of the caller
+
+`EASY_WAF_MCP_TOKEN` is one shared secret and therefore one implicit identity.
+Three things break it: a second client (laptop plus schedule plus a second
+person), a second appliance under one assistant, and any fleet arrangement —
+which is not hypothetical for anyone running this at more than one site.
+
+The options, by cost:
+
+- **Named tokens.** A table of `(name, hash, created, last used, revoked)`. Still
+  bearer, still shared secrets, but you know *which* one was used, you can revoke
+  one, and the audit record gains a caller. Roughly 80% of the value for very
+  little work.
+- **mTLS.** A client certificate per caller. Cleaner in principle; issuance and
+  rotation are real operational weight for a home appliance, and client-cert
+  support across MCP clients is uneven.
+- **OAuth with dynamic client registration.** Where the specification is heading
+  for HTTP transports, and the right long-run answer if third-party clients ever
+  connect. Premature now: the spec is still moving, and pinning to it early buys
+  a migration.
+
+Not deciding is fine. What is not fine is letting the *audit schema* assume a
+single caller, which is why the implementation sketch above makes the actor a
+(kind, name) pair from the start. That is the cheap insurance in the one place
+where retrofitting is expensive.
+
+**Trigger:** a second caller, a second appliance, or any non-loopback bind.
