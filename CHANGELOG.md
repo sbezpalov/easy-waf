@@ -5,12 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.1] - 2026-08-23
 
-### Added
+A correctness release: the licence the project ships was not the licence it
+claimed, and the packaging change that started distributing it landed after the
+1.4.0 tag. No code changes, no migration, nothing to do on an appliance beyond
+installing the newer package if you want the terms alongside the software.
+
+### Fixed
 
 - **`LICENSE` now contains the Apache-2.0 text.** It held the boilerplate *header* — the "Licensed under the Apache License… You may obtain a copy at ‹URL›" notice meant for the top of a source file — and not the licence itself. Apache-2.0 §4(a) requires giving every recipient a copy of the License, GitHub's detector does not recognise a stub, and `NOTICE` pointed at it for "the full license text" that was not there. The file is now the canonical text, verbatim and unmodified, which is also what licence scanners expect; the copyright line stays in `NOTICE`, where it belongs.
 - **`LICENSE` and `NOTICE` ship in the package** and in the release tarball (`packaging/nfpm.yaml`, `release.yml`) — installed to `/usr/share/doc/easy-waf/`. An appliance that has the software should have the terms it is under without going back to the repository.
+
+### Added
+
 - **[ADR 0002](docs/adr/0002-mcp-server.md): an MCP server for management and diagnostic verbs.** Proposed, no code — the record exists so the design is settled before anything opens a second way into the control plane. The decision is a separate `easy-waf-mcpd` process on its own loopback port that **calls the REST API as an ordinary client**, so there is still exactly one authorization path and one set of validators; an MCP server holding its own database handle would bypass every check that lives in the API handler, which is the bug class 1.2.1 and 1.4.0 were both spent on. Off unless switched on, read-only by default, its own 32-character credential, audited as a distinct actor, and — the part that answers prompt injection — **no mutating verb executes on its own authority**: `apply` returns a pending change with a rendered diff and the revision it was computed against, and a human confirms that specific change. Binding permission to a diff rather than to a time window is the difference between a control and a formality; a static flag is ambient authority and a short-lived token only narrows the window the injection arrives in. The env flag stays as a kill switch, not as authorization. The two remaining open questions — per-verb scopes, and identity of the caller — carry explicit triggers rather than being left to be remembered, and the one piece that would be expensive to retrofit is decided now: the audit actor is a (kind, name) pair from the start, so a second caller is a column that already exists rather than a migration against a live appliance. And everything that reaches `easy-waf-hostd` — netplan, nftables, systemd, packages, accounts, SSH keys — permanently out of scope, because the broker exists precisely because the API is assumed compromised.
 
 ## [1.4.0] - 2026-08-16
