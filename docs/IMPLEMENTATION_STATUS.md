@@ -1,6 +1,6 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-04-20  
+**Last updated:** 2026-09-04  
 **Current VERSION:** 1.4.1 (see root `VERSION` file)
 **Summary for the capability tables:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
 
