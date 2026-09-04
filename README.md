@@ -168,4 +168,7 @@ cannot afford to lose, and keep backups (`scripts/backup.sh`).
 
 ## License
 
-[Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE). Keep the `LICENSE` and `NOTICE` files with any copy or
+derivative, and mark the files you change — that is all the licence asks of you
+(§4). It does not grant rights to the project's name: a fork is welcome, a fork
+called *Easy Home WAF* is not (§6).
