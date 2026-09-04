@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Repository housekeeping ahead of making the project public. No code changes,
-nothing to do on an appliance.
+Repository housekeeping ahead of making the project public: documentation,
+attribution and dependency hygiene. No behaviour changes — the only edits to Go
+sources are licence headers — and nothing to do on an appliance.
 
 ### Changed
 
 - **The build-time specification is gone, and the status matrix stands on its own.** The root `prompts.md` was the prompt the project was built from: fully executed (Done 20, Partial 1, Missing 0) and, by 1.4.1, contradicted by the result — it prescribed a `/web`, `/templates`, `/tests` layout that does not exist, and an acceptance criterion of "SELinux remains enabled" on an appliance that targets Ubuntu with AppArmor and nftables. A reader arriving at the repository met a stale map competing with the real documentation. What was worth keeping — the requirements, the acceptance criteria AC-01 … AC-10, and where each one is implemented — is [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md), formerly `docs/PROMPTS_ALIGNMENT.md`, now written to be read on its own rather than as a diff against a document that no longer exists. `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/SECURITY.ru.md`, `docs/CROWDSEC.md` and `docs/adr/README.md` point at it.
 - **The fallback reporting channel in [`SECURITY.md`](SECURITY.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) is one that exists.** Both pointed at "the email address in the repository owner's GitHub profile", which that profile does not publish — a dead end for anyone who cannot use private advisories. They now point at the profile's contact links. GitHub private vulnerability reporting remains the primary channel.
+- **Attribution now travels with the code.** `NOTICE` names the original author rather than only "Easy Home WAF contributors", and every Go source file carries a two-line `Copyright` / `SPDX-License-Identifier: Apache-2.0` header. Apache-2.0 §4(c) obliges a derivative to keep `NOTICE`, so that file is where authorship survives a fork — and the per-file header is what survives when somebody copies a single file rather than the repository. Both READMEs now state the obligations in a sentence, including §6: the licence grants no rights to the project's name.
 
 ### Added
 
