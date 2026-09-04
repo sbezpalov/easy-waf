@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 package crowdsec
 
 import (

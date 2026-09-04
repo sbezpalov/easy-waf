@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 // Package mapfile holds helpers shared by the generators that write HAProxy map
 // files (ipbl, ipwl, blockedua, geoip).
 package mapfile

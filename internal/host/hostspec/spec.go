@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 // Package hostspec holds shared validation for host management (API + easy-waf-hostd).
 package hostspec
 
