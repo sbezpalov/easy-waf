@@ -16,4 +16,4 @@ rather than editing it, so the history of *why* stays readable.
 Earlier architectural context that predates this directory:
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — components, data flow, config lifecycle
-- [PROMPTS_ALIGNMENT.md](../PROMPTS_ALIGNMENT.md) — requirements ↔ implementation matrix
+- [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md) — requirements, acceptance criteria and where each is implemented

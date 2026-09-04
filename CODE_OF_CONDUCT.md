@@ -38,9 +38,10 @@ public behaviour that represents the project.
 
 ## Enforcement
 
-Report privately to the maintainer: email the address in the repository owner's
-GitHub profile with `easy-waf conduct` in the subject. Reports stay private;
-nothing sent to the maintainer will be republished.
+Report privately to the maintainer through the contact links on the repository
+owner's GitHub profile ([@sbezpalov](https://github.com/sbezpalov)), with
+`easy-waf conduct` in the subject. Reports stay private; nothing sent to the
+maintainer will be republished.
 
 The maintainer may edit or delete comments, close threads, or block accounts,
 proportionate to what happened. Deliberate harassment gets a block on the first
