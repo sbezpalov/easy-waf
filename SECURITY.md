@@ -24,8 +24,11 @@ Use GitHub's private reporting: **Security → Advisories → Report a vulnerabi
 on this repository. That creates a private thread visible only to maintainers and
 lets the fix and the advisory be prepared together.
 
-If private advisories are unavailable to you, email the address in the repository
-owner's GitHub profile with `easy-waf security` in the subject.
+If private advisories are unavailable to you, reach the maintainer through the
+contact links on the repository owner's GitHub profile
+([@sbezpalov](https://github.com/sbezpalov)) and use `easy-waf security` as the
+subject. Do not include the details in a public post — ask for a private channel
+first.
 
 ### What to include
 

@@ -77,7 +77,7 @@ For advanced behaviour (CAPTCHA, ban pages, AppSec), follow upstream docs: addit
 Authenticated session:
 
 - `GET /api/v1/integrations/crowdsec` — LAPI reachability (ping).
-- `GET /api/v1/integrations/crowdsec/decisions` — JSON from LAPI `GET /v1/decisions?limit=100` (blocked IPs preview; aligns with [prompts.md](../prompts.md) §7.5).
+- `GET /api/v1/integrations/crowdsec/decisions` — JSON from LAPI `GET /v1/decisions?limit=100` (blocked IPs preview).
 - `DELETE /api/v1/integrations/crowdsec/decisions/{id}` — removes one decision via LAPI `DELETE /v1/decisions/{id}` (same ID as in the decisions list). Audit: `crowdsec.decision_deleted`.
 - `POST /api/v1/integrations/crowdsec/decisions` — adds a manual ban or **whitelist**; body JSON `{ "ip", "type": "ban"|"whitelist", "duration": "1h"|"4h"|"24h"|"168h"|"permanent", "reason" }`. Proxied to LAPI `POST /v1/decisions` as a single-element array (`scope: Ip`, `origin: easy-waf`, `scenario` = `reason`). Whitelist uses a long LAPI duration (`876000h`). Audit: `crowdsec.decision_added`.
 

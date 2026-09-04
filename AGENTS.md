@@ -50,7 +50,7 @@
 - **Версия:** `1.4.1` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
 - **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply) и `easy-waf-acmed` (ACME-воркер).
 - Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 3.x, nftables, systemd.
-- Соответствие требований `prompts.md` ↔ коду отслеживается в `docs/PROMPTS_ALIGNMENT.md` (MVP gap matrix).
+- Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.
 
 ## 5. Как вносить изменения (агент)
 - Работай через план: декомпозируй задачу и покажи шаги ДО исполнения.

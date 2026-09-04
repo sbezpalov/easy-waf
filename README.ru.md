@@ -138,6 +138,7 @@ sudo apt install ./easy-waf_<version>_amd64.deb
 | [MONITORING](docs/MONITORING.md) · [DIAGNOSTICS](docs/DIAGNOSTICS.md) | Метрики и диагностика |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) · [VM-REQUIREMENTS](docs/VM-REQUIREMENTS.md) | Развёртывание, OVF/OVA, сайзинг |
 | [adr/](docs/adr/) | Архитектурные решения (ADR) |
+| [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md) | Требования, критерии приёмки и где что реализовано |
 
 ## Как это устроено
 

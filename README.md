@@ -131,6 +131,7 @@ this way: [ADR 0001](docs/adr/0001-packaging-and-installer.md).
 | [MONITORING](docs/MONITORING.md) · [DIAGNOSTICS](docs/DIAGNOSTICS.md) | Metrics and diagnostics |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) · [VM-REQUIREMENTS](docs/VM-REQUIREMENTS.md) | Rollout, OVF/OVA, sizing |
 | [adr/](docs/adr/) | Architecture decision records |
+| [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md) | Requirements, acceptance criteria and where each one is implemented |
 
 ## How it is built
 

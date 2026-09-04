@@ -1,12 +1,20 @@
-# Alignment with `prompts.md` (Easy Home WAF)
+# Implementation status (Easy Home WAF)
 
 **Last updated:** 2026-04-20  
 **Current VERSION:** 1.4.1 (see root `VERSION` file)
-**Summary for §2–§3 table rows:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
+**Summary for the capability tables:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
 
-This document **maps** requirements from [prompts.md](../prompts.md) to repository code and docs. Statuses: **Done** | **Partial** | **Missing** | **N/A** (out of MVP / deferred).
+This document records **what the appliance is required to do and where each
+requirement is implemented** — the original MVP scope, the security work that
+followed it, and the acceptance criteria AC-01 … AC-10 the project is judged
+against. Statuses: **Done** | **Partial** | **Missing** | **N/A** (out of MVP /
+deferred); **Partial** means the code is there and the remainder depends on the
+environment (NAT, DNS, an SPOA package) or is deliberately outside the UI.
 
-Source of truth for implementation is **§7 Features**; acceptance checks are **§9 Acceptance criteria**. Sections §2–§3 below are a compact index with status and pointers to `see §7.*` / §9 when needed.
+It is a status record, not a guide. How the system works is
+[ARCHITECTURE.md](ARCHITECTURE.md); how to run it is
+[OPERATIONS.md](OPERATIONS.md). The capability tables below are a compact index
+and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 ## Security hardening (audit follow-up)
 
@@ -28,63 +36,48 @@ Source of truth for implementation is **§7 Features**; acceptance checks are **
 | **System → Updates: disk usage indicator + apt cache clean** | **Done** | `GET /host/disk` (`statfs` + cache/removable hints); `POST /host/updates/clean` (`apt-clean`); UI disk bar + Clean apt cache |
 | **Host privilege model** | **Done** | Root broker **`easy-waf-hostd`** on `/run/easy-waf/hostd.sock`; `runner.Privileged` uses JSON over unix socket; API keeps `NoNewPrivileges`/`ProtectSystem=strict`; legacy sudo + `host-privileged.sh` removed on install |
 
-## §2 Goals — Core
+## Core capabilities
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Publish services by domain → backend | **Done** | see **§7.1** |
-| TLS on HAProxy (crt-list, ACME/DB certs, SNI, HTTP→HTTPS) | **Done** | see **§7.1**, **§7.2**, **§7.3** |
-| ACME issue / renew | **Done** | see **§7.2** |
-| WebSocket (`Application.WebSocket`, `timeout tunnel`) | **Done** | see **§7.3**; **§9** AC-09 |
-| Single HAProxy entry (`fe_http` / `fe_https`) | **Done** | see **§7.3** |
+| Publish services by domain → backend | **Done** | see **7.1** |
+| TLS on HAProxy (crt-list, ACME/DB certs, SNI, HTTP→HTTPS) | **Done** | see **7.1**, **7.2**, **7.3** |
+| ACME issue / renew | **Done** | see **7.2** |
+| WebSocket (`Application.WebSocket`, `timeout tunnel`) | **Done** | see **7.3**; **AC-09 |
+| Single HAProxy entry (`fe_http` / `fe_https`) | **Done** | see **7.3** |
 
-## §2 Security
+## Security capabilities
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Rate limit (stick-tables), per-app | **Done** | see **§7.1a** |
-| Basic WAF (ACL), per-app | **Done** | see **§7.1a** |
-| CrowdSec + decisions (LAPI, decisions in UI) | **Done** | see **§7.5** (ban/unban/whitelist in UI) |
-| SPOE bouncer | **Done** | see **§7.3**; template `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
+| Rate limit (stick-tables), per-app | **Done** | see **7.1a** |
+| Basic WAF (ACL), per-app | **Done** | see **7.1a** |
+| CrowdSec + decisions (LAPI, decisions in UI) | **Done** | see **7.5** (ban/unban/whitelist in UI) |
+| SPOE bouncer | **Done** | see **7.3**; template `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
 | Fail2Ban | **Done** | `GET/POST /api/v1/integrations/fail2ban/*` via **`easy-waf-hostd`** (`fail2ban` opcode); Fail2Ban UI tab; `docs/FAIL2BAN.md`; legacy socket/group path retired |
-| GeoIP + cache (ipinfo, batch map, ACL) | **Done** | see **§7.6** |
+| GeoIP + cache (ipinfo, batch map, ACL) | **Done** | see **7.6** |
 
-## §2 UX / Observability
+## UX and observability
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Web UI (LAN): 8 tabs, dashboard | **Done** | see **§7.7** |
-| Certificates, logs, stats, health | **Done** | see **§7.7**, **§7.8**; audit, `/health`, `/status` |
-| Backup/restore | **Done** | **§9** AC-10; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
+| Web UI (LAN): 8 tabs, dashboard | **Done** | see **7.7** |
+| Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health`, `/status` |
+| Backup/restore | **Done** | **AC-10; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
-## §3 Constraints
+## Platform constraints
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
 | Ubuntu 24.04 LTS, systemd, nftables, AppArmor | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md`, `docs/HOST-API.md` |
-| `haproxy -c` before reload | **Done** | see **§7.3**; `internal/apply`, `internal/engine` |
-| SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | see **§7.3** |
-| CrowdSec LAPI not via Lua | **Done** | Go LAPI client + SPOA package; see **§7.5**, `docs/CROWDSEC.md` |
-| Config generator, validation, atomic apply, rollback | **Done** | see **§7.3**; **§9** AC-06 |
-| GeoIP API + batch map + ACL | **Done** | see **§7.6** |
+| `haproxy -c` before reload | **Done** | see **7.3**; `internal/apply`, `internal/engine` |
+| SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | see **7.3** |
+| CrowdSec LAPI not via Lua | **Done** | Go LAPI client + SPOA package; see **7.5**, `docs/CROWDSEC.md` |
+| Config generator, validation, atomic apply, rollback | **Done** | see **7.3**; **AC-06 |
+| GeoIP API + batch map + ACL | **Done** | see **7.6** |
 | MaxMind MMDB as provider | **Done** | `geoip_mmdb_path`, `internal/geoip/maxmind.go`, `GET/POST /api/v1/geoip/*`, `docs/GEOIP.md`, `scripts/update-geoip-db.sh` |
 
-## §6 Repository structure (target layout from prompts)
-
-| Path in prompts | In this repo | Notes |
-|-----------------|--------------|-------|
-| `/internal/config` | `internal/config` | OK |
-| `/internal/haproxy` | `internal/haproxy` | Template embedded in `render.go` |
-| `/internal/acme` | `internal/acme` | OK |
-| `/internal/security` | no separate package | see `profiles`, `api/mgmtacl`, `auth` |
-| `/internal/geoip` | `internal/geoip` | OK |
-| `/internal/crowdsec` | `internal/crowdsec` | OK |
-| `/internal/stats` | `internal/metrics` (HAProxy socket) | see `GET /api/v1/stats/*` |
-| `/web/frontend` | `internal/webui/dist` | Embedded via `embed` |
-| `/templates/*.tmpl` | inside `render.go` | Can be split to files later |
-| `/tests` | focused `*_test.go` + **golden** HAProxy under `internal/haproxy/testdata/golden/` | No separate e2e tree |
-
-## §7 Features
+## Features
 
 ### 7.1 App publishing — **Done** (CRUD API + UI, profiles, restricted paths, health path in model; **HTTP publishing**: per-app `listen_mode`, `fe_http` routing / per-host redirect, migration `012_listen_mode.sql`, golden `http-only-app` / `mixed-listen-modes` / `http-only-reverse-proxy`, audit `app_listen_mode_changed`)
 
@@ -96,23 +89,23 @@ Source of truth for implementation is **§7 Features**; acceptance checks are **
 
 ### 7.3 HAProxy engine — **Done** (template, checksum, validate, revisions/rollback, golden)
 
-### 7.4 Security profiles — **Done** (names from prompts: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
+### 7.4 Security profiles — **Done** (profile names: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
 
 ### 7.5 CrowdSec — **Done** (ping LAPI, decisions in UI, **Unban** / **Ban IP** / **Allow IP (whitelist)** via LAPI; `cscli` ops outside UI — per docs)
 
 ### 7.6 GeoIP — **Done** (`internal/geoip` — ipinfo + **MaxMind GeoLite2-Country.mmdb**, `GET /api/v1/geoip/lookup|stats|providers`, `POST /api/v1/geoip/reload`, settings `geoip_*` / `geoip_mmdb_path`, migrations `007`+`010`, batch `geoip_enforce.map` + ACL in `render.go`, UI section, `docs/GEOIP.md`)
 
-### 7.7 UI pages — **Done** (tabs from §7 prompts + audit/logs, certificate summary)
+### 7.7 UI pages — **Done** (tabs from the feature list above + audit/logs, certificate summary)
 
 ### 7.8 Statistics — **Done** (`internal/metrics` — HAProxy `show stat` over Unix socket, cache 5s; API `GET /api/v1/stats/haproxy`, `GET /api/v1/stats/summary`; Dashboard traffic + backends, refresh 10s; `haproxy_stats_socket_path` + golden template)
 
-## §8 Lessons learned
+## Lessons learned
 
 Captured in `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render.go` (SNI, ws, validation).
 
-## §9 Acceptance criteria (MVP) — Spec v1.1 (AC-01 … AC-10)
+## Acceptance criteria (AC-01 … AC-10)
 
-Verified against code and scripts (iterations A–D). **Partial** = depends on environment (NAT, DNS, SPOA package) or deliberately left outside the UI.
+Verified against code and scripts (iterations A–D).
 
 | ID | Criterion | Status | Check in repository |
 |----|-----------|--------|---------------------|
@@ -127,7 +120,7 @@ Verified against code and scripts (iterations A–D). **Partial** = depends on e
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
-**AppArmor (from §3 prompts):** Ubuntu uses AppArmor by default; a dedicated easy-waf profile is not required. HAProxy access to configs is via the **`easy-waf`** group. Status: **Done** on Ubuntu 24.04.
+**AppArmor:** Ubuntu uses AppArmor by default; a dedicated easy-waf profile is not required. HAProxy access to configs is via the **`easy-waf`** group. Status: **Done** on Ubuntu 24.04.
 
 ## Roadmap (post-MVP)
 
