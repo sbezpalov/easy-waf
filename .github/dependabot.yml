@@ -1,0 +1,29 @@
+# Dependency updates. Grouped and monthly on purpose: this is a single-maintainer
+# appliance, and a weekly stream of individual bumps gets ignored, which is worse
+# than no automation at all. Security updates arrive separately and immediately —
+# GitHub sends those regardless of this schedule.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
