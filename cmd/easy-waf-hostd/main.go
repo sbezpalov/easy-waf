@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 // easy-waf-hostd is the root privilege broker for host management (unix socket).
 package main
 

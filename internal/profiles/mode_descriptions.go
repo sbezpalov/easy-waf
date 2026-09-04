@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 package profiles
 
 // SecurityModeMeta is returned by GET /api/v1/security/modes for the UI.

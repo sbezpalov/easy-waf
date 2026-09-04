@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 // easy-waf-admin — emergency maintenance (run as root on appliance).
 package main
 

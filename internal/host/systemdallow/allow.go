@@ -1,3 +1,6 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
 // Package systemdallow is the shared systemd unit/action whitelist (no runner dependency).
 package systemdallow
 
