@@ -1,6 +1,6 @@
 # Easy Home WAF
 
-[English](README.md) | **Русский**
+[English](README.md) | **Русский** · канонический документ — английский; при расхождении верна английская версия. Переведено с 1.4.1.
 
 [![CI](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml)
 [![Release](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml)
@@ -170,7 +170,7 @@ PostgreSQL — единый source of truth. API рендерит из него 
 Автор использует проект в продакшене на домашней сети; описанные здесь интерфейсы
 стабильны, а всё, что их ломает, проходит через `CHANGELOG.md` с примечанием об
 обновлении. Это молодой проект, который ведёт один человек — прочитайте
-[docs/SECURITY.md](docs/SECURITY.md), прежде чем ставить его перед тем, что вам
+[docs/SECURITY.ru.md](docs/SECURITY.ru.md), прежде чем ставить его перед тем, что вам
 жалко потерять, и держите бэкапы (`scripts/backup.sh`).
 
 ## Лицензия

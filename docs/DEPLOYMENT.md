@@ -21,7 +21,7 @@ Setting up a Linux host for development and pre-release testing: see **[DEV_HOST
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):
 
 1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).
-2. **Installs the `easy-waf` Debian package** for the version in [`VERSION`](../VERSION) — downloaded from the matching GitHub release and verified against `SHA256SUMS`, then `apt install`ed. The package owns `/usr/sbin/easy-waf-{api,acmed,hostd,admin}`, `/usr/sbin/easy-waf-diagnostics`, the units in `/lib/systemd/system/`, and `/etc/easy-waf/easy-waf.env` as a **conffile**. Fallback order and the `EASY_WAF_BUILD_FROM_SOURCE` opt-in: [ADR 0001](adr/0001-packaging-and-installer.md).
+2. **Installs the `easy-waf` Debian package** for the version in [`VERSION`](../VERSION) — downloaded from the matching GitHub release and verified against `SHA256SUMS`, then `apt install`ed. The package owns `/usr/sbin/easy-waf-{api,acmed,hostd,admin}`, `/usr/sbin/easy-waf-diagnostics`, the units in `/lib/systemd/system/`, and `/etc/easy-waf/easy-waf.env` as a **conffile**. Fallback order and the `EASY_WAF_BUILD_FROM_SOURCE` opt-in: [ADR 0001](adr/0001-packaging-and-installer.md). Set **`EASY_WAF_INSTALL_FROM_PACKAGE=0`** to skip the `.deb` entirely and take the tarball path instead (default `1`).
 3. Only when the package was not used: copies binaries from `dist/` (or `EASY_WAF_DIST_DIR`), copies [`configs/defaults/easy-waf.env.example`](../configs/defaults/easy-waf.env.example) to `/etc/easy-waf/easy-waf.env` if missing, and installs **systemd** units from `packaging/systemd/` into `/etc/systemd/system/` (unless `EASY_WAF_SKIP_SYSTEMD=1`). Units left in `/etc/systemd/system/` by an earlier script install are renamed to `*.replaced-by-package` when the package takes over, because `/etc` overrides `/lib` and would silently keep the old definition.
 4. Optionally (`EASY_WAF_INSTALL_OS_PACKAGES=1`) installs base packages via **apt** (Ubuntu 24.04+): HAProxy, **nftables**, fail2ban, netplan, CA certs. **PostgreSQL server defaults on** (`EASY_WAF_INSTALL_POSTGRES` defaults to **1**); set **`EASY_WAF_INSTALL_POSTGRES=0`** when using an external database only.
 5. After `/etc/easy-waf/easy-waf.env` exists, when local PostgreSQL was installed: **prepends** [`scripts/lib/pg-hba-easywaf.sh`](../scripts/lib/pg-hba-easywaf.sh) rules so TCP `127.0.0.1` uses **scram-sha-256** for `easywaf` (ensures password auth for `DATABASE_URL`), **creates** role and database `easywaf`, and may **rotate** weak default passwords (see [`scripts/lib/db-password.sh`](../scripts/lib/db-password.sh)).
@@ -37,7 +37,7 @@ CrowdSec is part of the default appliance install; see [CROWDSEC.md](CROWDSEC.md
 1. Clone the repo on the target host (or unpack a source tree). Run **`sudo bash scripts/install.sh`** — by default it **installs OS packages** (`EASY_WAF_INSTALL_OS_PACKAGES` defaults to **1**), **acquires binaries** from the **GitHub release** matching [`VERSION`](../VERSION) / `EASY_WAF_RELEASE_VERSION` — the `.deb` first, then the tarball, each verified against `SHA256SUMS`. If neither verifies it **stops** rather than compiling here; `EASY_WAF_BUILD_FROM_SOURCE=1` opts into a source build (which installs Go, make and git on this host and leaves them). Minimal footprint: `EASY_WAF_INSTALL_OS_PACKAGES=0`. Pre-built only: `EASY_WAF_SKIP_BINARY_FETCH=1 EASY_WAF_DIST_DIR=/path/to/dist`. Published releases: [`scripts/download-release.sh`](../scripts/download-release.sh).
 2. **Recommended (interactive, LAN-only API + optional CrowdSec):** `sudo bash scripts/install-interactive.sh`  
    **Or minimal:** `sudo bash scripts/install.sh` (same as [QUICKSTART.md](QUICKSTART.md): local PostgreSQL + DB provisioning + start services by default).
-3. **External database only:** `sudo EASY_WAF_INSTALL_POSTGRES=0 bash scripts/install.sh`, edit `/etc/easy-waf/easy-waf.env` (`DATABASE_URL`), then `sudo systemctl enable --now easy-waf-api easy-waf-acmed` (or use `EASY_WAF_ENABLE_SYSTEMD_UNITS=0` on install and start after editing).
+3. **External database only:** `sudo EASY_WAF_INSTALL_POSTGRES=0 bash scripts/install.sh`, edit `/etc/easy-waf/easy-waf.env` (`DATABASE_URL`), then `sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed` (or use `EASY_WAF_ENABLE_SYSTEMD_UNITS=0` on install and start after editing).
 4. If CrowdSec packages were skipped (**`EASY_WAF_INSTALL_CROWDSEC=0`**) or LAPI was not bootstrapped: run **`sudo bash scripts/crowdsec-bootstrap-lapi.sh`** or **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1 bash scripts/install.sh`** per [CROWDSEC.md](CROWDSEC.md).
 
 Requirements:
@@ -60,9 +60,9 @@ If you see **`Ident authentication failed for user "easywaf"`**, run **`sudo bas
 |-------|------------|
 | OS | Ubuntu 24.04 LTS (server, minimal) + updates |
 | Packages | `haproxy`, `nftables`, `fail2ban`, `postgresql` *or* leave DB external |
-| Binaries | Pre-place `easy-waf-api`, `easy-waf-acmed` in `/usr/sbin/` from CI build |
+| Binaries | Pre-place `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `easy-waf-admin` in `/usr/sbin/` from CI build — or, simpler, pre-install the `.deb` |
 | systemd | Pre-enable `nftables`, `fail2ban`; **do not** auto-enable `easy-waf-*` until first-boot config |
-| First boot | cloud-init / autoinstall: write `/etc/easy-waf/easy-waf.env` from metadata, `systemctl enable --now easy-waf-api easy-waf-acmed` |
+| First boot | cloud-init / autoinstall: write `/etc/easy-waf/easy-waf.env` from metadata, `systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed` |
 | Secrets | **Never** bake real `DATABASE_URL` or `EASY_WAF_ADMIN_TOKEN` into the image — inject at deploy time |
 | Disk | Separate `/var/lib/easy-waf` for certs and generated configs (snapshot-friendly) |
 
@@ -85,11 +85,23 @@ Archive `easy-waf_<version>_linux_amd64.tar.gz` contains:
 ```
 dist/easy-waf-api
 dist/easy-waf-acmed
+dist/easy-waf-hostd
 dist/easy-wafd
 dist/easy-waf-admin
 packaging/systemd/*.service
+packaging/systemd/haproxy-easy-waf-dropin.conf
 configs/defaults/easy-waf.env.example
+configs/defaults/haproxy-bootstrap.cfg
+scripts/fix-haproxy-easy-waf-dropin.sh
+scripts/lib/selinux-easy-waf-haproxy.sh
+LICENSE
+NOTICE
 ```
+
+Place **`easy-waf-hostd`** too. It is the root broker, and without it every
+privileged feature — host updates, fail2ban, nftables, netplan, local users —
+fails at the socket. (`easy-wafd` is the legacy alias; the package deliberately
+omits it and you should not enable a unit for it.)
 
 When unpacking into `repo/dist/`, **`scripts/install.sh`** and **`scripts/download-release.sh`** hoist binaries from the nested `dist/` folder into the target `dist/` root so paths match `make build`.
 
@@ -117,7 +129,8 @@ so an older binary must tolerate them — check the upgrade note in
 [`CHANGELOG.md`](../CHANGELOG.md) for the version you are leaving.
 
 **Removal.** `apt remove` deletes binaries and units and leaves configuration and
-state; `apt purge` additionally deletes `/etc/easy-waf`. Neither touches
+state; `apt purge` additionally deletes the `easy-waf.env` conffile and removes
+`/etc/easy-waf` **if nothing else is left in it**. Neither touches
 `/var/lib/easy-waf` (TLS keys, certificates, revisions, JWT secret), the
 PostgreSQL database, or the nftables policy — `postrm` prints how to remove the
 state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).

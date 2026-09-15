@@ -4,10 +4,10 @@ Many SME deployments use **split-DNS**: internal forwarders resolve `*.lan` / RF
 
 ## IPBL external feed fetch
 
-- **What:** `easy-waf-api` resolves feed hostnames and fetches HTTP(S) lists (`POST /api/v1/ipbl/sync`, periodic merge on apply).
+- **What:** `easy-waf-api` resolves feed hostnames and fetches HTTP(S) lists. Feeds are fetched on **apply** and on explicit `POST /api/v1/ipbl/sync` — there is no scheduled background refresh, so a feed is only as fresh as the last apply or sync.
 - **Default:** only **public** destination IPs are allowed after resolve and at dial time (anti–DNS rebinding).
 - **Internal feeds:** set global **`ipbl_fetch_allowed_cidrs`** (UI: Security → IP Blacklist → *Trusted internal CIDRs for feed fetch*) to RFC1918 ranges that host your blocklist, e.g. `192.168.1.0/24`.
-- **Hard floor (never allowlisted):** loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), unspecified, CGNAT `100.64.0.0/10`. This blocks `127.0.0.1:5432` and cloud metadata even if someone adds those CIDRs to the allowlist.
+- **Hard floor (never allowlisted):** loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), unspecified, CGNAT `100.64.0.0/10`, and multicast (including link-local multicast). This blocks `127.0.0.1:5432` and cloud metadata even if someone adds those CIDRs to the allowlist.
 - **Air-gapped:** `ipbl_external_enabled: false` — no outbound fetch at all.
 
 See [IPBL.md](IPBL.md) and [SECURITY.md](SECURITY.md).

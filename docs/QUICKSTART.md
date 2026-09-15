@@ -78,7 +78,7 @@ Optional **CrowdSec Console** enroll: `EASY_WAF_CROWDSEC_CONSOLE_TOKEN=...` duri
 - **UI (LAN):** by default **management HTTP is off** and **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Open **`https://<LAN-IP>:8443`**. Loopback HTTP: **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`**. Legacy cleartext LAN HTTP requires **`EASY_WAF_ALLOW_INSECURE_HTTP=1`** (discouraged). Port **8443** starts with a **self-signed** certificate (`…/secrets/management.crt`); replace via the **Management TLS** block in the UI or `PUT /api/v1/settings/management-tls`. **`install.sh`** configures **nftables**: **8000 and 8443/tcp** only from **127.0.0.0/8** and **RFC1918** (when **`EASY_WAF_NFT_MGMT_LAN=1`**). **`/health`** is on the HTTPS listener (and on HTTP only if you enabled it). ACME HTTP-01 stays on loopback **`127.0.0.1:8089`**.
 - **Login:** there is no default password. As root on the appliance run **`easy-waf-admin print-enrollment`**, then enroll in the UI (or `POST /api/v1/auth/enroll`) with that one-time secret.
 
-**Legacy `EASY_WAF_LISTEN=...` format:** set **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** in `/etc/easy-waf/easy-waf.env`, remove the **`EASY_WAF_LISTEN`** line, refresh the unit from `packaging/systemd/`, then:
+**Legacy `EASY_WAF_LISTEN=...` format:** set **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** in `/etc/easy-waf/easy-waf.env` and remove the **`EASY_WAF_LISTEN`** line. Do **not** copy units from `packaging/systemd/` into `/etc/systemd/system/` — those shadow the packaged units in `/lib/systemd/system/` and make the next upgrade look applied while systemd keeps starting the old definition. Then:
 
 `sudo bash scripts/fix-nftables-edge.sh`
 

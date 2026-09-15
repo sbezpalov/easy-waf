@@ -1,8 +1,8 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-09-04  
+**Last updated:** 2026-09-15  
 **Current VERSION:** 1.4.1 (see root `VERSION` file)
-**Summary for the capability tables:** Done — **20**, Partial — **1**, Missing — **0**, N/A — **0**
+**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **7**, Partial — **3** (AC-03, AC-04, AC-05).
 
 This document records **what the appliance is required to do and where each
 requirement is implemented** — the original MVP scope, the security work that
@@ -40,41 +40,41 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Publish services by domain → backend | **Done** | see **7.1** |
-| TLS on HAProxy (crt-list, ACME/DB certs, SNI, HTTP→HTTPS) | **Done** | see **7.1**, **7.2**, **7.3** |
-| ACME issue / renew | **Done** | see **7.2** |
-| WebSocket (`Application.WebSocket`, `timeout tunnel`) | **Done** | see **7.3**; **AC-09 |
-| Single HAProxy entry (`fe_http` / `fe_https`) | **Done** | see **7.3** |
+| Publish services by domain → backend | **Done** | see **7.1**; Host ACL → `use_backend` in `internal/haproxy/render.go` |
+| TLS on HAProxy (crt-list, ACME/DB certs, SNI, HTTP→HTTPS) | **Done** | see **7.1**, **7.2**, **7.3**; single `crt-list` on `:443` (`internal/haproxy/render.go`), bundles from `internal/pemutil` |
+| ACME issue / renew | **Done** | see **7.2**; `cmd/easy-waf-acmed`, `internal/acme`, `docs/ACME.md` |
+| WebSocket (`Application.WebSocket`, `timeout tunnel`) | **Done** | see **7.3**; **AC-09** |
+| Single HAProxy entry (`fe_http` / `fe_https`) | **Done** | see **7.3**; `internal/haproxy/render.go` |
 
 ## Security capabilities
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Rate limit (stick-tables), per-app | **Done** | see **7.1a** |
-| Basic WAF (ACL), per-app | **Done** | see **7.1a** |
-| CrowdSec + decisions (LAPI, decisions in UI) | **Done** | see **7.5** (ban/unban/whitelist in UI) |
-| SPOE bouncer | **Done** | see **7.3**; template `filter spoe` / `send-spoe-group`; `install.sh`, `docs/CROWDSEC.md` |
+| Rate limit (stick-tables), per-app | **Done** | see **7.1a**; `internal/profiles`, `docs/SECURITY_PROFILES.md` |
+| Basic WAF (ACL), per-app | **Done** | see **7.1a**; `internal/profiles`, `docs/APPLICATION_SECURITY.md` |
+| CrowdSec + decisions (LAPI, decisions in UI) | **Done** | see **7.5** (ban/unban/whitelist in UI); `internal/crowdsec`, `docs/CROWDSEC.md` |
+| SPOE bouncer | **Done** | see **7.3**; template `filter spoe` / `send-spoe-group`; `scripts/install.sh`, `docs/CROWDSEC.md` |
 | Fail2Ban | **Done** | `GET/POST /api/v1/integrations/fail2ban/*` via **`easy-waf-hostd`** (`fail2ban` opcode); Fail2Ban UI tab; `docs/FAIL2BAN.md`; legacy socket/group path retired |
-| GeoIP + cache (ipinfo, batch map, ACL) | **Done** | see **7.6** |
+| GeoIP + cache (ipinfo, batch map, ACL) | **Done** | see **7.6**; `internal/geoip`, `docs/GEOIP.md` |
 
 ## UX and observability
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Web UI (LAN): 8 tabs, dashboard | **Done** | see **7.7** |
+| Web UI (LAN): 11 tabs — dashboard, apps, certs, config, network, security, crowdsec, logs, system, users, settings | **Done** | see **7.7**; `internal/webui/dist/index.html` |
 | Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health`, `/status` |
-| Backup/restore | **Done** | **AC-10; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
+| Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
 ## Platform constraints
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
 | Ubuntu 24.04 LTS, systemd, nftables, AppArmor | **Done** | `scripts/install.sh`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md`, `docs/HOST-API.md` |
-| `haproxy -c` before reload | **Done** | see **7.3**; `internal/apply`, `internal/engine` |
-| SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | see **7.3** |
-| CrowdSec LAPI not via Lua | **Done** | Go LAPI client + SPOA package; see **7.5**, `docs/CROWDSEC.md` |
-| Config generator, validation, atomic apply, rollback | **Done** | see **7.3**; **AC-06 |
-| GeoIP API + batch map + ACL | **Done** | see **7.6** |
+| `haproxy -c` before reload | **Done** | see **7.3**; `internal/apply`, `internal/engine` — but see the `EASY_WAF_SKIP_VALIDATE` caveat in `docs/OPERATIONS.md` |
+| SPOE, WebSocket, SNI, redirect (golden + CI) | **Done** | see **7.3**; `internal/haproxy/testdata/golden/`, `.github/workflows/ci.yml` |
+| CrowdSec LAPI not via Lua | **Done** | Go LAPI client (`internal/crowdsec`) + SPOA package; see **7.5**, `docs/CROWDSEC.md` |
+| Config generator, validation, atomic apply, rollback | **Done** | see **7.3**; **AC-06** |
+| GeoIP API + batch map + ACL | **Done** | see **7.6**; `GET/POST /api/v1/geoip/*`, `docs/GEOIP.md` |
 | MaxMind MMDB as provider | **Done** | `geoip_mmdb_path`, `internal/geoip/maxmind.go`, `GET/POST /api/v1/geoip/*`, `docs/GEOIP.md`, `scripts/update-geoip-db.sh` |
 
 ## Features
@@ -109,14 +109,14 @@ Verified against code and scripts (iterations A–D).
 
 | ID | Criterion | Status | Check in repository |
 |----|-----------|--------|---------------------|
-| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
+| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success `eng.Apply(ctx,"acme")`; needs `ACME_EMAIL`, DNS/HTTP-01, worker running (`docs/ACME.md`) |
 | **AC-04** | External access to published application | **Partial** | Render `fe_http`/`fe_https`, SNI, Host backends — **Done** in code; WAN/NAT/port-forward routing — outside the repo |
 | **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Partial** | Template `filter spoe engine …` + ACL with `deny_status 403` (WAF, IPBL, GeoIP, UA); SPOA decision reaction — bouncer package config + `docs/CROWDSEC.md` |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
-| **AC-08** | Survives reboot | **Done** | `systemctl enable` for api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files |
+| **AC-08** | Survives reboot | **Done** | `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 

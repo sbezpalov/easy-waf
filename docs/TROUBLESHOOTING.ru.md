@@ -34,7 +34,7 @@ API выполняет **`/usr/bin/systemctl show -p ActiveState`** (и **`is-ac
 sed -i 's/\r$//' scripts/lib/pg-hba-easywaf.sh
 ```
 
-Либо переклонируйте репозиторий / выполните `git pull` после исправления `.gitattributes`, а на машине разработчика — `git add --renormalize . && git commit`. Репозиторий требует **LF** для всех `scripts/**/*.sh` (см. [README.md](../README.md)).
+Либо переклонируйте репозиторий / выполните `git pull` после исправления `.gitattributes`, а на машине разработчика — `git add --renormalize . && git commit`. Репозиторий требует **LF** для всех `scripts/**/*.sh` (см. [README.ru.md](../README.ru.md)).
 
 ## PostgreSQL: `FATAL: Ident authentication failed for user "easywaf"`
 
@@ -142,7 +142,7 @@ sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 3. Гарантирует наличие **`/run/haproxy/`** (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** для перезагрузок)  
 4. Выполняет **`systemctl daemon-reload`**
 
-После скрипта: **`sudo systemctl restart haproxy`** (нужно, чтобы `haproxy` подхватил новую дополнительную группу).
+Скрипт сам выполняет `haproxy -c` и перезапускает `haproxy`, явно завершаясь с ошибкой, если какой-то из шагов не прошёл, — вручную перезапускать не нужно. Исключение одно: если к этому моменту сгенерированный конфиг всё ещё отсутствует или пуст, скрипт сообщает об этом и просит сначала выполнить Apply в UI, а затем перезапустить HAProxy самостоятельно.
 
 **AppArmor:** в Ubuntu штатного профиля HAProxy обычно достаточно. Если видите `DENIED` в `/var/log/syslog`, выполните **`aa-status`** и при необходимости просмотрите **`/etc/apparmor.d/usr.sbin.haproxy`**.
 
@@ -152,7 +152,7 @@ sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 
 Строка **5** в сгенерированном конфиге — обычно **`stats socket /run/haproxy/easy-waf-admin.sock`**. **`haproxy -c`** не создаёт этот Unix-сокет, поэтому проверка может пройти, а **`ExecStart`** — упасть, если **`/run/haproxy`** отсутствует, не принадлежит **`haproxy`** или остался устаревший **`easy-waf-admin.sock`**.
 
-**Исправление:** запустите актуальный **`scripts/fix-haproxy-easy-waf-dropin.sh`** из репозитория (он пишет **`easy-waf.conf`** с **`ExecStartPre=+/bin/mkdir …`** — **`+`** выполняет эти шаги **от root**, поскольку штатный **`haproxy.service`** использует **`User=haproxy`**, а непривилегированный **`ExecStartPre`** не может сделать **`chown`** внутри **`/run`**, и удаляет устаревший **`50-easy-waf.conf`**), затем **`sudo systemctl daemon-reload && sudo systemctl restart haproxy`**.
+**Исправление:** запустите актуальный **`scripts/fix-haproxy-easy-waf-dropin.sh`** из репозитория. Он пишет **`easy-waf.conf`** с **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (каталог `/run/haproxy` создаёт и держит systemd) и **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** для очистки устаревшего сокета — **`+`** выполняет этот шаг **от root**, поскольку штатный **`haproxy.service`** использует **`User=haproxy`**, а непривилегированный `ExecStartPre` не может писать внутри `/run`. Он же удаляет устаревший **`50-easy-waf.conf`** и сам перезапускает HAProxy.
 
 Разовое ручное исправление:
 

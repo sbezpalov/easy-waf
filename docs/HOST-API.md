@@ -1,6 +1,6 @@
 # Host management API (Ubuntu)
 
-Authenticated routes under **`/api/v1/host/*`** (JWT + `X-Requested-With`). Privileged work is delegated to **`easy-waf-hostd`** (root broker on **`/run/easy-waf/hostd.sock`**, `root:easy-waf` **0660**). **`easy-waf-api`** stays unprivileged (`NoNewPrivileges=true`, `ProtectSystem=strict`) and sends typed JSON requests over the socket; the broker re-validates every operation (same allowlists as the API) and runs **`exec.Command`** without a shell.
+Authenticated routes under **`/api/v1/host/*`** (JWT; `X-Requested-With` is required on `POST` / `PUT` / `PATCH` / `DELETE`, not on `GET`). Privileged work is delegated to **`easy-waf-hostd`** (root broker on **`/run/easy-waf/hostd.sock`**, `root:easy-waf` **0660**). **`easy-waf-api`** stays unprivileged (`NoNewPrivileges=true`, `ProtectSystem=strict`) and sends typed JSON requests over the socket; the broker re-validates every operation (same allowlists as the API) and runs **`exec.Command`** without a shell.
 
 | Area | Methods | Notes |
 |------|---------|--------|
@@ -9,12 +9,12 @@ Authenticated routes under **`/api/v1/host/*`** (JWT + `X-Requested-With`). Priv
 | Firewall | `GET /host/firewall`, `PUT /host/firewall/ruleset`, `POST /host/firewall/apply` (legacy) | Managed file `/etc/nftables/easy-waf.nft` |
 | Firewall (safe apply) | `POST /host/firewall/apply-rollback`, `POST /host/firewall/commit` | Same rollback window via broker `nft-apply-confirm` / `nft-commit`. API runs `nft -c` **before** the broker (invalid ruleset → 4xx, no timer). |
 | Services | `GET /host/services`, `POST /host/services/{unit}/{action}` | Whitelisted systemd units only |
-| Journal | `GET /host/journal?unit=&lines=&since=` | `journalctl` via broker |
+| Journal | `GET /host/journal?unit=&lines=&since=&until=&priority=` | `journalctl` via broker |
 | Updates | `GET /host/updates`, `POST /host/updates/update`, `POST /host/updates/upgrade` (legacy), `POST /host/updates/upgrade/stream` (NDJSON live log), `GET /host/updates/upgrade/status`, `GET /host/updates/upgrade/log`, `GET /host/updates/autoremove/preview`, `POST /host/updates/autoremove/stream`, `POST /host/updates/clean` | apt via broker |
 | Disk | `GET /host/disk` | `statfs` in API process (no root); optional `cache_bytes`, `removable_count` via broker |
 | Power | `POST /host/power/reboot`, `POST /host/power/shutdown` | |
-| Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Local accounts uid ≥ 1000 |
-| Diagnostics | `POST /host/diagnostics/ping`, `POST /host/diagnostics/trace` | JSON body `{ "host": "…" }` |
+| Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Lists local accounts with **uid ≥ 1000, plus `root`**. `root` and `easy-waf` are **protected**: create, delete and ssh-key writes on those names are refused with 400 — `user protected`, `user cannot be deleted` and `user is protected or invalid` respectively — in the API *and* again in the broker. |
+| Diagnostics | `POST /host/diagnostics/ping`, `POST /host/diagnostics/trace` | JSON body `{ "host": "…" }`; `ping` also accepts `count` |
 
 WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes.
 
@@ -23,7 +23,7 @@ WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` rout
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).
 - **Events:** `{"type":"line","data":"…"}` and `{"type":"exit","code":N,"error":"…"}`.
 - **Broker:** `apt-upgrade-stream` runs `apt-get -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=120 upgrade` (`DEBIAN_FRONTEND=noninteractive`). Emits a start line immediately, then heartbeat lines if apt is silent for ~15s, then apt stdout/stderr.
-- **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails `/var/lib/easy-waf/apt-action.log`, with fallback to legacy `apt-upgrade.log`), does not start another apt. First line: `==> attaching to apt action already in progress ...`.
+- **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails `/var/lib/easy-waf/apt-action.log`), does not start another apt. The fallback to the legacy `apt-upgrade.log` applies only to the saved-log read behind `GET /host/updates/upgrade/log`, not to the live follower. First line: `==> attaching to apt action already in progress ...`.
 - **`code: -1`** is reserved for attach/log read failures (with explicit `error`), not for “already running”.
 - **Client disconnect** does not stop apt; the broker finishes the transaction.
 - **`GET /host/updates/upgrade/status`** — `{"active":true|false,"exit_code":…,"error":…}` for UI re-attach on the System tab.
