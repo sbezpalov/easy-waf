@@ -55,7 +55,10 @@ aa-status >"$ROOT/system/aa-status.txt" 2>&1 || true
 aa-status --enabled 2>/dev/null >"$ROOT/system/aa-status-enabled.txt" 2>&1 || true
 
 # --- (b) systemd ---
-units=(easy-waf-api easy-waf-acmed haproxy crowdsec fail2ban nftables)
+# easy-waf-hostd is in this list because every privileged operation goes through
+# the broker: a bundle taken after a failed host update or firewall apply used to
+# be missing the one unit that could explain it.
+units=(easy-waf-api easy-waf-acmed easy-waf-hostd haproxy crowdsec fail2ban nftables)
 for u in "${units[@]}"; do
   safe="${u//\//-}"
   systemctl status "$u" --no-pager -l >"$ROOT/systemctl/status-${safe}.txt" 2>&1 || true
@@ -72,6 +75,7 @@ jlog() {
 }
 jlog easy-waf-api "$ROOT/logs/journal-easy-waf-api.txt"
 jlog easy-waf-acmed "$ROOT/logs/journal-easy-waf-acmed.txt"
+jlog easy-waf-hostd "$ROOT/logs/journal-easy-waf-hostd.txt"
 jlog haproxy "$ROOT/logs/journal-haproxy.txt"
 
 # --- (d) Config (masked env) ---

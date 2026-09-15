@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/envflag"
 )
 
 // applyEdgeCLI re-renders HAProxy config from the database and reloads haproxy (same path as POST /api/v1/apply).
@@ -42,7 +43,7 @@ func runApplyEdge() error {
 	if err := eng.Apply(ctx, *label); err != nil {
 		return err
 	}
-	if os.Getenv("EASY_WAF_SKIP_RELOAD") != "" {
+	if envflag.Enabled("EASY_WAF_SKIP_RELOAD") {
 		log.Print("apply-edge: HAProxy config written from database (reload skipped; EASY_WAF_SKIP_RELOAD set)")
 		return nil
 	}

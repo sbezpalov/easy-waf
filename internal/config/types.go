@@ -178,6 +178,14 @@ type GlobalSettings struct {
 	ACMERenewalInterval Duration `json:"acme_renewal_interval"`
 	// ACMEWebrootPath is the filesystem root for HTTP-01 challenges (HAProxy must expose /.well-known/ → this path).
 	ACMEWebrootPath string `json:"acme_webroot_path,omitempty"`
+	// ACMEInternalHTTP is the loopback ip:port that serves HTTP-01 token files:
+	// easy-waf-api listens on it and the generated bk_acme backend points at it.
+	// It lives in settings rather than in the environment because the rendered
+	// config must be a function of the database — easy-waf-api, easy-waf-acmed
+	// and easy-waf-admin all render, and an address read from each process's own
+	// environment could differ between them. Empty means the default
+	// (DefaultACMEInternalHTTP). Must be ip:port; see ValidateListenAddr.
+	ACMEInternalHTTP string `json:"acme_internal_http,omitempty"`
 	// IPBlacklistMapPath is the generated HAProxy src map file (IPv4/IPv6 lines, one per line).
 	IPBlacklistMapPath string `json:"ip_blacklist_map_path,omitempty"`
 	// IPBLExternalEnabled enables merging synced external lists into the map file.
@@ -237,6 +245,7 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		GeoIPEnforceMapPath:      stateDir + "/haproxy/geoip_enforce.map",
 		ACMERenewalInterval:      Duration(12 * time.Hour),
 		ACMEWebrootPath:          stateDir + "/acme/webroot",
+		ACMEInternalHTTP:         DefaultACMEInternalHTTP,
 		IPBlacklistMapPath:       stateDir + "/haproxy/ip_blacklist.map",
 		IPBLExternalEnabled:      true,
 		IPAllowlistMapPath:       stateDir + "/haproxy/ip_allowlist.map",

@@ -2,7 +2,7 @@
 
 [English](SECURITY.md) | [Русский](SECURITY.ru.md)
 
-Applies to the release from root [`VERSION`](../VERSION) (**1.4.1**). Acceptance criteria for ACL / host firewall: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) (AC-01, AC-08).
+Applies to the release from root [`VERSION`](../VERSION) (**1.4.2**). Acceptance criteria for ACL / host firewall: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) (AC-01, AC-08).
 
 ## Principles
 
@@ -14,7 +14,7 @@ Applies to the release from root [`VERSION`](../VERSION) (**1.4.1**). Acceptance
 ## Control plane (API / UI)
 
 - Default `install.sh` appliance: **management HTTPS** on **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`** with management HTTP off. Default `install-interactive.sh` mode: **`https_loopback`** (`HTTP=off`, HTTPS `127.0.0.1:8443`) for SSH port-forwarding. **Cleartext management HTTP is off** unless you explicitly set **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`** (legacy loopback mode) or a non-loopback address **and** **`EASY_WAF_ALLOW_INSECURE_HTTP=1`** (legacy, logs a warning). **8443** uses a **bootstrap self-signed** cert (replace in UI / `PUT …/management-tls`). **nftables** (from **`install.sh`**) allows configured management ports only from **127.0.0.0/8** and **RFC1918** when **`EASY_WAF_NFT_MGMT_LAN=1`**. Separately, the installer opens **HAProxy edge** **80/tcp** and **443/tcp** when **`EASY_WAF_NFT_EDGE=1`** (default); set **`EASY_WAF_NFT_EDGE=0`** before install if another layer opens 80/443 only. Disable TLS listener: **`EASY_WAF_MANAGEMENT_HTTPS=0`** only after enabling loopback HTTP. Never forward management ports from WAN without VPN / reverse proxy / MFA.
-- **`/health`** is JWT- and ACL-exempt on every **enabled** management listener (HTTPS `:8443` by default; loopback HTTP if you enabled it). **`/metrics`** stays ACL-gated and Prometheus-off by default. Scrape HTTPS `:8443` (self-signed) or loopback HTTP. ACME HTTP-01 stays on **`EASY_WAF_ACME_INTERNAL_HTTP`** (`127.0.0.1:8089`) and is **not** the management API.
+- **`/health`** is JWT- and ACL-exempt on every **enabled** management listener (HTTPS `:8443` by default; loopback HTTP if you enabled it). **`/metrics`** stays ACL-gated and Prometheus-off by default. Scrape HTTPS `:8443` (self-signed) or loopback HTTP. ACME HTTP-01 stays on its own loopback listener (setting **`acme_internal_http`**, default `127.0.0.1:8089`) and is **not** the management API.
 - **Application-level ACL:** `management_allowed_cidrs` in global settings (API `GET` / `PATCH` / `PUT /api/v1/settings`; prefer **`PATCH`** for partial updates) restricts which source networks can use the UI and authenticated API (`/health` is exempt for probes). Defaults match RFC1918 + loopback; narrow the list in the configurator for stricter policy. Emergency: **`easy-waf-admin reset-control-panel-access`**, env **`EASY_WAF_BYPASS_MGMT_ACL=1`**, or see [ADMIN-CLI.md](ADMIN-CLI.md).
 - **Reverse proxy / NAT:** `easy-waf-api` uses **`TrustedRealIP`** (`internal/api/realip.go`). Only the rightmost **`X-Forwarded-For`** value may rewrite `Request.RemoteAddr`, and only when the **TCP peer** (direct connection source) is in **`EASY_WAF_TRUSTED_PROXY_CIDRS`** (default **`127.0.0.0/8`** and **`::1/128`**). The trusted proxy must overwrite `X-Forwarded-For` with `$remote_addr`; `True-Client-IP` and `X-Real-IP` are ignored. A client that reaches `:8000` / `:8443` directly cannot bypass **`management_allowed_cidrs`** by sending `X-Forwarded-For: 127.0.0.1`. If NGINX or another proxy runs on a non-loopback LAN address, add that proxy’s CIDR or `/32` to **`EASY_WAF_TRUSTED_PROXY_CIDRS`** (comma-separated). Still restrict who can reach the management listener (nftables, no WAN forward).
 - First boot: there is **no** shared `admin`/`admin` password. After `easy-waf-api` starts with an empty `users` table, a one-time enrollment secret is written to **`$EASY_WAF_STATE_DIR/secrets/enrollment`** (mode **0600**). Print it locally as root with **`easy-waf-admin print-enrollment`** (stdout only; never journal). Then **`POST /api/v1/auth/enroll`** (or the UI enrollment form) with that secret, a username, and a password (≥8 characters). The secret is hashed in PostgreSQL, deleted from disk after success, and cannot be reused. Existing operators are never reset. Optional **`EASY_WAF_ADMIN_TOKEN`** is for automation only (legacy Bearer) — prefer session JWT from **`POST /api/v1/auth/login`**. Changing the operator password increments **`users.session_version`** and immediately rejects previously issued JWTs.
@@ -102,7 +102,7 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Quick checklist (production)
 
-- [ ] `EASY_WAF_ADMIN_TOKEN` rotated; `EASY_WAF_DEV` unset  
+- [ ] `EASY_WAF_ADMIN_TOKEN` rotated; `EASY_WAF_SKIP_VALIDATE` and `EASY_WAF_SKIP_RELOAD` absent from `/etc/easy-waf/easy-waf.env`  
 - [ ] `DATABASE_URL` uses TLS to PostgreSQL where applicable  
 - [ ] Management API not on `0.0.0.0` facing WAN  
 - [ ] **nftables** / cloud security groups: 22 from admin IPs only; 80/443 for edge  

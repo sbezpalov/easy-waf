@@ -47,7 +47,7 @@
 | `docker-compose.yml` | Только dev-PostgreSQL |
 
 ## 4. Статус / текущий приоритет
-- **Версия:** `1.4.1` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
+- **Версия:** `1.4.2` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
 - **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply), `easy-waf-acmed` (ACME-воркер) и `easy-waf-hostd` (root-брокер привилегированных операций на unix-сокете).
 - Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 3.x, nftables, systemd.
 - Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.

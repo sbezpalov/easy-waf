@@ -14,10 +14,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/host/disk"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -405,29 +407,56 @@ func checkHAProxy(stateDir string) []CheckResult {
 		}
 	}
 
-	// Check stats socket
-	sockPath := "/run/haproxy/admin.sock"
-	if _, err := os.Stat(sockPath); err == nil {
-		conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
-		if err != nil {
-			checks = append(checks, CheckResult{
-				Category: "HAProxy",
-				Name:     "Stats Socket",
-				Status:   StatusWarn,
-				Message:  fmt.Sprintf("Socket %s exists but is not answering: %v", sockPath, err),
-			})
-		} else {
-			_ = conn.Close()
-			checks = append(checks, CheckResult{
-				Category: "HAProxy",
-				Name:     "Stats Socket",
-				Status:   StatusOK,
-				Message:  fmt.Sprintf("Socket %s responsive", sockPath),
-			})
-		}
+	// Check stats socket.
+	//
+	// The path is read out of the generated config rather than assumed: it is a
+	// setting (haproxy_stats_socket_path), and this check used to test a
+	// hardcoded /run/haproxy/admin.sock, which has not been the default since the
+	// socket was renamed to easy-waf-admin.sock. Because the whole check sat
+	// behind "if the file exists", it then reported nothing at all on a stock
+	// appliance — a check that silently never runs is worse than no check.
+	sockPath, sockSrc := haproxyStatsSocketPath(cfgPath)
+	if _, err := os.Stat(sockPath); err != nil {
+		checks = append(checks, CheckResult{
+			Category: "HAProxy",
+			Name:     "Stats Socket",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("No stats socket at %s (%s) — runtime metrics on the Dashboard will be empty", sockPath, sockSrc),
+			Details:  "HAProxy creates it on start; check that it is running and that /run/haproxy exists (scripts/fix-haproxy-easy-waf-dropin.sh).",
+		})
+	} else if conn, err := net.DialTimeout("unix", sockPath, 2*time.Second); err != nil {
+		checks = append(checks, CheckResult{
+			Category: "HAProxy",
+			Name:     "Stats Socket",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("Socket %s exists but is not answering: %v", sockPath, err),
+		})
+	} else {
+		_ = conn.Close()
+		checks = append(checks, CheckResult{
+			Category: "HAProxy",
+			Name:     "Stats Socket",
+			Status:   StatusOK,
+			Message:  fmt.Sprintf("Socket %s responsive (%s)", sockPath, sockSrc),
+		})
 	}
 
 	return checks
+}
+
+// statsSocketRe matches the `stats socket <path>` line of a generated config.
+// Everything after the path is HAProxy's own options (mode, level, expose-fd).
+var statsSocketRe = regexp.MustCompile(`(?m)^\s*stats socket\s+(\S+)`)
+
+// haproxyStatsSocketPath returns the stats socket HAProxy will actually open,
+// and where that answer came from, so the doctor output can be acted on.
+func haproxyStatsSocketPath(cfgPath string) (path, source string) {
+	if b, err := os.ReadFile(cfgPath); err == nil {
+		if m := statsSocketRe.FindSubmatch(b); m != nil {
+			return string(m[1]), "from " + cfgPath
+		}
+	}
+	return config.DefaultSettings("").HAProxyStatsSocketPath, "default; not found in the generated config"
 }
 
 func checkServices(ctx context.Context) []CheckResult {

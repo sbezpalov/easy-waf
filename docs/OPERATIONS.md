@@ -2,7 +2,7 @@
 
 This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting generated config, manual validation, and toggles used during debugging.
 
-**Version:** [`VERSION`](../VERSION) — **1.4.1**.
+**Version:** [`VERSION`](../VERSION) — **1.4.2**.
 
 ## Layout (defaults)
 
@@ -110,24 +110,31 @@ old definition. If you removed them by hand, run `systemctl daemon-reload`.
 
 | Variable | Effect |
 |----------|--------|
-| `EASY_WAF_SKIP_VALIDATE` | If set, skip `haproxy -c` during apply — **only** for broken lab environments; never in production. |
-| `EASY_WAF_SKIP_RELOAD` | If set, write the artifact set and revision but **do not** reload HAProxy (test/debug only). |
+| `EASY_WAF_SKIP_VALIDATE` | Skip `haproxy -c` during apply — **only** for broken lab environments; never in production. |
+| `EASY_WAF_SKIP_RELOAD` | Write the artifact set and revision but **do not** reload HAProxy (test/debug only). |
+| `EASY_WAF_ACME_SKIP_APPLY` | `easy-waf-acmed` writes the new PEMs but does not apply afterwards. |
+| `EASY_WAF_NO_AUTO_APPLY` | API mutations do not apply on their own; use `POST /api/v1/apply`. |
 
-> **"Set" means non-empty, so `=0` counts as set.** Both are read with
-> `os.Getenv(...) != ""`. `EASY_WAF_SKIP_VALIDATE=0` disables validation and
-> `EASY_WAF_SKIP_RELOAD=0` disables the reload, exactly as `=1` would. To turn
-> either one **off**, comment the line out or delete it — do not set it to `0`.
+All four are booleans: `1`, `true`, `yes`, `on` turn them **on**; `0`, `false`,
+`off`, empty and unset turn them **off**. A value that is neither is treated as
+off and logged — a typo must not be what disables a safety check.
+
+> **Appliances installed before 1.4.2 need one check.** The shipped
+> `easy-waf.env.example` used to carry `EASY_WAF_SKIP_RELOAD=0` and
+> `EASY_WAF_SKIP_VALIDATE=0` *uncommented*, and the code read any non-empty value
+> as "set" — so a stock appliance applied configuration that HAProxy never
+> reloaded, and never ran `haproxy -c` against it. Upgrading to 1.4.2 fixes it
+> without touching your env file, because `0` now means what it says.
 >
-> Check your appliance now: `grep -n 'EASY_WAF_SKIP_' /etc/easy-waf/easy-waf.env`.
-> If either line is present and uncommented, apply is writing configuration that
-> HAProxy never loads, and `haproxy -c` is never run against it. Comment both out
-> and restart **both** `easy-waf-api` and `easy-waf-acmed` — acmed calls the same
-> apply path after issuing a certificate and reads the same env file, so leaving it
-> running keeps the old values alive. An apply that skipped the reload records
-> `"skipped_reload": true` in its audit detail — that is how to confirm it after
-> the fact.
+> It is still worth looking: `grep -n 'EASY_WAF_SKIP_' /etc/easy-waf/easy-waf.env`.
+> Comment both lines out — an appliance that does not need the escape hatches
+> should not carry them. An apply that skipped the reload recorded
+> `"skipped_reload": true` in its audit detail, which is how to tell whether this
+> ever bit you.
 
-Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
+Restart `easy-waf-api` **and `easy-waf-acmed`** after changing these in
+`/etc/easy-waf/easy-waf.env` — acmed runs the same apply path after issuing a
+certificate and loads the same file.
 
 ## Updating code after `git pull` (why the UI “doesn’t show changes”)
 

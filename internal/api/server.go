@@ -23,6 +23,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
@@ -525,7 +526,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // maybeAutoApply renders and reloads HAProxy after API mutations so the edge matches the database.
 // Set EASY_WAF_NO_AUTO_APPLY=1 to skip (e.g. DB-only tooling); use POST /api/v1/apply manually instead.
 func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
-	if strings.TrimSpace(os.Getenv("EASY_WAF_NO_AUTO_APPLY")) != "" {
+	if envflag.Enabled("EASY_WAF_NO_AUTO_APPLY") {
 		return nil
 	}
 	if err := s.Eng.Apply(ctx, label); err != nil {
@@ -755,6 +756,34 @@ func validateIPOrCIDR(s string) error {
 	return nil
 }
 
+// resolveRequestIssueMode decides the ACME challenge a re-issue should use, and
+// reports whether the request is acceptable.
+//
+// An omitted mode keeps a stored ACME mode instead of overwriting it. It used to
+// fall back to "http-01" unconditionally, and the UI's Issue and Renew buttons
+// both post an empty body — so renewing a dns-01 certificate through the UI
+// rewrote the row to http-01, and the next acmed pass attempted the wrong
+// challenge for a domain that may not be reachable over HTTP at all.
+//
+// A certificate that is not on an ACME mode yet (manual, self-signed, uploaded)
+// still defaults to http-01: that is what makes the button mean "start issuing
+// this with ACME".
+func resolveRequestIssueMode(requested, stored string) (string, bool) {
+	mode := strings.ToLower(strings.TrimSpace(requested))
+	if mode == "" {
+		switch s := strings.ToLower(strings.TrimSpace(stored)); s {
+		case "http-01", "dns-01":
+			mode = s
+		default:
+			mode = "http-01"
+		}
+	}
+	if mode != "http-01" && mode != "dns-01" {
+		return "", false
+	}
+	return mode, true
+}
+
 func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var body struct {
@@ -780,12 +809,13 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	found.ACMEStatus = "pending"
-	if body.Mode != "" {
-		found.Mode = body.Mode
-	} else {
-		found.Mode = "http-01"
+	mode, ok := resolveRequestIssueMode(body.Mode, found.Mode)
+	if !ok {
+		http.Error(w, "mode must be http-01 or dns-01", http.StatusBadRequest)
+		return
 	}
+	found.ACMEStatus = "pending"
+	found.Mode = mode
 	if body.DNSProvider != "" {
 		found.DNSProvider = body.DNSProvider
 	}

@@ -51,6 +51,9 @@ type RenderInput struct {
 	UseCrowdSecHTTP          bool   // SPOE on fe_http
 	UseCrowdSecHTTPS         bool   // SPOE on fe_https
 	NeedsDNSResolver         bool   // any backend uses DNS name (split-DNS / DHCP)
+	// ACMEBackendAddr is the ip:port the generated bk_acme backend points at.
+	// Render fills it from Settings.ACMEInternalHTTP; callers do not set it.
+	ACMEBackendAddr string `json:"-"`
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -78,6 +81,12 @@ func Render(in RenderInput) (Rendered, error) {
 			return Rendered{}, fmt.Errorf("certificate %q is unsafe to render: %w", id, err)
 		}
 	}
+	// The HTTP-01 helper address comes from the database, never from this
+	// process's environment: easy-waf-api, easy-waf-acmed and easy-waf-admin all
+	// reach this function, and a backend that disagreed with the listener would
+	// leave HAProxy health-checking a closed port with no error anywhere.
+	in.ACMEBackendAddr = config.ACMEInternalHTTPOrDefault(in.Settings.ACMEInternalHTTP)
+
 	in.UseCrowdSecFilter = strings.TrimSpace(in.Settings.SPOEConfigPath) != ""
 	if in.UseCrowdSecFilter {
 		in.UseCrowdSecFilter = false
@@ -397,10 +406,10 @@ frontend fe_http
 	default_backend bk_http_default
 {{- end}}
 
-# ACME challenges: easy-waf-api loopback serves Lego webroot (EASY_WAF_ACME_INTERNAL_HTTP, default 127.0.0.1:8089)
+# ACME challenges: easy-waf-api loopback serves Lego webroot (setting acme_internal_http, default 127.0.0.1:8089)
 backend bk_acme
 	mode http
-	server acme 127.0.0.1:8089 check
+	server acme {{.ACMEBackendAddr}} check
 {{if not .HasHTTPSFrontend}}
 
 # :80 catch-all when there is no fe_https (plain HTTP edge only)

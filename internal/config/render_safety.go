@@ -5,8 +5,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -97,6 +99,9 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 			return err
 		}
 	}
+	if err := ValidateListenAddr("acme_internal_http", s.ACMEInternalHTTP); err != nil {
+		return err
+	}
 	// Emptiness is a functional question the renderer already handles (an unset
 	// map path simply omits the directive), so this only asks that whatever *is*
 	// set is safe to interpolate. Requiring values here would turn a partially
@@ -116,6 +121,49 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 		if err := ValidateConfigFilePath(name, path, true); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// DefaultACMEInternalHTTP is the loopback address the HTTP-01 helper listens on
+// and the generated bk_acme backend points at.
+const DefaultACMEInternalHTTP = "127.0.0.1:8089"
+
+// ACMEInternalHTTPOrDefault resolves the configured HTTP-01 helper address,
+// falling back to the default for a partially configured appliance. Callers that
+// render must go through this, so that an unset setting and the shipped default
+// produce the same config line.
+func ACMEInternalHTTPOrDefault(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return DefaultACMEInternalHTTP
+	}
+	return strings.TrimSpace(v)
+}
+
+// ValidateListenAddr accepts an empty value (meaning "use the default") or an
+// ip:port literal.
+//
+// A hostname is refused on purpose. The value is interpolated into a `server`
+// line, and a name there would need a `resolvers` section that the renderer only
+// emits when an application backend asks for one — so a hostname would render a
+// config that HAProxy rejects at start, after the validation step has passed.
+// Requiring a literal also means no character that could open a second directive
+// can survive parsing.
+func ValidateListenAddr(name, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(v)
+	if err != nil {
+		return fmt.Errorf("%s must be ip:port (e.g. %s)", name, DefaultACMEInternalHTTP)
+	}
+	if _, err := netip.ParseAddr(host); err != nil {
+		return fmt.Errorf("%s must use an IP literal, not a hostname (e.g. %s)", name, DefaultACMEInternalHTTP)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 1 || p > 65535 {
+		return fmt.Errorf("%s port must be 1-65535", name)
 	}
 	return nil
 }

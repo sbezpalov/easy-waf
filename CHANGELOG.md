@@ -7,16 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Repository housekeeping ahead of making the project public: documentation,
-attribution and dependency hygiene. No behaviour changes — the only edits to Go
-sources are licence headers.
+## [1.4.2] - 2026-09-15
 
-**One thing to check on an appliance:** `grep -n 'EASY_WAF_SKIP_' /etc/easy-waf/easy-waf.env`.
-If either line is present and uncommented — the shipped default sets both to `0` —
-apply is skipping `haproxy -c` and skipping the reload, because the code treats any
-non-empty value as "set". Comment both out and restart `easy-waf-api` **and
-`easy-waf-acmed`** — acmed applies after issuance and reads the same env file. See
-[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+Five defects the documentation pass turned up, and the documentation pass itself.
+
+The one that matters: **a stock appliance was not validating or reloading
+HAProxy.** `configs/defaults/easy-waf.env.example` shipped
+`EASY_WAF_SKIP_RELOAD=0` and `EASY_WAF_SKIP_VALIDATE=0` *uncommented*, and the
+code read any non-empty value as "set" — so `0` switched both off. Apply wrote a
+configuration that was never checked with `haproxy -c` and never loaded by the
+running HAProxy, and reported success. The lines have been there since the first
+commit. Upgrading fixes it without editing anything: `0` now means off.
+
+**Upgrade note.** Nothing to do by hand. After upgrading, an apply will do what it
+always said it did — which on an affected appliance means HAProxy picks up
+everything that accumulated in the database since the last manual reload. Look at
+the generated config first if that gap is large:
+`easy-waf-admin apply-edge` after `haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`.
+Whether this bit you at all is recorded: an apply that skipped the reload wrote
+`"skipped_reload": true` into its audit detail.
+
+### Fixed
+
+- **`EASY_WAF_SKIP_VALIDATE`, `EASY_WAF_SKIP_RELOAD`, `EASY_WAF_ACME_SKIP_APPLY` and `EASY_WAF_NO_AUTO_APPLY` are parsed as booleans.** They were read with `os.Getenv(...) != ""`, which makes `0` mean *on* — the opposite of what the shipped env file, and every reader of it, intended. They now go through `internal/envflag`: `1`/`true`/`yes`/`on` enable, `0`/`false`/`off`/empty/unset disable, and a value that is neither is treated as **off** and logged once, because a typo must not be the thing that disables a safety check. `easy-waf.env.example` no longer sets any of them, and says why.
+- **A re-issue with no `mode` keeps the certificate's mode instead of forcing `http-01`.** The UI's Issue and Renew buttons both `POST` an empty body, so renewing a DNS-01 certificate through the UI rewrote the row to `http-01` and the next `easy-waf-acmed` pass attempted a challenge the domain may not answer. A certificate not yet on an ACME mode still starts on `http-01`; an explicit mode that is neither `http-01` nor `dns-01` is now rejected with 400 rather than stored.
+- **The rendered `bk_acme` backend follows a setting instead of a hardcoded address.** `EASY_WAF_ACME_INTERNAL_HTTP` moved the HTTP-01 listener while the generated config kept `server acme 127.0.0.1:8089`, so using the variable as documented silently broke HTTP-01. The address is now the global setting **`acme_internal_http`** (default `127.0.0.1:8089`, `ip:port`, validated on write *and* at render like every other interpolated value), which both the listener and the renderer read — the rendered config is a function of the database, as it has to be when three binaries render it. The environment variable still switches the helper off, and `easy-waf-api` now logs a warning if it is used to move the listener away from what the backend dials.
+- **`easy-waf-admin doctor` checks the stats socket that exists.** It probed a hardcoded `/run/haproxy/admin.sock`, which has not been the default since the socket was renamed, and the whole check sat behind "if the file exists" — so on a stock appliance it silently reported nothing. It now reads the path out of the generated `haproxy.cfg`, falls back to the current default, and reports a missing socket as a warning instead of saying nothing.
+- **Diagnostics bundles collect `easy-waf-hostd`.** Both the API bundle and `scripts/diagnostics.sh` gathered status and journals for the API, acmed and HAProxy but not the root broker — so a bundle taken after a failed host update, firewall apply or user change was missing the one unit that could explain it.
 
 ### Changed
 
@@ -24,8 +41,7 @@ non-empty value as "set". Comment both out and restart `easy-waf-api` **and
 - **The fallback reporting channel in [`SECURITY.md`](SECURITY.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) is one that exists.** Both pointed at "the email address in the repository owner's GitHub profile", which that profile does not publish — a dead end for anyone who cannot use private advisories. They now point at the profile's contact links. GitHub private vulnerability reporting remains the primary channel.
 - **Attribution now travels with the code.** `NOTICE` names the original author rather than only "Easy Home WAF contributors", and every Go source file carries a two-line `Copyright` / `SPDX-License-Identifier: Apache-2.0` header. Apache-2.0 §4(c) obliges a derivative to keep `NOTICE`, so that file is where authorship survives a fork — and the per-file header is what survives when somebody copies a single file rather than the repository. Both READMEs now state the obligations in a sentence, including §6: the licence grants no rights to the project's name.
 - **CI and release workflows run on current actions** — `actions/checkout` v7, `actions/setup-go` v7, `softprops/action-gh-release` v3.
-- **Documentation caught up with the code, and four instructions that would have failed an operator are corrected.** A pass over every document against `HEAD` found the reference guides had drifted furthest — `docs/ACME.md`, `docs/DNS01.md`, `docs/HOST-API.md`, `docs/DIAGNOSTICS.md`, `docs/DNS.md`, `docs/FAIL2BAN.md` and `docs/VM-REQUIREMENTS.md` had not been revised since May while the appliance grew a root broker, GeoIP, and packaging. The four that were actively wrong: the DNS-01 credentials file is **readable by `easy-waf`**, not root-only as `docs/ACME.md` said (`easy-waf-acmed` runs as that user and opens the file itself, so a file only root can read fails every issuance — `docs/DNS01.md` had this right all along); `POST /certificates/{id}/request-issue` **must carry `{"mode":"dns-01"}`**, because an empty body rewrites the stored row to `http-01`; `EASY_WAF_ACME_INTERNAL_HTTP` can only be left unset or disabled, since the rendered HAProxy backend hardcodes `127.0.0.1:8089`; and the "separate `crt` + `key`" PEM layout does not exist — a certificate resolves to exactly one file on the `crt-list` line. Alongside those: secrets live under the **state** directory, not `/etc/easy-waf/secrets`; `easy-waf-hostd` is now named everywhere the other two daemons are (release tarball, OVF checklist, `systemctl enable`, VM sizing); `/var/log/easy-waf/` never existed; and `upgrade.sh` re-runs the whole installer rather than swapping a binary.
-- **`EASY_WAF_SKIP_VALIDATE` and `EASY_WAF_SKIP_RELOAD` are documented as what they are: any non-empty value counts as set, `0` included.** The shipped `configs/defaults/easy-waf.env.example` sets both to `0`, which the code reads as *enabled* — so an appliance installed from the stock env file writes HAProxy configuration that is never validated with `haproxy -c` and never reloaded. `docs/OPERATIONS.md` now says so and tells operators to check `/etc/easy-waf/easy-waf.env` and comment both lines out. The same `!= ""` trap applies to `EASY_WAF_ACME_SKIP_APPLY`, which is shipped commented as `=0`. **Fixing the defaults and the parsing is a code change, tracked separately.**
+- **Documentation caught up with the code, and four instructions that would have failed an operator are corrected.** A pass over every document against `HEAD` found the reference guides had drifted furthest — `docs/ACME.md`, `docs/DNS01.md`, `docs/HOST-API.md`, `docs/DIAGNOSTICS.md`, `docs/DNS.md`, `docs/FAIL2BAN.md` and `docs/VM-REQUIREMENTS.md` had not been revised since May while the appliance grew a root broker, GeoIP, and packaging. The four that were actively wrong: the DNS-01 credentials file is **readable by `easy-waf`**, not root-only as `docs/ACME.md` said (`easy-waf-acmed` runs as that user and opens the file itself, so a file only root can read fails every issuance — `docs/DNS01.md` had this right all along); `POST /certificates/{id}/request-issue` with an empty body rewrote the stored row to `http-01` (fixed above); `EASY_WAF_ACME_INTERNAL_HTTP` could not move the HTTP-01 listener, because the rendered HAProxy backend hardcoded `127.0.0.1:8089` (fixed above); and the "separate `crt` + `key`" PEM layout does not exist — a certificate resolves to exactly one file on the `crt-list` line. Alongside those: secrets live under the **state** directory, not `/etc/easy-waf/secrets`; `easy-waf-hostd` is now named everywhere the other two daemons are (release tarball, OVF checklist, `systemctl enable`, VM sizing); `/var/log/easy-waf/` never existed; and `upgrade.sh` re-runs the whole installer rather than swapping a binary.
 - **`docs/IMPLEMENTATION_STATUS.md` now adds up.** Its summary counts were carried over from the retired spec unchanged and did not match the tables under them — Done 20 against 36 actual, and the acceptance criteria were not summarised at all. Three rows had unclosed `**` markers left by the retirement edit, which GitHub rendered literally. The UI row still said 8 tabs against the 11 in `internal/webui/dist/index.html`. The capability tables keep their `see 7.*` pointers into the feature sections and now also name the package or script that implements each row, so a reader can go straight to the code.
 - **Contributor guidance states the two rules the repository now enforces socially rather than in CI** — every new `.go` file carries the `Copyright` / `SPDX-License-Identifier` header, and dependency updates land as reviewed commits because there is no Dependabot. Both in [`CONTRIBUTING.md`](CONTRIBUTING.md); the header rule is also in `AGENTS.md`, which is what the AI tooling reads.
 

@@ -22,7 +22,9 @@ Lego posts JSON to `{HTTPREQ_ENDPOINT}/present` and `{HTTPREQ_ENDPOINT}/cleanup`
 ## Flow
 
 1. Create env file under e.g. `/var/lib/easy-waf/secrets/dns/<cert-id>.env`.
-2. `POST /api/v1/certificates` with `mode`, `dns_provider`, `dns_credentials_env_file`, then `POST /api/v1/certificates/{id}/request-issue` — **always with `{"mode": "dns-01"}` in the body.** An empty body does *not* reuse the stored row: the handler writes `mode = "http-01"` back to the certificate (`internal/api/server.go`), so a re-issue without the field silently converts a DNS-01 certificate to HTTP-01 and the next acmed pass attempts the wrong challenge.
+2. `POST /api/v1/certificates` with `mode`, `dns_provider`, `dns_credentials_env_file`, then `POST /api/v1/certificates/{id}/request-issue`. An omitted `mode` **keeps** the stored one, which is what the UI's Issue and Renew buttons rely on — they post an empty body. Sending `{"mode": "dns-01"}` explicitly is still the clearer thing to do in a script. A certificate that is not on an ACME mode yet (manual, self-signed, uploaded) starts on `http-01`; an explicit mode other than `http-01` or `dns-01` is rejected with 400.
+
+   Before 1.4.2 an empty body rewrote the row to `http-01` unconditionally, so renewing a DNS-01 certificate from the UI converted it and the next acmed pass attempted the wrong challenge. If a certificate was silently converted, set it back with `{"mode": "dns-01"}`.
 3. `easy-waf-acmed` loads the env file, applies variables, runs Lego DNS-01, writes PEMs, applies HAProxy.
 
 ## SME / HA

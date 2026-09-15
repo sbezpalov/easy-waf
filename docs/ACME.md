@@ -13,7 +13,26 @@ Requires HAProxy on port **80** with a frontend rule for `/.well-known/acme-chal
 
 The generated HAProxy config routes those URLs to **`bk_acme` → `127.0.0.1:8089`**. **`easy-waf-api`** listens on that loopback address and serves files from the webroot so HAProxy health checks succeed.
 
-`EASY_WAF_ACME_INTERNAL_HTTP` (see `configs/defaults/easy-waf.env.example`) has two usable values: **unset** = `127.0.0.1:8089`, and `0` / `off` / `false` = **disabled**. Do **not** point it at another address: the rendered backend line is a literal `server acme 127.0.0.1:8089 check` (`internal/haproxy/render.go`), so moving the listener leaves HAProxy checking a dead port and HTTP-01 fails with no obvious cause.
+**To move it, change the setting, not the environment.** The address is the global
+setting **`acme_internal_http`** (default `127.0.0.1:8089`), and both sides read
+it: `easy-waf-api` listens on it, and the renderer writes it into the `bk_acme`
+backend. It must be `ip:port` — a hostname is refused, because a `server` line
+naming a host would need a `resolvers` section the renderer only emits for
+application backends.
+
+```bash
+curl -X PATCH https://127.0.0.1:8443/api/v1/settings \
+  -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"acme_internal_http":"127.0.0.1:9090"}'
+```
+
+`EASY_WAF_ACME_INTERNAL_HTTP` (see `configs/defaults/easy-waf.env.example`) still
+works for **switching the helper off** — `0` / `off` / `false` — and unset means
+"use the setting". Using it to move the listener moves only the listener: the
+rendered backend follows the setting, so the two disagree and HTTP-01 fails on a
+backend nobody looks at. `easy-waf-api` logs a warning naming both addresses when
+it starts in that state.
 
 ## DNS-01
 
@@ -38,7 +57,7 @@ Empty list = system resolver (`/etc/resolv.conf`). See [DNS.md](DNS.md).
 - `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). It processes `acme_status = pending` and renews certs whose `not_after` falls inside the renewal window.
 - **The renewal window is a hardcoded 30 days** (`cmd/easy-waf-acmed/main.go`). The `acme_renewal_interval` setting (default 12h) is **not read by acmed** — changing it has no effect today.
 - **Nothing is issued until `acme_email` is set** in global settings. Without it the worker logs `acmed: ACMEEmail not set in global settings — idle` once per tick and does nothing else. This is the first thing to check when certificates stay `pending`.
-- On success: PEM files under `/var/lib/easy-waf/certs/<id>/`, DB updated, then `engine.Apply` reloads HAProxy — skipped if `EASY_WAF_ACME_SKIP_APPLY` is set to **any non-empty value**. The check is `!= ""`, so `EASY_WAF_ACME_SKIP_APPLY=0` also skips the apply. Comment the line out rather than setting it to `0`.
+- On success: PEM files under `/var/lib/easy-waf/certs/<id>/`, DB updated, then `engine.Apply` reloads HAProxy — skipped when `EASY_WAF_ACME_SKIP_APPLY` is set to a true value (`1`, `true`, `yes`, `on`). `0`, `false` and `off` mean "do not skip"; an unparseable value is treated as off and logged.
 - Account private key is stored at `${EASY_WAF_STATE_DIR}/acme/account.pem` (Lego HTTP-01 webroot: `${ACMEWebrootPath}` / default `.../acme/webroot`).
 
 ## Multiple hostnames / one public IP
