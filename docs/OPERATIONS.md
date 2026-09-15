@@ -78,7 +78,7 @@ a defined operation rather than a hunt for files.
 |---|---|---|---|---|---|
 | `apt install ./easy-waf_X.Y.Z_amd64.deb` | replaced | conffile preserved | untouched | untouched | untouched |
 | `apt remove easy-waf` | removed; services stopped and disabled | kept | kept | untouched | untouched |
-| `apt purge easy-waf` | removed | **deleted** | kept | untouched | untouched |
+| `apt purge easy-waf` | removed | conffile deleted, directory removed **only if empty** | kept | untouched | untouched |
 
 Three consequences worth knowing before you need them:
 
@@ -94,6 +94,11 @@ Three consequences worth knowing before you need them:
 - **The `easy-waf` account is kept on purge**, so the remaining state does not end
   up owned by a recycled UID. Use `deluser --system easy-waf` after removing the
   state directory.
+- **`purge` leaves `/etc/easy-waf` in place if anything else is in it.** `postrm`
+  does a plain `rmdir`, not a recursive delete: dpkg removes the `easy-waf.env`
+  conffile, and if a `.dpkg-dist` file or anything you put there survives, the
+  directory stays and `postrm` says so — *"Kept /etc/easy-waf: it still contains
+  files this package did not install."*
 
 Upgrading an appliance that was installed by the script, before packaging existed:
 `install.sh` renames any `/etc/systemd/system/easy-waf-*.service` it finds to
@@ -105,8 +110,22 @@ old definition. If you removed them by hand, run `systemctl daemon-reload`.
 
 | Variable | Effect |
 |----------|--------|
-| `EASY_WAF_SKIP_VALIDATE` | If set (non-empty), skip `haproxy -c` during apply — **only** for broken lab environments; never in production. |
+| `EASY_WAF_SKIP_VALIDATE` | If set, skip `haproxy -c` during apply — **only** for broken lab environments; never in production. |
 | `EASY_WAF_SKIP_RELOAD` | If set, write the artifact set and revision but **do not** reload HAProxy (test/debug only). |
+
+> **"Set" means non-empty, so `=0` counts as set.** Both are read with
+> `os.Getenv(...) != ""`. `EASY_WAF_SKIP_VALIDATE=0` disables validation and
+> `EASY_WAF_SKIP_RELOAD=0` disables the reload, exactly as `=1` would. To turn
+> either one **off**, comment the line out or delete it — do not set it to `0`.
+>
+> Check your appliance now: `grep -n 'EASY_WAF_SKIP_' /etc/easy-waf/easy-waf.env`.
+> If either line is present and uncommented, apply is writing configuration that
+> HAProxy never loads, and `haproxy -c` is never run against it. Comment both out
+> and restart **both** `easy-waf-api` and `easy-waf-acmed` — acmed calls the same
+> apply path after issuing a certificate and reads the same env file, so leaving it
+> running keeps the old values alive. An apply that skipped the reload records
+> `"skipped_reload": true` in its audit detail — that is how to confirm it after
+> the fact.
 
 Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
 
@@ -114,15 +133,26 @@ Restart `easy-waf-api` after changing these in `/etc/easy-waf/easy-waf.env`.
 
 The web UI is **embedded in the `easy-waf-api` binary** at build time (`go:embed` → `internal/webui/dist`). Changes to `index.html` and new API routes **will not appear** until you rebuild the API and restart the service.
 
-On a machine with the repo (as root or with rights to `make install`):
+**On a packaged appliance, upgrade the package** — do not hand-install binaries.
+`/usr/sbin/easy-waf-*` is owned by dpkg, so `install`-ing over it makes `dpkg -V`
+dirty and the next `apt install` silently reverts your build:
+
+```bash
+sudo apt install ./easy-waf_X.Y.Z_amd64.deb   # or: sudo bash scripts/install.sh
+```
+
+Hand-installing is for a source checkout that was never packaged (as root, or with
+rights to `make install`):
 
 ```bash
 cd /path/to/easy-waf
 git pull
 make clean && make build && make test   # or: go build -o dist/easy-waf-api ./cmd/easy-waf-api …
 sudo install -m 0755 dist/easy-waf-api /usr/sbin/easy-waf-api
-sudo install -m 0755 dist/easy-waf-acmed /usr/sbin/easy-waf-acmed   # if acmed changed
-sudo systemctl restart easy-waf-api.service
+sudo install -m 0755 dist/easy-waf-acmed /usr/sbin/easy-waf-acmed     # if acmed changed
+sudo install -m 0755 dist/easy-waf-hostd /usr/sbin/easy-waf-hostd     # if the broker changed
+sudo install -m 0755 dist/easy-waf-admin /usr/sbin/easy-waf-admin     # if the CLI changed
+sudo systemctl restart easy-waf-hostd.service easy-waf-api.service
 # if needed: sudo systemctl restart easy-waf-acmed.service
 ```
 
@@ -165,4 +195,4 @@ See [SECURITY_PROFILES.md](SECURITY_PROFILES.md).
 
 ## Nginx on the edge
 
-The product does **not** require a separate Nginx in front of HAProxy for the MVP: HTTP‑01 challenges are served via HAProxy → `bk_acme` → easy‑wafd. A standalone Nginx is optional for unrelated sites on the same host.
+The product does **not** require a separate Nginx in front of HAProxy for the MVP: HTTP‑01 challenges are served via HAProxy → `bk_acme` → the `easy-waf-api` loopback listener on `127.0.0.1:8089`. A standalone Nginx is optional for unrelated sites on the same host.

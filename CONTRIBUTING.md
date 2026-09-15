@@ -118,6 +118,16 @@ reload behaviour), say so in the PR and, if you can, run
   compromised API.
 - Errors get context (`fmt.Errorf("...: %w", err)`); no silent `_ =` on anything
   whose failure changes behaviour.
+- **Every new `.go` file starts with the licence header** — these two lines, before
+  the `package` clause, on source and test files alike:
+
+  ```go
+  // Copyright 2026 Sergey Bezpalov
+  // SPDX-License-Identifier: Apache-2.0
+  ```
+
+  Nothing in CI enforces this yet, so it is on the author and the reviewer.
+  `git grep -L 'SPDX-License-Identifier' -- '*.go'` lists any file that is missing it.
 - Shell scripts: `set -euo pipefail`, shellcheck-clean, no secrets in `argv`
   (command lines are world-readable — use `curl --config -` or a file).
 
@@ -133,6 +143,20 @@ makes review much harder, and this project reviews security-relevant code closel
 
 Update [`CHANGELOG.md`](CHANGELOG.md) under `## [Unreleased]` for anything a user
 or operator would notice.
+
+## Dependencies
+
+There is **no Dependabot** on this repository, deliberately: a single maintainer
+reviewing a stream of bot branches is worse than a periodic pass, and every
+dependency bump here lands as an ordinary reviewed commit with the rest of the
+change history. Go modules and GitHub Actions are updated by hand — actions are
+pinned to a major version (`actions/checkout@v7`) in both workflows, so a bump is
+a find-and-replace across `.github/workflows/` — `ci.yml` pins each action three
+times, once per job.
+
+If you send a dependency update, say in the PR **why** — a fix you need, a
+security advisory, or a scheduled refresh — and keep it separate from behaviour
+changes.
 
 ## Releases
 

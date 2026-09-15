@@ -77,7 +77,7 @@ sudo bash scripts/crowdsec-bootstrap-lapi.sh   # when online
 - **UI (LAN):** по умолчанию **управляющий HTTP выключен**, а **`EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`**. Откройте **`https://<LAN-IP>:8443`**. HTTP на loopback: **`EASY_WAF_LISTEN_HTTP=127.0.0.1:8000`**. Устаревший открытый HTTP в LAN требует **`EASY_WAF_ALLOW_INSECURE_HTTP=1`** (не рекомендуется). Порт **8443** поднимается с **самоподписанным** сертификатом (`…/secrets/management.crt`); замените его через блок **Management TLS** в UI или запросом `PUT /api/v1/settings/management-tls`. **`install.sh`** настраивает **nftables**: **8000 и 8443/tcp** — только с **127.0.0.0/8** и **RFC1918** (при **`EASY_WAF_NFT_MGMT_LAN=1`**). **`/health`** живёт на HTTPS-прослушивателе (и на HTTP — только если вы его включили). ACME HTTP-01 остаётся на loopback **`127.0.0.1:8089`**.
 - **Вход:** пароля по умолчанию нет. Под root на аплаенсе выполните **`easy-waf-admin print-enrollment`**, затем пройдите регистрацию в UI (или через `POST /api/v1/auth/enroll`), указав этот одноразовый секрет.
 
-**Устаревший формат `EASY_WAF_LISTEN=...`:** задайте **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** в `/etc/easy-waf/easy-waf.env`, удалите строку **`EASY_WAF_LISTEN`**, обновите юнит из `packaging/systemd/`, затем выполните:
+**Устаревший формат `EASY_WAF_LISTEN=...`:** задайте **`EASY_WAF_LISTEN_HTTP`** / **`EASY_WAF_LISTEN_HTTPS`** в `/etc/easy-waf/easy-waf.env` и удалите строку **`EASY_WAF_LISTEN`**. **Не** копируйте юниты из `packaging/systemd/` в `/etc/systemd/system/`: они перекрывают пакетные юниты в `/lib/systemd/system/`, и тогда обновление выглядит применённым, а systemd продолжает запускать старое определение. Затем выполните:
 
 `sudo bash scripts/fix-nftables-edge.sh`
 

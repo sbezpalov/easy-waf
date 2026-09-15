@@ -18,7 +18,7 @@ Audit: explicit `fail2ban.unban` plus HTTP audit category **fail2ban**.
 
 `easy-waf-api` runs as user **`easy-waf`** with **`NoNewPrivileges=true`** (see `packaging/systemd/easy-waf-api.service`). It does **not** call `fail2ban-client` directly or use `sudo`.
 
-Status and unban go through the root broker **`easy-waf-hostd`** on **`/run/easy-waf/hostd.sock`**. The broker runs **`/usr/bin/fail2ban-client`** as root and accepts only these forms:
+Status and unban go through the root broker **`easy-waf-hostd`** on **`/run/easy-waf/hostd.sock`**. The broker runs `fail2ban-client` as root — resolved as `/usr/bin/fail2ban-client`, then `/bin/fail2ban-client`, then whatever is on `PATH` — and accepts only these forms:
 
 - `ping`
 - `status`
@@ -27,7 +27,13 @@ Status and unban go through the root broker **`easy-waf-hostd`** on **`/run/easy
 
 Jail names and IPs are validated in **`internal/host/hostspec`** before execution.
 
-Membership in group **`fail2ban`**, socket drop-ins, and **`/etc/sudoers.d/easy-waf-fail2ban`** are **not** required on current installs. `scripts/install.sh` removes those artifacts on upgrade (`cleanup_legacy_fail2ban_access`).
+Membership in group **`fail2ban`**, socket drop-ins, and **`/etc/sudoers.d/easy-waf-fail2ban`** are **not** required on current installs. `scripts/install.sh` removes the sudoers file and the two systemd drop-ins on upgrade (`cleanup_legacy_fail2ban_access`).
+
+It does **not** remove `easy-waf` from the `fail2ban` group, so a host upgraded from an old release keeps that membership. It grants nothing the current path needs; drop it by hand if you want the account to hold only what it uses:
+
+```bash
+id easy-waf | grep -q fail2ban && sudo gpasswd -d easy-waf fail2ban
+```
 
 ### Requirements
 

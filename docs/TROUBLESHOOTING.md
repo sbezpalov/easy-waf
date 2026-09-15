@@ -143,7 +143,7 @@ This script:
 3. Ensures **`/run/haproxy/`** exists (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** for reboots)  
 4. Runs **`systemctl daemon-reload`**
 
-After the script: **`sudo systemctl restart haproxy`** (needed so `haproxy` picks up the new supplementary group).
+The script runs `haproxy -c` and restarts `haproxy` itself, failing loudly if either step fails — no manual restart is needed. The one exception is when the generated config is still missing or empty at that point: the script says so and tells you to Apply from the UI first, then restart HAProxy yourself.
 
 **AppArmor:** on Ubuntu the stock HAProxy profile is usually sufficient. If you see `DENIED` in `/var/log/syslog`, run **`aa-status`** and review **`/etc/apparmor.d/usr.sbin.haproxy`** if needed.
 
@@ -153,7 +153,7 @@ After the script: **`sudo systemctl restart haproxy`** (needed so `haproxy` pick
 
 Line **5** in the generated config is usually **`stats socket /run/haproxy/easy-waf-admin.sock`**. **`haproxy -c`** does not create that Unix socket, so the check can pass while **`ExecStart`** fails if **`/run/haproxy`** is missing, not owned by **`haproxy`**, or a stale **`easy-waf-admin.sock`** is left behind.
 
-**Fix:** run a current **`scripts/fix-haproxy-easy-waf-dropin.sh`** from the repo (it writes **`easy-waf.conf`** with **`ExecStartPre=+/bin/mkdir …`** — the **`+`** runs those steps **as root** because the stock **`haproxy.service`** uses **`User=haproxy`**, and unprivileged **`ExecStartPre`** cannot **`chown`** under **`/run`**) and removes legacy **`50-easy-waf.conf`**), then **`sudo systemctl daemon-reload && sudo systemctl restart haproxy`**.
+**Fix:** run a current **`scripts/fix-haproxy-easy-waf-dropin.sh`** from the repo. It writes **`easy-waf.conf`** with **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (systemd creates and owns `/run/haproxy`) plus **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** to clear a stale socket — the **`+`** runs that step **as root**, because the stock **`haproxy.service`** uses **`User=haproxy`** and an unprivileged `ExecStartPre` cannot write under `/run`. It also removes the legacy **`50-easy-waf.conf`** and restarts HAProxy for you.
 
 Manual one-off:
 

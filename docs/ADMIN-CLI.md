@@ -20,7 +20,7 @@ Runs a full health and self-diagnostic check across the appliance components:
 
 1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions and checks available filesystem space.
 2. **Database (PostgreSQL)**: Uses a non-migrating connection and read-only transaction to test connectivity, verify the security schema from migrations 016-018, and count configured entities (applications, certs, operators).
-3. **HAProxy Edge**: Verifies binary presence, validates edge configuration syntax (`haproxy -c`), and tests stats socket responsiveness.
+3. **HAProxy Edge**: Verifies binary presence and validates edge configuration syntax (`haproxy -c`). It also *tries* the stats socket, but looks for it at the hardcoded legacy path `/run/haproxy/admin.sock` while the current default is `/run/haproxy/easy-waf-admin.sock`, and the whole check is skipped when the file is absent — so on a stock appliance this step silently reports nothing. Check the socket by hand instead: `sudo socat /run/haproxy/easy-waf-admin.sock stdio <<< "show info"`.
 4. **Services (systemd)**: Checks active status of `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, and `fail2ban`.
 5. **GeoIP**: Checks MaxMind MMDB file presence and freshness.
 6. **TLS Certificates**: Checks expiration dates for all active certificates in the certs directory.
@@ -34,6 +34,27 @@ sudo /usr/sbin/easy-waf-admin doctor -json
 ```
 
 Exits with `0` if all checks pass or only non-critical warnings exist, and `1` if any critical errors are detected.
+
+## `apply-edge`
+
+Re-renders the HAProxy configuration from PostgreSQL and reloads (or starts)
+`haproxy` — the same path as `POST /api/v1/apply`, but from the console and
+without a session. Use it after a template upgrade, before the first `haproxy`
+start on a fresh appliance, or when the UI is unreachable and the edge needs to
+pick up what is already in the database. `scripts/fix-haproxy-easy-waf-dropin.sh`
+calls it for exactly that reason.
+
+```bash
+sudo /usr/sbin/easy-waf-admin apply-edge \
+  [-env-file /etc/easy-waf/easy-waf.env] [-state-dir /var/lib/easy-waf] \
+  [-database-url URL] [-label text]
+```
+
+The revision it writes to `config_revisions` is labelled
+`easy-waf-admin-apply-edge` unless you pass `-label`. It honours
+`EASY_WAF_SKIP_RELOAD` — and, as everywhere else, **any non-empty value counts as
+set, including `0`** (see [OPERATIONS.md](OPERATIONS.md)); when the reload is
+skipped it says so in its output.
 
 ## Automated appliance reset (dev / lab)
 
@@ -146,7 +167,15 @@ Then update **`/etc/easy-waf/easy-waf.env`** so **`DATABASE_URL`** matches that 
 
 ### `Usage:` does not list `reset-appliance`
 
-The **`/usr/sbin/easy-waf-admin`** binary is older than the repo. Rebuild and reinstall:
+The **`/usr/sbin/easy-waf-admin`** binary is older than the repo. On a packaged
+appliance, upgrade the package — `/usr/sbin/easy-waf-admin` is owned by dpkg, so
+installing over it makes `dpkg -V` dirty and the next `apt install` reverts it:
+
+```bash
+sudo apt install ./easy-waf_X.Y.Z_amd64.deb
+```
+
+Only on a source checkout that was never packaged:
 
 ```bash
 cd ~/easy-waf && git pull && make build

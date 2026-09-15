@@ -1,6 +1,6 @@
 # Virtual machine sizing (ESXi / QEMU–KVM)
 
-These numbers are **planning guidelines** for a single appliance running the full stack: **Ubuntu 24.04 LTS**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **nftables**.
+These numbers are **planning guidelines** for a single appliance running the full stack: **Ubuntu 24.04 LTS**, **HAProxy**, **PostgreSQL** (local or co-located), **easy-waf-api**, **easy-waf-acmed**, **easy-waf-hostd**, **CrowdSec** (agent + LAPI + HAProxy SPOA bouncer), **fail2ban**, **nftables**.
 
 ## Rough memory budget (why these sizes)
 
@@ -9,7 +9,8 @@ These numbers are **planning guidelines** for a single appliance running the ful
 | OS + systemd + sshd | ~300–600 MiB baseline |
 | PostgreSQL (small config DB) | ~400–900 MiB (shared buffers + connections) |
 | HAProxy | ~50–150 MiB |
-| easy-waf-api + easy-waf-acmed (Go) | ~80–200 MiB combined |
+| easy-waf-api + easy-waf-acmed + easy-waf-hostd (Go) | ~80–200 MiB combined |
+| GeoIP mmdb reader, when enabled | grows with the database you upload (accepted up to 128 MiB per file) |
 | CrowdSec (crowdsec + spoa bouncer) | ~200–500 MiB |
 | CrowdSec / OS page cache, spikes | headroom |
 
@@ -25,7 +26,7 @@ These numbers are **planning guidelines** for a single appliance running the ful
 | Use | Minimum | Recommended |
 |-----|---------|-------------|
 | OS (Ubuntu 24.04 server + updates) | ~8–12 GiB | ~16 GiB |
-| `/var/lib/easy-waf` (certs, revisions, ACME webroot, IPBL maps) | ~2 GiB | ~8 GiB+ (growth) |
+| `/var/lib/easy-waf` (certs, revisions, ACME webroot, IPBL maps, GeoIP databases, secrets, staging) | ~2 GiB | ~8 GiB+ (growth) |
 | PostgreSQL data (local) | ~2 GiB | ~8 GiB+ |
 | Logs, CrowdSec data, package cache | ~2 GiB | ~4 GiB+ |
 

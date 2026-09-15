@@ -22,7 +22,7 @@ Lego posts JSON to `{HTTPREQ_ENDPOINT}/present` and `{HTTPREQ_ENDPOINT}/cleanup`
 ## Flow
 
 1. Create env file under e.g. `/var/lib/easy-waf/secrets/dns/<cert-id>.env`.
-2. `POST /api/v1/certificates` with `mode`, `dns_provider`, `dns_credentials_env_file`, then `POST /api/v1/certificates/{id}/request-issue` with the same mode or rely on stored row.
+2. `POST /api/v1/certificates` with `mode`, `dns_provider`, `dns_credentials_env_file`, then `POST /api/v1/certificates/{id}/request-issue` — **always with `{"mode": "dns-01"}` in the body.** An empty body does *not* reuse the stored row: the handler writes `mode = "http-01"` back to the certificate (`internal/api/server.go`), so a re-issue without the field silently converts a DNS-01 certificate to HTTP-01 and the next acmed pass attempts the wrong challenge.
 3. `easy-waf-acmed` loads the env file, applies variables, runs Lego DNS-01, writes PEMs, applies HAProxy.
 
 ## SME / HA

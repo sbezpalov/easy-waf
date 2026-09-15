@@ -33,7 +33,7 @@
 |---|---|
 | `cmd/easy-waf-api/` | Management REST API + встроенная UI, рендер/apply HAProxy |
 | `cmd/easy-waf-acmed/` | ACME-воркер (Lego): выпуск и обновление сертификатов |
-| `cmd/easy-wafd/` | Legacy-энтрипойнт → тот же код, что `easy-waf-api` |
+| `cmd/easy-wafd/` | Legacy-энтрипойнт → тот же код, что `easy-waf-api`. **В `.deb` не входит** — второй включаемый экземпляр control plane на одном state-каталоге не нужен |
 | `cmd/easy-waf-admin/` | Emergency CLI: сброс доступа к панели, factory reset, apply edge |
 | `cmd/easy-waf-hostd/` | Host-management daemon (network, nftables, apt) |
 | `internal/` | store (PostgreSQL), haproxy, acme, api, ipbl, admin, webui и др. |
@@ -48,7 +48,7 @@
 
 ## 4. Статус / текущий приоритет
 - **Версия:** `1.4.1` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
-- **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply) и `easy-waf-acmed` (ACME-воркер).
+- **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply), `easy-waf-acmed` (ACME-воркер) и `easy-waf-hostd` (root-брокер привилегированных операций на unix-сокете).
 - Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 3.x, nftables, systemd.
 - Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.
 
@@ -58,6 +58,12 @@
 - Формируй артефакты (diff, список изменённых файлов, план отката) до применения.
 - Изменения атомарные; объясняй ЧТО и ПОЧЕМУ.
 - Новый код — с тестами; задача не «done» при падающих тестах/линте.
+- **Каждый новый `.go`-файл (включая тесты) начинается с лицензионного заголовка** — две строки перед `package`:
+  ```go
+  // Copyright 2026 Sergey Bezpalov
+  // SPDX-License-Identifier: Apache-2.0
+  ```
+  CI это не проверяет, поэтому ответственность на авторе. Проверка: `git grep -L 'SPDX-License-Identifier' -- '*.go'`.
 
 ## 6. Безопасность (NEVER)
 - Прод (appliance-VM) не редактируется напрямую: доставка через git → сборка (`make build`) → установка/upgrade скриптами на Ubuntu 24.04 LTS.
@@ -72,6 +78,7 @@
 - [ ] Изменение локально; секреты не попали в код/коммит.
 - [ ] Тесты/линт зелёные; при необходимости проверено на staging.
 - [ ] Diff отревьюен, есть план отката.
+- [ ] Новые `.go`-файлы несут SPDX-заголовок (`git grep -L 'SPDX-License-Identifier' -- '*.go'` пуст).
 
 ## Раскладка инструментов
 Артефакты — в `.ai/artifacts/` (кросс) и `.<инструмент>/artifacts/`. Детали — `.ai/README.md`.

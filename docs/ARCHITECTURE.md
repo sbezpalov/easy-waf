@@ -98,24 +98,33 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 | Path | Purpose |
 |------|---------|
 | `/etc/easy-waf/` | Environment, defaults, optional overrides |
-| `/var/lib/easy-waf/` | Generated configs, cert storage, revisions (DB is PostgreSQL, not here) |
-| `/var/log/easy-waf/` | Daemon and apply logs |
+| `/var/lib/easy-waf/` | Generated configs, cert storage, secrets, revisions, GeoIP databases, staging (DB is PostgreSQL, not here) |
+
+There is no `/var/log/easy-waf/`: the units are `Type=simple` with no log file, so
+everything goes to the journal — `journalctl -u easy-waf-api` and friends.
 
 ## systemd layout
 
 | Unit | Role |
 |------|------|
 | `easy-waf-hostd.service` | Root privilege broker — unix socket `/run/easy-waf/hostd.sock` (`root:easy-waf` **0660**); host/netplan/nft/systemd/apt/users/journal/power |
-| `easy-waf-api.service` (alias `easy-wafd.service` may point to same binary) | API, UI, config apply (unprivileged; talks to hostd) |
+| `easy-waf-api.service` | API, UI, config apply (unprivileged; talks to hostd) |
 | `easy-waf-acmed.service` | ACME issuance/renewal (Lego HTTP-01), then triggers config reload via DB + optional apply |
 | `haproxy.service` | Stock; reload triggered after successful apply |
 | `crowdsec.service` | Stock |
 | `fail2ban.service` | Stock |
 
+`easy-wafd`, the legacy alias entrypoint, is **not** shipped in the `.deb` (the
+release tarball and the non-package installer path still carry it). If
+`easy-wafd.service` is **enabled** on an appliance, `postinst` warns about it —
+disable it (`systemctl disable --now easy-wafd.service`) rather than running a
+second copy of the control plane against the same state directory. A unit file
+that merely exists, disabled, raises no warning.
+
 ## Security model
 
 - Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated. Host mutations go through **`easy-waf-hostd`** (root), not `sudo` from the API process.
-- Secrets in `/etc/easy-waf/secrets/` with `0600`. HAProxy reads generated configs via group **`easy-waf`** (AppArmor stock profile on Ubuntu).
+- Secrets in `${EASY_WAF_STATE_DIR}/secrets/` (default `/var/lib/easy-waf/secrets/`, directory `0700`). HAProxy reads generated configs via group **`easy-waf`** (AppArmor stock profile on Ubuntu).
 - UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **nftables** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
 - Subprocess: no shell; explicit argv; timeouts.
 - Audit: append-only audit log for admin actions.
@@ -190,7 +199,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 - `backup.sh`: one **`.tar.gz`** (format v1) — `pg_dump -Fc` → `easywaf.dump`, plus `state/` (`/var/lib/easy-waf`) and `etc/` (`/etc/easy-waf`). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 - `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → start services → optional **`POST /api/v1/apply`**.
-- `upgrade.sh`: replace binary + run migrations + reload daemon only.
+- `upgrade.sh`: **re-runs `install.sh`** with `EASY_WAF_DIST_DIR` set and local PostgreSQL install disabled, then restarts `easy-waf-api` and `easy-waf-acmed`. It is a full installer pass, not a binary swap: OS packages, CrowdSec bootstrap, nftables and the HAProxy drop-in are all re-applied. Migrations are not run by the script — the API applies them on start.
 
 ## GeoIP architecture
 
@@ -225,7 +234,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 | Layer | Choice |
 |-------|--------|
-| Control plane | `easy-waf-api`: Go 1.22+, Chi, embedded `web/dist` |
+| Control plane | `easy-waf-api`: Go 1.22+, Chi, embedded `internal/webui/dist` |
 | Host broker | `easy-waf-hostd`: root unix-socket broker (`internal/hostd`); long ops (e.g. `apt-upgrade-stream`) return **NDJSON** lines on the same socket instead of one JSON blob |
 | ACME worker | `easy-waf-acmed` — Lego v4 HTTP-01 (webroot) |
 | State | PostgreSQL (`pgx` / `database/sql`) |
