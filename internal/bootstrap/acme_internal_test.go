@@ -13,20 +13,58 @@ import (
 
 func TestAcmeInternalListenAddr(t *testing.T) {
 	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "")
-	if got := acmeInternalListenAddr(); got != "127.0.0.1:8089" {
+	if got := acmeInternalListenAddr(""); got != "127.0.0.1:8089" {
 		t.Fatalf("default: got %q", got)
 	}
 	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "0")
-	if got := acmeInternalListenAddr(); got != "" {
+	if got := acmeInternalListenAddr(""); got != "" {
 		t.Fatalf("0: got %q", got)
 	}
 	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "off")
-	if got := acmeInternalListenAddr(); got != "" {
+	if got := acmeInternalListenAddr(""); got != "" {
 		t.Fatalf("off: got %q", got)
 	}
 	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "127.0.0.1:9999")
-	if got := acmeInternalListenAddr(); got != "127.0.0.1:9999" {
+	if got := acmeInternalListenAddr(""); got != "127.0.0.1:9999" {
 		t.Fatalf("custom: got %q", got)
+	}
+}
+
+// The listener and the rendered bk_acme backend must resolve to the same
+// address, or HAProxy health-checks a closed port and HTTP-01 fails with no
+// error anywhere. acmeInternalAddrs is what lets the caller notice.
+func TestAcmeInternalAddrs(t *testing.T) {
+	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "")
+
+	// The setting drives both sides, so moving it there keeps them in step.
+	listen, backend := acmeInternalAddrs("127.0.0.1:9090")
+	if listen != "127.0.0.1:9090" || backend != "127.0.0.1:9090" {
+		t.Fatalf("setting: listen=%q backend=%q, want both 127.0.0.1:9090", listen, backend)
+	}
+
+	// Unset setting: both fall back to the same default.
+	if listen, backend = acmeInternalAddrs(""); listen != backend {
+		t.Fatalf("default: listen=%q backend=%q, want equal", listen, backend)
+	}
+
+	// The environment variable moves only the listener — this is the mismatch
+	// the caller warns about, and the case that used to be silent.
+	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "127.0.0.1:9999")
+	listen, backend = acmeInternalAddrs("127.0.0.1:8089")
+	if listen != "127.0.0.1:9999" {
+		t.Fatalf("env override: listen=%q", listen)
+	}
+	if backend != "127.0.0.1:8089" {
+		t.Fatalf("env override must not move the rendered backend: backend=%q", backend)
+	}
+	if listen == backend {
+		t.Fatal("the mismatch this function exists to surface was not reported")
+	}
+
+	// Disabling still disables, whatever the setting says.
+	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "off")
+	if listen, _ = acmeInternalAddrs("127.0.0.1:9090"); listen != "" {
+		t.Fatalf("off: listen=%q, want disabled", listen)
 	}
 }
 

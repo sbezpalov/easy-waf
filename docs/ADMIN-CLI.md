@@ -20,7 +20,7 @@ Runs a full health and self-diagnostic check across the appliance components:
 
 1. **Storage & Permissions**: Validates `/var/lib/easy-waf` and `secrets/` directory permissions and checks available filesystem space.
 2. **Database (PostgreSQL)**: Uses a non-migrating connection and read-only transaction to test connectivity, verify the security schema from migrations 016-018, and count configured entities (applications, certs, operators).
-3. **HAProxy Edge**: Verifies binary presence and validates edge configuration syntax (`haproxy -c`). It also *tries* the stats socket, but looks for it at the hardcoded legacy path `/run/haproxy/admin.sock` while the current default is `/run/haproxy/easy-waf-admin.sock`, and the whole check is skipped when the file is absent — so on a stock appliance this step silently reports nothing. Check the socket by hand instead: `sudo socat /run/haproxy/easy-waf-admin.sock stdio <<< "show info"`.
+3. **HAProxy Edge**: Verifies binary presence, validates edge configuration syntax (`haproxy -c`), and tests the stats socket. The socket path is read out of the generated `haproxy.cfg` — the value HAProxy will actually open — and falls back to the default `/run/haproxy/easy-waf-admin.sock` when there is no generated config yet. A missing socket is reported as a **WARN** naming the path, not skipped: before 1.4.2 this check probed a hardcoded `/run/haproxy/admin.sock` and, finding nothing there, printed nothing at all.
 4. **Services (systemd)**: Checks active status of `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, and `fail2ban`.
 5. **GeoIP**: Checks MaxMind MMDB file presence and freshness.
 6. **TLS Certificates**: Checks expiration dates for all active certificates in the certs directory.
@@ -52,9 +52,8 @@ sudo /usr/sbin/easy-waf-admin apply-edge \
 
 The revision it writes to `config_revisions` is labelled
 `easy-waf-admin-apply-edge` unless you pass `-label`. It honours
-`EASY_WAF_SKIP_RELOAD` — and, as everywhere else, **any non-empty value counts as
-set, including `0`** (see [OPERATIONS.md](OPERATIONS.md)); when the reload is
-skipped it says so in its output.
+`EASY_WAF_SKIP_RELOAD` as a boolean (see [OPERATIONS.md](OPERATIONS.md)); when the
+reload is skipped it says so in its output.
 
 ## Automated appliance reset (dev / lab)
 

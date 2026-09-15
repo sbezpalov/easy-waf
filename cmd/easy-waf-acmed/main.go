@@ -17,6 +17,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/acme"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -153,7 +154,7 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 	}
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})
 
-	if os.Getenv("EASY_WAF_ACME_SKIP_APPLY") != "" {
+	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
 		return
 	}
 	if err := eng.Apply(ctx, "acme"); err != nil {

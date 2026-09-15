@@ -18,6 +18,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/apply"
 	"github.com/easy-waf/easy-waf/internal/blockedua"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
@@ -311,7 +312,7 @@ func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
 	defer func() { _ = tx.remove() }()
 
 	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
-	skipReload := os.Getenv("EASY_WAF_SKIP_RELOAD") != ""
+	skipReload := envflag.Enabled("EASY_WAF_SKIP_RELOAD")
 	promoted := false
 	runtimeChanged := false
 	var revisionSnapshot *artifactSnapshot
@@ -348,7 +349,7 @@ func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
 	if err := apply.WriteAtomic(crtListPath, []byte(r.CRTList), 0o640); err != nil {
 		return err
 	}
-	if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
+	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
 		if err := apply.Validate(e.Settings.HAProxyBinary, staging); err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
@@ -415,7 +416,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	}
 	defer func() { _ = tx.remove() }()
 
-	skipReload := os.Getenv("EASY_WAF_SKIP_RELOAD") != ""
+	skipReload := envflag.Enabled("EASY_WAF_SKIP_RELOAD")
 	promoted := false
 	runtimeChanged := false
 	var revisionSnapshot *artifactSnapshot
@@ -472,7 +473,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		if err := apply.WriteAtomic(staging, b, 0o640); err != nil {
 			return err
 		}
-		if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
+		if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
 			if err := apply.Validate(e.Settings.HAProxyBinary, staging); err != nil {
 				return fmt.Errorf("validation failed: %w", err)
 			}
@@ -490,7 +491,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	if !strings.EqualFold(got, rev.HAProxySHA256) {
 		return fmt.Errorf("restored revision config checksum mismatch")
 	}
-	if os.Getenv("EASY_WAF_SKIP_VALIDATE") == "" {
+	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
 		if err := apply.Validate(e.Settings.HAProxyBinary, cfgPath); err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}

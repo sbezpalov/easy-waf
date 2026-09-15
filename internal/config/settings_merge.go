@@ -75,6 +75,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.ACMERenewalInterval)
 	case "acme_webroot_path":
 		return json.Unmarshal(raw, &out.ACMEWebrootPath)
+	case "acme_internal_http":
+		return json.Unmarshal(raw, &out.ACMEInternalHTTP)
 	case "ip_blacklist_map_path":
 		return json.Unmarshal(raw, &out.IPBlacklistMapPath)
 	case "ipbl_external_enabled":

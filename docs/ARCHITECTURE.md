@@ -1,6 +1,6 @@
 # Easy Home WAF — Architecture
 
-**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.4.1**). Acceptance criteria **AC-01…AC-10:** [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Document / product version:** aligned with root [`VERSION`](../VERSION) (**1.4.2**). Acceptance criteria **AC-01…AC-10:** [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## Product / technical vision
 

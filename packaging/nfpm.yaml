@@ -1,6 +1,6 @@
 # Easy Home WAF — Debian package definition (nfpm).
 #
-# Build:  make deb           (or: EASY_WAF_VERSION=1.4.1 nfpm package -f packaging/nfpm.yaml -p deb -t dist/)
+# Build:  make deb           (or: EASY_WAF_VERSION=1.4.2 nfpm package -f packaging/nfpm.yaml -p deb -t dist/)
 # Why a package at all: docs/adr/0001-packaging-and-installer.md
 #
 # The package owns binaries, systemd units and defaults. It deliberately does

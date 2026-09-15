@@ -69,7 +69,7 @@ func TestResolveManagementHTTPS_default(t *testing.T) {
 
 func TestAcmeInternalListenUnchanged(t *testing.T) {
 	t.Setenv("EASY_WAF_ACME_INTERNAL_HTTP", "")
-	if acmeInternalListenAddr() != "127.0.0.1:8089" {
-		t.Fatal(acmeInternalListenAddr())
+	if acmeInternalListenAddr("") != "127.0.0.1:8089" {
+		t.Fatal(acmeInternalListenAddr(""))
 	}
 }

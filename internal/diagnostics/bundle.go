@@ -114,7 +114,11 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	}
 	cancel()
 
-	units := []string{"easy-waf-api", "easy-waf-acmed", "haproxy", "crowdsec", "fail2ban", "nftables"}
+	// easy-waf-hostd belongs here as much as the other two: every privileged
+	// operation the appliance performs goes through the broker, so a bundle
+	// collected after a failed host update, firewall apply or user change was
+	// missing the one unit that could explain it.
+	units := []string{"easy-waf-api", "easy-waf-acmed", "easy-waf-hostd", "haproxy", "crowdsec", "fail2ban", "nftables"}
 	for _, u := range units {
 		safe := strings.ReplaceAll(u, "/", "-")
 		_ = run(fmt.Sprintf("systemctl/status-%s.txt", safe), 20*time.Second, "systemctl", "status", u, "--no-pager", "-l")
@@ -130,6 +134,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	for _, pair := range []struct{ unit, dst string }{
 		{"easy-waf-api", "logs/journal-easy-waf-api.txt"},
 		{"easy-waf-acmed", "logs/journal-easy-waf-acmed.txt"},
+		{"easy-waf-hostd", "logs/journal-easy-waf-hostd.txt"},
 		{"haproxy", "logs/journal-haproxy.txt"},
 	} {
 		ctx2, cancel := context.WithTimeout(ctx, 45*time.Second)

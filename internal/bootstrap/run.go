@@ -252,7 +252,11 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	}
 
 	var acmeInternalSrv *http.Server
-	if acAddr := acmeInternalListenAddr(); acAddr != "" {
+	acAddr, acBackend := acmeInternalAddrs(eng.Settings.ACMEInternalHTTP)
+	if acAddr != "" && acAddr != acBackend {
+		log.Printf("WARNING: EASY_WAF_ACME_INTERNAL_HTTP=%s moves the HTTP-01 helper, but the generated HAProxy backend dials %s (setting acme_internal_http) — HTTP-01 will fail. Change the setting instead, or unset the variable.", acAddr, acBackend)
+	}
+	if acAddr != "" {
 		wr, err := acmeWebrootPath(stateDir, eng.Settings.ACMEWebrootPath)
 		if err != nil {
 			return fmt.Errorf("ACME webroot: %w", err)

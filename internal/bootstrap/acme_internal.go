@@ -10,6 +10,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/easy-waf/easy-waf/internal/config"
 )
 
 const acmeChallengeURLPrefix = "/.well-known/acme-challenge/"
@@ -17,17 +19,35 @@ const acmeChallengeURLPrefix = "/.well-known/acme-challenge/"
 // acmeInternalListenAddr returns the loopback address for the HTTP-01 helper that
 // HAProxy's bk_acme backend proxies to. Empty means disabled.
 //
-// Env EASY_WAF_ACME_INTERNAL_HTTP: unset or empty → "127.0.0.1:8089";
-// "0", "off", "false" (case-insensitive) → disabled; otherwise used as-is (e.g. "127.0.0.1:9090").
-func acmeInternalListenAddr() string {
+// configured is the acme_internal_http setting, which is also what the renderer
+// writes into the bk_acme backend. The environment variable stays supported so
+// that an appliance can switch the helper off without a database round-trip, and
+// so that installs that already move it keep working:
+//
+//	EASY_WAF_ACME_INTERNAL_HTTP unset or empty → the setting (or its default)
+//	"0", "off", "false"                        → disabled
+//	anything else                              → used as-is
+//
+// Using it to *move* the helper is the case worth warning about: the backend
+// follows the setting, so the two then point at different ports and HTTP-01
+// fails with nothing in the logs but a failing health check. acmeInternalAddrs
+// reports that mismatch to the caller.
+func acmeInternalListenAddr(configured string) string {
 	v := strings.TrimSpace(strings.ReplaceAll(os.Getenv("EASY_WAF_ACME_INTERNAL_HTTP"), "\r", ""))
 	if v == "0" || strings.EqualFold(v, "off") || strings.EqualFold(v, "false") {
 		return ""
 	}
 	if v == "" {
-		return "127.0.0.1:8089"
+		return config.ACMEInternalHTTPOrDefault(configured)
 	}
 	return v
+}
+
+// acmeInternalAddrs returns the address the helper will listen on and the
+// address the generated HAProxy backend will dial. They differ only when
+// EASY_WAF_ACME_INTERNAL_HTTP overrides a different acme_internal_http setting.
+func acmeInternalAddrs(configured string) (listen, backend string) {
+	return acmeInternalListenAddr(configured), config.ACMEInternalHTTPOrDefault(configured)
 }
 
 // acmeChallengeHandler serves Lego HTTP-01 files from webroot (same layout as
