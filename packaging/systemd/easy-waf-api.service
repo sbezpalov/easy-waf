@@ -2,6 +2,10 @@
 Description=Easy Home WAF API (control plane + UI; architecture C)
 After=network-online.target postgresql.service easy-waf-hostd.service
 Wants=network-online.target easy-waf-hostd.service
+# Keep retrying when PostgreSQL comes up late (or is remote and briefly
+# unreachable): with the default start limit, five quick failures left the
+# control plane dead until someone noticed.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -12,7 +16,9 @@ EnvironmentFile=-/etc/easy-waf/easy-waf.env
 # Do not use ${VAR:-default} in ExecStart — some systemd builds pass it literally and ListenAndServe fails immediately (exit 1).
 ExecStart=/usr/sbin/easy-waf-api
 Restart=on-failure
+RestartSec=5
 AmbientCapabilities=
+CapabilityBoundingSet=
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
