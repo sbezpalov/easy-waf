@@ -501,3 +501,37 @@ func (e *Engine) createRevisionSnapshot(cfg config.GlobalSettings, sha256Hex str
 	}
 	return snapshot, nil
 }
+
+// artifactsUnchanged reports whether rendering reproduced exactly what was
+// live: the new config equals the one in the pre-render snapshot, and every
+// managed file on disk now (maps and crt-list, which the render rewrites in
+// place) still has the hash the snapshot recorded, with none added.
+func (e *Engine) artifactsUnchanged(cfg config.GlobalSettings, before *artifactSnapshot, cfgPath string, rendered []byte) (bool, error) {
+	if before == nil || !before.hasFile(cfgPath) || !strings.EqualFold(before.Manifest.ConfigSHA256, sha256HexBytes(rendered)) {
+		return false, nil
+	}
+	paths, err := e.managedArtifactPaths(cfg, nil)
+	if err != nil {
+		return false, err
+	}
+	for _, path := range paths {
+		if artifactPathKey(path) == artifactPathKey(cfgPath) {
+			continue
+		}
+		recorded, inSnapshot := manifestFileForPath(before.Manifest, path)
+		sum, err := sha256HexFile(path)
+		if os.IsNotExist(err) {
+			if inSnapshot {
+				return false, nil
+			}
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if !inSnapshot || !strings.EqualFold(recorded.SHA256, sum) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
