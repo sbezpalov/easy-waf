@@ -21,6 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04
+    # Store, engine and auth integration tests skip without DATABASE_URL; run them
+    # against the PostgreSQL major Ubuntu 24.04 ships.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ewtest
+          POSTGRES_PASSWORD: ewtest
+          POSTGRES_DB: ewtest
+        options: >-
+          --health-cmd "pg_isready -U ewtest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         shell: bash
@@ -60,8 +74,11 @@ jobs:
       - name: HAProxy render golden fixtures
         run: go test ./internal/haproxy/... -run Golden -count=1
 
-      - name: go test (race)
-        run: go test -race -count=1 -skip '^TestGoldenRender$' ./...
+      - name: go test (race, with PostgreSQL)
+        env:
+          DATABASE_URL: postgres://ewtest:ewtest@postgres:5432/ewtest?sslmode=disable
+        # One package at a time: the integration tests share one database.
+        run: go test -race -count=1 -p 1 -skip '^TestGoldenRender$' ./...
 
   verify:
     runs-on: ubuntu-latest
