@@ -6,7 +6,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,63 +19,6 @@ import (
 	// Register pgx stdlib driver for database/sql.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
-
-//go:embed migrations/001_initial.sql
-var initialMigrationSQL string
-
-//go:embed migrations/002_dns01.sql
-var migration002SQL string
-
-//go:embed migrations/003_users.sql
-var migration003SQL string
-
-//go:embed migrations/004_ipwl.sql
-var migration004SQL string
-
-//go:embed migrations/005_restricted_paths.sql
-var migration005SQL string
-
-//go:embed migrations/006_blocked_user_agents.sql
-var migration006SQL string
-
-//go:embed migrations/007_geoip_settings_note.sql
-var migration007SQL string
-
-//go:embed migrations/008_audit_log_columns.sql
-var migration008SQL string
-
-//go:embed migrations/009_application_security.sql
-var migration009SQL string
-
-//go:embed migrations/010_geoip_mmdb.sql
-var migration010SQL string
-
-//go:embed migrations/011_prometheus.sql
-var migration011SQL string
-
-//go:embed migrations/012_listen_mode.sql
-var migration012SQL string
-
-//go:embed migrations/013_ipbl_allow_private_fetch.sql
-var migration013SQL string
-
-//go:embed migrations/014_ipbl_fetch_allowed_cidrs.sql
-var migration014SQL string
-
-//go:embed migrations/015_acme_dns_resolvers.sql
-var migration015SQL string
-
-//go:embed migrations/016_user_session_version.sql
-var migration016SQL string
-
-//go:embed migrations/017_operator_enrollment.sql
-var migration017SQL string
-
-//go:embed migrations/018_backend_tls_verify.sql
-var migration018SQL string
-
-//go:embed migrations/019_acme_retry.sql
-var migration019SQL string
 
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
@@ -113,22 +55,6 @@ func openPostgres(driverName, dsn string, runMigrations bool) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-func (s *Store) migrate(ctx context.Context) error {
-	for _, raw := range []string{
-		initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL,
-		migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL,
-		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
-		migration016SQL, migration017SQL, migration018SQL, migration019SQL,
-	} {
-		for _, stmt := range splitSQLStatements(raw) {
-			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("migrate: %w", err)
-			}
-		}
-	}
-	return nil
 }
 
 // Close releases the pool.

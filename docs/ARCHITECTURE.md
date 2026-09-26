@@ -199,7 +199,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 - `backup.sh`: one **`.tar.gz`** (format v1) — `pg_dump -Fc` → `easywaf.dump`, plus `state/` (`/var/lib/easy-waf`) and `etc/` (`/etc/easy-waf`). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 - `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → start services → optional **`POST /api/v1/apply`**.
-- `upgrade.sh`: **re-runs `install.sh`** with `EASY_WAF_DIST_DIR` set and local PostgreSQL install disabled, then restarts `easy-waf-api` and `easy-waf-acmed`. It is a full installer pass, not a binary swap: OS packages, CrowdSec bootstrap, nftables and the HAProxy drop-in are all re-applied. Migrations are not run by the script — the API applies them on start.
+- `upgrade.sh`: **re-runs `install.sh`** with `EASY_WAF_DIST_DIR` set and local PostgreSQL install disabled, then restarts `easy-waf-api` and `easy-waf-acmed`. It is a full installer pass, not a binary swap: OS packages, CrowdSec bootstrap, nftables and the HAProxy drop-in are all re-applied. Migrations are not run by the script — whichever service opens the store first applies the ones not yet recorded in `schema_migrations`, each in its own transaction, under a PostgreSQL advisory lock so api, acmed and admin starting together never migrate at the same time (`internal/store/migrate.go`).
 
 ## GeoIP architecture
 
