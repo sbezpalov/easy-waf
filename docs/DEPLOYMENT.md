@@ -119,13 +119,15 @@ sudo bash scripts/smoke-appliance.sh
 
 `postinst` restarts **only the units that were already running**, so a
 deliberately stopped service stays stopped. Database migrations still run when
-the API starts. Your `/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as
+the API starts: only those not yet in `schema_migrations`, each in one
+transaction, so a failed migration leaves the schema as it was. Your `/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as
 a conffile, and if a release changes the shipped default you get a prompt with
 the usual `Y/I/N/O/D/Z` options rather than a silent overwrite.
 
 **Rollback** is `apt install ./easy-waf_<previous>_amd64.deb`, with the caveats
 that already apply to any downgrade: additive migration columns are not removed,
-so an older binary must tolerate them — check the upgrade note in
+so an older binary must tolerate them (it logs that the schema is newer than it
+knows and keeps running) — check the upgrade note in
 [`CHANGELOG.md`](../CHANGELOG.md) for the version you are leaving.
 
 **Removal.** `apt remove` deletes binaries and units and leaves configuration and

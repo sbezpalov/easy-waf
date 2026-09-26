@@ -140,13 +140,12 @@ func TestDollarQuoteTag(t *testing.T) {
 // The shipped migrations must keep producing exactly the statements the previous
 // line-based splitter produced, so upgrading an existing appliance is a no-op.
 func TestSplitSQLStatements_matchesLegacyOnShippedMigrations(t *testing.T) {
-	migrations := []string{
-		initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL,
-		migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL,
-		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
-		migration016SQL, migration017SQL, migration018SQL,
+	all, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i, raw := range migrations {
+	for i, m := range all {
+		raw := m.sql
 		legacy := legacySplitForTest(raw)
 		got := splitSQLStatements(raw)
 		if len(got) != len(legacy) {

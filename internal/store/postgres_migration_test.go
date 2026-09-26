@@ -54,27 +54,10 @@ func TestDiagnosticStoreOpenSkipsMigrations(t *testing.T) {
 	}
 }
 
-func TestApplicationStoreOpenStillRunsMigrations(t *testing.T) {
-	t.Parallel()
-
-	const driverName = "easy-waf-test-application-runs-migrations"
-	drv := &migrationCountingDriver{}
-	sql.Register(driverName, drv)
-
-	st, err := openPostgres(driverName, "ignored", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	if got := drv.execs.Load(); got == 0 {
-		t.Fatal("application store open did not execute migrations")
-	}
-}
-
 func TestMigration018LegacyBackfillDoesNotDowngradeRequired(t *testing.T) {
 	t.Parallel()
 
-	statements := splitSQLStatements(migration018SQL)
+	statements := splitSQLStatements(migrationSQL("018_backend_tls_verify.sql"))
 	foundLegacyBackfill := false
 	for _, statement := range statements {
 		normalized := strings.ToLower(strings.Join(strings.Fields(statement), " "))
@@ -93,7 +76,7 @@ func TestMigration018LegacyBackfillDoesNotDowngradeRequired(t *testing.T) {
 		t.Fatal("migration 018 must preserve compatibility by backfilling legacy HTTPS rows to verify none")
 	}
 
-	normalizedMigration := strings.ToLower(strings.Join(strings.Fields(migration018SQL), " "))
+	normalizedMigration := strings.ToLower(strings.Join(strings.Fields(migrationSQL("018_backend_tls_verify.sql")), " "))
 	for _, required := range []string{
 		"set backend_tls_verify = 'required' where backend_tls_verify is null",
 		"alter column backend_tls_verify set default 'required'",

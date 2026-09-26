@@ -101,6 +101,13 @@ make golden-update
 git diff internal/haproxy/testdata/golden
 ```
 
+**Migrations.** Add `internal/store/migrations/NNN_name.sql` with the next
+number; it is embedded and applied once, in a transaction, and recorded in
+`schema_migrations`. Never edit a shipped migration — appliances that already
+ran it will not run it again. Keep new files repeat-safe anyway (`IF NOT EXISTS`,
+guarded backfills): a store upgraded from a release before `schema_migrations`
+replays every file once when it adopts the table.
+
 For a change that only a real appliance can prove (migrations, systemd units,
 reload behaviour), say so in the PR and, if you can, run
 `sudo bash scripts/smoke-appliance.sh` on a test VM and paste the summary.
