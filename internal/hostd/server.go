@@ -123,6 +123,7 @@ func writeResponse(c net.Conn, resp Response) error {
 // ServeDefault starts the broker on DefaultSocket until SIGTERM (used by main).
 func ServeDefault() error {
 	ctx := context.Background()
+	RevertPendingChanges()
 	return Serve(ctx, DefaultSocket)
 }
 

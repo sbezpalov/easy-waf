@@ -26,10 +26,10 @@ func materializeStagedFile(path string) (string, func(), error) {
 		return "", func() {}, err
 	}
 	defer src.Close()
-	if err := os.MkdirAll("/run/easy-waf", 0o750); err != nil {
+	if err := os.MkdirAll(runtimeDir, 0o750); err != nil {
 		return "", func() {}, err
 	}
-	dst, err := os.CreateTemp("/run/easy-waf", "staged-*")
+	dst, err := os.CreateTemp(runtimeDir, "staged-*")
 	if err != nil {
 		return "", func() {}, err
 	}
