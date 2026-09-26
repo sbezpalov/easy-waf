@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/apply"
-
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -41,7 +40,8 @@ func WriteMap(ctx context.Context, st *store.Store, outPath string) error {
 		b.WriteString(ln)
 		b.WriteByte('\n')
 	}
-	return apply.WriteAtomic(outPath, []byte(b.String()), 0o600)
+	// 0640: HAProxy reads this as the haproxy user, a member of the easy-waf group.
+	return apply.WriteAtomic(outPath, []byte(b.String()), 0o640)
 }
 
 // normalizePatterns trims, drops empty and comment lines, removes duplicates and

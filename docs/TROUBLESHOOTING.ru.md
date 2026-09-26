@@ -152,7 +152,7 @@ sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 
 Строка **5** в сгенерированном конфиге — обычно **`stats socket /run/haproxy/easy-waf-admin.sock`**. **`haproxy -c`** не создаёт этот Unix-сокет, поэтому проверка может пройти, а **`ExecStart`** — упасть, если **`/run/haproxy`** отсутствует, не принадлежит **`haproxy`** или остался устаревший **`easy-waf-admin.sock`**.
 
-**Исправление:** запустите актуальный **`scripts/fix-haproxy-easy-waf-dropin.sh`** из репозитория. Он пишет **`easy-waf.conf`** с **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (каталог `/run/haproxy` создаёт и держит systemd) и **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** для очистки устаревшего сокета — **`+`** выполняет этот шаг **от root**, поскольку штатный **`haproxy.service`** использует **`User=haproxy`**, а непривилегированный `ExecStartPre` не может писать внутри `/run`. Он же удаляет устаревший **`50-easy-waf.conf`** и сам перезапускает HAProxy.
+**Исправление:** запустите актуальный **`scripts/fix-haproxy-easy-waf-dropin.sh`** из репозитория. Он пишет **`easy-waf.conf`** с **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (каталог `/run/haproxy` создаёт и держит systemd) и **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** для очистки устаревшего сокета — **`+`** выполняет этот шаг **от root**, поскольку drop-in запускает HAProxy как **`User=haproxy`** (в штатном юните `User=` нет, и master работал бы от root), а непривилегированный `ExecStartPre` не может писать внутри `/run`. Он же удаляет устаревший **`50-easy-waf.conf`** и сам перезапускает HAProxy.
 
 Разовое ручное исправление:
 

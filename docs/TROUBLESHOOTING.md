@@ -153,7 +153,7 @@ The script runs `haproxy -c` and restarts `haproxy` itself, failing loudly if ei
 
 Line **5** in the generated config is usually **`stats socket /run/haproxy/easy-waf-admin.sock`**. **`haproxy -c`** does not create that Unix socket, so the check can pass while **`ExecStart`** fails if **`/run/haproxy`** is missing, not owned by **`haproxy`**, or a stale **`easy-waf-admin.sock`** is left behind.
 
-**Fix:** run a current **`scripts/fix-haproxy-easy-waf-dropin.sh`** from the repo. It writes **`easy-waf.conf`** with **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (systemd creates and owns `/run/haproxy`) plus **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** to clear a stale socket — the **`+`** runs that step **as root**, because the stock **`haproxy.service`** uses **`User=haproxy`** and an unprivileged `ExecStartPre` cannot write under `/run`. It also removes the legacy **`50-easy-waf.conf`** and restarts HAProxy for you.
+**Fix:** run a current **`scripts/fix-haproxy-easy-waf-dropin.sh`** from the repo. It writes **`easy-waf.conf`** with **`RuntimeDirectory=haproxy`** / **`RuntimeDirectoryMode=0755`** (systemd creates and owns `/run/haproxy`) plus **`ExecStartPre=+/bin/rm -f /run/haproxy/easy-waf-admin.sock`** to clear a stale socket — the **`+`** runs that step **as root**, because the drop-in runs HAProxy as **`User=haproxy`** (the stock unit has no `User=` and would run the master as root) and an unprivileged `ExecStartPre` cannot write under `/run`. It also removes the legacy **`50-easy-waf.conf`** and restarts HAProxy for you.
 
 Manual one-off:
 
@@ -269,3 +269,14 @@ After `git pull` + `make build`: reinstall API binary and `sudo systemctl restar
    - Output by default: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz`
 
 Details, layout, and what is **not** included: [DIAGNOSTICS.md](DIAGNOSTICS.md).
+
+## HAProxy: `haproxy cannot validate … as the haproxy user` from the drop-in script
+
+`scripts/fix-haproxy-easy-waf-dropin.sh` runs HAProxy entirely as the **`haproxy`** user (only `CAP_NET_BIND_SERVICE`), so the process that parses the easy-waf-written config is never root. Before switching, it validates the config as that user. If a file the config references is not readable by it — usually a manually installed PEM (`bundle_path` / `pem_crt_path`) or a backend CA outside `/etc/ssl/certs` — the script prints HAProxy's error, **keeps the previous root layout** so the edge stays up, and tells you to fix the permissions:
+
+```bash
+sudo chgrp easy-waf /path/to/file.pem && sudo chmod 0640 /path/to/file.pem
+sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
+```
+
+`haproxy` is a member of group `easy-waf`, so group-readable files under the state directory work as they are. `EASY_WAF_HAPROXY_MODE=root` forces the old layout. The generated config also carries `user haproxy` / `group haproxy`, so even under the root layout the workers serving traffic drop to `haproxy`.

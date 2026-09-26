@@ -331,9 +331,12 @@ const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand *
 global
 	log stdout format raw local0
 	maxconn 50000
+	# The stock haproxy.service starts as root; drop it after binding.
+	user haproxy
+	group haproxy
 	stats socket {{.Settings.HAProxyStatsSocketPath}} mode 660 level admin
 	stats timeout 30s
-	# pidfile omitted: systemd supplies -p /run/haproxy.pid (see haproxy.service.d drop-in).
+	# pidfile omitted: systemd supplies -p /run/haproxy/haproxy.pid (see haproxy.service.d drop-in).
 
 defaults
 	log	global
