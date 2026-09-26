@@ -679,7 +679,7 @@ func (s *Store) DeleteIPWLLocal(ctx context.Context, id string) error {
 // ListIPBLLocal returns enabled and disabled entries.
 func (s *Store) ListIPBLLocal(ctx context.Context) ([]config.IPBLLocalEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, cidr, note, enabled, created_at, updated_at FROM ipbl_local ORDER BY cidr`)
+		SELECT id, cidr, COALESCE(note, ''), enabled, created_at, updated_at FROM ipbl_local ORDER BY cidr`)
 	if err != nil {
 		return nil, err
 	}
