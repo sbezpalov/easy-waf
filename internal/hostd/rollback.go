@@ -186,6 +186,9 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	}
 	defer cleanup()
 	staged = stagedCopy
+	if err := validateNftFile(staged); err != nil {
+		return failResp("nft-apply-confirm: "+err.Error(), 1)
+	}
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	bak := rollbackBackupPath("nft", token)
 	if err := saveRollbackBackup(nftRulesPath, bak, 0o644); err != nil {

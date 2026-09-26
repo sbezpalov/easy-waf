@@ -66,6 +66,11 @@ cmd_systemctl() {
     start|stop|restart|reload|enable|disable|try-restart) ;;
     *) log "action not allowed: $action"; exit 1 ;;
   esac
+  # Same rule as systemdallow.AllowedUnitAction: the firewall is never switched off from here.
+  if [[ "$unit" == "nftables.service" && ( "$action" == "stop" || "$action" == "disable" ) ]]; then
+    log "action not allowed for nftables.service: $action"
+    exit 1
+  fi
   systemctl "$action" "$unit"
 }
 

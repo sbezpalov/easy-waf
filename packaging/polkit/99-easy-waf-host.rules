@@ -16,6 +16,11 @@ polkit.addRule(function(action, subject) {
             "postgresql.service"
         ];
         if (allowed.indexOf(unit) >= 0) {
+            // Never let the easy-waf account switch the firewall off
+            // (systemdallow.AllowedUnitAction applies the same rule in hostd).
+            if (unit == "nftables.service" && action.lookup("verb") == "stop") {
+                return polkit.Result.NO;
+            }
             return polkit.Result.YES;
         }
     }

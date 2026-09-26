@@ -18,13 +18,24 @@ import (
 // (overridden in tests).
 var groupFilePath = "/etc/group"
 
-// privilegedGroups are root-equivalent on the supported platform: a member can
-// run sudo, so writing into their authorized_keys is equivalent to handing out root.
+// privilegedGroups give root, or this appliance's secrets, to their members:
+// sudo/admin/wheel run sudo; docker, lxd, incus-admin and libvirt start a
+// container or VM with the host filesystem mounted; disk reads raw block
+// devices; easy-waf reads the state directory (TLS private keys included) and
+// haproxy reaches HAProxy's admin socket. Handing out SSH access to any of them
+// is handing out that power.
 var privilegedGroups = map[string]struct{}{
-	"root":  {},
-	"sudo":  {},
-	"admin": {},
-	"wheel": {},
+	"root":        {},
+	"sudo":        {},
+	"admin":       {},
+	"wheel":       {},
+	"docker":      {},
+	"lxd":         {},
+	"incus-admin": {},
+	"libvirt":     {},
+	"disk":        {},
+	"easy-waf":    {},
+	"haproxy":     {},
 }
 
 // allowPrivilegedSSHTargets reports whether the operator explicitly allowed key
@@ -116,14 +127,14 @@ func sshAuthorizedKeys(username, staged string) Response {
 	}
 
 	if !allowPrivilegedSSHTargets() {
-		grp, gerr := accountPrivilegedGroup(u.Username, u.Gid)
-		if gerr != nil {
-			return failResp("ssh-authorized-keys: "+gerr.Error(), 1)
+		why, perr := privilegedAccountReason(u.Username, u.Gid)
+		if perr != nil {
+			return failResp("ssh-authorized-keys: "+perr.Error(), 1)
 		}
-		if grp != "" {
+		if why != "" {
 			return failResp(
-				"ssh-authorized-keys: refusing account in privileged group "+grp+
-					" (set EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1 in the easy-waf-hostd unit to allow)", 1)
+				"ssh-authorized-keys: refusing privileged account ("+why+
+					"); set EASY_WAF_HOSTD_ALLOW_PRIVILEGED_SSH_TARGETS=1 in the easy-waf-hostd unit to allow", 1)
 		}
 	}
 

@@ -17,3 +17,8 @@ func AllowedUnit(unit string) bool {
 func AllowedAction(action string) bool {
 	return systemdallow.AllowedAction(action)
 }
+
+// AllowedUnitAction reports whether action may be applied to unit.
+func AllowedUnitAction(unit, action string) bool {
+	return systemdallow.AllowedUnitAction(unit, action)
+}

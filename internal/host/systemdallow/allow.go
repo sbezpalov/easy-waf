@@ -45,3 +45,20 @@ func AllowedAction(action string) bool {
 	_, ok := allowedActions[action]
 	return ok
 }
+
+// firewallUnit may be restarted but never stopped or disabled through the
+// appliance: that drops every rule at once, the management-port restriction
+// included, which is the one change a compromised easy-waf-api should not be
+// able to make. An operator who really wants it off does so from a root shell.
+const firewallUnit = "nftables.service"
+
+// AllowedUnitAction reports whether action may be applied to unit.
+func AllowedUnitAction(unit, action string) bool {
+	if !AllowedUnit(unit) || !AllowedAction(action) {
+		return false
+	}
+	if unit == firewallUnit && (action == "stop" || action == "disable") {
+		return false
+	}
+	return true
+}
