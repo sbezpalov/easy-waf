@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/apply"
-
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/mapfile"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -111,7 +110,8 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		b.WriteByte('\n')
 	}
 
-	if err := apply.WriteAtomic(outPath, []byte(b.String()), 0o600); err != nil {
+	// 0640: HAProxy reads this as the haproxy user, a member of the easy-waf group.
+	if err := apply.WriteAtomic(outPath, []byte(b.String()), 0o640); err != nil {
 		return SyncResult{}, err
 	}
 

@@ -172,6 +172,10 @@ func copyFileAtomic(src, dst string, mode os.FileMode) error {
 	if mode.Perm() == 0 {
 		mode = 0o640
 	}
+	// HAProxy reads every managed artifact as the haproxy user through group
+	// easy-waf. Revisions snapshotted before the maps became 0640 recorded
+	// 0600; restoring that would leave HAProxy unable to read them.
+	mode |= 0o040
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}

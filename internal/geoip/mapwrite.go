@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/apply"
-
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 )
@@ -136,7 +135,8 @@ func WriteDisabledEnforceMap(g config.GlobalSettings, stateDir string) error {
 }
 
 func writeMapFile(path, body string) error {
-	return apply.WriteAtomic(path, []byte(body), 0o600)
+	// 0640: HAProxy reads this as the haproxy user, a member of the easy-waf group.
+	return apply.WriteAtomic(path, []byte(body), 0o640)
 }
 
 func normalizeCountryList(in []string) []string {
