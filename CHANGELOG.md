@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+An architecture review of the control plane, the host broker and the data layer,
+and the fixes it led to. Two matter most: **HAProxy ran as root** on a stock
+appliance, and **a certificate whose issuance or renewal failed once was never
+retried**, so it expired silently.
+
+**Upgrade note.** Run `sudo bash scripts/fix-haproxy-easy-waf-dropin.sh` (install.sh and
+upgrade.sh do it for you; a `.deb` upgrade does not). It switches HAProxy to run as the
+`haproxy` user and first checks, as that user, that every file the config references is
+readable; if one is not (typically a manually installed PEM), it keeps the old layout and
+tells you what to `chgrp easy-waf` / `chmod 0640`. Until then the new `user haproxy` /
+`group haproxy` lines still drop the workers to `haproxy`. The API reconciles the edge when
+it starts, so the new config goes live on the first restart without a manual Apply. Existing
+databases adopt `schema_migrations` on first start (every migration file runs once more,
+as it did on every start before).
+
+### Security
+
+- **HAProxy no longer runs as root.** Ubuntu's `haproxy.service` has no `User=` and relies on `user`/`group` in its config, which the generated config lacked, so every worker, the process facing the internet, kept root. The config now drops to `haproxy`, and the drop-in runs the whole unit as `haproxy` with only `CAP_NET_BIND_SERVICE`, so the master, which parses a file the `easy-waf` account writes, is not root either. Map files are written `0640` so the `haproxy` user (group `easy-waf`) can read them.
+- **`easy-waf-hostd` rejects nftables rulesets that use `include`.** It runs `nft -c -f` as root on API-supplied rulesets and returns nft's errors, which quote the lines nft cannot parse, so `include "/etc/shadow"` read any root-only file back. Ruleset backups, which live in an `easy-waf`-owned directory, are checked too.
+- **SSH keys and `userdel` refuse more root-equivalent accounts:** members of `docker`, `lxd`, `incus-admin`, `libvirt`, `disk`, `easy-waf` and `haproxy` besides `root`/`sudo`/`admin`/`wheel`, accounts a sudoers rule names (by user, group or `ALL`), and anything the broker cannot verify.
+- **The firewall cannot be switched off through the appliance:** `stop`/`disable` of `nftables.service` are refused by the broker, the API and the polkit rule.
+- **`easy-waf-acmed` is sandboxed** (it had no systemd hardening while running as the API's account).
+
+### Fixed
+
+- **Failed ACME issuances and renewals are retried** with exponential backoff (10 min doubling to 24 h), rows stuck in `issuing` after a crash are reclaimed, and the dashboard shows them as **failed** with the error and next retry instead of "pending". Rows are claimed with `FOR UPDATE SKIP LOCKED`, PEMs are written atomically under the apply lock, and an operator edit made during issuance is no longer overwritten.
+- **A local blocklist entry without a note broke every apply** (`converting NULL to string`).
+- **An application HAProxy rejects is no longer saved.** It used to stay in the database and fail every later apply, ACME renewals included; the change is now undone and the API answers 422. Applies no longer depend on the client staying connected.
+- **Migrations are versioned** (`schema_migrations`, one transaction each, advisory lock). They used to replay on every start from api and acmed at once, which could collide on a fresh schema, and brought back seed user agents the operator had deleted.
+- **Settings are no longer raced or overwritten.** API handlers changed the engine's settings while applies read them; the API rendered from settings loaded at startup, so an `easy-waf-admin` change was rendered over and written back; a database error while loading settings silently became defaults, and at startup those defaults were saved. `POST /ipbl/sync` now takes the apply lock.
+- **Confirm-or-revert network changes revert reliably.** The timer is armed before the change; a change that fails part-way is undone at once (a rejected netplan file used to stay in `/etc/netplan`); uncommitted changes are reverted when the broker starts, since a reboot cancelled the transient timer; a reused token is refused; an empty-backup nftables revert removes only the managed tables instead of `flush ruleset`.
+- **`easy-waf-api` and `easy-waf-acmed` keep retrying** when PostgreSQL comes up late, instead of hitting systemd's start limit and staying down.
+
+### Added
+
+- **`GET /health/ready`** returns 503 when PostgreSQL is unreachable (`/health` stays a liveness probe).
+- **CI runs the integration tests against PostgreSQL 16**; the store, engine and auth tests used to skip there.
+
 ## [1.4.2] - 2026-09-15
 
 Five defects the documentation pass turned up, and the documentation pass itself.
