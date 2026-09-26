@@ -34,7 +34,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 			return failResp("systemctl: want action unit", 1)
 		}
 		action, unit := argv[1], argv[2]
-		if !systemdallow.AllowedUnit(unit) || !systemdallow.AllowedAction(action) {
+		if !systemdallow.AllowedUnitAction(unit, action) {
 			return failResp("systemctl: not allowed", 1)
 		}
 		stdout, stderr, code, err := runCmd(ctx, r, "systemctl", action, unit)
@@ -53,6 +53,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	case "nft-apply":
 		if _, err := os.Stat(nftRulesPath); err != nil {
 			return failResp("missing rules file", 1)
+		}
+		if err := validateNftFile(nftRulesPath); err != nil {
+			return failResp("nft-apply: "+err.Error(), 1)
 		}
 		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", nftRulesPath)
 		if err != nil || code != 0 {
@@ -73,6 +76,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 			return failResp("nft-install: "+err.Error(), 1)
 		}
 		defer cleanup()
+		if err := validateNftFile(src); err != nil {
+			return failResp("nft-install: "+err.Error(), 1)
+		}
 		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", src)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
@@ -241,8 +247,20 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if len(argv) != 2 || !hostspec.DeletableUsername(argv[1]) {
 			return failResp("userdel: not allowed", 1)
 		}
-		if _, err := lookupManagedUser(argv[1]); err != nil {
+		u, err := lookupManagedUser(argv[1])
+		if err != nil {
 			return failResp("userdel: "+err.Error(), 1)
+		}
+		// Deleting the operator's own sudo account would lock them out of the
+		// host; that is not a change easy-waf-api gets to make.
+		if !allowPrivilegedSSHTargets() {
+			why, perr := privilegedAccountReason(u.Username, u.Gid)
+			if perr != nil {
+				return failResp("userdel: "+perr.Error(), 1)
+			}
+			if why != "" {
+				return failResp("userdel: refusing privileged account ("+why+")", 1)
+			}
 		}
 		stdout, stderr, code, err := runCmd(ctx, r, "userdel", "-r", argv[1])
 		if err != nil || code != 0 {

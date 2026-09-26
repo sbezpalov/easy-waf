@@ -79,3 +79,12 @@ func lookupManagedUser(username string) (*user.User, error) {
 	}
 	return u, nil
 }
+
+// validateNftFile checks a ruleset before nft, running as root, reads it.
+func validateNftFile(path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return hostspec.ValidateNftRuleset(b)
+}

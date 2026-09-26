@@ -44,6 +44,9 @@ func Action(ctx context.Context, action, unit string) error {
 	if !AllowedAction(action) {
 		return osErr("action not allowed")
 	}
+	if !AllowedUnitAction(unit, action) {
+		return osErr("action not allowed for this unit")
+	}
 	_, err := runner.Privileged(ctx, "systemctl", action, unit)
 	return err
 }
