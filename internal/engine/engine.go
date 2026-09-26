@@ -292,6 +292,20 @@ func (e *Engine) finishFailedArtifactTransaction(
 	}
 }
 
+// WithApplyLock runs fn while holding the HAProxy apply lock, so files fn
+// writes (for example renewed PEMs that a render reads) never change in the
+// middle of another process's Apply or Rollback. fn must not call Apply.
+func (e *Engine) WithApplyLock(ctx context.Context, fn func() error) (retErr error) {
+	release, err := e.Store.AcquireAdvisoryLock(ctx, haproxyApplyAdvisoryLockKey)
+	if err != nil {
+		return fmt.Errorf("acquire HAProxy apply lock: %w", err)
+	}
+	defer func() {
+		appendFailure(&retErr, "release HAProxy apply lock", release())
+	}()
+	return fn()
+}
+
 // Apply renders and validates one complete managed artifact set, promotes it,
 // records a full revision manifest, and reloads HAProxy. Any failure restores
 // the previous files; a failed post-promotion reload also reloads that restored

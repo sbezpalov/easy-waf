@@ -118,9 +118,13 @@ type Certificate struct {
 	DNSCredentialsEnvFile string `json:"dns_credentials_env_file,omitempty"` // root-readable env file; never store secrets in DB
 	// ACMEStatus: ready | pending | issuing | failed (manual / self-signed use ready).
 	ACMEStatus string `json:"acme_status,omitempty"`
-	Staging    bool   `json:"staging"`
-	PEMCrtPath string `json:"pem_crt_path"`
-	PEMKeyPath string `json:"pem_key_path"`
+	// ACMEAttempts counts consecutive failed issuances; ACMENextAttemptAt is when
+	// easy-waf-acmed retries a failed row. Both reset on success or a manual request.
+	ACMEAttempts      int        `json:"acme_attempts,omitempty"`
+	ACMENextAttemptAt *time.Time `json:"acme_next_attempt_at,omitempty"`
+	Staging           bool       `json:"staging"`
+	PEMCrtPath        string     `json:"pem_crt_path"`
+	PEMKeyPath        string     `json:"pem_key_path"`
 	// BundlePath is fullchain + private key in one PEM for HAProxy crt/crt-list (preferred).
 	BundlePath    string     `json:"bundle_path,omitempty"`
 	FullchainPath string     `json:"fullchain_path,omitempty"`
@@ -137,8 +141,11 @@ type CertificateSummaryEntry struct {
 	PrimaryDomain string     `json:"primary_domain"`
 	NotAfter      *time.Time `json:"not_after,omitempty"`
 	DaysRemaining *int       `json:"days_remaining,omitempty"`
-	Status        string     `json:"status"` // valid | expiring | expired | pending
+	Status        string     `json:"status"` // valid | expiring | expired | pending | failed
 	Mode          string     `json:"mode"`   // http-01 | dns-01 | manual
+	// LastError and NextAttemptAt are set while Status is failed.
+	LastError     string     `json:"last_error,omitempty"`
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
 }
 
 // CertificateSummaryResponse aggregates counts and per-certificate rows for dashboards.
@@ -147,6 +154,7 @@ type CertificateSummaryResponse struct {
 	Valid        int                       `json:"valid"`
 	ExpiringSoon int                       `json:"expiring_soon"`
 	Expired      int                       `json:"expired"`
+	Failed       int                       `json:"failed"`
 	Certificates []CertificateSummaryEntry `json:"certificates"`
 }
 

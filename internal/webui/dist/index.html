@@ -1697,11 +1697,19 @@
     return ta.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   }
 
-  function certStatusPillHTML(status) {
+  function certStatusPillHTML(status, title) {
     const cls = status === 'valid' ? 'status-valid'
       : status === 'expiring' ? 'status-expiring'
-        : status === 'expired' ? 'status-expired' : 'status-pending';
-    return '<span class="status-pill ' + cls + '">' + esc(status) + '</span>';
+        : (status === 'expired' || status === 'failed') ? 'status-expired' : 'status-pending';
+    const t = title ? ' title="' + esc(title) + '"' : '';
+    return '<span class="status-pill ' + cls + '"' + t + '>' + esc(status) + '</span>';
+  }
+
+  function certFailedTitle(c) {
+    if (c.status !== 'failed') return '';
+    let t = c.last_error || 'ACME issuance failed';
+    if (c.next_attempt_at) t += ' — automatic retry at ' + formatCertNotAfter(c.next_attempt_at) + ' UTC';
+    return t;
   }
 
   function formatCertNotAfter(iso) {
@@ -1749,6 +1757,9 @@
       if (c.status === 'pending') {
         actions.push('<button type="button" data-cert-issue="' + esc(id) + '">Request issue</button>');
       }
+      if (c.status === 'failed') {
+        actions.push('<button type="button" data-cert-issue="' + esc(id) + '">Retry now</button>');
+      }
       if (c.status === 'expiring' || c.status === 'expired') {
         actions.push('<button type="button" data-cert-renew="' + esc(id) + '">Renew now</button>');
       }
@@ -1757,7 +1768,7 @@
       tr.innerHTML =
         '<td><code>' + esc(c.primary_domain || '') + '</code></td>' +
         '<td><code>' + esc(c.mode || '') + '</code></td>' +
-        '<td>' + certStatusPillHTML(c.status || '') + '</td>' +
+        '<td>' + certStatusPillHTML(c.status || '', certFailedTitle(c)) + '</td>' +
         '<td><code>' + formatCertNotAfter(c.not_after) + '</code></td>' +
         '<td>' + (c.days_remaining == null ? '—' : esc(String(c.days_remaining))) + '</td>' +
         '<td class="row" style="gap:0.35rem;flex-wrap:wrap">' + actions.join(' ') + '</td>';
@@ -2082,10 +2093,12 @@
     if (certSum && typeof certSum.valid === 'number') {
       document.getElementById('dash-certs-stat').textContent =
         `${certSum.valid} / ${certSum.expiring_soon} / ${certSum.expired}`;
-      const pend = certSum.total - certSum.valid - certSum.expiring_soon - certSum.expired;
+      const failed = certSum.failed || 0;
+      const pend = certSum.total - certSum.valid - certSum.expiring_soon - certSum.expired - failed;
       const sub = document.getElementById('dash-certs-sub');
       if (sub) {
-        sub.textContent = `total ${certSum.total}` + (pend > 0 ? ` · pending ${pend}` : '');
+        sub.textContent = `total ${certSum.total}` + (pend > 0 ? ` · pending ${pend}` : '') +
+          (failed > 0 ? ` · failed ${failed}` : '');
       }
     } else {
       document.getElementById('dash-certs-stat').textContent = '—';

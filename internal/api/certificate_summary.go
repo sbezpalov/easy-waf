@@ -40,6 +40,8 @@ func BuildCertificateSummaryResponse(certs []config.Certificate, now time.Time) 
 			out.ExpiringSoon++
 		case "expired":
 			out.Expired++
+		case "failed":
+			out.Failed++
 		}
 	}
 	return out
@@ -68,7 +70,14 @@ func certificateSummaryEntry(c *config.Certificate, now time.Time) config.Certif
 		return row
 	}
 	if acme == "failed" {
-		row.Status = "pending"
+		// A failed issuance or renewal: say so, even while an older certificate
+		// is still valid, so it cannot expire unnoticed.
+		row.Status = "failed"
+		row.LastError = c.LastError
+		if c.ACMENextAttemptAt != nil {
+			t := *c.ACMENextAttemptAt
+			row.NextAttemptAt = &t
+		}
 		return row
 	}
 	if c.NotAfter == nil {

@@ -21,14 +21,37 @@ func Validate(haproxyBinary, cfgPath string) error {
 	return nil
 }
 
-// WriteAtomic writes data to path via a temp file in the same directory, then renames.
-func WriteAtomic(path string, data []byte, perm os.FileMode) error {
+// WriteAtomic writes data to path via a uniquely named temp file in the same
+// directory, fsyncs it, then renames it over path. Readers see either the old
+// or the new content, and two concurrent writers never share a temp file.
+func WriteAtomic(path string, data []byte, perm os.FileMode) (retErr error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if retErr != nil {
+			_ = os.Remove(tmp)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

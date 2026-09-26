@@ -75,6 +75,9 @@ var migration017SQL string
 //go:embed migrations/018_backend_tls_verify.sql
 var migration018SQL string
 
+//go:embed migrations/019_acme_retry.sql
+var migration019SQL string
+
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
 type Store struct {
 	db *sql.DB
@@ -117,7 +120,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		initialMigrationSQL, migration002SQL, migration003SQL, migration004SQL, migration005SQL,
 		migration006SQL, migration007SQL, migration008SQL, migration009SQL, migration010SQL,
 		migration011SQL, migration012SQL, migration013SQL, migration014SQL, migration015SQL,
-		migration016SQL, migration017SQL, migration018SQL,
+		migration016SQL, migration017SQL, migration018SQL, migration019SQL,
 	} {
 		for _, stmt := range splitSQLStatements(raw) {
 			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -468,10 +471,7 @@ func (s *Store) GetConfigRevision(ctx context.Context, id int64) (ConfigRevision
 
 // ListCertificates returns all certificate rows.
 func (s *Store) ListCertificates(ctx context.Context) ([]config.Certificate, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, primary_domain, san_json, mode, staging, acme_status, dns_provider, dns_credentials_env_file,
-		       pem_crt_path, pem_key_path, fullchain_path, not_before, not_after, last_error, created_at, updated_at
-		FROM certificates ORDER BY primary_domain`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+certificateColumns+` FROM certificates ORDER BY primary_domain`)
 	if err != nil {
 		return nil, err
 	}
@@ -479,17 +479,27 @@ func (s *Store) ListCertificates(ctx context.Context) ([]config.Certificate, err
 	return scanCertificates(rows)
 }
 
+// certificateColumns is the column list scanCertificates expects, in order.
+const certificateColumns = `id, primary_domain, san_json, mode, staging, acme_status, dns_provider, dns_credentials_env_file,
+	pem_crt_path, pem_key_path, fullchain_path, not_before, not_after, last_error, created_at, updated_at,
+	acme_attempts, acme_next_attempt_at`
+
 func scanCertificates(rows *sql.Rows) ([]config.Certificate, error) {
 	var out []config.Certificate
 	for rows.Next() {
 		var c config.Certificate
 		var san []byte
 		var pc, pk, fc, acmeSt, dnsP, dnsEnv, le sql.NullString
-		var nb, na sql.NullTime
+		var nb, na, next sql.NullTime
 		if err := rows.Scan(&c.ID, &c.PrimaryDomain, &san, &c.Mode, &c.Staging, &acmeSt,
 			&dnsP, &dnsEnv,
-			&pc, &pk, &fc, &nb, &na, &le, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			&pc, &pk, &fc, &nb, &na, &le, &c.CreatedAt, &c.UpdatedAt,
+			&c.ACMEAttempts, &next); err != nil {
 			return nil, err
+		}
+		if next.Valid {
+			t := next.Time
+			c.ACMENextAttemptAt = &t
 		}
 		if len(san) > 0 {
 			if err := json.Unmarshal(san, &c.SAN); err != nil {
@@ -604,47 +614,13 @@ func (s *Store) UpsertCertificate(ctx context.Context, c *config.Certificate) er
 			not_before = EXCLUDED.not_before,
 			not_after = EXCLUDED.not_after,
 			last_error = EXCLUDED.last_error,
-			updated_at = EXCLUDED.updated_at
+			updated_at = EXCLUDED.updated_at,
+			acme_attempts = CASE WHEN EXCLUDED.acme_status = 'pending' THEN 0 ELSE certificates.acme_attempts END,
+			acme_next_attempt_at = CASE WHEN EXCLUDED.acme_status = 'pending' THEN NULL ELSE certificates.acme_next_attempt_at END
 	`, c.ID, c.PrimaryDomain, sanJSON, c.Mode, c.Staging, c.ACMEStatus,
 		nullStrPtr(c.DNSProvider), nullStrPtr(c.DNSCredentialsEnvFile),
 		nullStrPtr(c.PEMCrtPath), nullStrPtr(c.PEMKeyPath), nullStrPtr(c.FullchainPath),
 		nb, na, nullStrPtr(c.LastError), c.CreatedAt, c.UpdatedAt)
-	return err
-}
-
-// ListCertificatesACMEPending returns rows awaiting issuance.
-func (s *Store) ListCertificatesACMEPending(ctx context.Context, limit int) ([]config.Certificate, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, primary_domain, san_json, mode, staging, acme_status, dns_provider, dns_credentials_env_file,
-		       pem_crt_path, pem_key_path, fullchain_path, not_before, not_after, last_error, created_at, updated_at
-		FROM certificates WHERE acme_status = 'pending' ORDER BY updated_at ASC LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanCertificates(rows)
-}
-
-// ListCertificatesACMERenew returns certs that should be renewed (not_after within window).
-func (s *Store) ListCertificatesACMERenew(ctx context.Context, renewBefore time.Time, limit int) ([]config.Certificate, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, primary_domain, san_json, mode, staging, acme_status, dns_provider, dns_credentials_env_file,
-		       pem_crt_path, pem_key_path, fullchain_path, not_before, not_after, last_error, created_at, updated_at
-		FROM certificates
-		WHERE acme_status = 'ready' AND mode IN ('http-01', 'dns-01') AND not_after IS NOT NULL AND not_after < $1
-		ORDER BY not_after ASC LIMIT $2`, renewBefore, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanCertificates(rows)
-}
-
-// UpdateCertificateACMEState updates status and optional error after worker run.
-func (s *Store) UpdateCertificateACMEState(ctx context.Context, id, status, lastErr string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE certificates SET acme_status = $2, last_error = $3, updated_at = $4 WHERE id = $1`,
-		id, status, nullStrPtr(lastErr), time.Now().UTC())
 	return err
 }
 
