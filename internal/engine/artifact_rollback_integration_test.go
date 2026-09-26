@@ -44,12 +44,11 @@ func TestRollbackRestoresArtifactManifestSet(t *testing.T) {
 	defer db.Close()
 
 	stateDir := t.TempDir()
-	e := &engine.Engine{
-		StateDir: stateDir,
-		Store:    st,
-		Settings: config.DefaultSettings(stateDir),
-	}
-	e.Settings.IPBLExternalEnabled = false
+	cfg := config.DefaultSettings(stateDir)
+	cfg.IPBLExternalEnabled = false
+	e := engine.New(stateDir, st, cfg)
+	// Apply renders from the stored settings, so store these for the test.
+	useStoredSettingsForTest(t, st, e)
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	appID := "artifact_rollback_app_" + suffix
@@ -132,7 +131,7 @@ func TestRollbackRestoresArtifactManifestSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ipblV1, err := os.ReadFile(e.Settings.IPBlacklistMapPath)
+	ipblV1, err := os.ReadFile(e.Settings().IPBlacklistMapPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +147,7 @@ func TestRollbackRestoresArtifactManifestSet(t *testing.T) {
 	if err := e.Apply(ctx, labelV2); err != nil {
 		t.Fatalf("Apply v2: %v", err)
 	}
-	ipblV2, err := os.ReadFile(e.Settings.IPBlacklistMapPath)
+	ipblV2, err := os.ReadFile(e.Settings().IPBlacklistMapPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +174,7 @@ func TestRollbackRestoresArtifactManifestSet(t *testing.T) {
 	if string(crtListAfter) != string(crtListV1) {
 		t.Fatal("crt-list was not restored with artifact revision")
 	}
-	ipblAfter, err := os.ReadFile(e.Settings.IPBlacklistMapPath)
+	ipblAfter, err := os.ReadFile(e.Settings().IPBlacklistMapPath)
 	if err != nil {
 		t.Fatal(err)
 	}

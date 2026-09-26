@@ -24,7 +24,7 @@ func (s *Server) postDiagnosticsBundle(w http.ResponseWriter, r *http.Request) {
 		StateDir: s.Eng.StateDir,
 		EnvPath:  "/etc/easy-waf/easy-waf.env",
 		Store:    s.Eng.Store,
-		Settings: s.Eng.Settings,
+		Settings: s.Eng.Settings(),
 		Version:  os.Getenv("EASY_WAF_VERSION"),
 	})
 	if err != nil {

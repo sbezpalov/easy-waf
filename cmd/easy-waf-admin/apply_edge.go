@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/envflag"
 )
@@ -36,7 +37,7 @@ func runApplyEdge() error {
 	}
 	defer st.Close()
 
-	eng := &engine.Engine{StateDir: *stateDir, Store: st}
+	eng := engine.New(*stateDir, st, config.DefaultSettings(*stateDir))
 	if err := eng.LoadSettings(ctx); err != nil {
 		return err
 	}

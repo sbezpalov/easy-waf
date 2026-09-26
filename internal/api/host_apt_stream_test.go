@@ -17,7 +17,7 @@ import (
 )
 
 func TestHostAptUpgradeStream_requiresXHR(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/upgrade/stream", strings.NewReader("{}"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -29,7 +29,7 @@ func TestHostAptUpgradeStream_requiresXHR(t *testing.T) {
 }
 
 func TestHostAptUpgradeStream_setsNDJSONContentType(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/upgrade/stream", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -91,7 +91,7 @@ func TestHostAptUpgradeStream_flushesIncrementally(t *testing.T) {
 		return nil
 	}
 
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/upgrade/stream", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -124,7 +124,7 @@ func TestHostAptUpgradeStream_flushesIncrementally(t *testing.T) {
 }
 
 func TestHostAutoremoveStream_requiresXHR(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -136,7 +136,7 @@ func TestHostAutoremoveStream_requiresXHR(t *testing.T) {
 }
 
 func TestHostAutoremoveStream_setsNDJSONContentType(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -168,7 +168,7 @@ func TestHostAutoremoveStream_flushesIncrementally(t *testing.T) {
 		return nil
 	}
 
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")

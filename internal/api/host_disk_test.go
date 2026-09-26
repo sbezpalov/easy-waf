@@ -17,7 +17,7 @@ import (
 )
 
 func TestHostAptClean_requiresXHR(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/clean", strings.NewReader("{}"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -47,7 +47,7 @@ func TestHostAptClean_freedBytes(t *testing.T) {
 	})
 	defer apt.SetPrivilegedFnForTest(restore)
 
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/clean", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -79,7 +79,7 @@ func TestHostDisk_jsonShape(t *testing.T) {
 	})
 	defer apt.SetPrivilegedFnForTest(restore)
 
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/disk", nil)
 	req.RemoteAddr = "127.0.0.1:12345"

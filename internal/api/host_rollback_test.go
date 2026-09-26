@@ -16,7 +16,7 @@ import (
 )
 
 func TestHostNetplanApply_invalidYAML(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	body, _ := json.Marshal(map[string]any{"yaml": "", "rollback_seconds": 90})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/network/netplan/apply", bytes.NewReader(body))
@@ -30,7 +30,7 @@ func TestHostNetplanApply_invalidYAML(t *testing.T) {
 }
 
 func TestHostFirewallApplyRB_invalidRuleset(t *testing.T) {
-	eng := &engine.Engine{Settings: config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}}}
+	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
 	body, _ := json.Marshal(map[string]any{"ruleset": "not valid nft {", "rollback_seconds": 29})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/firewall/apply-rollback", bytes.NewReader(body))

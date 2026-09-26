@@ -6,6 +6,8 @@ package pemutil
 import (
 	"fmt"
 	"os"
+
+	"github.com/easy-waf/easy-waf/internal/apply"
 )
 
 // WriteBundle writes fullchain + private key into one PEM for HAProxy.
@@ -18,9 +20,5 @@ func WriteBundle(dest, fullchainPath, keyPath string, mode os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("read key: %w", err)
 	}
-	tmp := dest + ".tmp"
-	if err := os.WriteFile(tmp, append(chain, key...), mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dest)
+	return apply.WriteAtomic(dest, append(chain, key...), mode)
 }

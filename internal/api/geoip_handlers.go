@@ -10,9 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
-
-	"github.com/easy-waf/easy-waf/internal/geoip"
 )
 
 type geoipProviderRow struct {
@@ -22,7 +19,7 @@ type geoipProviderRow struct {
 }
 
 func (s *Server) geoipListProviders(w http.ResponseWriter, _ *http.Request) {
-	path := strings.TrimSpace(s.Eng.Settings.GeoIPMMDBPath)
+	path := strings.TrimSpace(s.Eng.Settings().GeoIPMMDBPath)
 	ok := path != ""
 	if ok {
 		st, err := os.Stat(path)
@@ -37,7 +34,7 @@ func (s *Server) geoipListProviders(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
-	if strings.ToLower(strings.TrimSpace(s.Eng.Settings.GeoIPProvider)) != "maxmind" {
+	if strings.ToLower(strings.TrimSpace(s.Eng.Settings().GeoIPProvider)) != "maxmind" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "geoip_provider is not maxmind"})
 		return
 	}
@@ -50,19 +47,16 @@ func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimSpace(body.MmdbPath)
 	if path == "" {
-		path = strings.TrimSpace(s.Eng.Settings.GeoIPMMDBPath)
+		path = strings.TrimSpace(s.Eng.Settings().GeoIPMMDBPath)
 	}
 	if path == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "geoip_mmdb_path is empty"})
 		return
 	}
-	if s.Eng.GeoIP == nil {
-		s.Eng.GeoIP = geoip.NewRuntime(time.Duration(s.Eng.Settings.GeoIPCacheTTL))
-	}
-	if err := s.Eng.GeoIP.ReloadMaxMindDB(path); err != nil {
+	if err := s.Eng.GeoIP().ReloadMaxMindDB(path); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	s.Eng.GeoIP.Cache.Clear()
+	s.Eng.GeoIP().Cache.Clear()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

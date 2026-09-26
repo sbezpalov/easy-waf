@@ -26,7 +26,6 @@ import (
 	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
-	"github.com/easy-waf/easy-waf/internal/ipwl"
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/profiles"
@@ -158,7 +157,7 @@ func (s *Server) metricsHandler() http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !s.Eng.Settings.PrometheusEnabled || s.Prom == nil {
+		if !s.Eng.Settings().PrometheusEnabled || s.Prom == nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -387,7 +386,7 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 // crowdsecLAPIClient uses /etc/easy-waf/easy-waf.env (systemd EnvironmentFile) when set,
 // so a stale DB key after install/bootstrap does not cause 403 until settings are re-saved.
 func (s *Server) crowdsecLAPIClient() crowdsec.Client {
-	url := strings.TrimSpace(s.Eng.Settings.CrowdSecLAPIURL)
+	url := strings.TrimSpace(s.Eng.Settings().CrowdSecLAPIURL)
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
 		url = v
 	}
@@ -397,7 +396,7 @@ func (s *Server) crowdsecLAPIClient() crowdsec.Client {
 	if _, err := crowdsec.ValidateLAPIURL(url, nil); err != nil {
 		return crowdsec.Client{BaseURL: "", APIKey: ""}
 	}
-	key := strings.TrimSpace(s.Eng.Settings.CrowdSecLAPIKey)
+	key := strings.TrimSpace(s.Eng.Settings().CrowdSecLAPIKey)
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
 		key = v
 	}
@@ -436,7 +435,7 @@ func (s *Server) writeSettingsResponse(w http.ResponseWriter, code int, gs confi
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
-	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings)
+	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings())
 }
 
 func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
@@ -480,41 +479,41 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	gs, err := config.ApplySettingsJSONPatch(s.Eng.Settings, body)
+	// Merge over the stored settings, not this process's copy, so a change
+	// made meanwhile (admin CLI, another API instance) is not overwritten.
+	var badRequest bool
+	gs, err := s.Eng.UpdateSettings(r.Context(), func(cur config.GlobalSettings) (config.GlobalSettings, error) {
+		gs, err := config.ApplySettingsJSONPatch(cur, body)
+		if err == nil {
+			if gs.CrowdSecLAPIKey == "" {
+				gs.CrowdSecLAPIKey = cur.CrowdSecLAPIKey
+			}
+			if gs.ACMEEmail == "" {
+				gs.ACMEEmail = cur.ACMEEmail
+			}
+			if gs.ManagementAllowedCIDRs == nil {
+				gs.ManagementAllowedCIDRs = cur.ManagementAllowedCIDRs
+			}
+			err = ValidateManagementCIDRs(gs.ManagementAllowedCIDRs)
+		}
+		if err == nil {
+			err = validateGeoIPSettings(gs)
+		}
+		if err == nil {
+			err = validateRuntimeSettings(gs)
+		}
+		badRequest = err != nil
+		return gs, err
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		code := http.StatusInternalServerError
+		if badRequest {
+			code = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), code)
 		return
 	}
-	if gs.CrowdSecLAPIKey == "" {
-		gs.CrowdSecLAPIKey = s.Eng.Settings.CrowdSecLAPIKey
-	}
-	if gs.ACMEEmail == "" {
-		gs.ACMEEmail = s.Eng.Settings.ACMEEmail
-	}
-	if gs.ManagementAllowedCIDRs == nil {
-		gs.ManagementAllowedCIDRs = s.Eng.Settings.ManagementAllowedCIDRs
-	}
-	if err := ValidateManagementCIDRs(gs.ManagementAllowedCIDRs); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := validateGeoIPSettings(gs); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := validateRuntimeSettings(gs); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	s.Eng.Settings = gs
-	if s.Eng.GeoIP != nil {
-		s.Eng.GeoIP.InvalidateGeoProvider()
-	}
-	if err := s.Eng.SaveSettings(r.Context()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.writeSettingsResponse(w, http.StatusOK, s.Eng.Settings)
+	s.writeSettingsResponse(w, http.StatusOK, gs)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -587,7 +586,7 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	allowed := ipbl.ParseFeedAllowedPrefixes(s.Eng.Settings)
+	allowed := ipbl.ParseFeedAllowedPrefixes(s.Eng.Settings())
 	if _, err := ipbl.ValidateFeedURLContext(r.Context(), e.URL, allowed); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -600,17 +599,9 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
-	res, err := ipbl.SyncAndWrite(r.Context(), s.Eng.Store, s.Eng.Settings, s.Eng.StateDir)
+	res, err := s.Eng.SyncIPBL(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := ipwl.WriteLocalMap(r.Context(), s.Eng.Store, ipwl.MapPath(s.Eng.Settings, s.Eng.StateDir)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.Eng.WriteGeoIPEnforceMap(r.Context(), res.AllCIDRs); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -626,18 +617,15 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid ip", http.StatusBadRequest)
 		return
 	}
-	if s.Eng.GeoIP == nil {
-		s.Eng.GeoIP = geoip.NewRuntime(time.Duration(s.Eng.Settings.GeoIPCacheTTL))
+	if r.URL.Query().Get("nocache") == "1" && s.Eng.GeoIP().Cache != nil {
+		s.Eng.GeoIP().Cache.Delete(ip)
 	}
-	if r.URL.Query().Get("nocache") == "1" && s.Eng.GeoIP.Cache != nil {
-		s.Eng.GeoIP.Cache.Delete(ip)
-	}
-	g := s.Eng.Settings
+	g := s.Eng.Settings()
 	if probe := strings.TrimSpace(r.URL.Query().Get("probe_mmdb_path")); probe != "" {
 		g.GeoIPMMDBPath = probe
 		g.GeoIPProvider = "maxmind"
 	}
-	cc, cached, err := s.Eng.GeoIP.Lookup(r.Context(), g, ip)
+	cc, cached, err := s.Eng.GeoIP().Lookup(r.Context(), g, ip)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -646,11 +634,11 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) geoipStats(w http.ResponseWriter, _ *http.Request) {
-	if s.Eng.GeoIP == nil || s.Eng.GeoIP.Cache == nil {
+	if s.Eng.GeoIP() == nil || s.Eng.GeoIP().Cache == nil {
 		writeJSON(w, http.StatusOK, geoip.Stats{})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Eng.GeoIP.Cache.Stats())
+	writeJSON(w, http.StatusOK, s.Eng.GeoIP().Cache.Stats())
 }
 
 func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {

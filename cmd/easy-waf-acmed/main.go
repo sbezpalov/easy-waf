@@ -49,7 +49,7 @@ func main() {
 	}
 	defer st.Close()
 
-	eng := &engine.Engine{StateDir: stateDir, Store: st}
+	eng := engine.New(stateDir, st, config.DefaultSettings(stateDir))
 	tick := 30 * time.Second
 	if v := os.Getenv("EASY_WAF_ACME_TICK"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
@@ -66,7 +66,7 @@ func main() {
 			time.Sleep(tick)
 			continue
 		}
-		if eng.Settings.ACMEEmail == "" {
+		if eng.Settings().ACMEEmail == "" {
 			log.Printf("acmed: ACMEEmail not set in global settings — idle")
 			time.Sleep(tick)
 			continue
@@ -91,8 +91,8 @@ func main() {
 }
 
 func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) {
-	email := eng.Settings.ACMEEmail
-	webroot := eng.Settings.ACMEWebrootPath
+	email := eng.Settings().ACMEEmail
+	webroot := eng.Settings().ACMEWebrootPath
 	if webroot == "" {
 		webroot = filepath.Join(eng.StateDir, "acme", "webroot")
 	}
@@ -106,7 +106,7 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 		mode = "http-01"
 	}
 
-	staging := c.Staging || eng.Settings.ACMEStaging
+	staging := c.Staging || eng.Settings().ACMEStaging
 
 	var res *certificate.Resource
 	var err error
@@ -122,7 +122,7 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 			err = fmt.Errorf("dns-01: dns_credentials_env_file must point to a root-readable env file on the appliance")
 			break
 		}
-		res, err = acme.IssueDNS01(ctx, email, domains, staging, accountKey, provider, envFile, eng.Settings.ACMEDNSResolvers)
+		res, err = acme.IssueDNS01(ctx, email, domains, staging, accountKey, provider, envFile, eng.Settings().ACMEDNSResolvers)
 	case "http-01":
 		res, err = acme.IssueHTTP01Webroot(ctx, email, domains, webroot, staging, accountKey)
 	default:

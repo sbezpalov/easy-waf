@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/easy-waf/easy-waf/internal/apply"
+
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/mapfile"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -48,11 +50,7 @@ func WriteLocalMap(ctx context.Context, st *store.Store, outPath string) error {
 		b.WriteByte('\n')
 	}
 
-	tmp := outPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, outPath)
+	return apply.WriteAtomic(outPath, []byte(b.String()), 0o600)
 }
 
 func validateCIDRLine(s string) error {

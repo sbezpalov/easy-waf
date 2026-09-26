@@ -75,11 +75,9 @@ func TestTrustedRealIP_IgnoresAlternateClientIPHeaders(t *testing.T) {
 }
 
 func TestManagementACL_RejectsSpoofedXFFFromWAN(t *testing.T) {
-	eng := &engine.Engine{
-		Settings: config.GlobalSettings{
-			ManagementAllowedCIDRs: []string{"127.0.0.0/8", "192.168.0.0/16"},
-		},
-	}
+	eng := engine.New("", nil, config.GlobalSettings{
+		ManagementAllowedCIDRs: []string{"127.0.0.0/8", "192.168.0.0/16"},
+	})
 	s := &Server{Eng: eng, JWTSecret: []byte("test-secret")}
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	r.RemoteAddr = "203.0.113.50:12345"
@@ -92,11 +90,9 @@ func TestManagementACL_RejectsSpoofedXFFFromWAN(t *testing.T) {
 }
 
 func TestManagementACL_AllowsForwardedLANViaLoopbackProxy(t *testing.T) {
-	eng := &engine.Engine{
-		Settings: config.GlobalSettings{
-			ManagementAllowedCIDRs: []string{"127.0.0.0/8", "192.168.0.0/16"},
-		},
-	}
+	eng := engine.New("", nil, config.GlobalSettings{
+		ManagementAllowedCIDRs: []string{"127.0.0.0/8", "192.168.0.0/16"},
+	})
 	s := &Server{Eng: eng, JWTSecret: []byte("test-secret")}
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	r.RemoteAddr = "127.0.0.1:12345"

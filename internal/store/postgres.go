@@ -228,6 +228,12 @@ func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 	return v, err
 }
 
+// DeleteSetting removes a setting; a missing key is not an error.
+func (s *Store) DeleteSetting(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = $1`, key)
+	return err
+}
+
 // SetSetting upserts a setting.
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `
