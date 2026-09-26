@@ -7,6 +7,8 @@ The management API (`easy-waf-api`) can expose a **Prometheus text exposition** 
 - **Disabled by default** (`prometheus_enabled: false` in global settings).
 - When enabled, **`/metrics` is not protected by JWT** (Prometheus scrapes rarely support Bearer tokens). It **is** protected by the same **`management_allowed_cidrs`** ACL as the UI and `/api/v1` (see `docs/SECURITY.md`).
 - **`/health`** remains reachable for probes regardless of CIDR list; **`/metrics`** does not bypass the ACL.
+- **`/health`** only says the API process answers. **`/health/ready`** (same exemptions) also pings PostgreSQL and returns **503** `{"status":"unavailable","database":"unreachable"}` when it cannot — point load balancers and uptime checks at it. The edge keeps serving on its last applied config while the database is down; only changes and renewals stop.
+- `easy-waf-api` and `easy-waf-acmed` restart every 5s without a start limit, so they come back on their own once a late or remote PostgreSQL is reachable.
 
 Enable the toggle in the UI (**Settings → Monitoring**) or `PATCH /api/v1/settings` with `{"prometheus_enabled": true}`.
 

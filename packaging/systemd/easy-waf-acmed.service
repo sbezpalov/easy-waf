@@ -2,6 +2,8 @@
 Description=Easy Home WAF ACME worker (Lego issuance / renewal)
 After=network-online.target postgresql.service
 Wants=network-online.target
+# See easy-waf-api.service: retry until PostgreSQL is reachable.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -11,6 +13,32 @@ EnvironmentFile=-/etc/easy-waf/easy-waf.env
 Environment=EASY_WAF_STATE_DIR=/var/lib/easy-waf
 ExecStart=/usr/sbin/easy-waf-acmed
 Restart=on-failure
+RestartSec=5
+# acmed runs as the same account as the API and parses responses from the
+# internet (ACME CA, DNS provider APIs), so it gets at least the API's
+# sandbox. It writes only certificates and ACME state under the state dir;
+# ProtectSystem=full rather than strict keeps an operator-chosen HTTP-01
+# webroot outside it writable.
+AmbientCapabilities=
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+StateDirectory=easy-waf
 
 [Install]
 WantedBy=multi-user.target

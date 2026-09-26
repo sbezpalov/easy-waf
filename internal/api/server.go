@@ -60,6 +60,9 @@ func (s *Server) Router() chi.Router {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	// /health says the process is up; /health/ready also says it can reach
+	// PostgreSQL, so a probe can tell a live API from a useful one.
+	r.Get("/health/ready", s.handleReady)
 	r.Handle("/metrics", s.metricsHandler())
 
 	r.Route("/api/v1", func(r chi.Router) {
