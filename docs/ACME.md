@@ -54,7 +54,13 @@ Empty list = system resolver (`/etc/resolv.conf`). See [DNS.md](DNS.md).
 
 ## Renewal
 
-- `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). It processes `acme_status = pending` and renews certs whose `not_after` falls inside the renewal window.
+- `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). Each tick it claims due rows with `FOR UPDATE SKIP LOCKED` (so two workers never issue the same certificate) and marks them `issuing`. A row is due when it is:
+  - `pending` (new, or the operator pressed **Request issue** / **Retry now**);
+  - `failed` and its `acme_next_attempt_at` has passed;
+  - `ready`, ACME-managed and its `not_after` falls inside the renewal window;
+  - `issuing` for more than an hour (a worker died mid-issuance).
+- **Failures retry on their own** with exponential backoff: 10m, 20m, 40m, … capped at 24h (`internal/acme/retry.go`). `acme_attempts` counts consecutive failures; success or a manual request resets it. The certificate dashboard shows such rows as **failed** (red), with the error and the next retry time on hover — including a renewal that failed while the old certificate is still valid.
+- On success the worker writes `privkey.pem` and `fullchain.pem` atomically while holding the HAProxy apply lock, then updates only the columns it owns (paths, validity, status). If the operator edited the row during issuance, the result is discarded and the row is issued again on the next tick.
 - **The renewal window is a hardcoded 30 days** (`cmd/easy-waf-acmed/main.go`). The `acme_renewal_interval` setting (default 12h) is **not read by acmed** — changing it has no effect today.
 - **Nothing is issued until `acme_email` is set** in global settings. Without it the worker logs `acmed: ACMEEmail not set in global settings — idle` once per tick and does nothing else. This is the first thing to check when certificates stay `pending`.
 - On success: PEM files under `/var/lib/easy-waf/certs/<id>/`, DB updated, then `engine.Apply` reloads HAProxy — skipped when `EASY_WAF_ACME_SKIP_APPLY` is set to a true value (`1`, `true`, `yes`, `on`). `0`, `false` and `off` mean "do not skip"; an unparseable value is treated as off and logged.

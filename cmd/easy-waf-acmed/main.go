@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +20,15 @@ import (
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/store"
+)
+
+const (
+	// renewWindow: ready ACME certificates are renewed this long before expiry.
+	renewWindow = 30 * 24 * time.Hour
+	// staleIssuing: a row still 'issuing' after this long belongs to a worker
+	// that died mid-issuance; it is claimed again. Lego's own timeouts, DNS
+	// propagation included, finish well inside it.
+	staleIssuing = time.Hour
 )
 
 // ACME worker (architecture C): issues and renews certificates (HTTP-01 and DNS-01) using shared PostgreSQL state.
@@ -62,24 +72,18 @@ func main() {
 			continue
 		}
 
-		pending, err := st.ListCertificatesACMEPending(ctx, 5)
+		now := time.Now().UTC()
+		due, err := st.ClaimCertificatesACME(ctx, store.ACMEClaimWindow{
+			Now:          now,
+			RenewBefore:  now.Add(renewWindow),
+			StaleIssuing: staleIssuing,
+			Limit:        5,
+		})
 		if err != nil {
-			log.Printf("list pending: %v", err)
-			time.Sleep(tick)
-			continue
+			log.Printf("claim certificates: %v", err)
 		}
-		for _, c := range pending {
-			issueOne(ctx, eng, st, &c)
-		}
-
-		renewBefore := time.Now().UTC().Add(30 * 24 * time.Hour)
-		renew, err := st.ListCertificatesACMERenew(ctx, renewBefore, 5)
-		if err != nil {
-			log.Printf("list renew: %v", err)
-		} else {
-			for _, c := range renew {
-				issueOne(ctx, eng, st, &c)
-			}
+		for i := range due {
+			issueOne(ctx, eng, st, &due[i])
 		}
 
 		time.Sleep(tick)
@@ -93,8 +97,6 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 		webroot = filepath.Join(eng.StateDir, "acme", "webroot")
 	}
 	accountKey := filepath.Join(eng.StateDir, "acme", "account.pem")
-
-	_ = st.UpdateCertificateACMEState(ctx, c.ID, "issuing", "")
 
 	domains := []string{c.PrimaryDomain}
 	domains = append(domains, c.SAN...)
@@ -127,29 +129,25 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 		err = fmt.Errorf("unsupported certificate mode %q (use http-01 or dns-01)", c.Mode)
 	}
 
-	if err != nil {
-		_ = st.UpdateCertificateACMEState(ctx, c.ID, "failed", err.Error())
-		_ = st.AppendAudit(ctx, "acme.failed", map[string]string{"id": c.ID, "error": err.Error()})
-		log.Printf("acme issue failed id=%s mode=%s: %v", c.ID, mode, err)
+	if err == nil {
+		err = eng.WithApplyLock(ctx, func() error {
+			return st.CompleteCertificateACME(ctx, c, func() (store.ACMEResult, error) {
+				full, key, nb, na, werr := acme.WriteCertificateResource(eng.StateDir, c.ID, res)
+				return store.ACMEResult{FullchainPath: full, KeyPath: key, NotBefore: nb, NotAfter: na, Mode: mode}, werr
+			})
+		})
+	}
+	if errors.Is(err, store.ErrACMEClaimLost) {
+		log.Printf("acme id=%s: row changed during issuance; result discarded", c.ID)
 		return
 	}
-
-	full, key, nb, na, err := acme.WriteCertificateResource(eng.StateDir, c.ID, res)
 	if err != nil {
-		_ = st.UpdateCertificateACMEState(ctx, c.ID, "failed", err.Error())
-		return
-	}
-
-	c.FullchainPath = full
-	c.PEMKeyPath = key
-	c.ACMEStatus = "ready"
-	c.LastError = ""
-	c.NotBefore = &nb
-	c.NotAfter = &na
-	c.Mode = mode
-
-	if err := st.UpsertCertificate(ctx, c); err != nil {
-		log.Printf("upsert cert: %v", err)
+		next := time.Now().Add(acme.RetryBackoff(c.ACMEAttempts + 1))
+		if ferr := st.FailCertificateACME(ctx, c, err.Error(), next); ferr != nil && !errors.Is(ferr, store.ErrACMEClaimLost) {
+			log.Printf("acme id=%s: record failure: %v", c.ID, ferr)
+		}
+		_ = st.AppendAudit(ctx, "acme.failed", map[string]string{"id": c.ID, "error": err.Error(), "next_attempt_at": next.UTC().Format(time.RFC3339)})
+		log.Printf("acme issue failed id=%s mode=%s attempt=%d next=%s: %v", c.ID, mode, c.ACMEAttempts+1, next.UTC().Format(time.RFC3339), err)
 		return
 	}
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})

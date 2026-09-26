@@ -65,3 +65,27 @@ func TestBuildCertificateSummaryResponse_statuses(t *testing.T) {
 		t.Fatalf("5: %q", byID["5"].Status)
 	}
 }
+
+func TestBuildCertificateSummaryResponse_failedIsNotPending(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	stillValid := now.Add(20 * 24 * time.Hour)
+	next := now.Add(40 * time.Minute)
+	certs := []config.Certificate{
+		// A renewal that failed while the old certificate still works.
+		{ID: "r", PrimaryDomain: "r.example", Mode: "http-01", ACMEStatus: "failed", NotAfter: &stillValid,
+			LastError: "acme: urn:ietf:params:acme:error:connection", ACMENextAttemptAt: &next},
+		// A first issuance that never succeeded.
+		{ID: "n", PrimaryDomain: "n.example", Mode: "dns-01", ACMEStatus: "failed", LastError: "dns timeout"},
+	}
+	s := BuildCertificateSummaryResponse(certs, now)
+	if s.Failed != 2 || s.Valid != 0 || s.ExpiringSoon != 0 {
+		t.Fatalf("counts failed=%d valid=%d expiring=%d", s.Failed, s.Valid, s.ExpiringSoon)
+	}
+	r := s.Certificates[0]
+	if r.Status != "failed" || r.LastError == "" || r.NextAttemptAt == nil || !r.NextAttemptAt.Equal(next) {
+		t.Fatalf("renewal row: %+v", r)
+	}
+	if s.Certificates[1].Status != "failed" || s.Certificates[1].NextAttemptAt != nil {
+		t.Fatalf("issuance row: %+v", s.Certificates[1])
+	}
+}

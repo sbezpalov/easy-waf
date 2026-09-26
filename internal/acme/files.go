@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/apply"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/go-acme/lego/v4/certificate"
 )
@@ -29,15 +30,26 @@ func WriteCertificateResource(stateDir, certID string, res *certificate.Resource
 	}
 	fullchainPath = filepath.Join(dir, "fullchain.pem")
 	keyPath = filepath.Join(dir, "privkey.pem")
-	if err := os.WriteFile(fullchainPath, res.Certificate, 0o600); err != nil {
-		return "", "", time.Time{}, time.Time{}, err
-	}
-	if err := os.WriteFile(keyPath, res.PrivateKey, 0o600); err != nil {
-		return "", "", time.Time{}, time.Time{}, err
-	}
+	// Parse before touching disk so a malformed chain never replaces a good one.
 	nb, na, err := parseFirstCertTimes(res.Certificate)
 	if err != nil {
-		return fullchainPath, keyPath, time.Time{}, time.Time{}, err
+		return "", "", time.Time{}, time.Time{}, err
+	}
+	// Each file is replaced atomically; callers hold the HAProxy apply lock so
+	// no render reads the pair between the two renames.
+	oldKey, oldKeyErr := os.ReadFile(keyPath)
+	if err := apply.WriteAtomic(keyPath, res.PrivateKey, 0o600); err != nil {
+		return "", "", time.Time{}, time.Time{}, err
+	}
+	if err := apply.WriteAtomic(fullchainPath, res.Certificate, 0o600); err != nil {
+		// Never leave a new key next to the old chain: that pair fails haproxy -c
+		// and would block every later apply.
+		if oldKeyErr == nil {
+			_ = apply.WriteAtomic(keyPath, oldKey, 0o600)
+		} else {
+			_ = os.Remove(keyPath)
+		}
+		return "", "", time.Time{}, time.Time{}, err
 	}
 	return fullchainPath, keyPath, nb, na, nil
 }
