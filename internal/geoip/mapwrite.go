@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/easy-waf/easy-waf/internal/apply"
+
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 )
@@ -134,11 +136,7 @@ func WriteDisabledEnforceMap(g config.GlobalSettings, stateDir string) error {
 }
 
 func writeMapFile(path, body string) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return apply.WriteAtomic(path, []byte(body), 0o600)
 }
 
 func normalizeCountryList(in []string) []string {

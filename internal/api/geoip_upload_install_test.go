@@ -50,14 +50,13 @@ func testMMDBBytes(t *testing.T, ip, iso string) []byte {
 func testServer(t *testing.T, provider string) *Server {
 	t.Helper()
 	dir := t.TempDir()
-	s := &Server{Eng: &engine.Engine{
-		StateDir: dir,
-		Settings: config.GlobalSettings{GeoIPProvider: provider},
-	}}
+	s := &Server{Eng: engine.New(dir, nil, config.GlobalSettings{GeoIPProvider: provider})}
 	if provider == "maxmind" {
 		// The runtime resolves its reader from settings, so an appliance already
 		// configured for MaxMind points at the managed file.
-		s.Eng.Settings.GeoIPMMDBPath = filepath.Join(s.geoipDir(), "GeoLite2-Country.mmdb")
+		cfg := s.Eng.Settings()
+		cfg.GeoIPMMDBPath = filepath.Join(s.geoipDir(), "GeoLite2-Country.mmdb")
+		s.Eng.SetSettings(cfg)
 	}
 	return s
 }
@@ -76,7 +75,7 @@ func TestInstallGeoIPDatabase_activatesWhenProviderIsMaxMind(t *testing.T) {
 		t.Fatalf("installed at %q, want %q", resp.Path, want)
 	}
 	// The runtime must now answer from the uploaded database.
-	got, _, err := s.Eng.GeoIP.Lookup(context.Background(), s.Eng.Settings, "8.8.8.8")
+	got, _, err := s.Eng.GeoIP().Lookup(context.Background(), s.Eng.Settings(), "8.8.8.8")
 	if err != nil || got != "US" {
 		t.Fatalf("live lookup after upload: %q, %v", got, err)
 	}
@@ -91,9 +90,6 @@ func TestInstallGeoIPDatabase_doesNotHijackIpinfoProvider(t *testing.T) {
 	}
 	if resp.Reloaded {
 		t.Fatal("runtime was switched to the uploaded database without the operator changing provider")
-	}
-	if s.Eng.GeoIP != nil {
-		t.Fatal("GeoIP runtime was created for an ipinfo appliance")
 	}
 	if resp.ActivateHint == "" {
 		t.Fatal("no hint telling the operator how to activate the upload")
@@ -123,7 +119,7 @@ func TestInstallGeoIPDatabase_keepsLiveDatabaseOnRejection(t *testing.T) {
 	if readErr != nil || !bytes.Equal(current, good) {
 		t.Fatal("rejected upload modified the live database")
 	}
-	if got, _, err := s.Eng.GeoIP.Lookup(context.Background(), s.Eng.Settings, "8.8.8.8"); err != nil || got != "US" {
+	if got, _, err := s.Eng.GeoIP().Lookup(context.Background(), s.Eng.Settings(), "8.8.8.8"); err != nil || got != "US" {
 		t.Fatalf("runtime broken after a rejected upload: %q, %v", got, err)
 	}
 	// No leftovers in the GeoIP directory.
@@ -140,7 +136,9 @@ func TestInstallGeoIPDatabase_keepsLiveDatabaseOnRejection(t *testing.T) {
 // on the next lookup and quietly undo it.
 func TestInstallGeoIPDatabase_noFalseActivationOnPathMismatch(t *testing.T) {
 	s := testServer(t, "maxmind")
-	s.Eng.Settings.GeoIPMMDBPath = "/var/lib/easy-waf/geoip/SomeOther.mmdb"
+	cfg := s.Eng.Settings()
+	cfg.GeoIPMMDBPath = "/var/lib/easy-waf/geoip/SomeOther.mmdb"
+	s.Eng.SetSettings(cfg)
 
 	resp, status, err := s.installGeoIPDatabase(bytes.NewReader(testMMDBBytes(t, "8.8.8.8", "US")))
 	if err != nil || status != http.StatusOK {

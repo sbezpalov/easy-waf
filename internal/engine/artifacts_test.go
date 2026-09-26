@@ -35,16 +35,13 @@ func readArtifactTestFile(t *testing.T, path string) string {
 func newArtifactTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	stateDir := filepath.Join(t.TempDir(), "state")
-	return &Engine{
-		StateDir: stateDir,
-		Settings: config.DefaultSettings(stateDir),
-	}
+	return New(stateDir, nil, config.DefaultSettings(stateDir))
 }
 
 func TestArtifactTransactionRollbackRestoresCompleteSet(t *testing.T) {
 	e := newArtifactTestEngine(t)
 	_, cfgPath, crtListPath := haproxy.Paths(e.StateDir)
-	ipblPath := e.Settings.IPBlacklistMapPath
+	ipblPath := e.Settings().IPBlacklistMapPath
 	oldGeoPath := filepath.Join(e.StateDir, "haproxy", "geoip_app_old.map")
 	newGeoPath := filepath.Join(e.StateDir, "haproxy", "geoip_app_new.map")
 
@@ -53,7 +50,7 @@ func TestArtifactTransactionRollbackRestoresCompleteSet(t *testing.T) {
 	writeArtifactTestFile(t, ipblPath, "192.0.2.1")
 	writeArtifactTestFile(t, oldGeoPath, "198.51.100.0/24")
 
-	tx, err := e.beginArtifactTransaction()
+	tx, err := e.beginArtifactTransaction(e.Settings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +97,7 @@ func TestRevisionArtifactManifestRestoresSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot, err := e.createRevisionSnapshot(cfgSHA, nil)
+	snapshot, err := e.createRevisionSnapshot(e.Settings(), cfgSHA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +107,7 @@ func TestRevisionArtifactManifestRestoresSet(t *testing.T) {
 	writeArtifactTestFile(t, crtListPath, "crt-list-v2")
 	writeArtifactTestFile(t, geoPath, "203.0.113.0/24")
 
-	current, err := e.managedArtifactPaths(nil)
+	current, err := e.managedArtifactPaths(e.Settings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +137,7 @@ func TestArtifactManifestRejectsCorruptBackupBeforeRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := e.createRevisionSnapshot(cfgSHA, nil)
+	snapshot, err := e.createRevisionSnapshot(e.Settings(), cfgSHA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +151,7 @@ func TestArtifactManifestRejectsCorruptBackupBeforeRestore(t *testing.T) {
 	writeArtifactTestFile(t, backupPath, "corrupt")
 	writeArtifactTestFile(t, cfgPath, "live-must-survive")
 
-	current, err := e.managedArtifactPaths(nil)
+	current, err := e.managedArtifactPaths(e.Settings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,18 +168,16 @@ func TestArtifactTransactionIncludesConfiguredExternalMap(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	externalMap := filepath.Join(root, "external", "ip-blacklist.map")
-	e := &Engine{
-		StateDir: stateDir,
-		Settings: config.DefaultSettings(stateDir),
-	}
-	e.Settings.IPBlacklistMapPath = externalMap
+	cfg := config.DefaultSettings(stateDir)
+	cfg.IPBlacklistMapPath = externalMap
+	e := New(stateDir, nil, cfg)
 
 	_, cfgPath, _ := haproxy.Paths(stateDir)
 	writeArtifactTestFile(t, cfgPath, "config-v1")
 	writeArtifactTestFile(t, externalMap, "192.0.2.10")
 	writeArtifactTestFile(t, filepath.Join(stateDir, "certs", "c1", "bundle.pem"), "private-key-material")
 
-	tx, err := e.beginArtifactTransaction()
+	tx, err := e.beginArtifactTransaction(e.Settings())
 	if err != nil {
 		t.Fatal(err)
 	}

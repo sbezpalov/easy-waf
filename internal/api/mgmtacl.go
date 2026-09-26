@@ -78,7 +78,7 @@ func (s *Server) managementACL(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		cidrs := s.Eng.Settings.ManagementAllowedCIDRs
+		cidrs := s.Eng.Settings().ManagementAllowedCIDRs
 		if len(cidrs) == 0 {
 			cidrs = config.DefaultManagementCIDRs()
 		}

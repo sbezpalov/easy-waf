@@ -181,7 +181,13 @@ sequenceDiagram
 ```
 
 `easy-waf-api` and `easy-waf-acmed` share the advisory lock, so only one process
-can promote or roll back HAProxy artifacts at a time. New rollback revisions
+can promote or roll back HAProxy artifacts at a time. Inside the lock, Apply and
+Rollback re-read the global settings from PostgreSQL and render from that one
+snapshot, so a change made by `easy-waf-admin` or another process is never
+rendered over by a stale in-memory copy. `POST /api/v1/ipbl/sync`, which
+rewrites live map files outside a full apply, and acmed's PEM writes take the
+same lock. Settings changes from the API merge over the stored settings, not
+the process's copy. New rollback revisions
 restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 ## Log and metrics flow

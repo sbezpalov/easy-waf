@@ -23,7 +23,6 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
-	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -39,25 +38,37 @@ func rejectUnexpandedSystemdArg(label, value string) {
 
 const defaultCrowdSecLAPIURL = "http://127.0.0.1:8080/"
 
-// mergeEnvIntoSettings applies /etc/easy-waf/easy-waf.env CrowdSec (and defaults) into in-memory settings.
-func mergeEnvIntoSettings(eng *engine.Engine) {
-	if strings.TrimSpace(eng.Settings.CrowdSecLAPIURL) == "" {
-		eng.Settings.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
+// mergeEnvIntoSettings applies /etc/easy-waf/easy-waf.env CrowdSec (and defaults) onto settings.
+func mergeEnvIntoSettings(gs *config.GlobalSettings) {
+	if strings.TrimSpace(gs.CrowdSecLAPIURL) == "" {
+		gs.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
 	}
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
 		if _, err := crowdsec.ValidateLAPIURL(v, nil); err != nil {
 			log.Printf("CROWDSEC_LAPI_URL rejected by destination policy: %v (keeping previous/default local LAPI)", err)
 		} else {
-			eng.Settings.CrowdSecLAPIURL = v
+			gs.CrowdSecLAPIURL = v
 		}
 	}
-	if _, err := crowdsec.ValidateLAPIURL(eng.Settings.CrowdSecLAPIURL, nil); err != nil {
+	if _, err := crowdsec.ValidateLAPIURL(gs.CrowdSecLAPIURL, nil); err != nil {
 		log.Printf("crowdsec_lapi_url rejected by destination policy: %v; falling back to %s", err, defaultCrowdSecLAPIURL)
-		eng.Settings.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
+		gs.CrowdSecLAPIURL = defaultCrowdSecLAPIURL
 	}
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
-		eng.Settings.CrowdSecLAPIKey = v
+		gs.CrowdSecLAPIKey = v
 	}
+}
+
+// syncEnvIntoStoredSettings merges the env file into the stored settings. A
+// failure to read them is returned rather than replaced by defaults: saving
+// defaults over a database that merely hiccupped would wipe the operator's
+// configuration.
+func syncEnvIntoStoredSettings(ctx context.Context, eng *engine.Engine) error {
+	_, err := eng.UpdateSettings(ctx, func(gs config.GlobalSettings) (config.GlobalSettings, error) {
+		mergeEnvIntoSettings(&gs)
+		return gs, nil
+	})
+	return err
 }
 
 // RunSyncSettingsOnly loads settings from PostgreSQL, merges env, saves — used by install.sh before first API start.
@@ -84,13 +95,8 @@ func runSyncSettingsOnly() error {
 		return err
 	}
 	defer st.Close()
-	eng := &engine.Engine{StateDir: stateDir, Store: st}
-	ctx := context.Background()
-	if err := eng.LoadSettings(ctx); err != nil {
-		eng.Settings = config.DefaultSettings(stateDir)
-	}
-	mergeEnvIntoSettings(eng)
-	return eng.SaveSettings(ctx)
+	eng := engine.New(stateDir, st, config.DefaultSettings(stateDir))
+	return syncEnvIntoStoredSettings(context.Background(), eng)
 }
 
 // RunAPI starts the management API and embedded UI (architecture C: control-plane service).
@@ -138,17 +144,11 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	}
 	defer st.Close()
 
-	eng := &engine.Engine{StateDir: stateDir, Store: st}
+	eng := engine.New(stateDir, st, config.DefaultSettings(stateDir))
 	ctx := context.Background()
-	if err := eng.LoadSettings(ctx); err != nil {
-		log.Printf("settings: using defaults: %v", err)
-		eng.Settings = config.DefaultSettings(stateDir)
+	if err := syncEnvIntoStoredSettings(ctx, eng); err != nil {
+		return fmt.Errorf("settings: %w", err)
 	}
-	mergeEnvIntoSettings(eng)
-	if err := eng.SaveSettings(ctx); err != nil {
-		log.Printf("persist settings: %v", err)
-	}
-	eng.GeoIP = geoip.NewRuntime(time.Duration(eng.Settings.GeoIPCacheTTL))
 
 	jwtSecret, err := auth.LoadJWTSecret(stateDir)
 	if err != nil {
@@ -252,12 +252,12 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	}
 
 	var acmeInternalSrv *http.Server
-	acAddr, acBackend := acmeInternalAddrs(eng.Settings.ACMEInternalHTTP)
+	acAddr, acBackend := acmeInternalAddrs(eng.Settings().ACMEInternalHTTP)
 	if acAddr != "" && acAddr != acBackend {
 		log.Printf("WARNING: EASY_WAF_ACME_INTERNAL_HTTP=%s moves the HTTP-01 helper, but the generated HAProxy backend dials %s (setting acme_internal_http) — HTTP-01 will fail. Change the setting instead, or unset the variable.", acAddr, acBackend)
 	}
 	if acAddr != "" {
-		wr, err := acmeWebrootPath(stateDir, eng.Settings.ACMEWebrootPath)
+		wr, err := acmeWebrootPath(stateDir, eng.Settings().ACMEWebrootPath)
 		if err != nil {
 			return fmt.Errorf("ACME webroot: %w", err)
 		}
@@ -322,11 +322,11 @@ func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	refresh := func() {
-		if srv.Prom == nil || !srv.Eng.Settings.PrometheusEnabled {
+		if srv.Prom == nil || !srv.Eng.Settings().PrometheusEnabled {
 			return
 		}
 		bg := context.Background()
-		sock := metrics.StatsSocketPath(srv.Eng.Settings, stateDir)
+		sock := metrics.StatsSocketPath(srv.Eng.Settings(), stateDir)
 		if rep, _ := srv.HAProxyMetrics.Fetch(sock); rep != nil {
 			srv.Prom.UpdateFromHAProxyReport(rep)
 		}
@@ -337,7 +337,7 @@ func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string
 		if apps, err := srv.Eng.Store.ListApplications(bg); err == nil {
 			srv.Prom.UpdateFromAppStats(apps)
 		}
-		cs := crowdsec.Client{BaseURL: srv.Eng.Settings.CrowdSecLAPIURL, APIKey: srv.Eng.Settings.CrowdSecLAPIKey}
+		cs := crowdsec.Client{BaseURL: srv.Eng.Settings().CrowdSecLAPIURL, APIKey: srv.Eng.Settings().CrowdSecLAPIKey}
 		raw, err := cs.DecisionsSample(bg)
 		n := 0
 		if err == nil {

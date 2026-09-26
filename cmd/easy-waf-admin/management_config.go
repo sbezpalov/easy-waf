@@ -67,7 +67,7 @@ func runManagementConfig() error {
 	defer st.Close()
 
 	ctx := context.Background()
-	eng := &engine.Engine{StateDir: *stateDir, Store: st}
+	eng := engine.New(*stateDir, st, config.DefaultSettings(*stateDir))
 	if err := eng.LoadSettings(ctx); err != nil {
 		_ = st.Close()
 		return fmt.Errorf("load settings: %w", err)
@@ -105,9 +105,8 @@ func runManagementConfig() error {
 	}
 
 	if *defaultCIDRs {
-		eng.Settings.ManagementAllowedCIDRs = append([]string(nil), config.DefaultManagementCIDRs()...)
-		if err := eng.SaveSettings(ctx); err != nil {
-			return fmt.Errorf("save settings: %w", err)
+		if err := setManagementCIDRs(ctx, eng, append([]string(nil), config.DefaultManagementCIDRs()...)); err != nil {
+			return err
 		}
 		dbChanged = true
 	} else if strings.TrimSpace(*managementCIDRs) != "" {
@@ -118,9 +117,8 @@ func runManagementConfig() error {
 		if err := api.ValidateManagementCIDRs(list); err != nil {
 			return fmt.Errorf("management CIDRs: %w", err)
 		}
-		eng.Settings.ManagementAllowedCIDRs = list
-		if err := eng.SaveSettings(ctx); err != nil {
-			return fmt.Errorf("save settings: %w", err)
+		if err := setManagementCIDRs(ctx, eng, list); err != nil {
+			return err
 		}
 		dbChanged = true
 	}
@@ -186,7 +184,7 @@ func printManagementConfiguration(out io.Writer, envFile string, eng *engine.Eng
 	}
 
 	fmt.Fprintln(out, "\n## Database: management_allowed_cidrs (GUI + API except /health)")
-	stored := eng.Settings.ManagementAllowedCIDRs
+	stored := eng.Settings().ManagementAllowedCIDRs
 	if len(stored) == 0 {
 		fmt.Fprintln(out, "(stored empty — running API uses built-in defaults until next save)")
 		defs := config.DefaultManagementCIDRs()
@@ -236,4 +234,15 @@ func effectiveManagementCIDRs(stored []string) []string {
 		return append([]string(nil), config.DefaultManagementCIDRs()...)
 	}
 	return append([]string(nil), stored...)
+}
+
+func setManagementCIDRs(ctx context.Context, eng *engine.Engine, list []string) error {
+	_, err := eng.UpdateSettings(ctx, func(gs config.GlobalSettings) (config.GlobalSettings, error) {
+		gs.ManagementAllowedCIDRs = list
+		return gs, nil
+	})
+	if err != nil {
+		return fmt.Errorf("save settings: %w", err)
+	}
+	return nil
 }

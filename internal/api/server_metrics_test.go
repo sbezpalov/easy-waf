@@ -16,12 +16,10 @@ import (
 )
 
 func TestMetricsEndpointDisabled(t *testing.T) {
-	eng := &engine.Engine{
-		Settings: config.GlobalSettings{
-			PrometheusEnabled:      false,
-			ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
-		},
-	}
+	eng := engine.New("", nil, config.GlobalSettings{
+		PrometheusEnabled:      false,
+		ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
+	})
 	s := &Server{
 		Eng:       eng,
 		JWTSecret: []byte("test-secret"),
@@ -41,12 +39,10 @@ func TestMetricsEndpointDisabled(t *testing.T) {
 }
 
 func TestMetricsEndpointEnabled(t *testing.T) {
-	eng := &engine.Engine{
-		Settings: config.GlobalSettings{
-			PrometheusEnabled:      true,
-			ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
-		},
-	}
+	eng := engine.New("", nil, config.GlobalSettings{
+		PrometheusEnabled:      true,
+		ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
+	})
 	s := &Server{
 		Eng:       eng,
 		JWTSecret: []byte("test-secret"),

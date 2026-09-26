@@ -20,6 +20,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/apply"
 	"github.com/easy-waf/easy-waf/internal/blockedua"
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/ipwl"
@@ -50,7 +51,10 @@ type artifactSnapshot struct {
 }
 
 type artifactTransaction struct {
-	engine        *Engine
+	engine *Engine
+	// cfg is the settings snapshot the transaction started with, so the set of
+	// managed paths cannot shift under it.
+	cfg           config.GlobalSettings
 	snapshot      *artifactSnapshot
 	managedBefore []string
 }
@@ -88,11 +92,11 @@ func appendUniquePath(paths *[]string, seen map[string]struct{}, path string) {
 	*paths = append(*paths, path)
 }
 
-func (e *Engine) managedArtifactPaths(extra []string) ([]string, error) {
+func (e *Engine) managedArtifactPaths(cfg config.GlobalSettings, extra []string) ([]string, error) {
 	_, _, crtListPath := haproxy.Paths(e.StateDir)
-	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, cfg.HAProxyConfigPath)
 
-	ipblPath := strings.TrimSpace(e.Settings.IPBlacklistMapPath)
+	ipblPath := strings.TrimSpace(cfg.IPBlacklistMapPath)
 	if ipblPath == "" {
 		ipblPath = filepath.Join(e.StateDir, "haproxy", "ip_blacklist.map")
 	}
@@ -103,9 +107,9 @@ func (e *Engine) managedArtifactPaths(extra []string) ([]string, error) {
 		cfgPath,
 		crtListPath,
 		ipblPath,
-		ipwl.MapPath(e.Settings, e.StateDir),
-		blockedua.MapPath(e.Settings, e.StateDir),
-		geoip.EnforceMapPath(e.Settings, e.StateDir),
+		ipwl.MapPath(cfg, e.StateDir),
+		blockedua.MapPath(cfg, e.StateDir),
+		geoip.EnforceMapPath(cfg, e.StateDir),
 	} {
 		appendUniquePath(&paths, seen, path)
 	}
@@ -395,8 +399,8 @@ func restoreArtifactManifest(
 	return manifest, nil
 }
 
-func (e *Engine) newArtifactSnapshot(kind string, extra []string) (*artifactSnapshot, error) {
-	paths, err := e.managedArtifactPaths(extra)
+func (e *Engine) newArtifactSnapshot(cfg config.GlobalSettings, kind string, extra []string) (*artifactSnapshot, error) {
+	paths, err := e.managedArtifactPaths(cfg, extra)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +409,7 @@ func (e *Engine) newArtifactSnapshot(kind string, extra []string) (*artifactSnap
 		return nil, err
 	}
 	dir := filepath.Join(revisionsDir, kind+"-"+uuid.NewString())
-	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, cfg.HAProxyConfigPath)
 	manifest, err := writeArtifactSnapshot(dir, paths, cfgPath)
 	if err != nil {
 		_ = os.RemoveAll(dir)
@@ -433,17 +437,18 @@ func (s *artifactSnapshot) hasFile(path string) bool {
 	return ok
 }
 
-func (e *Engine) beginArtifactTransaction() (*artifactTransaction, error) {
-	managed, err := e.managedArtifactPaths(nil)
+func (e *Engine) beginArtifactTransaction(cfg config.GlobalSettings) (*artifactTransaction, error) {
+	managed, err := e.managedArtifactPaths(cfg, nil)
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := e.newArtifactSnapshot(".apply-before", nil)
+	snapshot, err := e.newArtifactSnapshot(cfg, ".apply-before", nil)
 	if err != nil {
 		return nil, err
 	}
 	return &artifactTransaction{
 		engine:        e,
+		cfg:           cfg,
 		snapshot:      snapshot,
 		managedBefore: managed,
 	}, nil
@@ -455,11 +460,11 @@ func (t *artifactTransaction) rollback() error {
 	}
 	extra := append([]string(nil), t.managedBefore...)
 	extra = append(extra, artifactManifestPaths(t.snapshot.Manifest)...)
-	current, err := t.engine.managedArtifactPaths(extra)
+	current, err := t.engine.managedArtifactPaths(t.cfg, extra)
 	if err != nil {
 		return err
 	}
-	cfgPath := haproxy.LiveCfgPath(t.engine.StateDir, t.engine.Settings.HAProxyConfigPath)
+	cfgPath := haproxy.LiveCfgPath(t.engine.StateDir, t.cfg.HAProxyConfigPath)
 	_, err = restoreArtifactManifest(t.snapshot.ManifestPath, current, cfgPath)
 	return err
 }
@@ -471,8 +476,8 @@ func (t *artifactTransaction) remove() error {
 	return t.snapshot.remove()
 }
 
-func (e *Engine) createRevisionSnapshot(sha256Hex string, extra []string) (*artifactSnapshot, error) {
-	snapshot, err := e.newArtifactSnapshot("artifacts", extra)
+func (e *Engine) createRevisionSnapshot(cfg config.GlobalSettings, sha256Hex string, extra []string) (*artifactSnapshot, error) {
+	snapshot, err := e.newArtifactSnapshot(cfg, "artifacts", extra)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +489,7 @@ func (e *Engine) createRevisionSnapshot(sha256Hex string, extra []string) (*arti
 			sha256Hex,
 		)
 	}
-	cfgPath := haproxy.LiveCfgPath(e.StateDir, e.Settings.HAProxyConfigPath)
+	cfgPath := haproxy.LiveCfgPath(e.StateDir, cfg.HAProxyConfigPath)
 	previewPath := filepath.Join(e.StateDir, "revisions", fmt.Sprintf("haproxy-%s.cfg", sha256Hex[:12]))
 	if err := copyFileAtomic(cfgPath, previewPath, 0o640); err != nil {
 		_ = snapshot.remove()

@@ -191,13 +191,12 @@ func runResetManagementACLCLI() error {
 	defer st.Close()
 
 	ctx := context.Background()
-	eng := &engine.Engine{StateDir: *stateDir, Store: st}
-	if err := eng.LoadSettings(ctx); err != nil {
-		return fmt.Errorf("load settings: %w", err)
-	}
-	eng.Settings.ManagementAllowedCIDRs = config.DefaultManagementCIDRs()
-	if err := eng.SaveSettings(ctx); err != nil {
-		return fmt.Errorf("save settings: %w", err)
+	eng := engine.New(*stateDir, st, config.DefaultSettings(*stateDir))
+	if _, err := eng.UpdateSettings(ctx, func(gs config.GlobalSettings) (config.GlobalSettings, error) {
+		gs.ManagementAllowedCIDRs = config.DefaultManagementCIDRs()
+		return gs, nil
+	}); err != nil {
+		return fmt.Errorf("reset management CIDRs: %w", err)
 	}
 	log.Print("reset management_allowed_cidrs to defaults in database")
 

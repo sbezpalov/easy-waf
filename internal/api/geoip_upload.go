@@ -101,20 +101,18 @@ func (s *Server) installGeoIPDatabase(body io.Reader) (geoipUploadResponse, int,
 	// the configured path is the file we just installed. Anything else would
 	// report an activation that the next lookup silently undoes — and uploading
 	// a database must not switch an ipinfo appliance over by itself either.
-	provider := strings.EqualFold(strings.TrimSpace(s.Eng.Settings.GeoIPProvider), "maxmind")
-	configured := strings.TrimSpace(s.Eng.Settings.GeoIPMMDBPath) == info.Path
+	cfg := s.Eng.Settings()
+	provider := strings.EqualFold(strings.TrimSpace(cfg.GeoIPProvider), "maxmind")
+	configured := strings.TrimSpace(cfg.GeoIPMMDBPath) == info.Path
 	if !provider || !configured {
 		resp.ActivateHint = "set geoip_provider=maxmind and geoip_mmdb_path=" + info.Path + ", then save settings"
 		return resp, http.StatusOK, nil
 	}
 
-	if s.Eng.GeoIP == nil {
-		s.Eng.GeoIP = geoip.NewRuntime(time.Duration(s.Eng.Settings.GeoIPCacheTTL))
-	}
-	if err := s.Eng.GeoIP.ReloadMaxMindDB(info.Path); err != nil {
+	if err := s.Eng.GeoIP().ReloadMaxMindDB(info.Path); err != nil {
 		return resp, http.StatusBadGateway, fmt.Errorf("database installed but reload failed: %w", err)
 	}
-	s.Eng.GeoIP.Cache.Clear()
+	s.Eng.GeoIP().Cache.Clear()
 	resp.Reloaded = true
 	return resp, http.StatusOK, nil
 }

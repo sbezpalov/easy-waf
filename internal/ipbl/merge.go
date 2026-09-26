@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/apply"
+
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/mapfile"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -109,11 +111,7 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		b.WriteByte('\n')
 	}
 
-	tmp := outPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
-		return SyncResult{}, err
-	}
-	if err := os.Rename(tmp, outPath); err != nil {
+	if err := apply.WriteAtomic(outPath, []byte(b.String()), 0o600); err != nil {
 		return SyncResult{}, err
 	}
 
