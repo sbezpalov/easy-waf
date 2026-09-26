@@ -23,6 +23,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -149,6 +150,7 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	if err := syncEnvIntoStoredSettings(ctx, eng); err != nil {
 		return fmt.Errorf("settings: %w", err)
 	}
+	go reconcileEdgeAtStartup(eng)
 
 	jwtSecret, err := auth.LoadJWTSecret(stateDir)
 	if err != nil {
@@ -386,4 +388,23 @@ func countEnabledIPBLFeeds(srcs []config.IPBLExternalSource) int {
 		}
 	}
 	return n
+}
+
+// reconcileEdgeAtStartup brings the edge in line with the database once the
+// API is up: after an upgrade that changed the template, or a restore, the new
+// config otherwise waited for the next manual Apply. It applies only when the
+// rendered set differs from the live one, and never blocks startup.
+func reconcileEdgeAtStartup(eng *engine.Engine) {
+	if envflag.Enabled("EASY_WAF_NO_AUTO_APPLY") {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	applied, err := eng.ApplyIfChanged(ctx, "startup-reconcile")
+	switch {
+	case err != nil:
+		log.Printf("startup reconcile: edge not updated: %v", err)
+	case applied:
+		log.Printf("startup reconcile: edge config differed from the database; applied")
+	}
 }

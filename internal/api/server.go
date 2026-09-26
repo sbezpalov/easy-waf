@@ -259,8 +259,13 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.maybeAutoApply(r.Context(), "api-application"); err != nil {
-		http.Error(w, "application saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+	undo := s.restoreApplication(old)
+	if !haveOld {
+		newID := a.ID
+		undo = func(ctx context.Context) error { return s.Eng.Store.DeleteApplication(ctx, newID) }
+	}
+	if err := s.applyOrUndo(r.Context(), "api-application", undo); err != nil {
+		writeApplyRejected(w, err)
 		return
 	}
 	if haveOld && old.ListenMode != a.ListenMode {
@@ -295,12 +300,22 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	old, err := s.Eng.Store.GetApplication(r.Context(), id)
+	haveOld := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if err := s.Eng.Store.DeleteApplication(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.maybeAutoApply(r.Context(), "api-application-delete"); err != nil {
-		http.Error(w, "application deleted but edge apply failed: "+err.Error(), http.StatusBadGateway)
+	undo := func(context.Context) error { return nil }
+	if haveOld {
+		undo = s.restoreApplication(old)
+	}
+	if err := s.applyOrUndo(r.Context(), "api-application-delete", undo); err != nil {
+		writeApplyRejected(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -373,7 +388,9 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 		Label string `json:"label"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	if err := s.Eng.Apply(r.Context(), body.Label); err != nil {
+	ctx, cancel := applyContext(r.Context())
+	defer cancel()
+	if err := s.Eng.Apply(ctx, body.Label); err != nil {
 		if s.Prom != nil {
 			s.Prom.IncApplyError()
 		}
@@ -531,6 +548,8 @@ func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
 	if envflag.Enabled("EASY_WAF_NO_AUTO_APPLY") {
 		return nil
 	}
+	ctx, cancel := applyContext(ctx)
+	defer cancel()
 	if err := s.Eng.Apply(ctx, label); err != nil {
 		if s.Prom != nil {
 			s.Prom.IncApplyError()

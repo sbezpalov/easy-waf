@@ -73,7 +73,9 @@ func (s *Server) postRevisionRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid revision id", http.StatusBadRequest)
 		return
 	}
-	err = s.Eng.Rollback(r.Context(), id)
+	ctx, cancel := applyContext(r.Context())
+	defer cancel()
+	err = s.Eng.Rollback(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "revision not found", http.StatusNotFound)

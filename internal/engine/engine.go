@@ -451,22 +451,36 @@ func (e *Engine) refreshForApply(ctx context.Context) (config.GlobalSettings, er
 // records a full revision manifest, and reloads HAProxy. Any failure restores
 // the previous files; a failed post-promotion reload also reloads that restored
 // configuration when one existed.
-func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
+func (e *Engine) Apply(ctx context.Context, label string) error {
+	_, err := e.apply(ctx, label, false)
+	return err
+}
+
+// ApplyIfChanged renders the artifact set and applies it only when it differs
+// from what is on disk, reporting whether it did. It is the reconcile run when
+// the API starts: after an upgrade that changes the template, or a database
+// restored behind the edge's back, the edge is brought in line without a
+// reload (or an empty revision) on every ordinary restart.
+func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error) {
+	return e.apply(ctx, label, true)
+}
+
+func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (applied bool, retErr error) {
 	releaseLock, err := e.lockApply(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() {
 		appendFailure(&retErr, "release HAProxy apply lock", releaseLock())
 	}()
 	cfg, err := e.refreshForApply(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	tx, err := e.beginArtifactTransaction(cfg)
 	if err != nil {
-		return fmt.Errorf("snapshot current HAProxy artifacts: %w", err)
+		return false, fmt.Errorf("snapshot current HAProxy artifacts: %w", err)
 	}
 	defer func() { _ = tx.remove() }()
 
@@ -494,37 +508,46 @@ func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
 
 	r, err := e.renderFromStore(ctx, cfg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if strings.TrimSpace(r.CRTList) == "" && r.RequiresTLS {
-		return fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
+		return false, fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
 	}
 	_, _, crtListPath := haproxy.Paths(e.StateDir)
 	staging := cfgPath + ".staging"
 	defer func() { _ = os.Remove(staging) }()
 	if err := apply.WriteAtomic(staging, []byte(r.HAProxyConfig), 0o640); err != nil {
-		return err
+		return false, err
 	}
 	if err := apply.WriteAtomic(crtListPath, []byte(r.CRTList), 0o640); err != nil {
-		return err
+		return false, err
+	}
+	if onlyIfChanged {
+		same, err := e.artifactsUnchanged(cfg, tx.snapshot, cfgPath, []byte(r.HAProxyConfig))
+		if err != nil {
+			return false, err
+		}
+		if same {
+			return false, nil
+		}
 	}
 	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
 		if err := apply.Validate(cfg.HAProxyBinary, staging); err != nil {
-			return fmt.Errorf("validation failed: %w", err)
+			return false, fmt.Errorf("validation failed: %w", err)
 		}
 	}
 	if err := apply.WriteAtomic(cfgPath, []byte(r.HAProxyConfig), 0o640); err != nil {
-		return err
+		return false, err
 	}
 	promoted = true
 
 	revisionSnapshot, err = e.createRevisionSnapshot(cfg, r.SHA256, nil)
 	if err != nil {
-		return fmt.Errorf("snapshot new HAProxy revision: %w", err)
+		return false, fmt.Errorf("snapshot new HAProxy revision: %w", err)
 	}
 	if !skipReload {
 		if err := apply.ReloadHAProxy(); err != nil {
-			return err
+			return false, err
 		}
 		runtimeChanged = true
 	}
@@ -544,9 +567,9 @@ func (e *Engine) Apply(ctx context.Context, label string) (retErr error) {
 		"apply",
 		detail,
 	); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // Rollback restores a full managed artifact set for new revisions. Legacy rows

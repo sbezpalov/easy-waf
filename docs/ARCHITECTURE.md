@@ -187,7 +187,22 @@ snapshot, so a change made by `easy-waf-admin` or another process is never
 rendered over by a stale in-memory copy. `POST /api/v1/ipbl/sync`, which
 rewrites live map files outside a full apply, and acmed's PEM writes take the
 same lock. Settings changes from the API merge over the stored settings, not
-the process's copy. New rollback revisions
+the process's copy.
+
+Application changes are **validated by the apply they trigger**: the handler
+writes the row, applies, and if the apply fails (HAProxy rejects the config,
+the reload fails) it restores the previous row and answers **422 "change not
+saved"**. A failed Apply has already restored the previous artifact set, so the
+database and the edge match again — a rejected row can no longer sit in the
+database and fail every later apply, ACME renewals included. Applies started
+by a request run detached from it (2-minute limit), so a client that
+disconnects mid-apply cannot roll back a change HAProxy already loaded.
+
+**Startup reconcile:** when `easy-waf-api` starts it renders the artifact set
+and applies it only if it differs from what is live (`Engine.ApplyIfChanged`),
+so a template change from an upgrade or a restored database reaches the edge
+without a manual Apply, and an ordinary restart causes no reload or revision.
+`EASY_WAF_NO_AUTO_APPLY=1` disables it along with auto-apply. New rollback revisions
 restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 ## Log and metrics flow

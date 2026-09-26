@@ -40,6 +40,11 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	before, err := cloneApplication(a)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	config.NormalizeApplicationSecurity(&sec)
 	sec.Mode = string(profiles.DetectMode(sec))
 	a.Security = sec
@@ -51,8 +56,8 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.maybeAutoApply(r.Context(), "api-application-security"); err != nil {
-		http.Error(w, "security saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
+		writeApplyRejected(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, a.Security)
@@ -70,6 +75,11 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	before, err := cloneApplication(a)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	merged, err := config.MergeApplicationSecurityJSON(a.Security, body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -85,8 +95,8 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.maybeAutoApply(r.Context(), "api-application-security"); err != nil {
-		http.Error(w, "security saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
+		writeApplyRejected(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, a.Security)
@@ -113,6 +123,11 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	before, err := cloneApplication(a)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	prev := a.Security.Mode
 	profiles.ApplyModePreset(&a, mode)
 	if _, err := profiles.Resolve(a.Profile); err != nil {
@@ -123,8 +138,8 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.maybeAutoApply(r.Context(), "api-application-security-mode"); err != nil {
-		http.Error(w, "security mode saved but edge apply failed: "+err.Error(), http.StatusBadGateway)
+	if err := s.applyOrUndo(r.Context(), "api-application-security-mode", s.restoreApplication(before)); err != nil {
+		writeApplyRejected(w, err)
 		return
 	}
 	detail := map[string]any{
