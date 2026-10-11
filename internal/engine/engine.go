@@ -47,9 +47,13 @@ type Engine struct {
 	settings config.GlobalSettings
 	geo      *geoip.Runtime
 
-	// applyMu serializes Apply, Rollback and WithApplyLock inside one process;
-	// the PostgreSQL advisory lock does the same across processes.
-	applyMu sync.Mutex
+	// applySem serializes Apply, Rollback and WithApplyLock inside one
+	// process; the PostgreSQL advisory lock does the same across processes.
+	// It is a one-slot channel rather than a sync.Mutex so that waiting for
+	// it honors the caller's context (an apply started by a request promises
+	// to finish, lock wait included, within its deadline).
+	applySem     chan struct{}
+	applySemOnce sync.Once
 	// settingsMu serializes read-modify-write of the stored settings.
 	settingsMu sync.Mutex
 }
@@ -453,14 +457,20 @@ func (e *Engine) WithApplyLock(ctx context.Context, fn func() error) (retErr err
 
 // lockApply takes the in-process and the cross-process apply locks.
 func (e *Engine) lockApply(ctx context.Context) (func() error, error) {
-	e.applyMu.Lock()
+	e.applySemOnce.Do(func() { e.applySem = make(chan struct{}, 1) })
+	select {
+	case e.applySem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("acquire HAProxy apply lock: %w", ctx.Err())
+	}
+	unlock := func() { <-e.applySem }
 	release, err := e.Store.AcquireAdvisoryLock(ctx, haproxyApplyAdvisoryLockKey)
 	if err != nil {
-		e.applyMu.Unlock()
+		unlock()
 		return nil, fmt.Errorf("acquire HAProxy apply lock: %w", err)
 	}
 	return func() error {
-		defer e.applyMu.Unlock()
+		defer unlock()
 		return release()
 	}, nil
 }

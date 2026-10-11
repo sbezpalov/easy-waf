@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-acme/lego/v4/certificate"
@@ -29,6 +31,14 @@ const (
 	// that died mid-issuance; it is claimed again. Lego's own timeouts, DNS
 	// propagation included, finish well inside it.
 	staleIssuing = time.Hour
+	// issueTimeout bounds one issuance end to end (ACME, apply lock, writes,
+	// apply). It stays below staleIssuing so another worker never reclaims a
+	// row that is still being worked on. Lego's own timeouts normally end an
+	// issuance long before; whether every Lego step honors the context is
+	// not guaranteed, which is why the deadline also covers what follows.
+	issueTimeout = 45 * time.Minute
+	// dbTimeout bounds the per-tick settings load and claim queries.
+	dbTimeout = 30 * time.Second
 )
 
 // ACME worker (architecture C): issues and renews certificates (HTTP-01 and DNS-01) using shared PostgreSQL state.
@@ -59,34 +69,54 @@ func main() {
 
 	log.Printf("easy-waf-acmed started state=%s tick=%s", stateDir, tick)
 
+	// SIGTERM/SIGINT stop the loop: no new claims, no further sleeps. An
+	// issuance already running finishes under its own deadline (issueTimeout),
+	// so a stop does not strand the row half-written.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	for {
-		ctx := context.Background()
-		if err := eng.LoadSettings(ctx); err != nil {
-			log.Printf("settings: %v", err)
-			time.Sleep(tick)
-			continue
+		runOnce(ctx, eng, st)
+		select {
+		case <-ctx.Done():
+			log.Printf("easy-waf-acmed stopping")
+			return
+		case <-time.After(tick):
 		}
-		if eng.Settings().ACMEEmail == "" {
-			log.Printf("acmed: ACMEEmail not set in global settings — idle")
-			time.Sleep(tick)
-			continue
-		}
+	}
+}
 
-		now := time.Now().UTC()
-		due, err := st.ClaimCertificatesACME(ctx, store.ACMEClaimWindow{
-			Now:          now,
-			RenewBefore:  now.Add(renewWindow),
-			StaleIssuing: staleIssuing,
-			Limit:        5,
-		})
-		if err != nil {
-			log.Printf("claim certificates: %v", err)
-		}
-		for i := range due {
-			issueOne(ctx, eng, st, &due[i])
-		}
+// runOnce loads settings, claims due certificates and issues them.
+func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
+	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+	if err := eng.LoadSettings(qctx); err != nil {
+		log.Printf("settings: %v", err)
+		return
+	}
+	if eng.Settings().ACMEEmail == "" {
+		log.Printf("acmed: ACMEEmail not set in global settings — idle")
+		return
+	}
 
-		time.Sleep(tick)
+	now := time.Now().UTC()
+	due, err := st.ClaimCertificatesACME(qctx, store.ACMEClaimWindow{
+		Now:          now,
+		RenewBefore:  now.Add(renewWindow),
+		StaleIssuing: staleIssuing,
+		Limit:        5,
+	})
+	if err != nil {
+		log.Printf("claim certificates: %v", err)
+	}
+	for i := range due {
+		if ctx.Err() != nil {
+			// Shutting down: leave the rest claimed; they are picked up again
+			// once staleIssuing has passed.
+			return
+		}
+		ictx, icancel := context.WithTimeout(context.WithoutCancel(ctx), issueTimeout)
+		issueOne(ictx, eng, st, &due[i])
+		icancel()
 	}
 }
 

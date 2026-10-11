@@ -27,7 +27,11 @@ func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(contex
 	if err == nil {
 		return nil
 	}
-	if uerr := undo(context.WithoutCancel(ctx)); uerr != nil {
+	// The undo must survive a client that disconnected, but not hang: it
+	// gets its own deadline rather than the (possibly spent) request one.
+	uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), undoTimeout)
+	defer cancel()
+	if uerr := undo(uctx); uerr != nil {
 		return fmt.Errorf("edge apply failed: %w; undoing the database change also failed, so it is saved but not live: %v", err, uerr)
 	}
 	return fmt.Errorf("change not saved, edge apply failed: %w", err)
@@ -36,6 +40,9 @@ func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(contex
 // applyTimeout bounds an apply started by a request, the wait for the apply
 // lock included.
 const applyTimeout = 2 * time.Minute
+
+// undoTimeout bounds the compensating database write after a failed apply.
+const undoTimeout = 30 * time.Second
 
 // applyContext detaches an apply from the request: a client that disconnects
 // after HAProxy reloaded used to cancel the revision/audit write, and the
