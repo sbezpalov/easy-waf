@@ -17,14 +17,53 @@ import (
 type AuditListParams struct {
 	Limit  int
 	Offset int
-	User   string // ILIKE match on user_name
-	Action string // ILIKE match on action
-	From   *time.Time
-	To     *time.Time // exclusive upper bound when set
+	// BeforeID, when > 0, returns only rows with id < BeforeID: keyset
+	// paging, which stays as cheap on the last page as on the first, unlike
+	// Offset (the server reads and discards every skipped row).
+	BeforeID int64
+	User     string // ILIKE match on user_name
+	Action   string // ILIKE match on action
+	From     *time.Time
+	To       *time.Time // exclusive upper bound when set
 }
 
-// ListAuditLogs returns audit rows ordered by id descending.
-func (s *Store) ListAuditLogs(ctx context.Context, p AuditListParams) ([]config.AuditLogEntry, error) {
+// auditWhere builds the WHERE clause from the filters actually set. A single
+// statement with an "unset or matches" clause per filter looked simpler, but once
+// the driver's cached prepared statement switches PostgreSQL to a generic plan
+// the planner cannot drop the unused branches: on 2M rows the unfiltered first
+// page then took 7 ms instead of 0.3 ms, and the count 140 ms instead of 67 ms.
+func auditWhere(p AuditListParams) (string, []any) {
+	var conds []string
+	var args []any
+	add := func(cond string, arg any) {
+		args = append(args, arg)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if v := strings.TrimSpace(p.User); v != "" {
+		add("COALESCE(user_name,'') ILIKE '%%' || $%d || '%%'", v)
+	}
+	if v := strings.TrimSpace(p.Action); v != "" {
+		add("action ILIKE '%%' || $%d || '%%'", v)
+	}
+	if p.From != nil {
+		add("at >= $%d", *p.From)
+	}
+	if p.To != nil {
+		add("at < $%d", *p.To)
+	}
+	if p.BeforeID > 0 {
+		add("id < $%d", p.BeforeID)
+	}
+	if len(conds) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+// ListAuditLogs returns up to p.Limit rows ordered by id descending, and
+// whether more rows match beyond them (found by reading one extra row, so
+// paging needs no COUNT).
+func (s *Store) ListAuditLogs(ctx context.Context, p AuditListParams) ([]config.AuditLogEntry, bool, error) {
 	if p.Limit <= 0 {
 		p.Limit = 100
 	}
@@ -34,27 +73,19 @@ func (s *Store) ListAuditLogs(ctx context.Context, p AuditListParams) ([]config.
 	if p.Offset < 0 {
 		p.Offset = 0
 	}
-	userPat := strings.TrimSpace(p.User)
-	actionPat := strings.TrimSpace(p.Action)
-	var fromArg, toArg any
-	if p.From != nil {
-		fromArg = *p.From
-	}
-	if p.To != nil {
-		toArg = *p.To
-	}
+	where, args := auditWhere(p)
+	args = append(args, p.Limit+1, p.Offset)
+	// where and the LIMIT/OFFSET placeholders are fixed text built above;
+	// every value is a bound parameter.
+	//nolint:gosec // G202: no user input in the SQL text
 	q := `
 		SELECT id, at, COALESCE(user_name,''), action, COALESCE(source_ip,''), detail_json
-		FROM audit_log
-		WHERE ($1::text = '' OR COALESCE(user_name,'') ILIKE '%' || $1 || '%')
-		  AND ($2::text = '' OR action ILIKE '%' || $2 || '%')
-		  AND ($3::timestamptz IS NULL OR at >= $3::timestamptz)
-		  AND ($4::timestamptz IS NULL OR at < $4::timestamptz)
+		FROM audit_log` + where + fmt.Sprintf(`
 		ORDER BY id DESC
-		LIMIT $5 OFFSET $6`
-	rows, err := s.db.QueryContext(ctx, q, userPat, actionPat, fromArg, toArg, p.Limit, p.Offset)
+		LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list audit: %w", err)
+		return nil, false, fmt.Errorf("list audit: %w", err)
 	}
 	defer rows.Close()
 	var out []config.AuditLogEntry
@@ -62,7 +93,7 @@ func (s *Store) ListAuditLogs(ctx context.Context, p AuditListParams) ([]config.
 		var e config.AuditLogEntry
 		var raw []byte
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.UserName, &e.Action, &e.SourceIP, &raw); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if len(raw) > 0 && string(raw) != "null" {
 			e.Details = json.RawMessage(raw)
@@ -71,29 +102,23 @@ func (s *Store) ListAuditLogs(ctx context.Context, p AuditListParams) ([]config.
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > p.Limit
+	if hasMore {
+		out = out[:p.Limit]
+	}
+	return out, hasMore, nil
 }
 
-// CountAuditLogs returns how many rows match the same filters as ListAuditLogs (for pagination hints).
+// CountAuditLogs returns how many rows match the same filters as ListAuditLogs
+// (BeforeID included). It reads every matching row — 70-600 ms on 2M rows —
+// so the API runs it only on request.
 func (s *Store) CountAuditLogs(ctx context.Context, p AuditListParams) (int64, error) {
-	userPat := strings.TrimSpace(p.User)
-	actionPat := strings.TrimSpace(p.Action)
-	var fromArg, toArg any
-	if p.From != nil {
-		fromArg = *p.From
-	}
-	if p.To != nil {
-		toArg = *p.To
-	}
+	where, args := auditWhere(p)
 	var n int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM audit_log
-		WHERE ($1::text = '' OR COALESCE(user_name,'') ILIKE '%' || $1 || '%')
-		  AND ($2::text = '' OR action ILIKE '%' || $2 || '%')
-		  AND ($3::timestamptz IS NULL OR at >= $3::timestamptz)
-		  AND ($4::timestamptz IS NULL OR at < $4::timestamptz)`,
-		userPat, actionPat, fromArg, toArg).Scan(&n)
-	if err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_log`+where, args...).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil

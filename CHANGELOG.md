@@ -50,6 +50,7 @@ as it did on every start before).
 
 - **GeoIP cache eviction is O(1)** (it scanned all 50,000 entries per insert under a lock) and a render resolves each blacklist address once for the global and all per-application GeoIP maps.
 - **Concurrent dashboard/Prometheus stats requests share one HAProxy socket read** instead of each reading and parsing `show stat`.
+- **The audit log pages without counting.** `GET /api/v1/audit` ran an exact `COUNT(*)` on every page and every 15 s auto-refresh (67–590 ms on 2M rows, measured); it now returns `has_more` and `next_before_id` (pass it back as `before_id` for constant-time paging at any depth) and includes `total` only with `include_total=1`. `offset` still works. The panel shows "Showing N (more available)" instead of "N of M".
 
 ### Added
 

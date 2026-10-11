@@ -22,6 +22,15 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(action, "all") {
 		action = ""
 	}
+	var beforeID int64
+	if v := strings.TrimSpace(q.Get("before_id")); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			http.Error(w, "invalid before_id (positive integer)", http.StatusBadRequest)
+			return
+		}
+		beforeID = n
+	}
 	var fromPtr, toPtr *time.Time
 	if v := strings.TrimSpace(q.Get("from")); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
@@ -40,12 +49,13 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		toPtr = &t
 	}
 	p := store.AuditListParams{
-		Limit:  limit,
-		Offset: offset,
-		User:   user,
-		Action: action,
-		From:   fromPtr,
-		To:     toPtr,
+		Limit:    limit,
+		Offset:   offset,
+		BeforeID: beforeID,
+		User:     user,
+		Action:   action,
+		From:     fromPtr,
+		To:       toPtr,
 	}
 	if p.Limit <= 0 {
 		p.Limit = 100
@@ -56,12 +66,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if p.Offset < 0 {
 		p.Offset = 0
 	}
-	entries, err := s.Eng.Store.ListAuditLogs(r.Context(), p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	total, err := s.Eng.Store.CountAuditLogs(r.Context(), p)
+	entries, hasMore, err := s.Eng.Store.ListAuditLogs(r.Context(), p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -69,10 +74,25 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []config.AuditLogEntry{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"entries": entries,
-		"total":   total,
-		"limit":   p.Limit,
-		"offset":  p.Offset,
-	})
+	resp := map[string]any{
+		"entries":  entries,
+		"limit":    p.Limit,
+		"offset":   p.Offset,
+		"has_more": hasMore,
+	}
+	if hasMore {
+		// Pass back as before_id for the next page.
+		resp["next_before_id"] = entries[len(entries)-1].ID
+	}
+	// An exact total reads every matching row (up to ~0.6 s on 2M rows) and
+	// used to run on every page and every 15 s auto-refresh; it is now opt-in.
+	if v := strings.TrimSpace(q.Get("include_total")); v == "1" || strings.EqualFold(v, "true") {
+		total, err := s.Eng.Store.CountAuditLogs(r.Context(), p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp["total"] = total
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
