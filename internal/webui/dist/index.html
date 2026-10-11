@@ -1913,7 +1913,17 @@
     if (!reset && auditBeforeId > 0) params.set('before_id', String(auditBeforeId));
     if (actionVal) params.set('action', actionVal);
 
-    const r = await fetch('/api/v1/audit?' + params.toString(), { headers: hdr() });
+    let r;
+    try {
+      r = await fetch('/api/v1/audit?' + params.toString(), { headers: hdr() });
+    } catch (e) {
+      // Network failure: report it and leave Load more usable for a retry.
+      if (gen !== auditGen) return;
+      if (reset) tbody.innerHTML = '';
+      else if (moreBtn) moreBtn.disabled = auditBeforeId === 0;
+      errEl.textContent = 'Request failed: ' + (e && e.message ? e.message : String(e));
+      return;
+    }
     if (gen !== auditGen) return; // superseded by a reset
     if (r.status === 401) {
       setTok('');
