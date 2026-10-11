@@ -320,6 +320,10 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	return nil
 }
 
+// promRefreshTimeout bounds one Prometheus refresh (all its queries together);
+// it is shorter than the 15s tick.
+const promRefreshTimeout = 10 * time.Second
+
 func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -327,9 +331,12 @@ func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string
 		if srv.Prom == nil || !srv.Eng.Settings().PrometheusEnabled {
 			return
 		}
-		bg := context.Background()
+		// One refresh must not outlive its tick or shutdown: a hung database
+		// or LAPI would otherwise block the loop indefinitely.
+		bg, cancel := context.WithTimeout(ctx, promRefreshTimeout)
+		defer cancel()
 		sock := metrics.StatsSocketPath(srv.Eng.Settings(), stateDir)
-		if rep, _ := srv.HAProxyMetrics.Fetch(sock); rep != nil {
+		if rep, _ := srv.HAProxyMetrics.FetchContext(bg, sock); rep != nil {
 			srv.Prom.UpdateFromHAProxyReport(rep)
 		}
 		if certs, err := srv.Eng.Store.ListCertificates(bg); err == nil {
