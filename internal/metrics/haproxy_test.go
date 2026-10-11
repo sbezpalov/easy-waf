@@ -4,6 +4,7 @@
 package metrics
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -72,5 +73,39 @@ func TestStatsSocketPath(t *testing.T) {
 	gs3 := config.GlobalSettings{HAProxyStatsSocketPath: "/var/lib/easy-waf/haproxy/admin.sock"}
 	if p := StatsSocketPath(gs3, "/var/lib/easy-waf"); p != "/run/haproxy/easy-waf-admin.sock" {
 		t.Fatalf("legacy state socket migrates to /run: got %q", p)
+	}
+}
+
+// nativeOrderStatsCSV is sampleStatsCSV in the order HAProxy 3.x emits it:
+// each proxy's server rows come before its BACKEND aggregate.
+const nativeOrderStatsCSV = `# pxname,svname,scur,smax,status,bin,bout,type,rate,hrsp_1xx,hrsp_2xx,hrsp_3xx,hrsp_4xx,hrsp_5xx,hrsp_other
+fe_http,FRONTEND,1,10,OPEN,2000,3000,0,5,0,900,50,15,5,0
+fe_https,FRONTEND,2,20,OPEN,4000,6000,0,12,0,1800,100,25,15,0
+bk_acme,s1,0,1,UP,50,75,2,0,0,20,5,0,0,0
+bk_acme,BACKEND,0,5,UP,100,200,1,0,0,45,5,0,0,0
+bk_ha_example_com,s1,1,2,UP,150,250,2,1,0,70,8,2,0,0
+bk_ha_example_com,s2,0,0,DOWN,0,0,2,0,0,0,0,0,0,0
+bk_ha_example_com,BACKEND,1,3,UP,200,300,1,1,0,80,15,3,2,0
+`
+
+// R4: server rows must be attached whatever their order relative to the
+// BACKEND row, so both orders yield the same inventory, health and summary.
+func TestParseShowStatCSV_ServerRowsBeforeBackend(t *testing.T) {
+	legacy, err := ParseShowStatCSV([]byte(sampleStatsCSV))
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, err := ParseShowStatCSV([]byte(nativeOrderStatsCSV))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(legacy.Backends, native.Backends) {
+		t.Fatalf("backends differ:\nlegacy %+v\nnative %+v", legacy.Backends, native.Backends)
+	}
+	if got := len(native.Backends[1].Servers); got != 2 || native.Backends[1].Health != "degraded" {
+		t.Fatalf("native order: servers=%d health=%q", got, native.Backends[1].Health)
+	}
+	if ls, ns := BuildSummary(legacy), BuildSummary(native); !reflect.DeepEqual(ls, ns) {
+		t.Fatalf("summaries differ:\nlegacy %+v\nnative %+v", ls, ns)
 	}
 }
