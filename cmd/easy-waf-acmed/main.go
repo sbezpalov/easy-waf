@@ -97,9 +97,9 @@ func main() {
 		<-ctx.Done()
 		stop() // restore default handling for a second signal
 	}()
-	w := &worker{eng: eng, st: st}
+	w := &worker{eng: eng}
 	for {
-		w.runOnce(ctx)
+		w.runOnce(ctx, st)
 		select {
 		case <-ctx.Done():
 			log.Printf("easy-waf-acmed stopping")
@@ -112,7 +112,6 @@ func main() {
 // worker carries what acmed keeps between ticks.
 type worker struct {
 	eng *engine.Engine
-	st  *store.Store
 	// lastTry is when reconcile last attempted an apply that failed.
 	lastTry time.Time
 }
@@ -120,69 +119,67 @@ type worker struct {
 // reconcileRetry spaces out reconcile attempts after a failed apply.
 const reconcileRetry = 5 * time.Minute
 
-// certsNotLive reports whether a ready certificate changed after the last
-// successful apply (the newest config revision, nil when none exists): its
-// PEMs are on disk but HAProxy may still serve the previous ones. This is
-// read from the database, so it survives a stop or crash between storing a
-// certificate and applying it. (ApplyIfChanged cannot tell: it compares the
-// config and map files, not certificate PEMs, which a renewal rewrites in
-// place under the same certificate ID.)
-func certsNotLive(certs []config.Certificate, lastApply *time.Time) bool {
-	for _, c := range certs {
-		if c.ACMEStatus != "ready" {
-			continue
-		}
-		if lastApply == nil || c.UpdatedAt.After(*lastApply) {
-			return true
-		}
-	}
-	return false
+// applyPendingPath marks a certificate acmed stored whose HAProxy apply has
+// not succeeded yet. It is a file so it survives a stop or crash between the
+// two; only acmed's own issuances set it, so a certificate or setting an
+// operator saved without applying (EASY_WAF_NO_AUTO_APPLY) never triggers an
+// apply here. (ApplyIfChanged cannot serve: it compares the config and map
+// files, not the certificate PEMs a renewal rewrites in place.)
+func applyPendingPath(stateDir string) string {
+	return filepath.Join(stateDir, "acme", "apply-pending")
 }
 
-// reconcile applies the edge when a stored certificate is not live yet: the
-// apply right after an issuance failed, was cancelled by a stop, or the
-// process died in between. After a failed attempt it waits reconcileRetry.
+func markApplyPending(stateDir, certID string) {
+	path := applyPendingPath(stateDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		log.Printf("acmed: mark apply pending: %v", err)
+		return
+	}
+	body := certID + " " + time.Now().UTC().Format(time.RFC3339) + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		log.Printf("acmed: mark apply pending: %v", err)
+	}
+}
+
+func applyPending(stateDir string) bool {
+	_, err := os.Stat(applyPendingPath(stateDir))
+	return err == nil
+}
+
+func clearApplyPending(stateDir string) {
+	if err := os.Remove(applyPendingPath(stateDir)); err != nil && !os.IsNotExist(err) {
+		log.Printf("acmed: clear apply pending: %v", err)
+	}
+}
+
+// reconcile applies the edge while a certificate acmed stored is not live
+// yet: the apply right after the issuance failed, was cancelled by a stop, or
+// the process died in between. After a failed attempt it waits
+// reconcileRetry, unless a new issuance resets the wait.
 func (w *worker) reconcile(ctx context.Context) {
-	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
+	stateDir := w.eng.StateDir
+	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") || !applyPending(stateDir) {
 		return
 	}
 	if !w.lastTry.IsZero() && time.Since(w.lastTry) < reconcileRetry {
 		return
 	}
-	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	actx, cancel := context.WithTimeout(ctx, applyTimeout)
 	defer cancel()
-	certs, err := w.st.ListCertificates(qctx)
-	if err != nil {
-		log.Printf("acmed: reconcile: list certificates: %v", err)
-		return
-	}
-	revs, err := w.st.ListConfigRevisions(qctx, 1)
-	if err != nil {
-		log.Printf("acmed: reconcile: last revision: %v", err)
-		return
-	}
-	var lastApply *time.Time
-	if len(revs) > 0 {
-		lastApply = &revs[0].At
-	}
-	if !certsNotLive(certs, lastApply) {
-		return
-	}
-	actx, acancel := context.WithTimeout(ctx, applyTimeout)
-	defer acancel()
 	if err := w.eng.Apply(actx, "acme-reconcile"); err != nil {
 		w.lastTry = time.Now()
-		log.Printf("acmed: certificates stored but not live; apply failed, retrying in %s: %v", reconcileRetry, err)
+		log.Printf("acmed: a stored certificate is not live; apply failed, retrying in %s: %v", reconcileRetry, err)
 		return
 	}
 	w.lastTry = time.Time{}
-	log.Printf("acmed: applied certificates that were stored but not live yet")
+	clearApplyPending(stateDir)
+	log.Printf("acmed: applied a stored certificate that was not live yet")
 }
 
 // runOnce takes stored certificates live if needed, loads settings, claims
 // due certificates and issues them.
-func (w *worker) runOnce(ctx context.Context) {
-	eng, st := w.eng, w.st
+func (w *worker) runOnce(ctx context.Context, st *store.Store) {
+	eng := w.eng
 	lctx, lcancel := context.WithTimeout(ctx, dbTimeout)
 	err := eng.LoadSettings(lctx)
 	lcancel()
@@ -226,15 +223,21 @@ func (w *worker) runOnce(ctx context.Context) {
 			return
 		}
 		ictx, icancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
-		issueOne(ictx, ctx, eng, st, &due[i])
+		if stored := issueOne(ictx, ctx, eng, st, &due[i]); stored {
+			// A fresh certificate is waiting: retry its apply on the next
+			// tick rather than after an earlier failure's backoff.
+			w.lastTry = time.Time{}
+		}
 		icancel()
 	}
 }
 
 // issueOne issues c under ctx. stop is the process lifecycle context: it
 // cancels the HAProxy apply that follows a successful issuance; if that
-// apply does not succeed, the worker's reconcile takes the certificate live.
-func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) {
+// apply does not succeed, the apply-pending mark makes the worker's
+// reconcile take the certificate live. It reports whether the certificate
+// was stored but its apply did not succeed.
+func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) (pending bool) {
 	email := eng.Settings().ACMEEmail
 	webroot := eng.Settings().ACMEWebrootPath
 	if webroot == "" {
@@ -302,11 +305,17 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})
 
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
-		return
+		return false
 	}
+	// Mark first: if the process dies during the apply, the next start
+	// still knows this certificate is not live.
+	markApplyPending(eng.StateDir, c.ID)
 	actx, acancel := context.WithTimeout(stop, applyTimeout)
 	defer acancel()
 	if err := eng.Apply(actx, "acme"); err != nil {
 		log.Printf("apply after acme failed; the edge is reconciled on a later tick or start: %v", err)
+		return true
 	}
+	clearApplyPending(eng.StateDir)
+	return false
 }
