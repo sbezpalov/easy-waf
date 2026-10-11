@@ -226,6 +226,7 @@ func ParseShowStatCSV(data []byte) (*HAProxyReport, error) {
 	var frontends []FrontendStat
 	backOrder := []string{}
 	backMap := map[string]*BackendStat{}
+	servers := map[string][]ServerStat{}
 
 	for _, rec := range rows {
 		if len(rec) < len(header) {
@@ -280,30 +281,22 @@ func ParseShowStatCSV(data []byte) (*HAProxyReport, error) {
 			continue
 		}
 
-		if hasType && typ == 2 {
-			if b, ok := backMap[px]; ok {
-				b.Servers = append(b.Servers, ServerStat{
-					Name:        sv,
-					Status:      field(rec, idx, "status"),
-					SessionsCur: parseInt64(field(rec, idx, "scur")),
-				})
-			}
-			continue
-		}
-		if !hasType && sv != "FRONTEND" && sv != "BACKEND" {
-			if b, ok := backMap[px]; ok {
-				b.Servers = append(b.Servers, ServerStat{
-					Name:        sv,
-					Status:      field(rec, idx, "status"),
-					SessionsCur: parseInt64(field(rec, idx, "scur")),
-				})
-			}
+		// HAProxy 3.x emits a proxy's server rows before its BACKEND
+		// aggregate, older versions after it: collect them per proxy and
+		// attach once every row has been read.
+		if (hasType && typ == 2) || (!hasType && sv != "FRONTEND" && sv != "BACKEND") {
+			servers[px] = append(servers[px], ServerStat{
+				Name:        sv,
+				Status:      field(rec, idx, "status"),
+				SessionsCur: parseInt64(field(rec, idx, "scur")),
+			})
 		}
 	}
 
 	backends := make([]BackendStat, 0, len(backOrder))
 	for _, name := range backOrder {
 		b := backMap[name]
+		b.Servers = servers[name]
 		b.Health = deriveBackendHealth(b)
 		backends = append(backends, *b)
 	}
