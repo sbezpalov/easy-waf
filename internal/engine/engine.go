@@ -237,7 +237,12 @@ func (e *Engine) saveSettings(ctx context.Context, s config.GlobalSettings) erro
 // Apply in another process may be snapshotting or promoting at the same time.
 func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) {
 	err = e.WithApplyLock(ctx, func() error {
-		cfg := e.Settings()
+		// What is stored now, not this process's copy: feeds switched off
+		// from the admin CLI or another instance must be honored here too.
+		cfg, err := e.refreshForApply(ctx)
+		if err != nil {
+			return err
+		}
 		r, err := ipbl.SyncAndWrite(ctx, e.Store, cfg, e.StateDir)
 		if err != nil {
 			return err
