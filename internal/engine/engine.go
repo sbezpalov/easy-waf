@@ -260,6 +260,7 @@ func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSett
 	}
 	if geo == nil {
 		geo = e.newRenderGeo(cfg)
+		defer geo.close()
 	}
 	prov, err := geo.provider()
 	if err != nil {
@@ -271,9 +272,10 @@ func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSett
 // renderGeo resolves countries for one render: every address is looked up at
 // most once however many maps (global and per application) need it.
 type renderGeo struct {
-	rt   *geoip.Runtime
-	cfg  config.GlobalSettings
-	memo *geoip.MemoProvider
+	rt      *geoip.Runtime
+	cfg     config.GlobalSettings
+	memo    *geoip.MemoProvider
+	release func()
 }
 
 func (e *Engine) newRenderGeo(cfg config.GlobalSettings) *renderGeo {
@@ -284,12 +286,20 @@ func (g *renderGeo) provider() (geoip.GeoProvider, error) {
 	if g.memo != nil {
 		return g.memo, nil
 	}
-	res, err := g.rt.Resolver(g.cfg)
+	res, release, err := g.rt.Resolver(g.cfg)
 	if err != nil {
 		return nil, err
 	}
-	g.memo = geoip.NewMemoProvider(res)
+	g.memo, g.release = geoip.NewMemoProvider(res), release
 	return g.memo, nil
+}
+
+// close releases what the render's resolver opened.
+func (g *renderGeo) close() {
+	if g.release != nil {
+		g.release()
+		g.release = nil
+	}
 }
 
 // RenderFromStore builds HAProxy config from current DB state.
@@ -317,6 +327,7 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 		return haproxy.Rendered{}, err
 	}
 	geo := e.newRenderGeo(cfg)
+	defer geo.close()
 	if err := e.writeGeoIPEnforceMap(ctx, cfg, syncRes.AllCIDRs, geo); err != nil {
 		return haproxy.Rendered{}, err
 	}

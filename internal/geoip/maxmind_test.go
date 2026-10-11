@@ -172,9 +172,11 @@ func TestRuntime_ReusesMaxMind(t *testing.T) {
 		GeoIPMMDBPath: p,
 	}
 	rt.Configure(g)
-	if _, err := rt.Resolver(g); err != nil {
+	_, release, err := rt.Resolver(g)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer release()
 	p1 := rt.prov
 	cc, _, err := rt.Lookup(context.Background(), g, "9.9.9.9")
 	if err != nil || cc != "FR" {
