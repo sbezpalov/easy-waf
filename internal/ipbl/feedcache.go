@@ -178,8 +178,9 @@ func readFeedCache(cacheDir string, src config.IPBLExternalSource) ([]string, ti
 }
 
 // pruneFeedCache removes cached copies of sources that are deleted or
-// disabled, so their entries can never come back through the fallback (a
-// re-enabled source starts from its next successful download).
+// disabled. It runs on every sync, under the apply lock, so no concurrent
+// download can write a copy back; a re-enabled source then starts from its
+// next successful download.
 func pruneFeedCache(cacheDir string, srcs []config.IPBLExternalSource) {
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
@@ -201,22 +202,8 @@ func pruneFeedCache(cacheDir string, srcs []config.IPBLExternalSource) {
 	}
 }
 
-// ForgetFeedCopy deletes the saved copy of one source, e.g. when an operator
-// disables it, so it cannot come back through the fallback even if no sync
-// runs before it is enabled again.
-func ForgetFeedCopy(stateDir string, src config.IPBLExternalSource) error {
-	path, err := feedCachePath(FeedCacheDir(stateDir), src)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
-// ForgetAllFeedCopies deletes every saved copy, e.g. when external feeds are
-// switched off, so none can come back through the fallback.
+// ForgetAllFeedCopies deletes every saved copy; a sync runs it when external
+// feeds are switched off, so none can come back through the fallback.
 func ForgetAllFeedCopies(stateDir string) {
 	if strings.TrimSpace(stateDir) == "" {
 		return

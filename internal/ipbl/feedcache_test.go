@@ -207,20 +207,6 @@ func TestDNSFailureKeepsLastGood(t *testing.T) {
 	}
 }
 
-func TestForgetFeedCopy(t *testing.T) {
-	state := t.TempDir()
-	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), FeedCacheDir(state), time.Now())
-	if err := ForgetFeedCopy(state, testSrc); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(FeedCacheDir(state), "src-1.list")); !os.IsNotExist(err) {
-		t.Fatalf("copy kept: %v", err)
-	}
-	if err := ForgetFeedCopy(state, testSrc); err != nil {
-		t.Fatalf("second forget: %v", err)
-	}
-}
-
 func TestForgetAllFeedCopies(t *testing.T) {
 	state := t.TempDir()
 	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), FeedCacheDir(state), time.Now())

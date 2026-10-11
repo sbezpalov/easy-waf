@@ -715,12 +715,6 @@ func (s *Store) UpsertIPBLExternalSource(ctx context.Context, e *config.IPBLExte
 	return err
 }
 
-// DeleteIPBLExternalSource removes an external list source.
-func (s *Store) DeleteIPBLExternalSource(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ipbl_external_sources WHERE id = $1`, id)
-	return err
-}
-
 // TouchIPBLSourceFetch updates fetch metadata for a source.
 func (s *Store) TouchIPBLSourceFetch(ctx context.Context, id string, fetchAt time.Time, fetchErr string) error {
 	_, err := s.db.ExecContext(ctx, `

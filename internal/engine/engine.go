@@ -76,18 +76,12 @@ func (e *Engine) Settings() config.GlobalSettings {
 
 // SetSettings replaces the in-memory settings (it does not persist them) and
 // rebinds the GeoIP runtime to them: a provider or database change retires the
-// cached reader and the cached countries, a TTL change applies at once. With
-// external blacklist feeds off it also deletes their saved copies.
+// cached reader and the cached countries, a TTL change applies at once.
 func (e *Engine) SetSettings(s config.GlobalSettings) {
 	e.mu.Lock()
 	e.settings = s
 	geo := e.geo
 	e.mu.Unlock()
-	if !s.IPBLExternalEnabled {
-		// Feeds switched off: drop their saved copies now, not at the next
-		// sync, so switching back on cannot revive old entries.
-		ipbl.ForgetAllFeedCopies(e.StateDir)
-	}
 	if geo != nil {
 		// Configure with whatever is current once we hold geoCfgMu: if
 		// another SetSettings ran meanwhile, its value wins, as it does for
