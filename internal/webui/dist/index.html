@@ -1931,13 +1931,22 @@
       return;
     }
     if (!r.ok) {
+      const msg = await apiMessage(r);
+      if (gen !== auditGen) return;
       if (reset) tbody.innerHTML = '';
       else if (moreBtn) moreBtn.disabled = auditBeforeId === 0; // allow a retry
-      errEl.textContent = await apiMessage(r);
+      errEl.textContent = msg;
       return;
     }
-    const data = await r.json().catch(() => ({}));
+    const data = await r.json().catch(() => null);
     if (gen !== auditGen) return;
+    if (!data || typeof data !== 'object') {
+      // Unreadable reply: keep the list and cursor, allow a retry.
+      if (reset) tbody.innerHTML = '';
+      else if (moreBtn) moreBtn.disabled = auditBeforeId === 0;
+      errEl.textContent = 'Unexpected response from the server';
+      return;
+    }
     const entries = Array.isArray(data.entries) ? data.entries : [];
     const hasMore = data.has_more === true;
 
