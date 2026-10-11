@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,8 +67,10 @@ func refreshFeed(ctx context.Context, src config.IPBLExternalSource, fetch func(
 	}
 	lines, fetched, cerr := readFeedCache(cacheDir, src)
 	switch {
+	case errors.Is(cerr, fs.ErrNotExist):
+		return feedOutcome{lastError: err.Error() + "; no last-good copy yet"}
 	case cerr != nil:
-		return feedOutcome{lastError: err.Error() + "; no last-good copy: " + cerr.Error()}
+		return feedOutcome{lastError: err.Error() + "; no usable last-good copy: " + cerr.Error()}
 	case now.Sub(fetched) > FeedMaxStale:
 		return feedOutcome{lastError: fmt.Sprintf("%v; last-good copy from %s is older than %s and was dropped",
 			err, fetched.UTC().Format(time.RFC3339), FeedMaxStale)}
