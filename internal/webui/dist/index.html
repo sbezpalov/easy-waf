@@ -1844,6 +1844,9 @@
   let auditTimer = null;
   let auditShown = 0;
   let auditBeforeId = 0; // keyset cursor: next page holds rows with id < this
+  // Bumped on every reset (filter change, auto-refresh): a "Load more" still
+  // in flight from before it must not append its rows or move the cursor.
+  let auditGen = 0;
 
   function stopAuditRefreshTimer() {
     if (auditTimer) {
@@ -1895,6 +1898,8 @@
     const sel = document.getElementById('audit-filter-action');
     const actionVal = sel && sel.value !== 'all' ? sel.value : '';
 
+    if (reset) auditGen++;
+    const gen = auditGen;
     if (reset) {
       auditShown = 0;
       auditBeforeId = 0;
@@ -1902,11 +1907,14 @@
     }
 
     errEl.textContent = '';
+    // One page at a time: a double click would fetch the same cursor twice.
+    if (moreBtn) moreBtn.disabled = true;
     const params = new URLSearchParams({ limit: String(AUDIT_PAGE) });
     if (!reset && auditBeforeId > 0) params.set('before_id', String(auditBeforeId));
     if (actionVal) params.set('action', actionVal);
 
     const r = await fetch('/api/v1/audit?' + params.toString(), { headers: hdr() });
+    if (gen !== auditGen) return; // superseded by a reset
     if (r.status === 401) {
       setTok('');
       refreshSession();
@@ -1914,10 +1922,12 @@
     }
     if (!r.ok) {
       if (reset) tbody.innerHTML = '';
+      else if (moreBtn) moreBtn.disabled = auditBeforeId === 0; // allow a retry
       errEl.textContent = await apiMessage(r);
       return;
     }
     const data = await r.json().catch(() => ({}));
+    if (gen !== auditGen) return;
     const entries = Array.isArray(data.entries) ? data.entries : [];
     const hasMore = data.has_more === true;
 
