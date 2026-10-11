@@ -163,7 +163,7 @@ func (c *HAProxyCollector) run(socketPath string, call *statsCall) {
 	if fetch == nil {
 		fetch = fetchHAProxyStatsOnce
 	}
-	rep, err := fetch(socketPath)
+	rep, err := fetchRecovered(fetch, socketPath)
 	if rep == nil {
 		rep = &HAProxyReport{Error: errString(err)}
 	}
@@ -174,6 +174,18 @@ func (c *HAProxyCollector) run(socketPath string, call *statsCall) {
 	c.mu.Unlock()
 	call.rep, call.err = rep, err
 	close(call.done)
+}
+
+// fetchRecovered runs fetch, turning a panic into an error: it runs on its own
+// goroutine, where a panic would take the process down (no net/http recovery)
+// and leave every waiting caller blocked.
+func fetchRecovered(fetch func(string) (*HAProxyReport, error), socketPath string) (rep *HAProxyReport, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			rep, err = nil, fmt.Errorf("haproxy stats: %v", p)
+		}
+	}()
+	return fetch(socketPath)
 }
 
 func errString(err error) string {
