@@ -39,6 +39,17 @@ as it did on every start before).
 - **Settings are no longer raced or overwritten.** API handlers changed the engine's settings while applies read them; the API rendered from settings loaded at startup, so an `easy-waf-admin` change was rendered over and written back; a database error while loading settings silently became defaults, and at startup those defaults were saved. `POST /ipbl/sync` now takes the apply lock.
 - **Confirm-or-revert network changes revert reliably.** The timer is armed before the change; a change that fails part-way is undone at once (a rejected netplan file used to stay in `/etc/netplan`); uncommitted changes are reverted when the broker starts, since a reboot cancelled the transient timer; a reused token is refused; an empty-backup nftables revert removes only the managed tables instead of `flush ruleset`.
 - **`easy-waf-api` and `easy-waf-acmed` keep retrying** when PostgreSQL comes up late, instead of hitting systemd's start limit and staying down.
+- **The login lockout lasts its full 15 minutes.** It was only checked while the triggering attempts were inside the 5-minute counting window, so a locked-out address was let back in after 5 minutes.
+- **A failing external blacklist feed keeps its last good entries** for up to 7 days instead of vanishing from the map on the next apply; the source's last error says which copy is in use (see `docs/IPBL.md`).
+- **GeoIP reloads can no longer crash the API.** A lookup could read a MaxMind database that a concurrent reload or settings change had just unmapped (`fatal error: fault`).
+- **Changing the GeoIP provider, database path or cache TTL takes effect at once**; countries cached from the previous database were served until they expired, and the TTL from startup stayed in force. Saving unrelated settings no longer reopens the MMDB.
+- **Dashboard backend server counts work with HAProxy 3.x**, which lists server rows before their backend; every backend showed no servers.
+- **Request deadlines cover the wait for the apply lock**, the undo after a failed apply has its own deadline, and `easy-waf-acmed` stops cleanly on SIGTERM.
+
+### Changed
+
+- **GeoIP cache eviction is O(1)** (it scanned all 50,000 entries per insert under a lock) and a render resolves each blacklist address once for the global and all per-application GeoIP maps.
+- **Concurrent dashboard/Prometheus stats requests share one HAProxy socket read** instead of each reading and parsing `show stat`.
 
 ### Added
 
