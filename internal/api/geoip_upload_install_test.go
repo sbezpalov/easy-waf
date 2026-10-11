@@ -132,7 +132,7 @@ func TestInstallGeoIPDatabase_keepsLiveDatabaseOnRejection(t *testing.T) {
 }
 
 // Storing a database at a path the settings do not point at must not claim the
-// runtime was switched: geoip.ProviderForRuntime would re-resolve from settings
+// runtime was switched: the geoip runtime would re-resolve from settings
 // on the next lookup and quietly undo it.
 func TestInstallGeoIPDatabase_noFalseActivationOnPathMismatch(t *testing.T) {
 	s := testServer(t, "maxmind")

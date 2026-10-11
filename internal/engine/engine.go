@@ -68,14 +68,15 @@ func (e *Engine) Settings() config.GlobalSettings {
 }
 
 // SetSettings replaces the in-memory settings (it does not persist them) and
-// drops the cached GeoIP provider, which depends on them.
+// rebinds the GeoIP runtime to them: a provider or database change retires the
+// cached reader and the cached countries, a TTL change applies at once.
 func (e *Engine) SetSettings(s config.GlobalSettings) {
 	e.mu.Lock()
 	e.settings = s
 	geo := e.geo
 	e.mu.Unlock()
 	if geo != nil {
-		geo.InvalidateGeoProvider()
+		geo.Configure(s)
 	}
 }
 
@@ -92,6 +93,7 @@ func (e *Engine) GeoIP() *geoip.Runtime {
 	defer e.mu.Unlock()
 	if e.geo == nil {
 		e.geo = geoip.NewRuntime(time.Duration(e.settings.GeoIPCacheTTL))
+		e.geo.Configure(e.settings)
 	}
 	return e.geo
 }
@@ -232,22 +234,50 @@ func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) 
 			return err
 		}
 		res = r
-		return e.writeGeoIPEnforceMap(ctx, cfg, r.AllCIDRs)
+		return e.writeGeoIPEnforceMap(ctx, cfg, r.AllCIDRs, nil)
 	})
 	return res, err
 }
 
-// writeGeoIPEnforceMap refreshes the HAProxy GeoIP batch map from merged blacklist CIDRs.
-func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSettings, blacklistCIDRs []string) error {
+// writeGeoIPEnforceMap refreshes the HAProxy GeoIP batch map from merged
+// blacklist CIDRs. geo memoizes lookups across the maps of one render; nil
+// means a fresh one.
+func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSettings, blacklistCIDRs []string, geo *renderGeo) error {
 	if !cfg.GeoIPEnabled {
 		return geoip.WriteDisabledEnforceMap(cfg, e.StateDir)
 	}
-	g := e.GeoIP()
-	prov, err := geoip.ProviderForRuntime(g, cfg)
+	if geo == nil {
+		geo = e.newRenderGeo(cfg)
+	}
+	prov, err := geo.provider()
 	if err != nil {
 		return err
 	}
-	return geoip.WriteEnforceMap(ctx, prov, g.Cache, cfg, e.StateDir, blacklistCIDRs)
+	return geoip.WriteEnforceMap(ctx, prov, nil, cfg, e.StateDir, blacklistCIDRs)
+}
+
+// renderGeo resolves countries for one render: every address is looked up at
+// most once however many maps (global and per application) need it.
+type renderGeo struct {
+	rt   *geoip.Runtime
+	cfg  config.GlobalSettings
+	memo *geoip.MemoProvider
+}
+
+func (e *Engine) newRenderGeo(cfg config.GlobalSettings) *renderGeo {
+	return &renderGeo{rt: e.GeoIP(), cfg: cfg}
+}
+
+func (g *renderGeo) provider() (geoip.GeoProvider, error) {
+	if g.memo != nil {
+		return g.memo, nil
+	}
+	res, err := g.rt.Resolver(g.cfg)
+	if err != nil {
+		return nil, err
+	}
+	g.memo = geoip.NewMemoProvider(res)
+	return g.memo, nil
 }
 
 // RenderFromStore builds HAProxy config from current DB state.
@@ -274,10 +304,11 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 	if err != nil {
 		return haproxy.Rendered{}, err
 	}
-	if err := e.writeGeoIPEnforceMap(ctx, cfg, syncRes.AllCIDRs); err != nil {
+	geo := e.newRenderGeo(cfg)
+	if err := e.writeGeoIPEnforceMap(ctx, cfg, syncRes.AllCIDRs, geo); err != nil {
 		return haproxy.Rendered{}, err
 	}
-	if err := e.writePerAppGeoMaps(ctx, cfg, apps, syncRes.AllCIDRs); err != nil {
+	if err := e.writePerAppGeoMaps(ctx, apps, syncRes.AllCIDRs, geo); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	certs, err := e.Store.ListCertificates(ctx)
@@ -337,7 +368,7 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 	return haproxy.Render(ri)
 }
 
-func (e *Engine) writePerAppGeoMaps(ctx context.Context, cfg config.GlobalSettings, apps []config.Application, blacklistCIDRs []string) error {
+func (e *Engine) writePerAppGeoMaps(ctx context.Context, apps []config.Application, blacklistCIDRs []string, geo *renderGeo) error {
 	for _, a := range apps {
 		out := geoip.AppEnforceMapPath(e.StateDir, a.ID)
 		if !a.Enabled || !a.Security.GeoIPEnabled || !geoip.HasCountryTargets(a.Security.GeoIPCountryList) {
@@ -346,12 +377,11 @@ func (e *Engine) writePerAppGeoMaps(ctx context.Context, cfg config.GlobalSettin
 			}
 			continue
 		}
-		g := e.GeoIP()
-		prov, err := geoip.ProviderForRuntime(g, cfg)
+		prov, err := geo.provider()
 		if err != nil {
 			return err
 		}
-		if err := geoip.WriteAppEnforceMap(ctx, prov, g.Cache, a.Security.GeoIPPolicy, a.Security.GeoIPCountryList, blacklistCIDRs, out); err != nil {
+		if err := geoip.WriteAppEnforceMap(ctx, prov, nil, a.Security.GeoIPPolicy, a.Security.GeoIPCountryList, blacklistCIDRs, out); err != nil {
 			return err
 		}
 	}

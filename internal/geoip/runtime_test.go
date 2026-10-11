@@ -1,0 +1,208 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
+package geoip
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/easy-waf/easy-waf/internal/config"
+)
+
+func maxmindSettings(path string) config.GlobalSettings {
+	return config.GlobalSettings{GeoIPProvider: "maxmind", GeoIPMMDBPath: path}
+}
+
+// Lookups racing settings changes must never use a provider after it was
+// closed, and every answer must come from the database of the settings the
+// lookup was made with.
+func TestRuntime_ConcurrentLookupConfigure(t *testing.T) {
+	us := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "US"))
+	de := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "DE"))
+	rt := NewRuntime(time.Hour)
+	rt.Configure(us)
+	ctx := context.Background()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan string, 16)
+	for i := 0; i < 8; i++ {
+		g, want := us, "US"
+		if i%2 == 1 {
+			g, want = de, "DE"
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				cc, _, err := rt.Lookup(ctx, g, "8.8.8.8")
+				if err != nil {
+					errs <- err.Error()
+					return
+				}
+				if cc != want {
+					errs <- "got " + cc + " want " + want
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < 200; i++ {
+		if i%2 == 0 {
+			rt.Configure(de)
+		} else {
+			rt.Configure(us)
+		}
+		if i%10 == 0 {
+			rt.InvalidateGeoProvider()
+		}
+	}
+	close(stop)
+	wg.Wait()
+	close(errs)
+	for msg := range errs {
+		t.Fatal(msg)
+	}
+	rt.InvalidateGeoProvider()
+}
+
+// R3: switching the database via settings must not keep serving countries
+// cached from the old one.
+func TestRuntime_ConfigureDropsCountriesFromOldDatabase(t *testing.T) {
+	us := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "US"))
+	de := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "DE"))
+	rt := NewRuntime(time.Hour)
+	rt.Configure(us)
+	defer rt.InvalidateGeoProvider()
+	ctx := context.Background()
+	if cc, _, err := rt.Lookup(ctx, us, "8.8.8.8"); err != nil || cc != "US" {
+		t.Fatalf("first lookup: %q %v", cc, err)
+	}
+	if _, cached, _ := rt.Lookup(ctx, us, "8.8.8.8"); !cached {
+		t.Fatal("second lookup should hit the cache")
+	}
+	rt.Configure(de)
+	cc, cached, err := rt.Lookup(ctx, de, "8.8.8.8")
+	if err != nil || cc != "DE" || cached {
+		t.Fatalf("after switch: %q cached=%v %v", cc, cached, err)
+	}
+}
+
+// Saving settings unrelated to GeoIP resolution must keep the open reader and
+// the cache; a TTL change applies to entries already cached.
+func TestRuntime_ConfigureKeepsReaderForUnrelatedChanges(t *testing.T) {
+	g := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "US"))
+	g.GeoIPCacheTTL = config.Duration(time.Hour)
+	rt := NewRuntime(time.Hour)
+	rt.Configure(g)
+	defer rt.InvalidateGeoProvider()
+	ctx := context.Background()
+	if _, _, err := rt.Lookup(ctx, g, "8.8.8.8"); err != nil {
+		t.Fatal(err)
+	}
+	reader := rt.prov
+
+	g2 := g
+	g2.GeoIPCountryList = []string{"RU"}
+	rt.Configure(g2)
+	if rt.prov != reader {
+		t.Fatal("unrelated settings change reopened the MMDB")
+	}
+	if _, cached, _ := rt.Lookup(ctx, g2, "8.8.8.8"); !cached {
+		t.Fatal("unrelated settings change dropped the cache")
+	}
+
+	g3 := g2
+	g3.GeoIPCacheTTL = config.Duration(time.Millisecond)
+	rt.Configure(g3)
+	if rt.Cache.TTL() != time.Millisecond {
+		t.Fatalf("ttl not reconfigured: %v", rt.Cache.TTL())
+	}
+	time.Sleep(5 * time.Millisecond)
+	if _, cached, _ := rt.Lookup(ctx, g3, "8.8.8.8"); cached {
+		t.Fatal("entry outlived the new TTL")
+	}
+}
+
+// A lookup made with settings other than the configured ones (an old render
+// snapshot, a probe of another file) must not replace the shared reader or
+// populate the shared cache.
+func TestRuntime_ForeignSettingsDoNotTouchSharedState(t *testing.T) {
+	us := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "US"))
+	de := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "DE"))
+	rt := NewRuntime(time.Hour)
+	rt.Configure(us)
+	defer rt.InvalidateGeoProvider()
+	ctx := context.Background()
+	if _, err := rt.Resolver(us); err != nil {
+		t.Fatal(err)
+	}
+	reader := rt.prov
+	cc, cached, err := rt.Lookup(ctx, de, "8.8.8.8")
+	if err != nil || cc != "DE" || cached {
+		t.Fatalf("probe: %q cached=%v %v", cc, cached, err)
+	}
+	if rt.prov != reader {
+		t.Fatal("probe replaced the configured reader")
+	}
+	if cc, _, _ := rt.Lookup(ctx, us, "8.8.8.8"); cc != "US" {
+		t.Fatalf("configured lookup after probe: %q", cc)
+	}
+}
+
+// An answer from the retired database must not be cached after the switch.
+func TestMemoryCache_SetIfGenerationRefusesStale(t *testing.T) {
+	c := NewMemoryCache(time.Hour, 10)
+	gen := c.Generation()
+	c.Clear()
+	if c.SetIfGeneration("8.8.8.8", "US", gen) {
+		t.Fatal("stale result stored")
+	}
+	if _, ok := c.Get("8.8.8.8"); ok {
+		t.Fatal("stale result visible")
+	}
+	if !c.SetIfGeneration("8.8.8.8", "DE", c.Generation()) {
+		t.Fatal("current result refused")
+	}
+}
+
+func TestResolver_MissingDatabaseFails(t *testing.T) {
+	rt := NewRuntime(0)
+	g := maxmindSettings("/nonexistent/db.mmdb")
+	rt.Configure(g)
+	if _, err := rt.Resolver(g); err == nil {
+		t.Fatal("expected error for a missing MMDB")
+	}
+}
+
+type countingProvider struct {
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (p *countingProvider) Lookup(_ context.Context, ip string) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls[ip]++
+	return "US", nil
+}
+
+func TestMemoProvider_ResolvesEachAddressOnce(t *testing.T) {
+	inner := &countingProvider{calls: map[string]int{}}
+	m := NewMemoProvider(inner)
+	for i := 0; i < 3; i++ {
+		if cc, err := m.Lookup(context.Background(), "1.1.1.1"); err != nil || cc != "US" {
+			t.Fatalf("lookup: %q %v", cc, err)
+		}
+	}
+	if inner.calls["1.1.1.1"] != 1 {
+		t.Fatalf("calls: %d", inner.calls["1.1.1.1"])
+	}
+}
