@@ -23,6 +23,7 @@ type MaxMindProvider struct {
 	mu     sync.RWMutex
 	reader *maxminddb.Reader
 	path   string
+	file   os.FileInfo // the file the reader was opened from
 }
 
 type maxMindCountryRecord struct {
@@ -37,14 +38,15 @@ func NewMaxMindProvider(dbPath string) (*MaxMindProvider, error) {
 	if dbPath == "" {
 		return nil, fmt.Errorf("geoip maxmind: empty database path")
 	}
-	if _, err := os.Stat(dbPath); err != nil {
+	fi, err := os.Stat(dbPath)
+	if err != nil {
 		return nil, fmt.Errorf("geoip maxmind: database file %q: %w", dbPath, err)
 	}
 	r, err := maxminddb.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("geoip maxmind: open %q: %w", dbPath, err)
 	}
-	return &MaxMindProvider{reader: r, path: dbPath}, nil
+	return &MaxMindProvider{reader: r, path: dbPath, file: fi}, nil
 }
 
 // Lookup returns ISO 3166-1 alpha-2 country code for a host IP.
@@ -83,7 +85,8 @@ func (p *MaxMindProvider) Reload(dbPath string) error {
 	if dbPath == "" {
 		return fmt.Errorf("geoip maxmind: empty database path for reload")
 	}
-	if _, err := os.Stat(dbPath); err != nil {
+	fi, err := os.Stat(dbPath)
+	if err != nil {
 		return fmt.Errorf("geoip maxmind: database file %q: %w", dbPath, err)
 	}
 	nr, err := maxminddb.Open(dbPath)
@@ -95,6 +98,7 @@ func (p *MaxMindProvider) Reload(dbPath string) error {
 	old := p.reader
 	p.reader = nr
 	p.path = dbPath
+	p.file = fi
 	if old != nil {
 		_ = old.Close()
 	}
@@ -108,8 +112,26 @@ func (p *MaxMindProvider) Close() error {
 	rd := p.reader
 	p.reader = nil
 	p.path = ""
+	p.file = nil
 	if rd == nil {
 		return nil
 	}
 	return rd.Close()
+}
+
+// ChangedOnDisk reports whether the file at the provider's path is no longer
+// the one its reader was opened from (replaced, rewritten or removed), as
+// scripts/update-geoip-db.sh does. A closed provider reports false.
+func (p *MaxMindProvider) ChangedOnDisk() bool {
+	p.mu.RLock()
+	path, opened := p.path, p.file
+	p.mu.RUnlock()
+	if opened == nil {
+		return false
+	}
+	cur, err := os.Stat(path)
+	if err != nil {
+		return true
+	}
+	return !os.SameFile(opened, cur) || !cur.ModTime().Equal(opened.ModTime()) || cur.Size() != opened.Size()
 }

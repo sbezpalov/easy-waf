@@ -18,7 +18,7 @@ Two backends are supported via global setting **`geoip_provider`**: **`ipinfo`**
 
 - Fully **offline** after the file is on disk.
 - Set **`geoip_provider`** to **`maxmind`** and **`geoip_mmdb_path`** to the absolute path of **`GeoLite2-Country.mmdb`** (e.g. `/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb`).
-- The API process opens the database with [`maxminddb-golang`](https://github.com/oschwald/maxminddb-golang); **`POST /api/v1/geoip/reload`** hot-swaps the reader after you replace the file (see script below).
+- The API process opens the database with [`maxminddb-golang`](https://github.com/oschwald/maxminddb-golang); **`POST /api/v1/geoip/reload`** hot-swaps the reader after you replace the file (see script below). Without the call, a file replaced at the same path is picked up at the next apply or settings refresh, in every process (`easy-waf-acmed` renders too). Changing `geoip_provider`, `geoip_mmdb_path` or `geoip_cache_ttl` takes effect at once and drops countries cached from the previous database; other settings leave the open reader alone.
 
 ### Installing GeoLite2 from the UI (no shell access needed)
 
@@ -75,7 +75,7 @@ Environment variables for **`scripts/update-geoip-db.sh`**:
 
 | Mode | When | Mechanism |
 |------|------|-------------|
-| **Real-time** | `GET /api/v1/geoip/lookup?ip=…` from the UI or automation | Uses current provider + in-memory TTL cache (`geoip_cache_ttl`). Optional **`nocache=1`** bypasses cache for one request. For MaxMind path checks before save, use **`probe_mmdb_path=/path/to.mmdb`**. |
+| **Real-time** | `GET /api/v1/geoip/lookup?ip=…` from the UI or automation | Uses current provider + in-memory TTL cache (`geoip_cache_ttl`). Optional **`nocache=1`** bypasses cache for one request. For MaxMind path checks before save, use **`probe_mmdb_path=/path/to.mmdb`** (opened just for that request, never cached, does not replace the configured reader). |
 | **Batch** | Apply / IPBL sync with GeoIP enabled | Resolves many blacklist CIDRs (and per-app rules) through the same provider; writes HAProxy **`.map`** files used at the edge. |
 
 Batch mode avoids per-request HTTP to ipinfo during traffic; MaxMind batch reads are local mmap lookups.
