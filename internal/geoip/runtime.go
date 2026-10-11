@@ -145,6 +145,12 @@ func (r *Runtime) ReloadMaxMindDB(dbPath string) error {
 
 // Lookup returns ISO country for ip, using cache then provider.
 func (r *Runtime) Lookup(ctx context.Context, g config.GlobalSettings, ip string) (country string, cached bool, err error) {
+	return r.lookup(ctx, g, ip, nil)
+}
+
+// lookup is Lookup; foreign, when non-nil, supplies the provider for settings
+// other than the configured ones instead of a one-off opened per call.
+func (r *Runtime) lookup(ctx context.Context, g config.GlobalSettings, ip string, foreign func() (GeoProvider, error)) (country string, cached bool, err error) {
 	if r == nil || r.Cache == nil {
 		return "", false, fmt.Errorf("geoip: runtime not initialized")
 	}
@@ -162,39 +168,45 @@ func (r *Runtime) Lookup(ctx context.Context, g config.GlobalSettings, ip string
 		}
 	}
 	r.mu.RUnlock()
-	cc, shared, err := r.lookupProvider(ctx, g, ip)
+	shared, err = r.withProvider(g, func(p GeoProvider) error {
+		var lerr error
+		country, lerr = p.Lookup(ctx, ip)
+		return lerr
+	}, foreign)
 	if err != nil {
 		return "", false, err
 	}
 	if shared {
 		// Refused when the provider changed meanwhile: the answer came from
 		// the database that was just retired.
-		r.Cache.SetIfGeneration(ip, cc, gen)
+		r.Cache.SetIfGeneration(ip, country, gen)
 	}
-	return cc, false, nil
+	return country, false, nil
 }
 
-// lookupProvider resolves ip with the shared provider when g is the
-// configuration the runtime serves, else with a one-off provider. shared
-// reports which one answered.
-func (r *Runtime) lookupProvider(ctx context.Context, g config.GlobalSettings, ip string) (cc string, shared bool, err error) {
-	shared, err = r.withProvider(g, func(p GeoProvider) error {
-		var lerr error
-		cc, lerr = p.Lookup(ctx, ip)
-		return lerr
-	})
-	return cc, shared, err
-}
-
-// withProvider runs fn with the provider for g: the shared one, held under
-// the read lock so it cannot be closed meanwhile, or a one-off provider closed
-// afterwards. Errors opening the provider are returned without calling fn.
-func (r *Runtime) withProvider(g config.GlobalSettings, fn func(GeoProvider) error) (shared bool, err error) {
+// withProvider runs fn with the provider for g and reports whether it was the
+// shared one. For settings other than the configured ones it uses foreign, or
+// when that is nil a one-off provider closed afterwards. Errors opening the
+// provider are returned without calling fn.
+//
+// A closable provider (MaxMind: its reader is memory-mapped) is used under the
+// read lock, so it cannot be closed mid-lookup. Other providers (ipinfo) hold
+// nothing that closing would free and are called outside the lock: a lookup
+// there may wait a second for the rate limit and up to 15 s for HTTP, and
+// must not hold up Configure, the next render or cache hits meanwhile.
+func (r *Runtime) withProvider(g config.GlobalSettings, fn func(GeoProvider) error, foreign func() (GeoProvider, error)) (shared bool, err error) {
 	key := providerKey(g)
 	for {
 		r.mu.RLock()
 		if r.configured && r.cfgKey != key {
 			r.mu.RUnlock()
+			if foreign != nil {
+				p, err := foreign()
+				if err != nil {
+					return false, err
+				}
+				return false, fn(p)
+			}
 			p, err := NewProviderForSettings(g)
 			if err != nil {
 				return false, err
@@ -205,9 +217,14 @@ func (r *Runtime) withProvider(g config.GlobalSettings, fn func(GeoProvider) err
 			return false, fn(p)
 		}
 		if r.prov != nil && r.provKey == key {
-			err := fn(r.prov)
+			p := r.prov
+			if _, closable := p.(io.Closer); closable {
+				err := fn(p)
+				r.mu.RUnlock()
+				return true, err
+			}
 			r.mu.RUnlock()
-			return true, err
+			return true, fn(p)
 		}
 		r.mu.RUnlock()
 
@@ -231,35 +248,79 @@ func (r *Runtime) withProvider(g config.GlobalSettings, fn func(GeoProvider) err
 	}
 }
 
-// Resolver returns a GeoProvider that resolves through the runtime (cache
-// first) with settings g and stays valid across provider changes. It fails
-// when the provider for g cannot be opened, e.g. a missing MMDB file. A
-// shared reader whose file was replaced on disk is reopened first.
-func (r *Runtime) Resolver(g config.GlobalSettings) (GeoProvider, error) {
-	if r == nil || r.Cache == nil {
-		return nil, fmt.Errorf("geoip: runtime not initialized")
+// retireIfChanged is retireIfChangedLocked that takes the write lock only when
+// the file really changed, so the common case does not wait for lookups.
+func (r *Runtime) retireIfChanged(key string) {
+	r.mu.RLock()
+	mm, _ := r.prov.(*MaxMindProvider)
+	serves := !r.configured || r.cfgKey == key
+	r.mu.RUnlock()
+	if !serves || mm == nil || !mm.ChangedOnDisk() {
+		return
 	}
-	// A render starts here: pick up a database replaced on disk since the
-	// reader was opened, as every render did when it reopened the file.
 	r.mu.Lock()
-	if !r.configured || r.cfgKey == providerKey(g) {
+	if r.prov == mm {
 		r.retireIfChangedLocked()
 	}
 	r.mu.Unlock()
-	if _, err := r.withProvider(g, func(GeoProvider) error { return nil }); err != nil {
-		return nil, err
+}
+
+// Resolver returns a GeoProvider for one batch (a render): it resolves through
+// the runtime, cache first, with settings g, and stays valid across provider
+// changes. If g stops matching the configured settings mid-batch, it opens one
+// provider for g and reuses it rather than one per address. Call release when
+// the batch is done. A shared reader whose file was replaced on disk is
+// reopened first. It fails when the provider for g cannot be opened, e.g. a
+// missing MMDB file.
+func (r *Runtime) Resolver(g config.GlobalSettings) (prov GeoProvider, release func(), err error) {
+	if r == nil || r.Cache == nil {
+		return nil, nil, fmt.Errorf("geoip: runtime not initialized")
 	}
-	return runtimeResolver{r: r, g: g}, nil
+	// A render starts here: pick up a database replaced on disk since the
+	// reader was opened, as every render did when it reopened the file.
+	r.retireIfChanged(providerKey(g))
+	rr := &runtimeResolver{r: r, g: g}
+	if _, err := r.withProvider(g, func(GeoProvider) error { return nil }, rr.foreign); err != nil {
+		rr.release()
+		return nil, nil, err
+	}
+	return rr, rr.release, nil
 }
 
 type runtimeResolver struct {
 	r *Runtime
 	g config.GlobalSettings
+
+	mu     sync.Mutex
+	oneOff GeoProvider
 }
 
-func (rr runtimeResolver) Lookup(ctx context.Context, ip string) (string, error) {
-	cc, _, err := rr.r.Lookup(ctx, rr.g, ip)
+func (rr *runtimeResolver) Lookup(ctx context.Context, ip string) (string, error) {
+	cc, _, err := rr.r.lookup(ctx, rr.g, ip, rr.foreign)
 	return cc, err
+}
+
+// foreign opens the batch's own provider for rr.g on first use.
+func (rr *runtimeResolver) foreign() (GeoProvider, error) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	if rr.oneOff == nil {
+		p, err := NewProviderForSettings(rr.g)
+		if err != nil {
+			return nil, err
+		}
+		rr.oneOff = p
+	}
+	return rr.oneOff, nil
+}
+
+func (rr *runtimeResolver) release() {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	if c, ok := rr.oneOff.(io.Closer); ok {
+		_ = c.Close()
+	}
+	rr.oneOff = nil
 }
 
 // MemoProvider remembers every answer, failures included, of the provider it

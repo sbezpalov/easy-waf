@@ -143,9 +143,11 @@ func TestRuntime_ForeignSettingsDoNotTouchSharedState(t *testing.T) {
 	rt.Configure(us)
 	defer rt.InvalidateGeoProvider()
 	ctx := context.Background()
-	if _, err := rt.Resolver(us); err != nil {
+	_, release, err := rt.Resolver(us)
+	if err != nil {
 		t.Fatal(err)
 	}
+	release()
 	reader := rt.prov
 	cc, cached, err := rt.Lookup(ctx, de, "8.8.8.8")
 	if err != nil || cc != "DE" || cached {
@@ -179,7 +181,7 @@ func TestResolver_MissingDatabaseFails(t *testing.T) {
 	rt := NewRuntime(0)
 	g := maxmindSettings("/nonexistent/db.mmdb")
 	rt.Configure(g)
-	if _, err := rt.Resolver(g); err == nil {
+	if _, _, err := rt.Resolver(g); err == nil {
 		t.Fatal("expected error for a missing MMDB")
 	}
 }
@@ -248,11 +250,102 @@ func TestRuntime_PicksUpDatabaseReplacedOnDisk(t *testing.T) {
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
 	}
-	res, err := rt.Resolver(g)
+	res, release, err := rt.Resolver(g)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer release()
 	if cc, err := res.Lookup(ctx, "8.8.8.8"); err != nil || cc != "FR" {
 		t.Fatalf("after Resolver: %q %v", cc, err)
+	}
+}
+
+// blockingProvider is a network-style provider (not closable) whose lookups
+// wait until released, like ipinfo behind its rate limit or a slow HTTP call.
+type blockingProvider struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p *blockingProvider) Lookup(context.Context, string) (string, error) {
+	p.entered <- struct{}{}
+	<-p.release
+	return "US", nil
+}
+
+// A slow network lookup must not hold the runtime lock: settings changes,
+// the start of a render and cache hits go ahead meanwhile.
+func TestRuntime_SlowNetworkLookupDoesNotBlock(t *testing.T) {
+	g := config.GlobalSettings{GeoIPProvider: "ipinfo"}
+	rt := NewRuntime(time.Hour)
+	rt.Configure(g)
+	bp := &blockingProvider{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	rt.mu.Lock()
+	rt.prov, rt.provKey = bp, providerKey(g)
+	rt.mu.Unlock()
+	rt.Cache.Set("1.1.1.1", "AU")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = rt.Lookup(context.Background(), g, "8.8.8.8")
+	}()
+	<-bp.entered
+
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		g2 := g
+		g2.GeoIPCacheTTL = config.Duration(2 * time.Hour)
+		rt.Configure(g2)
+		if _, release, err := rt.Resolver(g2); err == nil {
+			release()
+		}
+		if cc, cached, _ := rt.Lookup(context.Background(), g2, "1.1.1.1"); cc != "AU" || !cached {
+			t.Errorf("cache hit during slow lookup: %q cached=%v", cc, cached)
+		}
+	}()
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Configure/Resolver/cache hit blocked behind a slow network lookup")
+	}
+	close(bp.release)
+	<-done
+}
+
+// Settings that stop matching the configured ones in the middle of a render
+// get one provider for the rest of the render, not one per address, and it
+// is closed by release.
+func TestResolver_ForeignSettingsOpenOneProvider(t *testing.T) {
+	us := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "US"))
+	de := maxmindSettings(writeTestCountryMMDB(t, "8.8.8.8", "DE"))
+	rt := NewRuntime(time.Hour)
+	rt.Configure(us)
+	defer rt.InvalidateGeoProvider()
+	res, release, err := rt.Resolver(us)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.Configure(de) // settings saved while the render runs
+	rr := res.(*runtimeResolver)
+	var first GeoProvider
+	for i := 0; i < 5; i++ {
+		cc, err := res.Lookup(context.Background(), "8.8.8.8")
+		if err != nil || cc != "US" {
+			t.Fatalf("lookup %d: %q %v", i, cc, err)
+		}
+		rr.mu.Lock()
+		cur := rr.oneOff
+		rr.mu.Unlock()
+		if cur == nil || (first != nil && cur != first) {
+			t.Fatalf("lookup %d: provider %p, first %p", i, cur, first)
+		}
+		first = cur
+	}
+	release()
+	mm := first.(*MaxMindProvider)
+	if _, err := mm.Lookup(context.Background(), "8.8.8.8"); err == nil {
+		t.Fatal("release did not close the render's own provider")
 	}
 }
