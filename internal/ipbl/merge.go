@@ -72,7 +72,7 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		client := newFeedClient(allowed)
 		fetch := func(ctx context.Context, u string) ([]string, error) {
 			if _, err := validateFeedURLContext(ctx, u, allowed); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%w: %w", ErrFeedRejected, err)
 			}
 			return fetchPlainList(ctx, client, u)
 		}

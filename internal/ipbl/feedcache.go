@@ -27,6 +27,11 @@ import (
 // keep blocking with ever older data.
 const FeedMaxStale = 7 * 24 * time.Hour
 
+// ErrFeedRejected marks a feed URL the destination policy refuses (SSRF
+// guard, ipbl_fetch_allowed_cidrs). That is configuration saying "do not use
+// this feed", not an outage, so the last good copy is not used for it.
+var ErrFeedRejected = errors.New("feed URL rejected by fetch policy")
+
 const (
 	feedCacheHeader  = "# easy-waf ipbl feed cache — last good download; do not edit"
 	feedCacheURL     = "# url: "
@@ -62,7 +67,7 @@ func refreshFeed(ctx context.Context, src config.IPBLExternalSource, fetch func(
 		}
 		return feedOutcome{lines: lines}
 	}
-	if cacheDir == "" {
+	if cacheDir == "" || errors.Is(err, ErrFeedRejected) {
 		return feedOutcome{lastError: err.Error()}
 	}
 	lines, fetched, cerr := readFeedCache(cacheDir, src)
@@ -166,8 +171,9 @@ func readFeedCache(cacheDir string, src config.IPBLExternalSource) ([]string, ti
 	return validFeedLines(lines), fetched, nil
 }
 
-// pruneFeedCache removes cached copies of sources that no longer exist, so a
-// deleted source's entries can never come back through the fallback.
+// pruneFeedCache removes cached copies of sources that are deleted or
+// disabled, so their entries can never come back through the fallback (a
+// re-enabled source starts from its next successful download).
 func pruneFeedCache(cacheDir string, srcs []config.IPBLExternalSource) {
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
@@ -175,7 +181,9 @@ func pruneFeedCache(cacheDir string, srcs []config.IPBLExternalSource) {
 	}
 	keep := make(map[string]struct{}, len(srcs))
 	for _, s := range srcs {
-		keep[s.ID+".list"] = struct{}{}
+		if s.Enabled {
+			keep[s.ID+".list"] = struct{}{}
+		}
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".list") {

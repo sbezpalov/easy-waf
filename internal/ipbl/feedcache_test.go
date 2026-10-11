@@ -6,6 +6,7 @@ package ipbl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -89,6 +90,7 @@ func TestPruneFeedCache_RemovesDeletedSources(t *testing.T) {
 	other := config.IPBLExternalSource{ID: "src-2", URL: "https://two.example/list"}
 	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), dir, now)
 	refreshFeed(context.Background(), other, okFeed("198.51.100.1"), dir, now)
+	other.Enabled = true
 	pruneFeedCache(dir, []config.IPBLExternalSource{other})
 	if _, err := os.Stat(filepath.Join(dir, "src-1.list")); !os.IsNotExist(err) {
 		t.Fatalf("deleted source's copy kept: %v", err)
@@ -110,5 +112,35 @@ func TestRefreshFeed_UnsafeIDNotCached(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "escape.list")); !os.IsNotExist(err) {
 		t.Fatal("file written outside the cache directory")
+	}
+}
+
+// A disabled source loses its copy too: re-enabling it must not bring back
+// entries the operator switched off.
+func TestPruneFeedCache_RemovesDisabledSources(t *testing.T) {
+	dir := t.TempDir()
+	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), dir, time.Now())
+	disabled := testSrc
+	disabled.Enabled = false
+	pruneFeedCache(dir, []config.IPBLExternalSource{disabled})
+	if _, err := os.Stat(filepath.Join(dir, "src-1.list")); !os.IsNotExist(err) {
+		t.Fatalf("disabled source's copy kept: %v", err)
+	}
+}
+
+// A URL the fetch policy refuses is configuration, not an outage: no fallback.
+func TestRefreshFeed_PolicyRejectionSkipsLastGood(t *testing.T) {
+	dir := t.TempDir()
+	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), dir, t0)
+	rejected := func(context.Context, string) ([]string, error) {
+		return nil, fmt.Errorf("%w: %w", ErrFeedRejected, errors.New("destination 10.0.0.5 not allowed"))
+	}
+	out := refreshFeed(context.Background(), testSrc, rejected, dir, t0.Add(time.Minute))
+	if len(out.lines) != 0 {
+		t.Fatalf("rejected feed still contributed %v", out.lines)
+	}
+	if !strings.Contains(out.lastError, "not allowed") || strings.Contains(out.lastError, "last-good") {
+		t.Fatalf("last error: %q", out.lastError)
 	}
 }
