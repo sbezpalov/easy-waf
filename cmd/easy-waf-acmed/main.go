@@ -31,10 +31,11 @@ const (
 	// that died mid-issuance; it is claimed again. Lego's own timeouts, DNS
 	// propagation included, finish well inside it.
 	staleIssuing = time.Hour
-	// issueTimeout bounds one issuance end to end (ACME, apply lock, writes,
-	// apply). Lego's own timeouts normally end an issuance long before;
-	// whether every Lego step honors the context is not guaranteed, which is
-	// why the deadline also covers what follows.
+	// issueTimeout bounds one issuance: the ACME order, then the apply-lock
+	// wait and certificate writes (the HAProxy apply that follows has its own
+	// applyTimeout). Lego's own timeouts normally end an issuance long
+	// before; whether every Lego step honors the context is not guaranteed,
+	// which is why the deadline also covers the writes.
 	issueTimeout = 45 * time.Minute
 	// claimMargin: every row of a batch is claimed at once and issued one
 	// after another, so each issuance must also end this long before the
@@ -48,7 +49,9 @@ const (
 	// round instead.
 	minIssueBudget = 15 * time.Minute
 	// applyTimeout bounds the HAProxy apply after a successful issuance. The
-	// certificate is stored by then, so it is not tied to the claim deadline.
+	// certificate is stored by then, so it is not tied to the claim deadline;
+	// a stop signal cancels it (Apply rolls back cleanly) instead of letting
+	// systemd kill the process mid-apply.
 	applyTimeout = 5 * time.Minute
 	// dbTimeout bounds the per-tick settings load and claim queries.
 	dbTimeout = 30 * time.Second
@@ -145,12 +148,14 @@ func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
 			return
 		}
 		ictx, icancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
-		issueOne(ictx, eng, st, &due[i])
+		issueOne(ictx, ctx, eng, st, &due[i])
 		icancel()
 	}
 }
 
-func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) {
+// issueOne issues c under ctx. stop is the process lifecycle context: it
+// cancels the HAProxy apply that follows a successful issuance.
+func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) {
 	email := eng.Settings().ACMEEmail
 	webroot := eng.Settings().ACMEWebrootPath
 	if webroot == "" {
@@ -220,9 +225,9 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
 		return
 	}
-	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), applyTimeout)
+	actx, acancel := context.WithTimeout(stop, applyTimeout)
 	defer acancel()
 	if err := eng.Apply(actx, "acme"); err != nil {
-		log.Printf("apply after acme: %v", err)
+		log.Printf("apply after acme (the stored certificate goes live with the next apply): %v", err)
 	}
 }
