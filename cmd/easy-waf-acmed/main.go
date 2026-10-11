@@ -51,7 +51,8 @@ const (
 	// applyTimeout bounds the HAProxy apply after a successful issuance. The
 	// certificate is stored by then, so it is not tied to the claim deadline;
 	// a stop signal cancels it (Apply rolls back cleanly) instead of letting
-	// systemd kill the process mid-apply.
+	// systemd kill the process mid-apply, and the worker's reconcile takes the
+	// certificate live on the next tick or start.
 	applyTimeout = 5 * time.Minute
 	// dbTimeout bounds the per-tick settings load and claim queries.
 	dbTimeout = 30 * time.Second
@@ -96,8 +97,9 @@ func main() {
 		<-ctx.Done()
 		stop() // restore default handling for a second signal
 	}()
+	w := &worker{eng: eng, st: st, applyPending: true}
 	for {
-		runOnce(ctx, eng, st)
+		w.runOnce(ctx)
 		select {
 		case <-ctx.Done():
 			log.Printf("easy-waf-acmed stopping")
@@ -107,14 +109,54 @@ func main() {
 	}
 }
 
+// worker carries what acmed keeps between ticks.
+type worker struct {
+	eng *engine.Engine
+	st  *store.Store
+	// applyPending: a certificate may be stored but not live in HAProxy (the
+	// apply after it failed or was cut off by a stop, or a previous process
+	// died in between). It starts true so a fresh process checks once.
+	applyPending bool
+	lastTry      time.Time
+}
+
+// reconcileRetry spaces out reconcile attempts after a failure.
+const reconcileRetry = 5 * time.Minute
+
+// reconcile applies the edge if a stored certificate may not be live yet. It
+// applies only when the rendered set differs from the live one, and after a
+// failure retries every reconcileRetry until it succeeds.
+func (w *worker) reconcile(ctx context.Context) {
+	if !w.applyPending || envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
+		return
+	}
+	if !w.lastTry.IsZero() && time.Since(w.lastTry) < reconcileRetry {
+		return
+	}
+	w.lastTry = time.Now()
+	actx, cancel := context.WithTimeout(ctx, applyTimeout)
+	defer cancel()
+	applied, err := w.eng.ApplyIfChanged(actx, "acme-reconcile")
+	if err != nil {
+		log.Printf("acmed: edge reconcile failed, retrying in %s: %v", reconcileRetry, err)
+		return
+	}
+	w.applyPending = false
+	if applied {
+		log.Printf("acmed: applied stored certificates that were not live yet")
+	}
+}
+
 // runOnce loads settings, claims due certificates and issues them.
-func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
+func (w *worker) runOnce(ctx context.Context) {
+	eng, st := w.eng, w.st
 	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 	if err := eng.LoadSettings(qctx); err != nil {
 		log.Printf("settings: %v", err)
 		return
 	}
+	w.reconcile(ctx)
 	if eng.Settings().ACMEEmail == "" {
 		log.Printf("acmed: ACMEEmail not set in global settings — idle")
 		return
@@ -148,14 +190,18 @@ func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
 			return
 		}
 		ictx, icancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
-		issueOne(ictx, ctx, eng, st, &due[i])
+		if issueOne(ictx, ctx, eng, st, &due[i]) {
+			w.applyPending, w.lastTry = true, time.Time{}
+		}
 		icancel()
 	}
 }
 
 // issueOne issues c under ctx. stop is the process lifecycle context: it
-// cancels the HAProxy apply that follows a successful issuance.
-func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) {
+// cancels the HAProxy apply that follows a successful issuance. It reports
+// whether a certificate was stored without that apply succeeding, so the
+// worker's reconcile takes it live later.
+func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) (applyPending bool) {
 	email := eng.Settings().ACMEEmail
 	webroot := eng.Settings().ACMEWebrootPath
 	if webroot == "" {
@@ -223,11 +269,13 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})
 
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
-		return
+		return false
 	}
 	actx, acancel := context.WithTimeout(stop, applyTimeout)
 	defer acancel()
 	if err := eng.Apply(actx, "acme"); err != nil {
-		log.Printf("apply after acme (the stored certificate goes live with the next apply): %v", err)
+		log.Printf("apply after acme failed; the edge is reconciled on a later tick or start: %v", err)
+		return true
 	}
+	return false
 }
