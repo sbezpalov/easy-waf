@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -142,8 +144,8 @@ func TestRefreshFeed_PolicyRejectionSkipsLastGood(t *testing.T) {
 	if len(out.lines) != 0 {
 		t.Fatalf("rejected feed still contributed %v", out.lines)
 	}
-	if !strings.Contains(out.lastError, "not allowed") || strings.Contains(out.lastError, "last-good") {
-		t.Fatalf("last error: %q", out.lastError)
+	if !strings.Contains(out.lastError, "not allowed") || !strings.Contains(out.lastError, "refused by the fetch policy") {
+		t.Fatalf("last error does not say why the copy was skipped: %q", out.lastError)
 	}
 }
 
@@ -183,10 +185,15 @@ func TestPolicyRefusalsMatchErrFeedRejected(t *testing.T) {
 // A DNS failure is an outage: the feed keeps its last good copy.
 func TestDNSFailureKeepsLastGood(t *testing.T) {
 	ctx := context.Background()
-	src := config.IPBLExternalSource{ID: "src-dns", URL: "https://no-such-feed.invalid/list", Enabled: true}
+	orig := lookupNetIP
+	lookupNetIP = func(context.Context, string, string) ([]netip.Addr, error) {
+		return nil, &net.DNSError{Err: "server misbehaving", Name: "feed.example", IsTemporary: true}
+	}
+	t.Cleanup(func() { lookupNetIP = orig })
+	src := config.IPBLExternalSource{ID: "src-dns", URL: "https://feed.example/list", Enabled: true}
 	_, err := guardedFetch(nil)(ctx, src.URL)
-	if err == nil {
-		t.Skip("resolver answered for .invalid; cannot simulate a DNS failure here")
+	if err == nil || !strings.Contains(err.Error(), "dns lookup failed") {
+		t.Fatalf("expected a DNS failure, got %v", err)
 	}
 	if errors.Is(err, ErrFeedRejected) {
 		t.Fatalf("DNS failure classified as a policy rejection: %v", err)
@@ -212,4 +219,14 @@ func TestForgetFeedCopy(t *testing.T) {
 	if err := ForgetFeedCopy(state, testSrc); err != nil {
 		t.Fatalf("second forget: %v", err)
 	}
+}
+
+func TestForgetAllFeedCopies(t *testing.T) {
+	state := t.TempDir()
+	refreshFeed(context.Background(), testSrc, okFeed("192.0.2.1"), FeedCacheDir(state), time.Now())
+	ForgetAllFeedCopies(state)
+	if _, err := os.Stat(filepath.Join(FeedCacheDir(state), "src-1.list")); !os.IsNotExist(err) {
+		t.Fatalf("copy kept: %v", err)
+	}
+	ForgetAllFeedCopies("") // no state dir: must not touch a relative path
 }

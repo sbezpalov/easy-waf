@@ -7,11 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/ipbl"
 )
 
 // R8: waiting for the in-process apply lock honors the caller's deadline, so
@@ -63,5 +66,27 @@ func TestSetSettings_GeoRuntimeFollowsLatest(t *testing.T) {
 	rt.Configure(final)
 	if rt.Cache.Generation() != gen {
 		t.Fatalf("runtime was bound to stale settings, not %q", final.GeoIPMMDBPath)
+	}
+}
+
+// Switching external feeds off drops their saved copies at once, so turning
+// them back on before any sync cannot revive old entries.
+func TestSetSettings_ExternalFeedsOffForgetsCopies(t *testing.T) {
+	state := t.TempDir()
+	copyPath := filepath.Join(ipbl.FeedCacheDir(state), "src.list")
+	if err := os.MkdirAll(filepath.Dir(copyPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(copyPath, []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := New(state, nil, config.GlobalSettings{IPBLExternalEnabled: true})
+	e.SetSettings(config.GlobalSettings{IPBLExternalEnabled: true})
+	if _, err := os.Stat(copyPath); err != nil {
+		t.Fatalf("copy removed while feeds are on: %v", err)
+	}
+	e.SetSettings(config.GlobalSettings{IPBLExternalEnabled: false})
+	if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
+		t.Fatalf("copy kept after switching feeds off: %v", err)
 	}
 }
