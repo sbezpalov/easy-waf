@@ -70,10 +70,16 @@ func main() {
 	log.Printf("easy-waf-acmed started state=%s tick=%s", stateDir, tick)
 
 	// SIGTERM/SIGINT stop the loop: no new claims, no further sleeps. An
-	// issuance already running finishes under its own deadline (issueTimeout),
-	// so a stop does not strand the row half-written.
+	// issuance already running keeps going under its own deadline
+	// (issueTimeout) until systemd's stop timeout kills the process; a row
+	// cut off that way is reclaimed after staleIssuing. A second signal
+	// terminates at once.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop() // restore default handling for a second signal
+	}()
 	for {
 		runOnce(ctx, eng, st)
 		select {
@@ -173,6 +179,11 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 	}
 	if err != nil {
 		next := time.Now().Add(acme.RetryBackoff(c.ACMEAttempts + 1))
+		// The failure may be the issuance deadline itself: record it on a
+		// fresh short deadline, or the row would stay 'issuing' until
+		// staleIssuing instead of getting its retry time.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
+		defer cancel()
 		if ferr := st.FailCertificateACME(ctx, c, err.Error(), next); ferr != nil && !errors.Is(ferr, store.ErrACMEClaimLost) {
 			log.Printf("acme id=%s: record failure: %v", c.ID, ferr)
 		}
