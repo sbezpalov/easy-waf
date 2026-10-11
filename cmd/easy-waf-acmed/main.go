@@ -32,11 +32,15 @@ const (
 	// propagation included, finish well inside it.
 	staleIssuing = time.Hour
 	// issueTimeout bounds one issuance end to end (ACME, apply lock, writes,
-	// apply). It stays below staleIssuing so another worker never reclaims a
-	// row that is still being worked on. Lego's own timeouts normally end an
-	// issuance long before; whether every Lego step honors the context is
-	// not guaranteed, which is why the deadline also covers what follows.
+	// apply). Lego's own timeouts normally end an issuance long before;
+	// whether every Lego step honors the context is not guaranteed, which is
+	// why the deadline also covers what follows.
 	issueTimeout = 45 * time.Minute
+	// claimMargin: every row of a batch is claimed at once and issued one
+	// after another, so each issuance must also end this long before the
+	// batch's claim turns staleIssuing old; otherwise another worker could
+	// reclaim a row still waiting its turn and order it a second time.
+	claimMargin = 5 * time.Minute
 	// dbTimeout bounds the per-tick settings load and claim queries.
 	dbTimeout = 30 * time.Second
 )
@@ -114,13 +118,24 @@ func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
 	if err != nil {
 		log.Printf("claim certificates: %v", err)
 	}
+	claimExpires := now.Add(staleIssuing - claimMargin)
 	for i := range due {
 		if ctx.Err() != nil {
 			// Shutting down: leave the rest claimed; they are picked up again
 			// once staleIssuing has passed.
 			return
 		}
-		ictx, icancel := context.WithTimeout(context.WithoutCancel(ctx), issueTimeout)
+		deadline := time.Now().Add(issueTimeout)
+		if claimExpires.Before(deadline) {
+			deadline = claimExpires
+		}
+		if !time.Now().Before(deadline) {
+			// The claim is about to go stale: leave the rest to be reclaimed
+			// rather than race another worker for them.
+			log.Printf("acmed: %d claimed certificate(s) left for the next round", len(due)-i)
+			return
+		}
+		ictx, icancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 		issueOne(ictx, eng, st, &due[i])
 		icancel()
 	}
