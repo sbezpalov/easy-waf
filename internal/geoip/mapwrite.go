@@ -44,7 +44,7 @@ func AppEnforceMapPath(stateDir, appID string) string {
 }
 
 // WriteEnforceMap resolves each blacklist CIDR to a country (first address of the network),
-// uses cache+provider, and writes HAProxy src map lines (one CIDR per line) for CIDRs that
+// uses cache (optional, may be nil) and provider, and writes HAProxy src map lines (one CIDR per line) for CIDRs that
 // match the current allow/deny country policy. Empty list → empty map file (ACL disabled).
 func WriteEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, g config.GlobalSettings, stateDir string, blacklistCIDRs []string) error {
 	out := EnforceMapPath(g, stateDir)
@@ -79,18 +79,9 @@ func writeEnforceMapCore(ctx context.Context, prov GeoProvider, cache *MemoryCac
 		if err != nil {
 			continue
 		}
-		key := host.String()
-		cc, ok := cache.Get(key)
+		cc, ok := resolveCountry(ctx, prov, cache, host.String())
 		if !ok {
-			if prov == nil {
-				continue
-			}
-			var err error
-			cc, err = prov.Lookup(ctx, key)
-			if err != nil {
-				continue
-			}
-			cache.Set(key, cc)
+			continue
 		}
 		cc = strings.ToUpper(strings.TrimSpace(cc))
 		if len(cc) != 2 {
@@ -119,6 +110,29 @@ func writeEnforceMapCore(ctx context.Context, prov GeoProvider, cache *MemoryCac
 		b.WriteByte('\n')
 	}
 	return writeMapFile(out, b.String())
+}
+
+// resolveCountry looks key up in cache (when non-nil), then with prov. A
+// result is cached only if the cache was not cleared during the lookup.
+func resolveCountry(ctx context.Context, prov GeoProvider, cache *MemoryCache, key string) (string, bool) {
+	var gen uint64
+	if cache != nil {
+		gen = cache.Generation()
+		if cc, ok := cache.Get(key); ok {
+			return cc, true
+		}
+	}
+	if prov == nil {
+		return "", false
+	}
+	cc, err := prov.Lookup(ctx, key)
+	if err != nil {
+		return "", false
+	}
+	if cache != nil {
+		cache.SetIfGeneration(key, cc, gen)
+	}
+	return cc, true
 }
 
 // WriteDisabledAppEnforceMap clears a per-application GeoIP map file.

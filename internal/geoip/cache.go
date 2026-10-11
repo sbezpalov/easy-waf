@@ -4,26 +4,35 @@
 package geoip
 
 import (
+	"container/list"
 	"sync"
 	"time"
 )
 
-// Entry is a cached country code result.
-type Entry struct {
-	Country string
-	Expires time.Time
-	// lastUsed supports naive LRU eviction when over capacity.
-	lastUsed time.Time
+// cacheItem is one cached country code result, kept in the LRU list.
+type cacheItem struct {
+	ip      string
+	country string
+	stored  time.Time
 }
 
-// MemoryCache is a TTL map with optional max size and hit/miss statistics.
+// MemoryCache is a bounded TTL+LRU map with hit/miss statistics.
+//
+// Expiry is computed from the time an entry was stored and the current TTL,
+// so SetTTL takes effect for existing entries immediately. Every Clear starts
+// a new generation: SetIfGeneration refuses results computed before it, which
+// keeps a lookup still in flight against a retired database from writing its
+// stale answer back after the cache was cleared.
 type MemoryCache struct {
-	mu         sync.RWMutex
+	mu         sync.Mutex
 	ttl        time.Duration
 	maxEntries int
-	items      map[string]Entry
+	items      map[string]*list.Element // values are *cacheItem
+	lru        *list.List               // front = most recently used
+	gen        uint64
 	hits       uint64
 	misses     uint64
+	now        func() time.Time
 }
 
 // NewMemoryCache returns a cache with TTL and optional LRU cap (0 = unlimited).
@@ -31,13 +40,19 @@ func NewMemoryCache(ttl time.Duration, maxEntries int) *MemoryCache {
 	if maxEntries < 0 {
 		maxEntries = 0
 	}
-	return &MemoryCache{ttl: ttl, maxEntries: maxEntries, items: map[string]Entry{}}
+	return &MemoryCache{
+		ttl:        ttl,
+		maxEntries: maxEntries,
+		items:      map[string]*list.Element{},
+		lru:        list.New(),
+		now:        time.Now,
+	}
 }
 
-// Stats returns cache size and counters (O(n) for size if you need exact keys; here len(map)).
+// Stats returns cache size and counters.
 func (m *MemoryCache) Stats() Stats {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return Stats{
 		Size:   len(m.items),
 		Hits:   m.hits,
@@ -55,58 +70,99 @@ type Stats struct {
 func (m *MemoryCache) Get(ip string) (country string, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	e, ok := m.items[ip]
-	if !ok || time.Now().After(e.Expires) {
-		if ok {
-			delete(m.items, ip)
-		}
+	el, ok := m.items[ip]
+	if !ok {
+		m.misses++
+		return "", false
+	}
+	it := el.Value.(*cacheItem)
+	if m.now().After(it.stored.Add(m.ttl)) {
+		m.removeLocked(el)
 		m.misses++
 		return "", false
 	}
 	m.hits++
-	e.lastUsed = time.Now()
-	m.items[ip] = e
-	return e.Country, true
+	m.lru.MoveToFront(el)
+	return it.country, true
 }
 
 // Delete removes one IP from the cache (e.g. before a forced lookup).
 func (m *MemoryCache) Delete(ip string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.items, ip)
+	if el, ok := m.items[ip]; ok {
+		m.removeLocked(el)
+	}
 }
 
-// Clear drops all cached entries (e.g. after MMDB reload).
+// Clear drops all cached entries (e.g. after MMDB reload) and starts a new
+// generation, so results computed before the call are not stored afterwards.
 func (m *MemoryCache) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.items = map[string]Entry{}
+	m.items = map[string]*list.Element{}
+	m.lru.Init()
+	m.gen++
 }
 
+// Generation identifies the current cache contents; it changes on every Clear.
+func (m *MemoryCache) Generation() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.gen
+}
+
+// SetTTL changes the TTL for new and existing entries.
+func (m *MemoryCache) SetTTL(ttl time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ttl = ttl
+}
+
+// TTL returns the current entry lifetime.
+func (m *MemoryCache) TTL() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ttl
+}
+
+// Set stores a result in the current generation.
 func (m *MemoryCache) Set(ip, country string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now()
-	if m.maxEntries > 0 && len(m.items) >= m.maxEntries {
-		if _, exists := m.items[ip]; !exists {
-			m.evictOneLocked(now)
-		}
-	}
-	m.items[ip] = Entry{Country: country, Expires: now.Add(m.ttl), lastUsed: now}
+	m.setLocked(ip, country)
 }
 
-func (m *MemoryCache) evictOneLocked(_ time.Time) {
-	var victim string
-	var oldest time.Time
-	first := true
-	for k, e := range m.items {
-		if first || e.lastUsed.Before(oldest) {
-			first = false
-			oldest = e.lastUsed
-			victim = k
+// SetIfGeneration stores a result only if no Clear happened since gen was
+// read with Generation. It reports whether the result was stored.
+func (m *MemoryCache) SetIfGeneration(ip, country string, gen uint64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.gen != gen {
+		return false
+	}
+	m.setLocked(ip, country)
+	return true
+}
+
+func (m *MemoryCache) setLocked(ip, country string) {
+	now := m.now()
+	if el, ok := m.items[ip]; ok {
+		it := el.Value.(*cacheItem)
+		it.country = country
+		it.stored = now
+		m.lru.MoveToFront(el)
+		return
+	}
+	if m.maxEntries > 0 && len(m.items) >= m.maxEntries {
+		if oldest := m.lru.Back(); oldest != nil {
+			m.removeLocked(oldest)
 		}
 	}
-	if victim != "" {
-		delete(m.items, victim)
-	}
+	m.items[ip] = m.lru.PushFront(&cacheItem{ip: ip, country: country, stored: now})
+}
+
+func (m *MemoryCache) removeLocked(el *list.Element) {
+	m.lru.Remove(el)
+	delete(m.items, el.Value.(*cacheItem).ip)
 }

@@ -96,7 +96,7 @@ func (s *Server) installGeoIPDatabase(body io.Reader) (geoipUploadResponse, int,
 	}
 	resp.MMDBInfo = info
 
-	// The runtime resolves its provider from settings (geoip.ProviderForRuntime
+	// The runtime resolves its provider from settings (geoip.Runtime.Configure
 	// keys the cached reader on geoip_mmdb_path), so reloading only sticks when
 	// the configured path is the file we just installed. Anything else would
 	// report an activation that the next lookup silently undoes — and uploading

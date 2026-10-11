@@ -6,9 +6,12 @@ package geoip
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -161,27 +164,80 @@ func TestFactory_MaxMind_OK(t *testing.T) {
 	}
 }
 
-func TestProviderForRuntime_ReusesMaxMind(t *testing.T) {
+func TestRuntime_ReusesMaxMind(t *testing.T) {
 	p := writeTestCountryMMDB(t, "9.9.9.9", "FR")
 	rt := NewRuntime(0)
 	g := config.GlobalSettings{
 		GeoIPProvider: "maxmind",
 		GeoIPMMDBPath: p,
 	}
-	p1, err := ProviderForRuntime(rt, g)
-	if err != nil {
+	rt.Configure(g)
+	if _, err := rt.Resolver(g); err != nil {
 		t.Fatal(err)
 	}
-	p2, err := ProviderForRuntime(rt, g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p1 != p2 {
-		t.Fatal("expected same cached MaxMind provider instance")
-	}
-	cc, err := p1.Lookup(context.Background(), "9.9.9.9")
+	p1 := rt.prov
+	cc, _, err := rt.Lookup(context.Background(), g, "9.9.9.9")
 	if err != nil || cc != "FR" {
 		t.Fatalf("lookup: %v %q", err, cc)
 	}
+	if rt.prov != p1 || p1 == nil {
+		t.Fatal("expected same cached MaxMind provider instance")
+	}
 	rt.InvalidateGeoProvider()
+}
+
+// Lookups racing Reload and Close must never read an unmapped reader; run
+// with -race. Before the fix this ended in "fatal error: fault".
+func TestMaxMindProvider_ConcurrentLookupReloadClose(t *testing.T) {
+	us := writeTestCountryMMDB(t, "8.8.8.8", "US")
+	de := writeTestCountryMMDB(t, "8.8.8.8", "DE")
+	prov, err := NewMaxMindProvider(us)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				cc, err := prov.Lookup(ctx, "8.8.8.8")
+				if err != nil {
+					if !strings.Contains(err.Error(), "reader closed") {
+						errs <- err
+						return
+					}
+					continue
+				}
+				if cc != "US" && cc != "DE" {
+					errs <- fmt.Errorf("unexpected country %q", cc)
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < 200; i++ {
+		path := us
+		if i%2 == 1 {
+			path = de
+		}
+		if err := prov.Reload(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = prov.Close()
+	close(stop)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("lookup: %v", err)
+	}
 }

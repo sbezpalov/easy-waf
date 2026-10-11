@@ -15,6 +15,10 @@ import (
 )
 
 // MaxMindProvider resolves IPs using a local GeoLite2-Country (or compatible) MMDB file.
+//
+// The reader memory-maps the database, so a lookup must never run against a
+// reader that Reload or Close has already unmapped: lookups hold mu for reading
+// for their whole duration and retiring a reader takes mu exclusively.
 type MaxMindProvider struct {
 	mu     sync.RWMutex
 	reader *maxminddb.Reader
@@ -53,14 +57,15 @@ func (p *MaxMindProvider) Lookup(ctx context.Context, ipStr string) (string, err
 	if ip == nil {
 		return "", fmt.Errorf("geoip: invalid ip %q", ipStr)
 	}
+	var rec maxMindCountryRecord
 	p.mu.RLock()
-	rd := p.reader
-	p.mu.RUnlock()
-	if rd == nil {
+	if p.reader == nil {
+		p.mu.RUnlock()
 		return "", fmt.Errorf("geoip maxmind: reader closed")
 	}
-	var rec maxMindCountryRecord
-	if err := rd.Lookup(ip, &rec); err != nil {
+	err := p.reader.Lookup(ip, &rec)
+	p.mu.RUnlock()
+	if err != nil {
 		return "", fmt.Errorf("geoip maxmind: lookup %s: %w", ipStr, err)
 	}
 	cc := strings.ToUpper(strings.TrimSpace(rec.Country.ISOCode))
@@ -71,7 +76,8 @@ func (p *MaxMindProvider) Lookup(ctx context.Context, ipStr string) (string, err
 	return cc, nil
 }
 
-// Reload opens a new reader from dbPath, swaps it under the lock, and closes the previous reader.
+// Reload opens a new reader from dbPath, swaps it in and closes the previous
+// reader once no lookup is using it.
 func (p *MaxMindProvider) Reload(dbPath string) error {
 	dbPath = strings.TrimSpace(dbPath)
 	if dbPath == "" {
@@ -85,23 +91,23 @@ func (p *MaxMindProvider) Reload(dbPath string) error {
 		return fmt.Errorf("geoip maxmind: open %q: %w", dbPath, err)
 	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	old := p.reader
 	p.reader = nr
 	p.path = dbPath
-	p.mu.Unlock()
 	if old != nil {
 		_ = old.Close()
 	}
 	return nil
 }
 
-// Close releases the mmap / file handle.
+// Close releases the mmap / file handle once in-flight lookups have finished.
 func (p *MaxMindProvider) Close() error {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	rd := p.reader
 	p.reader = nil
 	p.path = ""
-	p.mu.Unlock()
 	if rd == nil {
 		return nil
 	}

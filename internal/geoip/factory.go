@@ -11,7 +11,7 @@ import (
 )
 
 // NewProviderForSettings returns a GeoProvider for the configured backend or an error.
-// For MaxMind, callers that reuse lookups should prefer ProviderForRuntime when a Runtime is available.
+// For MaxMind, callers that reuse lookups should prefer Runtime.Resolver when a Runtime is available.
 func NewProviderForSettings(g config.GlobalSettings) (GeoProvider, error) {
 	switch strings.ToLower(strings.TrimSpace(g.GeoIPProvider)) {
 	case "maxmind":
