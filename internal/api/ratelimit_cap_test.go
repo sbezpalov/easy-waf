@@ -59,11 +59,35 @@ func TestLoginRateLimiter_evictsLeastRecentlySeen(t *testing.T) {
 	now := time.Now()
 	rl.ips["oldest"] = &loginAttempt{attempts: []time.Time{now.Add(-time.Minute)}}
 	rl.ips["newer"] = &loginAttempt{attempts: []time.Time{now}}
-	rl.evictOldestLocked()
+	rl.evictOldestLocked(now)
 	if _, ok := rl.ips["oldest"]; ok {
 		t.Fatal("least recently seen entry survived eviction")
 	}
 	if _, ok := rl.ips["newer"]; !ok {
 		t.Fatal("active entry was evicted instead")
+	}
+}
+
+// A spray of fresh addresses must not push a locked-out IP out of the table
+// and so lift its lockout.
+func TestLoginRateLimiter_evictionSparesActiveLockout(t *testing.T) {
+	rl := &LoginRateLimiter{
+		ips:      make(map[string]*loginAttempt),
+		window:   5 * time.Minute,
+		maxInWin: 10,
+		lockout:  15 * time.Minute,
+	}
+	now := time.Now()
+	rl.ips["locked"] = &loginAttempt{
+		attempts:     []time.Time{now.Add(-10 * time.Minute)},
+		blockedUntil: now.Add(5 * time.Minute),
+	}
+	rl.ips["idle"] = &loginAttempt{attempts: []time.Time{now}}
+	rl.evictOldestLocked(now)
+	if _, ok := rl.ips["locked"]; !ok {
+		t.Fatal("locked-out entry was evicted")
+	}
+	if _, ok := rl.ips["idle"]; ok {
+		t.Fatal("unlocked entry survived eviction")
 	}
 }

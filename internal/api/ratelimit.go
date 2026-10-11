@@ -8,9 +8,24 @@ import (
 	"time"
 )
 
-// loginAttempt tracks per-IP login attempt timestamps.
+// loginAttempt tracks per-IP login attempt timestamps and an active lockout.
 type loginAttempt struct {
 	attempts []time.Time
+	// blockedUntil is set when the attempts in one window reach the limit. It
+	// is independent of the window: the lockout lasts its full duration even
+	// after the attempts that caused it have aged out of the window.
+	blockedUntil time.Time
+}
+
+// lastSeen returns the most recent attempt time.
+func (e *loginAttempt) lastSeen() time.Time {
+	var last time.Time
+	for _, t := range e.attempts {
+		if t.After(last) {
+			last = t
+		}
+	}
+	return last
 }
 
 // maxTrackedIPs caps the per-IP table. Without a cap, a spray from spoofed or
@@ -25,9 +40,17 @@ const maxTrackedIPs = 10000
 type LoginRateLimiter struct {
 	mu       sync.Mutex
 	ips      map[string]*loginAttempt
-	window   time.Duration // sliding window size
-	maxInWin int           // max attempts within window
-	lockout  time.Duration // lockout after exceeding limit
+	window   time.Duration    // sliding window size
+	maxInWin int              // max attempts within window
+	lockout  time.Duration    // lockout after exceeding limit
+	now      func() time.Time // nil = time.Now; injectable for tests
+}
+
+func (rl *LoginRateLimiter) clock() time.Time {
+	if rl.now != nil {
+		return rl.now()
+	}
+	return time.Now()
 }
 
 // NewLoginRateLimiter creates a limiter.
@@ -51,63 +74,68 @@ func NewLoginRateLimiter(window time.Duration, maxAttempts int, lockout time.Dur
 }
 
 // Allow checks if the IP is allowed to attempt login. Returns (allowed, retryAfterSeconds).
+//
+// Every allowed call counts as an attempt. The attempt that brings the count
+// within the window to the limit is still allowed but starts a lockout of
+// rl.lockout; until it ends every call is refused (and not counted). When it
+// ends the IP starts over with no attempts.
 func (rl *LoginRateLimiter) Allow(ip string) (bool, int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	now := time.Now()
+	now := rl.clock()
 	entry, exists := rl.ips[ip]
 	if !exists {
 		if len(rl.ips) >= maxTrackedIPs {
 			rl.pruneLocked(now)
 		}
 		if len(rl.ips) >= maxTrackedIPs {
-			rl.evictOldestLocked()
+			rl.evictOldestLocked(now)
 		}
 		entry = &loginAttempt{}
 		rl.ips[ip] = entry
 	}
 
-	// Prune old attempts outside the window+lockout
-	cutoff := now.Add(-(rl.window + rl.lockout))
-	fresh := entry.attempts[:0]
-	for _, t := range entry.attempts {
-		if t.After(cutoff) {
-			fresh = append(fresh, t)
+	if !entry.blockedUntil.IsZero() {
+		if now.Before(entry.blockedUntil) {
+			return false, retryAfterSeconds(entry.blockedUntil.Sub(now))
 		}
-	}
-	entry.attempts = fresh
-
-	// Count attempts within the sliding window
-	windowStart := now.Add(-rl.window)
-	count := 0
-	var lastAttempt time.Time
-	for _, t := range entry.attempts {
-		if t.After(windowStart) {
-			count++
-			if t.After(lastAttempt) {
-				lastAttempt = t
-			}
-		}
-	}
-
-	if count >= rl.maxInWin {
-		// Check if lockout has passed since the Nth attempt
-		unlockAt := lastAttempt.Add(rl.lockout)
-		if now.Before(unlockAt) {
-			retryAfter := int(time.Until(unlockAt).Seconds()) + 1
-			return false, retryAfter
-		}
-		// Lockout expired — allow and reset
+		// Lockout over — start from a clean slate.
+		entry.blockedUntil = time.Time{}
 		entry.attempts = nil
 	}
 
-	// Record this attempt
-	entry.attempts = append(entry.attempts, now)
+	// Keep only attempts inside the sliding window.
+	windowStart := now.Add(-rl.window)
+	fresh := entry.attempts[:0]
+	for _, t := range entry.attempts {
+		if t.After(windowStart) {
+			fresh = append(fresh, t)
+		}
+	}
+	fresh = append(fresh, now)
+	entry.attempts = fresh
+	if len(entry.attempts) >= rl.maxInWin {
+		entry.blockedUntil = now.Add(rl.lockout)
+	}
 	return true, 0
 }
 
-// RecordSuccess removes all attempts for the IP (successful login resets counter).
+// retryAfterSeconds rounds a remaining lockout up to whole seconds.
+func retryAfterSeconds(d time.Duration) int {
+	secs := int(d / time.Second)
+	if d%time.Second != 0 {
+		secs++
+	}
+	if secs < 1 {
+		secs = 1
+	}
+	return secs
+}
+
+// RecordSuccess forgets the IP: a successful login resets the counter. Allow
+// refuses a locked-out IP before credentials are checked, so the only lockout
+// this can clear is one started by the successful attempt itself.
 func (rl *LoginRateLimiter) RecordSuccess(ip string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -117,17 +145,25 @@ func (rl *LoginRateLimiter) RecordSuccess(ip string) {
 func (rl *LoginRateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	rl.pruneLocked(time.Now())
+	rl.pruneLocked(rl.clock())
 }
 
-// pruneLocked drops attempts older than window+lockout and any IP left empty.
-// Caller holds rl.mu.
+// pruneLocked drops attempts outside the window and any IP left with neither
+// attempts nor an active lockout. Caller holds rl.mu.
 func (rl *LoginRateLimiter) pruneLocked(now time.Time) {
-	cutoff := now.Add(-(rl.window + rl.lockout))
+	windowStart := now.Add(-rl.window)
 	for ip, entry := range rl.ips {
+		if !entry.blockedUntil.IsZero() {
+			if now.Before(entry.blockedUntil) {
+				continue
+			}
+			// Lockout over: Allow would start this IP from scratch anyway.
+			delete(rl.ips, ip)
+			continue
+		}
 		fresh := entry.attempts[:0]
 		for _, t := range entry.attempts {
-			if t.After(cutoff) {
+			if t.After(windowStart) {
 				fresh = append(fresh, t)
 			}
 		}
@@ -140,22 +176,24 @@ func (rl *LoginRateLimiter) pruneLocked(now time.Time) {
 }
 
 // evictOldestLocked removes the entry whose most recent attempt is the oldest,
-// so an active attacker's own entry is the last thing dropped. Caller holds rl.mu.
-func (rl *LoginRateLimiter) evictOldestLocked() {
-	var oldestIP string
-	var oldest time.Time
+// so an active attacker's own entry is the last thing dropped. Entries under an
+// active lockout go only when nothing else is left, so a spray of fresh source
+// addresses cannot lift a lockout by pushing it out. Caller holds rl.mu.
+func (rl *LoginRateLimiter) evictOldestLocked(now time.Time) {
+	var victim string
+	var victimSeen time.Time
+	victimBlocked := true
 	for ip, entry := range rl.ips {
-		var last time.Time
-		for _, t := range entry.attempts {
-			if t.After(last) {
-				last = t
-			}
-		}
-		if oldestIP == "" || last.Before(oldest) {
-			oldestIP, oldest = ip, last
+		blocked := now.Before(entry.blockedUntil)
+		seen := entry.lastSeen()
+		better := victim == "" ||
+			(victimBlocked && !blocked) ||
+			(victimBlocked == blocked && seen.Before(victimSeen))
+		if better {
+			victim, victimSeen, victimBlocked = ip, seen, blocked
 		}
 	}
-	if oldestIP != "" {
-		delete(rl.ips, oldestIP)
+	if victim != "" {
+		delete(rl.ips, victim)
 	}
 }
