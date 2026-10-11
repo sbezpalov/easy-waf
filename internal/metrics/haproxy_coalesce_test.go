@@ -77,3 +77,21 @@ func TestHAProxyCollector_CallerCancellation(t *testing.T) {
 		t.Fatalf("follow-up fetch: %v %+v", err, rep)
 	}
 }
+
+// A panicking read must not crash the process or strand waiting callers.
+func TestHAProxyCollector_FetchPanicBecomesError(t *testing.T) {
+	c := &HAProxyCollector{fetch: func(string) (*HAProxyReport, error) { panic("boom") }}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		rep, err := c.Fetch("/s")
+		if err == nil || rep == nil || rep.Error == "" {
+			t.Errorf("want error report, got rep=%+v err=%v", rep, err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("caller stranded after a panicking read")
+	}
+}
