@@ -137,12 +137,22 @@ func (e *Engine) UpdateSettings(ctx context.Context, fn func(config.GlobalSettin
 // defaults: rendering the edge from defaults would silently drop the
 // operator's protections.
 func (e *Engine) LoadSettings(ctx context.Context) error {
+	_, err := e.reloadSettings(ctx)
+	return err
+}
+
+// reloadSettings reads the stored settings and makes them current. It holds
+// settingsMu like UpdateSettings, so a concurrent update cannot be followed
+// by this older read overwriting it in memory.
+func (e *Engine) reloadSettings(ctx context.Context) (config.GlobalSettings, error) {
+	e.settingsMu.Lock()
+	defer e.settingsMu.Unlock()
 	s, err := e.readSettings(ctx)
 	if err != nil {
-		return err
+		return config.GlobalSettings{}, err
 	}
 	e.SetSettings(s)
-	return nil
+	return s, nil
 }
 
 func (e *Engine) readSettings(ctx context.Context) (config.GlobalSettings, error) {
@@ -503,12 +513,7 @@ func (e *Engine) lockApply(ctx context.Context) (func() error, error) {
 // what is stored now, not a copy this process loaded earlier (the admin CLI
 // or another API instance may have changed it).
 func (e *Engine) refreshForApply(ctx context.Context) (config.GlobalSettings, error) {
-	cfg, err := e.readSettings(ctx)
-	if err != nil {
-		return config.GlobalSettings{}, err
-	}
-	e.SetSettings(cfg)
-	return cfg, nil
+	return e.reloadSettings(ctx)
 }
 
 // Apply renders and validates one complete managed artifact set, promotes it,
