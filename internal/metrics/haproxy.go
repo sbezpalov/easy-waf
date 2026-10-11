@@ -5,6 +5,7 @@
 package metrics
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -100,9 +101,20 @@ type SummaryReport struct {
 type HAProxyCollector struct {
 	mu       sync.Mutex
 	lastPath string
-	lastAt   time.Time
+	lastAt   time.Time // when the cached fetch completed
 	last     *HAProxyReport
 	lastErr  error
+	// inflight coalesces concurrent cache misses: one socket read per path,
+	// every waiting caller gets its result.
+	inflight map[string]*statsCall
+	// fetch reads the socket; nil means fetchHAProxyStatsOnce (tests swap it).
+	fetch func(socketPath string) (*HAProxyReport, error)
+}
+
+type statsCall struct {
+	done chan struct{}
+	rep  *HAProxyReport
+	err  error
 }
 
 // NewHAProxyCollector creates a collector with a 5s cache per socket path.
@@ -112,29 +124,56 @@ func NewHAProxyCollector() *HAProxyCollector {
 
 // Fetch returns cached HAProxy stats when fresh enough; otherwise reads the Unix socket.
 func (c *HAProxyCollector) Fetch(socketPath string) (*HAProxyReport, error) {
-	now := time.Now()
+	return c.FetchContext(context.Background(), socketPath)
+}
+
+// FetchContext is Fetch that stops waiting when ctx ends. Concurrent callers
+// that miss the cache share one socket read; a caller that gives up does not
+// cancel it for the others (the read is bounded by its own socket deadlines).
+func (c *HAProxyCollector) FetchContext(ctx context.Context, socketPath string) (*HAProxyReport, error) {
 	c.mu.Lock()
-	if c.last != nil && c.lastPath == socketPath && now.Sub(c.lastAt) < MinHAProxyStatsRefresh {
+	if c.last != nil && c.lastPath == socketPath && time.Since(c.lastAt) < MinHAProxyStatsRefresh {
 		out := *c.last
 		err := c.lastErr
 		c.mu.Unlock()
 		return &out, err
 	}
+	call, ok := c.inflight[socketPath]
+	if !ok {
+		call = &statsCall{done: make(chan struct{})}
+		if c.inflight == nil {
+			c.inflight = map[string]*statsCall{}
+		}
+		c.inflight[socketPath] = call
+		go c.run(socketPath, call)
+	}
 	c.mu.Unlock()
 
-	rep, err := fetchHAProxyStatsOnce(socketPath)
-	c.mu.Lock()
-	c.lastPath = socketPath
-	c.lastAt = now
-	if rep != nil {
-		c.last = rep
-	} else {
-		c.last = &HAProxyReport{Error: errString(err)}
+	select {
+	case <-call.done:
+		out := *call.rep
+		return &out, call.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	c.lastErr = err
-	out := *c.last
+}
+
+func (c *HAProxyCollector) run(socketPath string, call *statsCall) {
+	fetch := c.fetch
+	if fetch == nil {
+		fetch = fetchHAProxyStatsOnce
+	}
+	rep, err := fetch(socketPath)
+	if rep == nil {
+		rep = &HAProxyReport{Error: errString(err)}
+	}
+	c.mu.Lock()
+	// Freshness counts from completion, so a slow read is not stale on arrival.
+	c.lastPath, c.lastAt, c.last, c.lastErr = socketPath, time.Now(), rep, err
+	delete(c.inflight, socketPath)
 	c.mu.Unlock()
-	return &out, err
+	call.rep, call.err = rep, err
+	close(call.done)
 }
 
 func errString(err error) string {
