@@ -7,6 +7,8 @@
 - **Local entries** (`ipbl_local`): administrator-defined IPv4/IPv6 or CIDR strings, editable via API (`/api/v1/ipbl/local`).
 - **External sources** (`ipbl_external_sources`): HTTP(S) URLs pointing to plain-text lists (one IP or CIDR per line, `#` comments allowed). Fetched periodically when `SyncAndWrite` runs (on HAProxy apply and via `POST /api/v1/ipbl/sync`).
 
+**Feed outages:** every successful download is also saved as that source's last good copy under `state/ipbl/feeds/<source-id>.list`. If a later download fails (network error, HTTP error, SSRF check), the last good copy is merged instead, for at most **7 days** after it was downloaded (`ipbl.FeedMaxStale`); the source's `last_error` then says which copy is in use. After 7 days a still-failing feed contributes nothing. A copy is used only for the URL it was downloaded from, and deleting a source deletes its copy, so only that source's entries disappear.
+
 **SSRF protection (default):** only **public** feed URLs are allowed. **Hard-blocked** destinations (loopback, link-local, metadata **169.254.x**, CGNAT **100.64.0.0/10**, unspecified) are never allowed, even via allowlist.
 
 **Trusted internal feeds (split-DNS):** set global **`ipbl_fetch_allowed_cidrs`** to the RFC1918 ranges where your feeds live (e.g. `192.168.1.0/24`). UI: **Security → IP Blacklist → Trusted internal CIDRs for feed fetch** (one CIDR per line). Checks run at URL save, sync, dial time, and on redirects.
