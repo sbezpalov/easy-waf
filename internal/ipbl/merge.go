@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,19 +64,16 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 	localN := len(set)
 
 	extN := 0
+	if !g.IPBLExternalEnabled {
+		// Feeds are switched off: no source may come back from a saved copy.
+		pruneFeedCache(FeedCacheDir(stateDir), nil)
+	}
 	if g.IPBLExternalEnabled {
 		srcs, err := st.ListIPBLExternalSources(ctx)
 		if err != nil {
 			return SyncResult{}, err
 		}
-		allowed := ParseFeedAllowedPrefixes(g)
-		client := newFeedClient(allowed)
-		fetch := func(ctx context.Context, u string) ([]string, error) {
-			if _, err := validateFeedURLContext(ctx, u, allowed); err != nil {
-				return nil, fmt.Errorf("%w: %w", ErrFeedRejected, err)
-			}
-			return fetchPlainList(ctx, client, u)
-		}
+		fetch := guardedFetch(ParseFeedAllowedPrefixes(g))
 		cacheDir := FeedCacheDir(stateDir)
 		pruneFeedCache(cacheDir, srcs)
 		for _, src := range srcs {
@@ -117,6 +115,19 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		MapPath:       outPath,
 		AllCIDRs:      append([]string(nil), lines...),
 	}, nil
+}
+
+// guardedFetch downloads a feed through the SSRF guard: destination checked
+// before the request, at dial time and on every redirect. Policy refusals
+// match ErrFeedRejected; DNS, network and HTTP failures do not.
+func guardedFetch(allowed []netip.Prefix) func(context.Context, string) ([]string, error) {
+	client := newFeedClient(allowed)
+	return func(ctx context.Context, u string) ([]string, error) {
+		if _, err := validateFeedURLContext(ctx, u, allowed); err != nil {
+			return nil, err
+		}
+		return fetchPlainList(ctx, client, u)
+	}
 }
 
 // FileHasEntries returns true if data contains at least one non-comment line

@@ -27,9 +27,12 @@ import (
 // keep blocking with ever older data.
 const FeedMaxStale = 7 * 24 * time.Hour
 
-// ErrFeedRejected marks a feed URL the destination policy refuses (SSRF
-// guard, ipbl_fetch_allowed_cidrs). That is configuration saying "do not use
-// this feed", not an outage, so the last good copy is not used for it.
+// ErrFeedRejected matches errors where the fetch policy refused a feed: a
+// destination the SSRF guard or ipbl_fetch_allowed_cidrs forbids (checked
+// before the request, at dial time and on every redirect), or a URL with a
+// bad scheme or shape. That is configuration saying "do not use this feed",
+// not an outage, so the last good copy is not used for it. DNS failures are
+// outages and do not match.
 var ErrFeedRejected = errors.New("feed URL rejected by fetch policy")
 
 const (
@@ -193,4 +196,18 @@ func pruneFeedCache(cacheDir string, srcs []config.IPBLExternalSource) {
 			_ = os.Remove(filepath.Join(cacheDir, e.Name()))
 		}
 	}
+}
+
+// ForgetFeedCopy deletes the saved copy of one source, e.g. when an operator
+// disables it, so it cannot come back through the fallback even if no sync
+// runs before it is enabled again.
+func ForgetFeedCopy(stateDir string, src config.IPBLExternalSource) error {
+	path, err := feedCachePath(FeedCacheDir(stateDir), src)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
