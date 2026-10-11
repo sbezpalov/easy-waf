@@ -59,6 +59,9 @@ func rejectf(format string, a ...any) error {
 	return &policyError{msg: fmt.Sprintf(format, a...)}
 }
 
+// lookupNetIP resolves feed hosts; tests replace it.
+var lookupNetIP = net.DefaultResolver.LookupNetIP
+
 func checkDestIP(ip netip.Addr, allowed []netip.Prefix) error {
 	if hardBlocked(ip) {
 		return rejectf("blocked (hard): %s", ip)
@@ -97,7 +100,7 @@ func validateFeedURLContext(ctx context.Context, rawURL string, allowed []netip.
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	ips, err := lookupNetIP(ctx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("dns lookup failed: %w", err)
 	}

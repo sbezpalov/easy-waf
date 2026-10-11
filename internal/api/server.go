@@ -619,8 +619,13 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !e.Enabled {
-		// A disabled feed must not return through its last good copy.
-		if err := ipbl.ForgetFeedCopy(s.Eng.StateDir, e); err != nil {
+		// A disabled feed must not return through its last good copy. Under
+		// the apply lock, so a sync already fetching it cannot write the copy
+		// back afterwards.
+		err := s.Eng.WithApplyLock(r.Context(), func() error {
+			return ipbl.ForgetFeedCopy(s.Eng.StateDir, e)
+		})
+		if err != nil {
 			log.Printf("ipbl: forget saved copy of source %s: %v", e.ID, err)
 		}
 	}

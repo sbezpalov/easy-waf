@@ -70,7 +70,10 @@ func refreshFeed(ctx context.Context, src config.IPBLExternalSource, fetch func(
 		}
 		return feedOutcome{lines: lines}
 	}
-	if cacheDir == "" || errors.Is(err, ErrFeedRejected) {
+	if errors.Is(err, ErrFeedRejected) {
+		return feedOutcome{lastError: err.Error() + "; refused by the fetch policy, so no last-good copy is used"}
+	}
+	if cacheDir == "" {
 		return feedOutcome{lastError: err.Error()}
 	}
 	lines, fetched, cerr := readFeedCache(cacheDir, src)
@@ -210,4 +213,13 @@ func ForgetFeedCopy(stateDir string, src config.IPBLExternalSource) error {
 		return err
 	}
 	return nil
+}
+
+// ForgetAllFeedCopies deletes every saved copy, e.g. when external feeds are
+// switched off, so none can come back through the fallback.
+func ForgetAllFeedCopies(stateDir string) {
+	if strings.TrimSpace(stateDir) == "" {
+		return
+	}
+	pruneFeedCache(FeedCacheDir(stateDir), nil)
 }

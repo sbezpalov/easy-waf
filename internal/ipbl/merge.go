@@ -66,9 +66,8 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 	extN := 0
 	if !g.IPBLExternalEnabled {
 		// Feeds are switched off: no source may come back from a saved copy.
-		pruneFeedCache(FeedCacheDir(stateDir), nil)
-	}
-	if g.IPBLExternalEnabled {
+		ForgetAllFeedCopies(stateDir)
+	} else {
 		srcs, err := st.ListIPBLExternalSources(ctx)
 		if err != nil {
 			return SyncResult{}, err

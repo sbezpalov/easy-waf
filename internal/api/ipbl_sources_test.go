@@ -44,6 +44,7 @@ func TestUpsertIPBLSource_DisableForgetsSavedCopy(t *testing.T) {
 	if err := st.UpsertIPBLExternalSource(context.Background(), &src); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.DeleteIPBLExternalSource(context.Background(), src.ID) })
 	copyPath := filepath.Join(state, "ipbl", "feeds", src.ID+".list")
 	if err := os.MkdirAll(filepath.Dir(copyPath), 0o750); err != nil {
 		t.Fatal(err)
