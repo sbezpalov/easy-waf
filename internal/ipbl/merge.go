@@ -34,6 +34,7 @@ type SyncResult struct {
 
 // SyncAndWrite merges local DB entries and optional external HTTP lists into a HAProxy-compatible text file
 // (one IPv4/IPv6 or CIDR per line). Comments with # are stripped from downloads.
+// A feed that fails to download contributes its last good copy (see FeedMaxStale).
 func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings, stateDir string) (SyncResult, error) {
 	outPath := g.IPBlacklistMapPath
 	if outPath == "" {
@@ -69,31 +70,25 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		}
 		allowed := ParseFeedAllowedPrefixes(g)
 		client := newFeedClient(allowed)
+		fetch := func(ctx context.Context, u string) ([]string, error) {
+			if _, err := validateFeedURLContext(ctx, u, allowed); err != nil {
+				return nil, err
+			}
+			return fetchPlainList(ctx, client, u)
+		}
+		cacheDir := FeedCacheDir(stateDir)
+		pruneFeedCache(cacheDir, srcs)
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
-			if _, vErr := validateFeedURLContext(ctx, src.URL, allowed); vErr != nil {
-				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), vErr.Error())
-				continue
-			}
-			lines, ferr := fetchPlainList(ctx, client, src.URL)
-			if ferr != nil {
-				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), ferr.Error())
-				continue
-			}
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
-				}
-				if err := validateCIDRLine(line); err != nil {
-					continue
-				}
+			now := time.Now().UTC()
+			out := refreshFeed(ctx, src, fetch, cacheDir, now)
+			for _, line := range out.lines {
 				set[line] = struct{}{}
 				extN++
 			}
-			_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), "")
+			_ = st.TouchIPBLSourceFetch(ctx, src.ID, now, out.lastError)
 		}
 	}
 
@@ -122,67 +117,6 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		MapPath:       outPath,
 		AllCIDRs:      append([]string(nil), lines...),
 	}, nil
-}
-
-// CollectBlacklistCIDRs returns the merged blacklist CIDR set without writing the map (tests / tooling).
-// It does not update external source fetch metadata (use SyncAndWrite for production sync).
-func CollectBlacklistCIDRs(ctx context.Context, st *store.Store, g config.GlobalSettings) ([]string, error) {
-	set := map[string]struct{}{}
-	local, err := st.ListIPBLLocal(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range local {
-		if !e.Enabled {
-			continue
-		}
-		line := strings.TrimSpace(e.CIDR)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if err := validateCIDRLine(line); err != nil {
-			continue
-		}
-		set[line] = struct{}{}
-	}
-	if g.IPBLExternalEnabled {
-		srcs, err := st.ListIPBLExternalSources(ctx)
-		if err != nil {
-			return nil, err
-		}
-		allowed := ParseFeedAllowedPrefixes(g)
-		client := newFeedClient(allowed)
-		for _, src := range srcs {
-			if !src.Enabled {
-				continue
-			}
-			if _, vErr := validateFeedURLContext(ctx, src.URL, allowed); vErr != nil {
-				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), vErr.Error())
-				continue
-			}
-			lines, ferr := fetchPlainList(ctx, client, src.URL)
-			if ferr != nil {
-				_ = st.TouchIPBLSourceFetch(ctx, src.ID, time.Now().UTC(), ferr.Error())
-				continue
-			}
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
-				}
-				if err := validateCIDRLine(line); err != nil {
-					continue
-				}
-				set[line] = struct{}{}
-			}
-		}
-	}
-	lines := make([]string, 0, len(set))
-	for k := range set {
-		lines = append(lines, k)
-	}
-	sort.Strings(lines)
-	return lines, nil
 }
 
 // FileHasEntries returns true if data contains at least one non-comment line
