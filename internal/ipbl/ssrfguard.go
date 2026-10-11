@@ -47,9 +47,21 @@ func softBlocked(ip netip.Addr) bool {
 	return ip.IsPrivate()
 }
 
+// policyError is a refusal by the fetch policy (destination, scheme or URL
+// shape). It matches ErrFeedRejected through errors.Is wherever it ends up
+// wrapped (pre-check, dial control, redirect check) and keeps its message.
+type policyError struct{ msg string }
+
+func (e *policyError) Error() string        { return e.msg }
+func (e *policyError) Is(target error) bool { return target == ErrFeedRejected }
+
+func rejectf(format string, a ...any) error {
+	return &policyError{msg: fmt.Sprintf(format, a...)}
+}
+
 func checkDestIP(ip netip.Addr, allowed []netip.Prefix) error {
 	if hardBlocked(ip) {
-		return fmt.Errorf("blocked (hard): %s", ip)
+		return rejectf("blocked (hard): %s", ip)
 	}
 	if softBlocked(ip) {
 		for _, p := range allowed {
@@ -57,7 +69,7 @@ func checkDestIP(ip netip.Addr, allowed []netip.Prefix) error {
 				return nil
 			}
 		}
-		return fmt.Errorf("private address %s not in ipbl_fetch_allowed_cidrs", ip)
+		return rejectf("private address %s not in ipbl_fetch_allowed_cidrs", ip)
 	}
 	return nil
 }
@@ -70,10 +82,10 @@ func ValidateFeedURLContext(ctx context.Context, rawURL string, allowed []netip.
 func validateFeedURLContext(ctx context.Context, rawURL string, allowed []netip.Prefix) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
-		return nil, fmt.Errorf("invalid url: %w", err)
+		return nil, rejectf("invalid url: %v", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("scheme not allowed: %q (use http/https)", u.Scheme)
+		return nil, rejectf("scheme not allowed: %q (use http/https)", u.Scheme)
 	}
 	host := u.Hostname()
 	if ip, err := netip.ParseAddr(host); err == nil {
