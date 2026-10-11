@@ -41,6 +41,15 @@ const (
 	// batch's claim turns staleIssuing old; otherwise another worker could
 	// reclaim a row still waiting its turn and order it a second time.
 	claimMargin = 5 * time.Minute
+	// minIssueBudget: an issuance is not started with less time than this
+	// left before the claim goes stale. It would only time out (DNS-01
+	// propagation alone can take minutes) and be charged an attempt and a
+	// backoff for a deadline the worker imposed; the row waits for the next
+	// round instead.
+	minIssueBudget = 15 * time.Minute
+	// applyTimeout bounds the HAProxy apply after a successful issuance. The
+	// certificate is stored by then, so it is not tied to the claim deadline.
+	applyTimeout = 5 * time.Minute
 	// dbTimeout bounds the per-tick settings load and claim queries.
 	dbTimeout = 30 * time.Second
 )
@@ -129,9 +138,9 @@ func runOnce(ctx context.Context, eng *engine.Engine, st *store.Store) {
 		if claimExpires.Before(deadline) {
 			deadline = claimExpires
 		}
-		if !time.Now().Before(deadline) {
-			// The claim is about to go stale: leave the rest to be reclaimed
-			// rather than race another worker for them.
+		if time.Until(deadline) < minIssueBudget {
+			// Too little time before the claim goes stale: leave the rest to
+			// be reclaimed rather than start an issuance bound to fail.
 			log.Printf("acmed: %d claimed certificate(s) left for the next round", len(due)-i)
 			return
 		}
@@ -211,7 +220,9 @@ func issueOne(ctx context.Context, eng *engine.Engine, st *store.Store, c *confi
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
 		return
 	}
-	if err := eng.Apply(ctx, "acme"); err != nil {
+	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), applyTimeout)
+	defer acancel()
+	if err := eng.Apply(actx, "acme"); err != nil {
 		log.Printf("apply after acme: %v", err)
 	}
 }
