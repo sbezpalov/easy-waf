@@ -46,6 +46,9 @@ type Engine struct {
 	mu       sync.RWMutex
 	settings config.GlobalSettings
 	geo      *geoip.Runtime
+	// geoCfgMu orders GeoIP runtime reconfiguration, so concurrent
+	// SetSettings calls cannot leave the runtime bound to an older value.
+	geoCfgMu sync.Mutex
 
 	// applySem serializes Apply, Rollback and WithApplyLock inside one
 	// process; the PostgreSQL advisory lock does the same across processes.
@@ -80,7 +83,12 @@ func (e *Engine) SetSettings(s config.GlobalSettings) {
 	geo := e.geo
 	e.mu.Unlock()
 	if geo != nil {
-		geo.Configure(s)
+		// Configure with whatever is current once we hold geoCfgMu: if
+		// another SetSettings ran meanwhile, its value wins, as it does for
+		// e.settings.
+		e.geoCfgMu.Lock()
+		geo.Configure(e.Settings())
+		e.geoCfgMu.Unlock()
 	}
 }
 

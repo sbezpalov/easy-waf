@@ -5,6 +5,8 @@ package geoip
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -204,5 +206,53 @@ func TestMemoProvider_ResolvesEachAddressOnce(t *testing.T) {
 	}
 	if inner.calls["1.1.1.1"] != 1 {
 		t.Fatalf("calls: %d", inner.calls["1.1.1.1"])
+	}
+}
+
+// Another process (easy-waf-acmed, or update-geoip-db.sh, which replaces the
+// file and reloads only the API) may install a new database at the same path.
+// The next settings refresh or render must pick it up, as reopening the file
+// on every settings load used to.
+func TestRuntime_PicksUpDatabaseReplacedOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "GeoLite2-Country.mmdb")
+	if err := os.WriteFile(path, mustBuildMMDB(t, "8.8.8.8", "US"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := maxmindSettings(path)
+	rt := NewRuntime(time.Hour)
+	rt.Configure(g)
+	defer rt.InvalidateGeoProvider()
+	ctx := context.Background()
+	if cc, _, err := rt.Lookup(ctx, g, "8.8.8.8"); err != nil || cc != "US" {
+		t.Fatalf("before: %q %v", cc, err)
+	}
+	// Replace the file the way install(1) and rename-based installers do.
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, mustBuildMMDB(t, "8.8.8.8", "DE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+
+	rt.Configure(g) // unchanged settings, as LoadSettings on every acmed tick
+	if cc, cached, err := rt.Lookup(ctx, g, "8.8.8.8"); err != nil || cc != "DE" || cached {
+		t.Fatalf("after Configure: %q cached=%v %v", cc, cached, err)
+	}
+
+	// And at the start of a render, without a settings refresh.
+	if err := os.WriteFile(tmp, mustBuildMMDB(t, "8.8.8.8", "FR"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+	res, err := rt.Resolver(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc, err := res.Lookup(ctx, "8.8.8.8"); err != nil || cc != "FR" {
+		t.Fatalf("after Resolver: %q %v", cc, err)
 	}
 }

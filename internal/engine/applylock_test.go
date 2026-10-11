@@ -6,8 +6,12 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/config"
 )
 
 // R8: waiting for the in-process apply lock honors the caller's deadline, so
@@ -34,5 +38,30 @@ func TestLockApply_WaitHonorsContext(t *testing.T) {
 	}
 	if len(e.applySem) != 1 {
 		t.Fatal("a failed wait must not take or release the slot")
+	}
+}
+
+// Concurrent settings changes must leave the GeoIP runtime bound to the
+// settings that ended up current, never to an older value.
+func TestSetSettings_GeoRuntimeFollowsLatest(t *testing.T) {
+	e := New(t.TempDir(), nil, config.GlobalSettings{GeoIPProvider: "ipinfo"})
+	rt := e.GeoIP()
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			g := config.GlobalSettings{GeoIPProvider: "maxmind", GeoIPMMDBPath: fmt.Sprintf("/db/%d.mmdb", i)}
+			e.SetSettings(g)
+		}(i)
+	}
+	wg.Wait()
+	final := e.Settings()
+	// Configure with the final settings is a no-op (no cache clear) only if
+	// the runtime is already bound to them.
+	gen := rt.Cache.Generation()
+	rt.Configure(final)
+	if rt.Cache.Generation() != gen {
+		t.Fatalf("runtime was bound to stale settings, not %q", final.GeoIPMMDBPath)
 	}
 }

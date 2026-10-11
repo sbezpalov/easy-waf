@@ -72,6 +72,9 @@ func (r *Runtime) Configure(g config.GlobalSettings) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.configured && r.cfgKey == key {
+		// Same settings, but the database file may have been replaced
+		// underneath (another process installed an update).
+		r.retireIfChangedLocked()
 		return
 	}
 	r.configured, r.cfgKey = true, key
@@ -91,6 +94,16 @@ func (r *Runtime) InvalidateGeoProvider() {
 	defer r.mu.Unlock()
 	r.closeProviderLocked()
 	r.Cache.Clear()
+}
+
+// retireIfChangedLocked drops the shared MaxMind reader and the cached answers
+// when its file changed on disk; the next lookup opens the new file. Caller
+// holds r.mu exclusively.
+func (r *Runtime) retireIfChangedLocked() {
+	if mm, ok := r.prov.(*MaxMindProvider); ok && mm.ChangedOnDisk() {
+		r.closeProviderLocked()
+		r.Cache.Clear()
+	}
 }
 
 func (r *Runtime) closeProviderLocked() {
@@ -220,11 +233,19 @@ func (r *Runtime) withProvider(g config.GlobalSettings, fn func(GeoProvider) err
 
 // Resolver returns a GeoProvider that resolves through the runtime (cache
 // first) with settings g and stays valid across provider changes. It fails
-// when the provider for g cannot be opened, e.g. a missing MMDB file.
+// when the provider for g cannot be opened, e.g. a missing MMDB file. A
+// shared reader whose file was replaced on disk is reopened first.
 func (r *Runtime) Resolver(g config.GlobalSettings) (GeoProvider, error) {
 	if r == nil || r.Cache == nil {
 		return nil, fmt.Errorf("geoip: runtime not initialized")
 	}
+	// A render starts here: pick up a database replaced on disk since the
+	// reader was opened, as every render did when it reopened the file.
+	r.mu.Lock()
+	if !r.configured || r.cfgKey == providerKey(g) {
+		r.retireIfChangedLocked()
+	}
+	r.mu.Unlock()
 	if _, err := r.withProvider(g, func(GeoProvider) error { return nil }); err != nil {
 		return nil, err
 	}
