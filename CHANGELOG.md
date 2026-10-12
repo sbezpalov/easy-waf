@@ -20,7 +20,9 @@ tells you what to `chgrp easy-waf` / `chmod 0640`. Until then the new `user hapr
 `group haproxy` lines still drop the workers to `haproxy`. The API reconciles the edge when
 it starts, so the new config goes live on the first restart without a manual Apply. Existing
 databases adopt `schema_migrations` on first start (every migration file runs once more,
-as it did on every start before).
+as it did on every start before). The first API start after the upgrade also applies and
+reloads HAProxy once even if nothing changed: it has no record yet of which certificates
+HAProxy loaded.
 
 ### Security
 
@@ -45,6 +47,7 @@ as it did on every start before).
 - **Changing the GeoIP provider, database path or cache TTL takes effect at once**; countries cached from the previous database were served until they expired, and the TTL from startup stayed in force. Saving unrelated settings no longer reopens the MMDB.
 - **Dashboard backend server counts work with HAProxy 3.x**, which lists server rows before their backend; every backend showed no servers.
 - **Request deadlines cover the wait for the apply lock**, the undo after a failed apply has its own deadline, and `easy-waf-acmed` stops claiming work on SIGTERM (an issuance already running continues until systemd's stop timeout; a second signal ends it at once). Issuances in one batch end before their claim goes stale, so another worker can no longer order the same certificate twice. A certificate stored without its HAProxy apply succeeding (apply error, stop, crash) is applied by acmed on a later tick or its next start.
+- **The startup reconcile notices renewed certificates.** It compared only the config and map files, so a certificate renewed in place whose apply failed was never loaded until an unrelated apply. The engine now records the hashes of the PEMs HAProxy loaded (no key material; rollbacks still never restore old keys) and treats a difference as a change.
 
 ### Changed
 
