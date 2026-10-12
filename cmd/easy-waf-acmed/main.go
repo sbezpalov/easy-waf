@@ -121,10 +121,8 @@ const reconcileRetry = 5 * time.Minute
 
 // applyPendingPath marks a certificate acmed stored whose HAProxy apply has
 // not succeeded yet. It is a file so it survives a stop or crash between the
-// two; only acmed's own issuances set it, so a certificate or setting an
-// operator saved without applying (EASY_WAF_NO_AUTO_APPLY) never triggers an
-// apply here. (ApplyIfChanged cannot serve: it compares the config and map
-// files, not the certificate PEMs a renewal rewrites in place.)
+// two; only acmed's own issuances set it, so acmed does not reconcile the edge
+// on every start for changes it did not make.
 func applyPendingPath(stateDir string) string {
 	return filepath.Join(stateDir, "acme", "apply-pending")
 }
@@ -166,14 +164,20 @@ func (w *worker) reconcile(ctx context.Context) {
 	}
 	actx, cancel := context.WithTimeout(ctx, applyTimeout)
 	defer cancel()
-	if err := w.eng.Apply(actx, "acme-reconcile"); err != nil {
+	// ApplyIfChanged compares the certificate files with what HAProxy last
+	// loaded, so it applies a renewal that is not live and does nothing (no
+	// reload) when another apply, the API's for example, already loaded it.
+	applied, err := w.eng.ApplyIfChanged(actx, "acme-reconcile")
+	if err != nil {
 		w.lastTry = time.Now()
-		log.Printf("acmed: a stored certificate is not live; apply failed, retrying in %s: %v", reconcileRetry, err)
+		log.Printf("acmed: a stored certificate may not be live; apply failed, retrying in %s: %v", reconcileRetry, err)
 		return
 	}
 	w.lastTry = time.Time{}
 	clearApplyPending(stateDir)
-	log.Printf("acmed: applied a stored certificate that was not live yet")
+	if applied {
+		log.Printf("acmed: applied a stored certificate that was not live yet")
+	}
 }
 
 // runOnce takes stored certificates live if needed, loads settings, claims
