@@ -108,6 +108,11 @@ pg_restore --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/eas
 mkdir -p "$STATE" "$CFG"
 echo "[easy-waf-restore] restoring $STATE from backup…"
 tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
+# The backup's record of which certificates HAProxy had loaded describes the
+# backed-up appliance, not the HAProxy running now. Without it the API's
+# startup reconcile re-applies, so the restored certificates are loaded even
+# when the POST /apply below is skipped.
+rm -f "$STATE/haproxy/.loaded-certs.json"
 
 echo "[easy-waf-restore] restoring $CFG from backup…"
 tar -C "$ROOT/etc" -cf - . | tar --no-same-owner -C "$CFG" -xf -

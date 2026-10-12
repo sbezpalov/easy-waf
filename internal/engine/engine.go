@@ -469,9 +469,23 @@ func (e *Engine) finishFailedArtifactTransaction(
 	if runtimeChanged && !tx.snapshot.hasFile(cfgPath) {
 		return
 	}
-	appendFailure(retErr, "restore previous HAProxy artifacts", tx.rollback())
-	if promoted && !skipReload && tx.snapshot.hasFile(cfgPath) {
-		appendFailure(retErr, "reload restored HAProxy configuration", apply.ReloadHAProxy())
+	restoreErr := tx.rollback()
+	appendFailure(retErr, "restore previous HAProxy artifacts", restoreErr)
+	if promoted && tx.snapshot.hasFile(cfgPath) {
+		// The reload loads whatever certificate files are on disk now,
+		// renewed ones included (a rollback does not restore PEMs).
+		certs := e.certsBeforeLoad()
+		if skipReload {
+			if restoreErr == nil {
+				e.saveLoadedCerts(certs)
+			}
+			return
+		}
+		reloadErr := apply.ReloadHAProxy()
+		appendFailure(retErr, "reload restored HAProxy configuration", reloadErr)
+		if reloadErr == nil {
+			e.saveLoadedCerts(certs)
+		}
 	}
 }
 
@@ -597,7 +611,15 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 			return false, err
 		}
 		if same {
-			return false, nil
+			// Config and maps match; a certificate renewed in place shows up
+			// only in the PEM files the crt-list names.
+			changed, err := e.certsChangedSinceLoad()
+			if err != nil {
+				return false, err
+			}
+			if !changed {
+				return false, nil
+			}
 		}
 	}
 	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
@@ -614,12 +636,14 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	if err != nil {
 		return false, fmt.Errorf("snapshot new HAProxy revision: %w", err)
 	}
+	certs := e.certsBeforeLoad()
 	if !skipReload {
 		if err := apply.ReloadHAProxy(); err != nil {
 			return false, err
 		}
 		runtimeChanged = true
 	}
+	e.saveLoadedCerts(certs)
 	detail := map[string]any{
 		"sha256":            r.SHA256,
 		"path":              cfgPath,
@@ -756,12 +780,14 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	if err != nil {
 		return fmt.Errorf("snapshot rollback revision: %w", err)
 	}
+	certs := e.certsBeforeLoad()
 	if !skipReload {
 		if err := apply.ReloadHAProxy(); err != nil {
 			return err
 		}
 		runtimeChanged = true
 	}
+	e.saveLoadedCerts(certs)
 	label := fmt.Sprintf("rollback from %s", rev.HAProxySHA256[:12])
 	detail := map[string]any{
 		"sha256":            got,
