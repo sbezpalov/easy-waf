@@ -202,6 +202,12 @@ disconnects mid-apply cannot roll back a change HAProxy already loaded.
 and applies it only if it differs from what is live (`Engine.ApplyIfChanged`),
 so a template change from an upgrade or a restored database reaches the edge
 without a manual Apply, and an ordinary restart causes no reload or revision.
+"Live" covers certificates too: whenever HAProxy (re)loads, the engine records
+the SHA-256 of every PEM the crt-list names (`state/haproxy/.loaded-certs.json`,
+hashes only; PEMs are not part of revisions, so a rollback never brings back an
+old key). A certificate renewed in place whose apply failed or was interrupted
+therefore still counts as a difference. `easy-waf-acmed` runs the same check
+after its own issuances until the renewal is live.
 `EASY_WAF_NO_AUTO_APPLY=1` disables it along with auto-apply. New rollback revisions
 restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 

@@ -398,8 +398,9 @@ func countEnabledIPBLFeeds(srcs []config.IPBLExternalSource) int {
 }
 
 // reconcileEdgeAtStartup brings the edge in line with the database once the
-// API is up: after an upgrade that changed the template, or a restore, the new
-// config otherwise waited for the next manual Apply. It applies only when the
+// API is up: after an upgrade that changed the template, a restore, or a
+// certificate renewed but never loaded, the change otherwise waited for the
+// next manual Apply. It applies only when the
 // rendered set differs from the live one, and never blocks startup.
 func reconcileEdgeAtStartup(eng *engine.Engine) {
 	if envflag.Enabled("EASY_WAF_NO_AUTO_APPLY") {
