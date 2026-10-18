@@ -39,7 +39,7 @@ var bannedListRE = regexp.MustCompile("(?m)^\\s*` - Banned IP list:\\s*(.*)$")
 func parseJailBannedIPs(out string) []string {
 	m := bannedListRE.FindStringSubmatch(out)
 	if len(m) < 2 {
-		return nil
+		return []string{}
 	}
 	raw := strings.TrimSpace(m[1])
 	if raw == "" {

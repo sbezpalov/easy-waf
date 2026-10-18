@@ -58,6 +58,7 @@ func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]any{
 			"id":                     rev.ID,
 			"sha":                    rev.HAProxySHA256,
+			"label":                  rev.Label,
 			"created_at":             rev.At.UTC().Format(time.RFC3339Nano),
 			"is_current":             curSHA != "" && rev.HAProxySHA256 == curSHA,
 			"config_snippet_preview": revisionConfigPreview(s.Eng.StateDir, rev.HAProxySHA256),

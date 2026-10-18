@@ -19,8 +19,12 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing decision id"})
 		return
 	}
-	c := s.crowdsecLAPIClient()
-	if err := c.DeleteDecision(r.Context(), id); err != nil {
+	c, err := s.crowdsecLAPIClient()
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if err = c.DeleteDecision(r.Context(), id); err != nil {
 		switch {
 		case errors.Is(err, crowdsec.ErrDecisionNotFound):
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
@@ -41,8 +45,12 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	c := s.crowdsecLAPIClient()
-	if err := c.AddDecision(r.Context(), body); err != nil {
+	c, err := s.crowdsecLAPIClient()
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if err = c.AddDecision(r.Context(), body); err != nil {
 		switch {
 		case errors.Is(err, crowdsec.ErrInvalidDecisionIP):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

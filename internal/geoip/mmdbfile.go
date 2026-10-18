@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -185,6 +186,9 @@ func copyMMDBFromTarGz(r io.Reader, dst io.Writer) error {
 	}
 }
 
+// ErrMMDBTooLarge marks an upload or extracted database over MaxMMDBBytes.
+var ErrMMDBTooLarge = errors.New("database exceeds the size limit")
+
 // copyCapped writes at most MaxMMDBBytes, refusing input that claims to be larger
 // (a decompression bomb would otherwise fill the state directory).
 func copyCapped(dst io.Writer, src io.Reader) error {
@@ -193,7 +197,7 @@ func copyCapped(dst io.Writer, src io.Reader) error {
 		return fmt.Errorf("mmdb: write: %w", err)
 	}
 	if written > MaxMMDBBytes {
-		return fmt.Errorf("mmdb: database exceeds %d bytes", MaxMMDBBytes)
+		return fmt.Errorf("mmdb: %w (%d bytes)", ErrMMDBTooLarge, MaxMMDBBytes)
 	}
 	if written == 0 {
 		return fmt.Errorf("mmdb: empty input")

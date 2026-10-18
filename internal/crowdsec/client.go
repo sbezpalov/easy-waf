@@ -86,6 +86,9 @@ func (c *Client) Ping(ctx context.Context) Status {
 	return Status{Reachable: true, LastMessage: fmt.Sprintf("http %d", resp.StatusCode)}
 }
 
+// maxDecisionsBytes bounds the decisions response relayed to the UI.
+const maxDecisionsBytes = 1 << 20
+
 // DecisionsSample returns LAPI GET /v1/decisions JSON (bounded size) for UI dashboards (prompts §7.5).
 func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if strings.TrimSpace(c.BaseURL) == "" {
@@ -96,9 +99,13 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionsBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	// Cut off, the passthrough would be invalid JSON served with a 200.
+	if len(b) > maxDecisionsBytes {
+		return nil, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		return nil, fmt.Errorf("crowdsec lapi decisions: redirect refused")
@@ -159,7 +166,7 @@ func (c *Client) DeleteDecision(ctx context.Context, decisionID string) error {
 func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error {
 	ip := strings.TrimSpace(req.IP)
 	if ip == "" {
-		return fmt.Errorf("crowdsec: empty ip")
+		return fmt.Errorf("%w: empty", ErrInvalidDecisionIP)
 	}
 	if net.ParseIP(ip) == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidDecisionIP, ip)

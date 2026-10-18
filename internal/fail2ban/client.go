@@ -104,14 +104,14 @@ func (c *Client) Overview(ctx context.Context) (Overview, error) {
 	out, err := c.run(ctx, "status")
 	if err != nil {
 		st.Message = strings.TrimSpace(string(out))
-		return Overview{Status: st}, err
+		return Overview{Status: st, Jails: []JailSummary{}}, err
 	}
 	names := parseStatusJails(string(out))
 	jails := make([]JailSummary, 0, len(names))
 	for _, name := range names {
 		js, err := c.JailStatus(ctx, name)
 		if err != nil {
-			js = JailSummary{Name: name, BannedIPs: nil}
+			js = JailSummary{Name: name, BannedIPs: []string{}}
 		}
 		jails = append(jails, js)
 	}
@@ -126,7 +126,7 @@ func (c *Client) JailStatus(ctx context.Context, jail string) (JailSummary, erro
 	}
 	out, err := c.run(ctx, "status", jail)
 	if err != nil {
-		return JailSummary{Name: jail}, fmt.Errorf("fail2ban status %s: %w: %s", jail, err, strings.TrimSpace(string(out)))
+		return JailSummary{Name: jail, BannedIPs: []string{}}, fmt.Errorf("fail2ban status %s: %w: %s", jail, err, strings.TrimSpace(string(out)))
 	}
 	return JailSummary{Name: jail, BannedIPs: parseJailBannedIPs(string(out))}, nil
 }

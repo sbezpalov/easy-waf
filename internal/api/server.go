@@ -186,10 +186,38 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// profileJSON is the API shape of profiles.Profile, which has no JSON tags
+// and used to come out with PascalCase keys and nanosecond durations.
+type profileJSON struct {
+	Name                string   `json:"name"`
+	Description         string   `json:"description"`
+	RateLimitRPS        int      `json:"rate_limit_rps"`
+	RateLimitBurst      int      `json:"rate_limit_burst"`
+	ConnectTimeoutMS    int64    `json:"connect_timeout_ms"`
+	ServerTimeoutMS     int64    `json:"server_timeout_ms"`
+	HTTPKeepAlive       bool     `json:"http_keep_alive"`
+	BlockPaths          []string `json:"block_paths"`
+	ExtraBlockedMethods []string `json:"extra_blocked_methods"`
+	GeoDefaultDeny      bool     `json:"geo_default_deny"`
+	Notes               string   `json:"notes,omitempty"`
+}
+
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
-	out := map[string]profiles.Profile{}
+	out := map[string]profileJSON{}
 	for k, v := range profiles.All() {
-		out[string(k)] = v
+		out[string(k)] = profileJSON{
+			Name:                string(v.Name),
+			Description:         v.Description,
+			RateLimitRPS:        v.RateLimitRPS,
+			RateLimitBurst:      v.RateLimitBurst,
+			ConnectTimeoutMS:    v.ConnectTimeout.Milliseconds(),
+			ServerTimeoutMS:     v.ServerTimeout.Milliseconds(),
+			HTTPKeepAlive:       v.HTTPKeepAlive,
+			BlockPaths:          nonNil(v.BlockPaths),
+			ExtraBlockedMethods: nonNil(v.ExtraBlockedMethods),
+			GeoDefaultDeny:      v.GeoDefaultDeny,
+			Notes:               v.Notes,
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -417,7 +445,11 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 
 // crowdsecLAPIClient uses /etc/easy-waf/easy-waf.env (systemd EnvironmentFile) when set,
 // so a stale DB key after install/bootstrap does not cause 403 until settings are re-saved.
-func (s *Server) crowdsecLAPIClient() crowdsec.Client {
+//
+// A LAPI URL the destination policy rejects is reported as an error. It used
+// to be indistinguishable from no URL at all: the status said "not
+// configured" and the decision list was an empty 200, hiding the problem.
+func (s *Server) crowdsecLAPIClient() (crowdsec.Client, error) {
 	url := strings.TrimSpace(s.Eng.Settings().CrowdSecLAPIURL)
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_URL")); v != "" {
 		url = v
@@ -426,22 +458,30 @@ func (s *Server) crowdsecLAPIClient() crowdsec.Client {
 		url = "http://127.0.0.1:8080/"
 	}
 	if _, err := crowdsec.ValidateLAPIURL(url, nil); err != nil {
-		return crowdsec.Client{BaseURL: "", APIKey: ""}
+		return crowdsec.Client{}, fmt.Errorf("crowdsec lapi url rejected: %w", err)
 	}
 	key := strings.TrimSpace(s.Eng.Settings().CrowdSecLAPIKey)
 	if v := strings.TrimSpace(os.Getenv("CROWDSEC_LAPI_KEY")); v != "" {
 		key = v
 	}
-	return crowdsec.Client{BaseURL: url, APIKey: key}
+	return crowdsec.Client{BaseURL: url, APIKey: key}, nil
 }
 
 func (s *Server) crowdsecStatus(w http.ResponseWriter, r *http.Request) {
-	c := s.crowdsecLAPIClient()
+	c, err := s.crowdsecLAPIClient()
+	if err != nil {
+		writeJSON(w, http.StatusOK, crowdsec.Status{Reachable: false, LastMessage: err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, c.Ping(r.Context()))
 }
 
 func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
-	c := s.crowdsecLAPIClient()
+	c, err := s.crowdsecLAPIClient()
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
 	raw, err := c.DecisionsSample(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

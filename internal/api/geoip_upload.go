@@ -4,8 +4,10 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,13 +88,13 @@ func (s *Server) installGeoIPDatabase(body io.Reader) (geoipUploadResponse, int,
 	dir := s.geoipDir()
 	tmpPath, err := geoip.ExtractMMDB(body, dir)
 	if err != nil {
-		return resp, http.StatusBadRequest, err
+		return resp, geoipUploadErrorStatus(err), err
 	}
 
 	info, err := geoip.InstallMMDB(tmpPath, dir)
 	if err != nil {
 		_ = os.Remove(tmpPath)
-		return resp, http.StatusBadRequest, err
+		return resp, geoipUploadErrorStatus(err), err
 	}
 	resp.MMDBInfo = info
 
@@ -115,4 +117,21 @@ func (s *Server) installGeoIPDatabase(body io.Reader) (geoipUploadResponse, int,
 	s.Eng.GeoIP().Cache.Clear()
 	resp.Reloaded = true
 	return resp, http.StatusOK, nil
+}
+
+// geoipUploadErrorStatus tells the client's fault from the server's: an
+// oversized upload is 413, a failure to create or write files in the GeoIP
+// directory is 500, and anything else means the file is not a usable
+// database (400). All of these used to be 400.
+func geoipUploadErrorStatus(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) || errors.Is(err, geoip.ErrMMDBTooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+	var pathErr *fs.PathError
+	var linkErr *os.LinkError
+	if errors.As(err, &pathErr) || errors.As(err, &linkErr) {
+		return http.StatusInternalServerError
+	}
+	return http.StatusBadRequest
 }
