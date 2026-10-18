@@ -196,14 +196,13 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, apps)
+	writeJSON(w, http.StatusOK, nonNil(apps))
 }
 
 func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	a, err := s.Eng.Store.GetApplication(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	a, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -220,8 +219,7 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	config.NormalizeListenMode(&a)
-	config.NormalizeApplicationSecurity(&a.Security)
-	a.Security.Mode = string(profiles.DetectMode(a.Security))
+	normalizeRequestSecurity(&a.Security)
 	if config.ListenModeRequiresCertificate(a.ListenMode) && strings.TrimSpace(a.CertificateID) == "" {
 		http.Error(w, "certificate_id is required for listen_mode "+a.ListenMode, http.StatusBadRequest)
 		return
@@ -255,6 +253,11 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if haveOld {
+		// The row keeps its original created_at (the upsert never updates
+		// it); report that rather than whatever the client sent or omitted.
+		a.CreatedAt = old.CreatedAt
+	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -300,21 +303,17 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	old, err := s.Eng.Store.GetApplication(r.Context(), id)
-	haveOld := err == nil
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// An unknown id is a 404, not a successful no-op delete followed by a
+	// full HAProxy apply and a new revision.
+	old, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	if err := s.Eng.Store.DeleteApplication(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	undo := func(context.Context) error { return nil }
-	if haveOld {
-		undo = s.restoreApplication(old)
-	}
-	if err := s.applyOrUndo(r.Context(), "api-application-delete", undo); err != nil {
+	if err := s.applyOrUndo(r.Context(), "api-application-delete", s.restoreApplication(old)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}
@@ -394,7 +393,7 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 		if s.Prom != nil {
 			s.Prom.IncApplyError()
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeApplyRejected(w, err)
 		return
 	}
 	if s.Prom != nil {

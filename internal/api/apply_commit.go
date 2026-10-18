@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -51,8 +52,14 @@ func applyContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), applyTimeout)
 }
 
-// writeApplyRejected reports a change the edge refused.
+// writeApplyRejected reports a failed apply: 503 when it ran out of time
+// (typically waiting for another apply to finish, so a retry can succeed),
+// otherwise 422 — the stored configuration could not be put live.
 func writeApplyRejected(w http.ResponseWriter, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 }
 
