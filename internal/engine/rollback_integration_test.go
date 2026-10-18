@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -51,12 +52,14 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 	}
 	defer db.Close()
 
+	// Rollback resolves the live config path from the stored settings, so the
+	// test stores its own. Loading whatever another test left there pointed
+	// the rollback at that test's directory, and a rerun on the same database
+	// failed ("already using this configuration", or v2 still live here).
 	stateDir := t.TempDir()
-	e := &engine.Engine{StateDir: stateDir, Store: st}
-	if err := e.LoadSettings(ctx); err != nil {
-		t.Fatal(err)
-	}
-	_, cfgPath, _ := haproxy.Paths(stateDir)
+	e := engine.New(stateDir, st, config.DefaultSettings(stateDir))
+	useStoredSettingsForTest(t, st, e)
+	cfgPath := haproxy.LiveCfgPath(stateDir, e.Settings().HAProxyConfigPath)
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -91,16 +94,15 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var id3 int64
+	// The rollback adds a revision of its own. Remove it by what it is rather
+	// than by an id read at the end of the test, so a failing run does not
+	// leave it behind for the next one.
 	t.Cleanup(func() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		for _, id := range []int64{id1, id2, id3} {
-			if id == 0 {
-				continue
-			}
-			_, _ = db.ExecContext(ctx2, `DELETE FROM config_revisions WHERE id = $1`, id)
-		}
+		_, _ = db.ExecContext(ctx2,
+			`DELETE FROM config_revisions WHERE id IN ($1, $2) OR (id > $2 AND label = $3)`,
+			id1, id2, "rollback from "+h1[:12])
 	})
 
 	if err := os.WriteFile(cfgPath, cfgV2, 0o600); err != nil {
@@ -125,7 +127,6 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 	if len(latest) == 0 {
 		t.Fatal("expected new revision after rollback")
 	}
-	id3 = latest[0].ID
 	if !strings.HasPrefix(latest[0].Label, "rollback from ") {
 		t.Fatalf("latest label = %q", latest[0].Label)
 	}
