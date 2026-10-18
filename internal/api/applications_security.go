@@ -20,9 +20,8 @@ func (s *Server) listSecurityModes(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) getAppSecurity(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	a, err := s.Eng.Store.GetApplication(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	a, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.Security)
@@ -35,9 +34,8 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	a, err := s.Eng.Store.GetApplication(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	a, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	before, err := cloneApplication(a)
@@ -45,8 +43,7 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	config.NormalizeApplicationSecurity(&sec)
-	sec.Mode = string(profiles.DetectMode(sec))
+	normalizeRequestSecurity(&sec)
 	a.Security = sec
 	if _, err := profiles.Resolve(a.Profile); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -70,9 +67,8 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	a, err := s.Eng.Store.GetApplication(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	a, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	before, err := cloneApplication(a)
@@ -118,9 +114,8 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown mode", http.StatusBadRequest)
 		return
 	}
-	a, err := s.Eng.Store.GetApplication(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	a, ok := s.loadApplication(w, r, id)
+	if !ok {
 		return
 	}
 	before, err := cloneApplication(a)
