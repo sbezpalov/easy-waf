@@ -108,7 +108,7 @@ sudo apt install ./easy-waf_<version>_amd64.deb
 
 ## Документация
 
-Документы в `docs/` ведутся на **английском** — это канон. Три из них переведены на русский и помечены 🇷🇺; при расхождении верна английская версия.
+Документы в `docs/` ведутся на **английском** — это канон. Четыре из них переведены на русский и помечены 🇷🇺; при расхождении верна английская версия.
 
 **С чего начать**
 
@@ -133,6 +133,7 @@ sudo apt install ./easy-waf_<version>_amd64.deb
 | Документ | Что внутри |
 |----------|------------|
 | [ACME](docs/ACME.md) · [DNS01](docs/DNS01.md) · [DNS](docs/DNS.md) | Выпуск и продление |
+| [API](docs/API.ru.md) 🇷🇺 | Справочник REST API: аутентификация, ошибки, все эндпоинты |
 | [HOST-API](docs/HOST-API.md) | Сеть, nftables, обновления, учётные записи |
 | [BACKUP_RESTORE](docs/BACKUP_RESTORE.md) · [ADMIN-CLI](docs/ADMIN-CLI.md) | Резервные копии и аварийное восстановление |
 | [MONITORING](docs/MONITORING.md) · [DIAGNOSTICS](docs/DIAGNOSTICS.md) | Метрики и диагностика |

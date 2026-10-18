@@ -26,6 +26,7 @@ HAProxy loaded.
 
 ### Security
 
+- **`dns_credentials_env_file` is limited to `/etc/easy-waf/` and the state directory's `secrets/`.** `easy-waf-acmed` loads that file into its own environment, and the API accepted any path, so a certificate could name any file acmed can read. `dns_provider` must be one acmed supports (stored lower-case). Both are checked for `dns-01` certificates only, so a stored value does not block an `http-01` issuance.
 - **HAProxy no longer runs as root.** Ubuntu's `haproxy.service` has no `User=` and relies on `user`/`group` in its config, which the generated config lacked, so every worker, the process facing the internet, kept root. The config now drops to `haproxy`, and the drop-in runs the whole unit as `haproxy` with only `CAP_NET_BIND_SERVICE`, so the master, which parses a file the `easy-waf` account writes, is not root either. Map files are written `0640` so the `haproxy` user (group `easy-waf`) can read them.
 - **`easy-waf-hostd` rejects nftables rulesets that use `include`.** It runs `nft -c -f` as root on API-supplied rulesets and returns nft's errors, which quote the lines nft cannot parse, so `include "/etc/shadow"` read any root-only file back. Ruleset backups, which live in an `easy-waf`-owned directory, are checked too.
 - **SSH keys and `userdel` refuse more root-equivalent accounts:** members of `docker`, `lxd`, `incus-admin`, `libvirt`, `disk`, `easy-waf` and `haproxy` besides `root`/`sudo`/`admin`/`wheel`, accounts a sudoers rule names (by user, group or `ALL`), and anything the broker cannot verify.
@@ -34,6 +35,16 @@ HAProxy loaded.
 
 ### Fixed
 
+- **Applications no longer lose security toggles sent without `"mode"`**: the whole block was replaced with the balanced defaults. Only an empty block gets the defaults now; otherwise the mode is detected from the toggles.
+- **Deleting an unknown application is a 404.** It answered 204 after a full HAProxy apply that recorded an empty revision. Deleting an unknown blocklist entry, allowlist entry or blocked user agent is a 404 too. Application lookups also report a database error as 500 instead of "not found".
+- **API errors carry the right status.** A failed `POST /apply` or revision rollback is 422 (503 when it timed out waiting for the apply lock), as for the auto-applying mutations, instead of 400; a password over bcrypt's 72-byte limit is 400 instead of 500; bodies over the settings/security limit (1 MiB) and oversized GeoIP uploads are 413 instead of a confusing 400; a failed IPBL sync and failures to write management TLS files or the GeoIP directory are 500 instead of 400; adding a CrowdSec decision with a missing or invalid IP is always 400, even when the LAPI URL is also wrong.
+- **Malformed request bodies are rejected** by `POST /certificates/{id}/request-issue` and `POST /geoip/reload`, which used to carry on with defaults. An empty body still keeps the stored settings.
+- **Responses show what was stored**: `POST /certificates`, `POST /ipbl/local`, `POST /ipbl/sources` and `POST /ipwl/local` answer with the stored row, and an application update reports its original `created_at`. A client can no longer forge or clear an IPBL source's `last_fetch_at` / `last_error`.
+- **`POST /ipbl/local` validates the address** like the allowlist; an invalid entry was stored and silently left out of the map. An omitted `enabled` now means on for blocklist entries and sources (it created them disabled). A blocked user-agent pattern may not contain control characters.
+- **A rejected CrowdSec LAPI URL is reported** as rejected; the status said "not configured" and the decision list was an empty 200. A decision list over 1 MiB is an error rather than truncated JSON served with 200.
+- **A successful password change resets the per-IP login limiter**, and no longer panics if the account cannot be re-read afterwards.
+- **Audit `user` / `action` filters match `%` and `_` literally**; they were SQL wildcards.
+- **The dashboard stats handlers no longer race** creating their collector.
 - **Failed ACME issuances and renewals are retried** with exponential backoff (10 min doubling to 24 h), rows stuck in `issuing` after a crash are reclaimed, and the dashboard shows them as **failed** with the error and next retry instead of "pending". Rows are claimed with `FOR UPDATE SKIP LOCKED`, PEMs are written atomically under the apply lock, and an operator edit made during issuance is no longer overwritten.
 - **A local blocklist entry without a note broke every apply** (`converting NULL to string`).
 - **An application HAProxy rejects is no longer saved.** It used to stay in the database and fail every later apply, ACME renewals included; the change is now undone and the API answers 422. Applies no longer depend on the client staying connected.
@@ -51,6 +62,7 @@ HAProxy loaded.
 
 ### Changed
 
+- **API responses are more consistent.** Empty lists are `[]` instead of `null`; `GET /profiles` uses snake_case keys and milliseconds (`connect_timeout_ms`, `server_timeout_ms`) instead of Go field names and nanoseconds; `POST /ipbl/sync` returns `local_lines`, `external_lines`, `total_lines`, `map_path` and no longer the whole merged list (`all_cidrs`); `GET /revisions` includes each revision's `label`; `GET /auth/status` reports the real enrollment file path. Clients that read the old keys need updating.
 - **GeoIP cache eviction is O(1)** (it scanned all 50,000 entries per insert under a lock) and a render resolves each blacklist address once for the global and all per-application GeoIP maps.
 - **ipinfo lookups for the configured settings share one client and its 1 request/s limit** across renders and API lookups (each call used to get its own); a manual lookup may wait behind a render's lookups. Probes with other settings still use their own client.
 - **Concurrent dashboard/Prometheus stats requests share one HAProxy socket read** instead of each reading and parsing `show stat`.
@@ -58,6 +70,8 @@ HAProxy loaded.
 
 ### Added
 
+- **`DELETE /api/v1/ipbl/sources/{id}`** removes an external blocklist source; there was no way to.
+- **[REST API reference](docs/API.md)** ([Russian](docs/API.ru.md)) covering every endpoint.
 - **`GET /health/ready`** returns 503 when PostgreSQL is unreachable (`/health` stays a liveness probe).
 - **CI runs the integration tests against PostgreSQL 16**; the store, engine and auth tests used to skip there.
 
