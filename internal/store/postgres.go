@@ -699,19 +699,33 @@ func (s *Store) UpsertIPBLExternalSource(ctx context.Context, e *config.IPBLExte
 	if e.RefreshSeconds <= 0 {
 		e.RefreshSeconds = 3600
 	}
+	// last_fetch_at and last_error belong to the fetcher (TouchIPBLSourceFetch):
+	// a new source starts without them and an edit keeps them, so a client
+	// can neither forge nor clear a source's fetch status.
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ipbl_external_sources (
 			id, name, url, enabled, refresh_seconds, last_fetch_at, last_error, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		) VALUES ($1,$2,$3,$4,$5,NULL,NULL,$6,$7)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			url = EXCLUDED.url,
 			enabled = EXCLUDED.enabled,
 			refresh_seconds = EXCLUDED.refresh_seconds,
-			last_fetch_at = EXCLUDED.last_fetch_at,
-			last_error = EXCLUDED.last_error,
 			updated_at = EXCLUDED.updated_at
-	`, e.ID, e.Name, e.URL, e.Enabled, e.RefreshSeconds, e.LastFetchAt, nullStrPtr(e.LastError), e.CreatedAt, e.UpdatedAt)
+	`, e.ID, e.Name, e.URL, e.Enabled, e.RefreshSeconds, e.CreatedAt, e.UpdatedAt)
+	return err
+}
+
+// DeleteIPBLExternalSource removes a source, or returns sql.ErrNoRows. Its
+// saved feed copy is forgotten by the next sync or apply.
+func (s *Store) DeleteIPBLExternalSource(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM ipbl_external_sources WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return sql.ErrNoRows
+	}
 	return err
 }
 

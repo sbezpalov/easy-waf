@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -116,6 +117,7 @@ func (s *Server) Router() chi.Router {
 				r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)
 				r.Get("/ipbl/sources", s.listIPBLSources)
 				r.Post("/ipbl/sources", s.upsertIPBLSource)
+				r.Delete("/ipbl/sources/{id}", s.deleteIPBLSource)
 				r.Post("/ipbl/sync", s.syncIPBL)
 
 				r.Get("/ipwl/local", s.listIPWLLocal)
@@ -581,12 +583,23 @@ func (s *Server) listIPBLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, nonNil(list))
 }
 
 func (s *Server) upsertIPBLLocal(w http.ResponseWriter, r *http.Request) {
-	var e config.IPBLLocalEntry
+	e := config.IPBLLocalEntry{Enabled: true} // an omitted "enabled" means on
 	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Validated like the allowlist: an invalid entry used to be stored and
+	// then silently dropped from the map.
+	e.CIDR = strings.TrimSpace(e.CIDR)
+	if e.CIDR == "" {
+		http.Error(w, "cidr required", http.StatusBadRequest)
+		return
+	}
+	if err := validateIPOrCIDR(e.CIDR); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -612,11 +625,11 @@ func (s *Server) listIPBLSources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, nonNil(list))
 }
 
 func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
-	var e config.IPBLExternalSource
+	e := config.IPBLExternalSource{Enabled: true} // an omitted "enabled" means on
 	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -630,13 +643,41 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Answer with the stored row: the fetch status is the server's, not
+	// whatever the request carried.
+	srcs, err := s.Eng.Store.ListIPBLExternalSources(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, src := range srcs {
+		if src.ID == e.ID {
+			writeJSON(w, http.StatusOK, src)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, e)
 }
 
+func (s *Server) deleteIPBLSource(w http.ResponseWriter, r *http.Request) {
+	err := s.Eng.Store.DeleteIPBLExternalSource(r.Context(), chi.URLParam(r, "id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
+	// A failing feed does not fail the sync (it falls back or is skipped and
+	// its last_error says why), so what is left is a server-side failure.
 	res, err := s.Eng.SyncIPBL(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -682,7 +723,7 @@ func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, nonNil(list))
 }
 
 func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
@@ -722,7 +763,7 @@ func (s *Server) listBlockedUA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, nonNil(list))
 }
 
 func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
@@ -734,6 +775,11 @@ func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
 	e.Pattern = strings.TrimSpace(e.Pattern)
 	if e.Pattern == "" {
 		http.Error(w, "pattern required", http.StatusBadRequest)
+		return
+	}
+	// One pattern is one map line; an embedded newline would make it two.
+	if strings.ContainsFunc(e.Pattern, unicode.IsControl) {
+		http.Error(w, "pattern must not contain control characters", http.StatusBadRequest)
 		return
 	}
 	e.ID = ""

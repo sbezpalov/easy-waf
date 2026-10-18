@@ -25,12 +25,14 @@ import (
 
 // SyncResult describes a merge operation for observability.
 type SyncResult struct {
-	LocalLines    int
-	ExternalLines int
-	TotalLines    int
-	MapPath       string
-	// AllCIDRs is the sorted unique CIDR/IP lines written to the blacklist map (GeoIP batch uses this).
-	AllCIDRs []string `json:"all_cidrs,omitempty"`
+	LocalLines    int    `json:"local_lines"`
+	ExternalLines int    `json:"external_lines"`
+	TotalLines    int    `json:"total_lines"`
+	MapPath       string `json:"map_path"`
+	// AllCIDRs is the sorted unique CIDR/IP lines written to the blacklist map
+	// (GeoIP batch uses this). It is not part of the API response: it can run
+	// to hundreds of thousands of lines and the map file already holds it.
+	AllCIDRs []string `json:"-"`
 }
 
 // SyncAndWrite merges local DB entries and optional external HTTP lists into a HAProxy-compatible text file
