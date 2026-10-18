@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -42,6 +43,7 @@ type Server struct {
 	MgmtTLSCertPath string
 	MgmtTLSKeyPath  string
 	HAProxyMetrics  *metrics.HAProxyCollector
+	statsOnce       sync.Once
 	Prom            *metrics.PrometheusExporter
 }
 
@@ -326,7 +328,7 @@ func (s *Server) listCerts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, nonNil(c))
 }
 
 func (s *Server) listCertsSummary(w http.ResponseWriter, r *http.Request) {
@@ -375,11 +377,20 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateCertificateDNS(s.Eng.StateDir, c); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	stored, err := s.findCertificate(r.Context(), c.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, stored)
 }
 
 func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +486,11 @@ func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.MgmtTLS.Store(s.MgmtTLSCertPath, s.MgmtTLSKeyPath, []byte(body.CertificatePEM), []byte(body.PrivateKeyPEM)); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		code := http.StatusInternalServerError
+		if errors.Is(err, mgmttls.ErrInvalidPEMPair) {
+			code = http.StatusBadRequest
+		}
+		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -493,9 +508,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 // Omitted keys keep existing values (PATCH semantics). PUT uses the same merge so partial bodies
 // do not zero paths or durations; send only the fields you want to change, or use GET → edit → PUT.
 func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	body, ok := readJSONBody(w, r)
+	if !ok {
 		return
 	}
 	// Merge over the stored settings, not this process's copy, so a change
@@ -800,22 +814,20 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 		DNSProvider           string `json:"dns_provider"`
 		DNSCredentialsEnvFile string `json:"dns_credentials_env_file"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-
-	certs, err := s.Eng.Store.ListCertificates(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// An empty body keeps the stored settings (the UI's Issue and Renew
+	// buttons rely on that); a malformed one is an error, not "use defaults".
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var found *config.Certificate
-	for i := range certs {
-		if certs[i].ID == id {
-			found = &certs[i]
-			break
-		}
-	}
-	if found == nil {
+
+	found, err := s.findCertificate(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	mode, ok := resolveRequestIssueMode(body.Mode, found.Mode)
@@ -830,6 +842,10 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.DNSCredentialsEnvFile != "" {
 		found.DNSCredentialsEnvFile = body.DNSCredentialsEnvFile
+	}
+	if err := validateCertificateDNS(s.Eng.StateDir, *found); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), found); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -9,12 +9,21 @@ import (
 	"github.com/easy-waf/easy-waf/internal/metrics"
 )
 
+// haproxyStats returns the stats collector, creating one on first use when
+// the server was built without it. Concurrent requests used to race on that
+// lazy assignment.
+func (s *Server) haproxyStats() *metrics.HAProxyCollector {
+	s.statsOnce.Do(func() {
+		if s.HAProxyMetrics == nil {
+			s.HAProxyMetrics = metrics.NewHAProxyCollector()
+		}
+	})
+	return s.HAProxyMetrics
+}
+
 func (s *Server) handleStatsHAProxy(w http.ResponseWriter, r *http.Request) {
-	if s.HAProxyMetrics == nil {
-		s.HAProxyMetrics = metrics.NewHAProxyCollector()
-	}
 	path := metrics.StatsSocketPath(s.Eng.Settings(), s.Eng.StateDir)
-	rep, _ := s.HAProxyMetrics.FetchContext(r.Context(), path)
+	rep, _ := s.haproxyStats().FetchContext(r.Context(), path)
 	if rep == nil {
 		return // client went away
 	}
@@ -22,11 +31,8 @@ func (s *Server) handleStatsHAProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatsSummary(w http.ResponseWriter, r *http.Request) {
-	if s.HAProxyMetrics == nil {
-		s.HAProxyMetrics = metrics.NewHAProxyCollector()
-	}
 	path := metrics.StatsSocketPath(s.Eng.Settings(), s.Eng.StateDir)
-	rep, _ := s.HAProxyMetrics.FetchContext(r.Context(), path)
+	rep, _ := s.haproxyStats().FetchContext(r.Context(), path)
 	if rep == nil {
 		return // client went away
 	}

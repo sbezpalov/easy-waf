@@ -1,6 +1,6 @@
 # DNS-01 (Lego providers)
 
-Certificates with `mode: dns-01` use **Lego** DNS providers. Secrets are **not** stored in PostgreSQL: set `dns_credentials_env_file` to a **Linux path** readable only by `easy-waf` (e.g. mode `0600`), containing `KEY=value` lines consumed by Lego’s env helpers.
+Certificates with `mode: dns-01` use **Lego** DNS providers. Secrets are **not** stored in PostgreSQL: set `dns_credentials_env_file` to a **Linux path** readable only by `easy-waf` (e.g. mode `0600`), containing `KEY=value` lines consumed by Lego’s env helpers. The API accepts only a clean absolute path under **`/etc/easy-waf/`** or **`/var/lib/easy-waf/secrets/`** (the state directory's `secrets/`), and only the providers listed below; anything else is rejected with 400.
 
 Default **`dns_provider`** when empty: **`cloudns`** (ClouDNS).
 

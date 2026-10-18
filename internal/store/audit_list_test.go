@@ -121,7 +121,7 @@ func TestAuditWhere_OnlySetFilters(t *testing.T) {
 		t.Fatalf("no filters: %q %v", where, args)
 	}
 	where, args = auditWhere(AuditListParams{Action: " apply ", BeforeID: 7})
-	want := " WHERE action ILIKE '%' || $1 || '%' AND id < $2"
+	want := ` WHERE action ILIKE '%' || $1 || '%' ESCAPE '\' AND id < $2`
 	if where != want || len(args) != 2 || args[0] != "apply" || args[1] != int64(7) {
 		t.Fatalf("got %q %v", where, args)
 	}
