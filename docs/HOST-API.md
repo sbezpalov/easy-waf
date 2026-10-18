@@ -6,14 +6,14 @@ Authenticated routes under **`/api/v1/host/*`** (JWT; `X-Requested-With` is requ
 |------|---------|--------|
 | Network | `GET /host/network`, `PUT /host/network/netplan` (legacy immediate apply) | `ip -j` snapshot; netplan file `/etc/netplan/99-easy-waf.yaml` |
 | Network (safe apply) | `POST /host/network/netplan/apply`, `POST /host/network/netplan/commit` | Body `{ "yaml", "rollback_seconds" }` (default/clamp 30–600s, default 90). Broker backs up YAML, applies, schedules **`systemd-run`** → **`easy-waf-hostd revert netplan <token>`** if not committed. |
-| Firewall | `GET /host/firewall`, `PUT /host/firewall/ruleset`, `POST /host/firewall/apply` (legacy) | Managed file `/etc/nftables/easy-waf.nft` |
+| Firewall | `GET /host/firewall`, `PUT /host/firewall/ruleset`, `POST /host/firewall/apply` (legacy) | Managed file `/etc/nftables/easy-waf.nft`. A ruleset that uses `include` is refused (the broker runs `nft -c -f` as root and echoes nft's errors, so an include could read root-only files back). |
 | Firewall (safe apply) | `POST /host/firewall/apply-rollback`, `POST /host/firewall/commit` | Same rollback window via broker `nft-apply-confirm` / `nft-commit`. API runs `nft -c` **before** the broker (invalid ruleset → 4xx, no timer). |
-| Services | `GET /host/services`, `POST /host/services/{unit}/{action}` | Whitelisted systemd units only |
+| Services | `GET /host/services`, `POST /host/services/{unit}/{action}` | Whitelisted systemd units only. `stop` and `disable` of `nftables.service` are refused (by the API, the broker and the polkit rule), so the firewall cannot be switched off through the appliance. |
 | Journal | `GET /host/journal?unit=&lines=&since=&until=&priority=` | `journalctl` via broker |
 | Updates | `GET /host/updates`, `POST /host/updates/update`, `POST /host/updates/upgrade` (legacy), `POST /host/updates/upgrade/stream` (NDJSON live log), `GET /host/updates/upgrade/status`, `GET /host/updates/upgrade/log`, `GET /host/updates/autoremove/preview`, `POST /host/updates/autoremove/stream`, `POST /host/updates/clean` | apt via broker |
 | Disk | `GET /host/disk` | `statfs` in API process (no root); optional `cache_bytes`, `removable_count` via broker |
 | Power | `POST /host/power/reboot`, `POST /host/power/shutdown` | |
-| Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Lists local accounts with **uid ≥ 1000, plus `root`**. `root` and `easy-waf` are **protected**: create, delete and ssh-key writes on those names are refused with 400 — `user protected`, `user cannot be deleted` and `user is protected or invalid` respectively — in the API *and* again in the broker. |
+| Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Lists local accounts with **uid ≥ 1000, plus `root`**. `root` and `easy-waf` are **protected**: create, delete and ssh-key writes on those names are refused with 400 — `user protected`, `user cannot be deleted` and `user is protected or invalid` respectively — in the API *and* again in the broker. The broker also refuses ssh-key writes and deletion for any root-equivalent account (members of `sudo`, `docker`, `lxd`, `easy-waf`, `haproxy`, …, or named by a sudoers rule) — see [SECURITY.md](SECURITY.md#host-management-apiv1host). |
 | Diagnostics | `POST /host/diagnostics/ping`, `POST /host/diagnostics/trace` | JSON body `{ "host": "…" }`; `ping` also accepts `count` |
 
 WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes.
