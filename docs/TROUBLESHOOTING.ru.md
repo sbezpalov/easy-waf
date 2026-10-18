@@ -271,3 +271,14 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "X-Api-Key: $KEY" 'http://127.0.0.1:
    - Вывод по умолчанию: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz`
 
 Подробности, структура и что **не** включается: [DIAGNOSTICS.md](DIAGNOSTICS.md).
+
+## HAProxy: `haproxy cannot validate … as the haproxy user` от скрипта drop-in
+
+`scripts/fix-haproxy-easy-waf-dropin.sh` запускает HAProxy целиком от пользователя **`haproxy`** (только `CAP_NET_BIND_SERVICE`), так что процесс, разбирающий конфиг, который пишет easy-waf, никогда не работает от root. Перед переключением скрипт проверяет конфиг от имени этого пользователя. Если какой-то файл из конфига ему недоступен — обычно вручную установленный PEM (`bundle_path` / `pem_crt_path`) или CA бэкенда вне `/etc/ssl/certs`, — скрипт выводит ошибку HAProxy, **оставляет прежнюю схему с root**, чтобы edge продолжал работать, и подсказывает, как исправить права:
+
+```bash
+sudo chgrp easy-waf /path/to/file.pem && sudo chmod 0640 /path/to/file.pem
+sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
+```
+
+`haproxy` входит в группу `easy-waf`, поэтому файлы в каталоге состояния, доступные группе на чтение, работают как есть. `EASY_WAF_HAPROXY_MODE=root` принудительно включает старую схему. Сгенерированный конфиг всё равно содержит `user haproxy` / `group haproxy`, так что даже при схеме с root воркеры, обслуживающие трафик, сбрасывают права до `haproxy`.

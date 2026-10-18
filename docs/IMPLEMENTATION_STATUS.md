@@ -1,6 +1,6 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-09-15  
+**Last updated:** 2026-10-19  
 **Current VERSION:** 1.4.2 (see root `VERSION` file)
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **7**, Partial — **3** (AC-03, AC-04, AC-05).
 
@@ -62,7 +62,7 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 | Requirement | Status | Where |
 |-------------|--------|-------|
 | Web UI (LAN): 11 tabs — dashboard, apps, certs, config, network, security, crowdsec, logs, system, users, settings | **Done** | see **7.7**; `internal/webui/dist/index.html` |
-| Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health`, `/status` |
+| Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health` (liveness), `/health/ready` (503 without PostgreSQL), `/status` |
 | Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
 ## Platform constraints
@@ -83,7 +83,7 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 ### 7.1a Per-application security — **Done** (migration `009_application_security.sql`, `Application.security`, presets `internal/profiles/modes.go`, HAProxy per-host ACL order, per-app GeoIP maps `geoip_app_*.map`, API `GET/PUT/PATCH /applications/{id}/security`, `POST …/security/mode`, `GET /security/modes`, audit `app_security_mode_changed`, UI cards + Dashboard overview, golden `app-*` / `mixed-apps`, `docs/APPLICATION_SECURITY.md`)
 
-### 7.2 ACME — **Done** (HTTP-01, DNS-01 providers, renew worker, apply hook in `easy-waf-acmed`)
+### 7.2 ACME — **Done** (HTTP-01, DNS-01 providers, renew worker, apply hook in `easy-waf-acmed`; failed issuances retry with exponential backoff 10 min → 24 h, stale `issuing` rows are reclaimed — `internal/acme/retry.go`, `docs/ACME.md`)
 
 ### 7.2a Global settings API — **Done** (`GET /api/v1/settings`; **`PATCH /api/v1/settings`** — partial JSON, merge over current in-memory/DB values; **`PUT /api/v1/settings`** — same merge so a partial body does not zero paths/timeouts; fields `geoip_cache_ttl` and `acme_renewal_interval` in JSON as `time.ParseDuration` strings, e.g. `"24h"`, `"30m"`, plus nanosecond numbers for older snapshots; UI saves ACME via PATCH) — `internal/api/server.go`, `internal/config/settings_merge.go`, `internal/config/duration.go`, `internal/webui/dist/index.html`
 
@@ -116,7 +116,7 @@ Verified against code and scripts (iterations A–D).
 | **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Partial** | Template `filter spoe engine …` + ACL with `deny_status 403` (WAF, IPBL, GeoIP, UA); SPOA decision reaction — bouncer package config + `docs/CROWDSEC.md` |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
-| **AC-08** | Survives reboot | **Done** | `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files |
+| **AC-08** | Survives reboot | **Done** | `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
@@ -144,4 +144,4 @@ Update this file when closing MVP items and when `VERSION` changes.
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| `go vet`, golangci-lint, `go test -run Golden` (HAProxy golden), `go test -race` (with `-skip TestGoldenRender` to avoid duplicating golden), Linux artifact / LF checks for `scripts/**/*.sh`, `haproxy -c` on generated config + golden (`-tags=integration`) | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/render_golden_test.go`, `internal/haproxy/haproxy_validate_test.go` |
+| `go vet`, golangci-lint, `go test -run Golden` (HAProxy golden), `go test -race` (with `-skip TestGoldenRender` to avoid duplicating golden), Linux artifact / LF checks for `scripts/**/*.sh`, `haproxy -c` on generated config + golden (`-tags=integration`), store/engine/auth integration tests against a PostgreSQL 16 service container | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/render_golden_test.go`, `internal/haproxy/haproxy_validate_test.go` |

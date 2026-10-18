@@ -10,7 +10,7 @@ Two backends are supported via global setting **`geoip_provider`**: **`ipinfo`**
 
 ## ipinfo (HTTP API)
 
-- Outbound HTTPS to `ipinfo.io` (rate-limited in-process; optional token **`GEOIP_IPINFO_TOKEN`** on the `easy-waf-api` host).
+- Outbound HTTPS to `ipinfo.io` (rate-limited in-process; optional token **`GEOIP_IPINFO_TOKEN`** on the `easy-waf-api` host). Renders and API lookups with the configured settings share one client and its **1 request/s** limit, so a manual lookup may wait behind a render's batch; probes with other settings use their own client.
 - **Pros:** no local database file; quick to start.
 - **Cons:** depends on external service and network; per-IP HTTP calls (with in-memory cache).
 
