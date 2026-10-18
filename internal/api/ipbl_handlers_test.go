@@ -105,6 +105,23 @@ func TestDeleteIPBLSource(t *testing.T) {
 	}
 }
 
+func TestDeleteUnknownLocalEntriesIs404(t *testing.T) {
+	s := applyFailingServer(t)
+	const unknown = "00000000-0000-0000-0000-000000000000"
+	handlers := map[string]http.HandlerFunc{
+		"ipbl/local":          s.deleteIPBLLocal,
+		"ipwl/local":          s.deleteIPWLLocal,
+		"security/blocked-ua": s.deleteBlockedUA,
+	}
+	for name, h := range handlers {
+		rec := httptest.NewRecorder()
+		h(rec, withURLParam(httptest.NewRequest(http.MethodDelete, "/api/v1/"+name+"/x", nil), "id", unknown))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", name, rec.Code)
+		}
+	}
+}
+
 func mustSource(t *testing.T, body string) *config.IPBLExternalSource {
 	t.Helper()
 	var e config.IPBLExternalSource

@@ -407,6 +407,7 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	normalizeDNSProvider(&c)
 	if err := validateCertificateDNS(s.Eng.StateDir, c); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -647,13 +648,25 @@ func (s *Server) upsertIPBLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The stored row, not the request: created_at is the server's.
+	list, err := s.Eng.Store.ListIPBLLocal(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, stored := range list {
+		if stored.ID == e.ID {
+			writeJSON(w, http.StatusOK, stored)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, e)
 }
 
 func (s *Server) deleteIPBLLocal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Eng.Store.DeleteIPBLLocal(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeDeleteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -785,13 +798,25 @@ func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The stored row, not the request: created_at is the server's.
+	list, err := s.Eng.Store.ListIPWLLocal(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, stored := range list {
+		if stored.ID == e.ID {
+			writeJSON(w, http.StatusOK, stored)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, e)
 }
 
 func (s *Server) deleteIPWLLocal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Eng.Store.DeleteIPWLLocal(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeDeleteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -833,7 +858,7 @@ func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteBlockedUA(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.Eng.Store.DeleteBlockedUserAgent(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeDeleteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -929,6 +954,7 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 	if body.DNSCredentialsEnvFile != "" {
 		found.DNSCredentialsEnvFile = body.DNSCredentialsEnvFile
 	}
+	normalizeDNSProvider(found)
 	if err := validateCertificateDNS(s.Eng.StateDir, *found); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
