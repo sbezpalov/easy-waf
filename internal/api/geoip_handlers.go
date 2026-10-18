@@ -41,9 +41,18 @@ func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MmdbPath string `json:"mmdb_path"`
 	}
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	// An empty body reloads the configured path; a malformed one is an error
+	// rather than a silent reload of something the caller did not ask for.
 	if len(bytes.TrimSpace(raw)) > 0 {
-		_ = json.Unmarshal(raw, &body)
+		if err := json.Unmarshal(raw, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	path := strings.TrimSpace(body.MmdbPath)
 	if path == "" {
