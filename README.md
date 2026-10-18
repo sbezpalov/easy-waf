@@ -126,6 +126,7 @@ this way: [ADR 0001](docs/adr/0001-packaging-and-installer.md).
 | Doc | What is in it |
 |-----|---------------|
 | [ACME](docs/ACME.md) · [DNS01](docs/DNS01.md) · [DNS](docs/DNS.md) | Issuance and renewal |
+| [API](docs/API.md) | REST API reference: authentication, errors, every endpoint |
 | [HOST-API](docs/HOST-API.md) | Network, nftables, updates, accounts |
 | [BACKUP_RESTORE](docs/BACKUP_RESTORE.md) · [ADMIN-CLI](docs/ADMIN-CLI.md) | Backups and emergency recovery |
 | [MONITORING](docs/MONITORING.md) · [DIAGNOSTICS](docs/DIAGNOSTICS.md) | Metrics and diagnostics |

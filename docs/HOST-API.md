@@ -16,7 +16,7 @@ Authenticated routes under **`/api/v1/host/*`** (JWT; `X-Requested-With` is requ
 | Users | `GET /host/users`, `POST /host/users`, `DELETE /host/users/{name}`, `PUT /host/users/{name}/ssh-keys` | Lists local accounts with **uid ≥ 1000, plus `root`**. `root` and `easy-waf` are **protected**: create, delete and ssh-key writes on those names are refused with 400 — `user protected`, `user cannot be deleted` and `user is protected or invalid` respectively — in the API *and* again in the broker. The broker also refuses ssh-key writes and deletion for any root-equivalent account (members of `sudo`, `docker`, `lxd`, `easy-waf`, `haproxy`, …, or named by a sudoers rule) — see [SECURITY.md](SECURITY.md#host-management-apiv1host). |
 | Diagnostics | `POST /host/diagnostics/ping`, `POST /host/diagnostics/trace` | JSON body `{ "host": "…" }`; `ping` also accepts `count` |
 
-WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes.
+WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes; authentication, error handling and every other endpoint are in the [REST API reference](API.md).
 
 ### `POST /host/updates/upgrade/stream` (live apt log)
 
