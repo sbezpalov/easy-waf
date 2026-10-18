@@ -96,10 +96,10 @@ func (c *Client) Ping(ctx context.Context) Status {
 func (c *Client) Overview(ctx context.Context) (Overview, error) {
 	st := c.Ping(ctx)
 	if !st.Installed && strings.Contains(st.Message, "not found") {
-		return Overview{Status: st}, ErrNotInstalled
+		return Overview{Status: st, Jails: []JailSummary{}}, ErrNotInstalled
 	}
 	if !st.Running {
-		return Overview{Status: st}, nil
+		return Overview{Status: st, Jails: []JailSummary{}}, nil
 	}
 	out, err := c.run(ctx, "status")
 	if err != nil {

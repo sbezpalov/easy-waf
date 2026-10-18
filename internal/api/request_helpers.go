@@ -62,8 +62,15 @@ var dnsProviders = map[string]struct{}{"": {}, "cloudflare": {}, "cloudns": {}, 
 // files — /etc/easy-waf or the state directory's secrets — rather than name
 // any file acmed can read. An unknown provider used to surface only as a
 // failed issuance.
+//
+// Only a dns-01 certificate uses them, so others are not held to the rules: a
+// value stored earlier must not block an http-01 issuance. The provider is
+// expected normalized (normalizeDNSProvider).
 func validateCertificateDNS(stateDir string, c config.Certificate) error {
-	if _, ok := dnsProviders[strings.ToLower(strings.TrimSpace(c.DNSProvider))]; !ok {
+	if c.Mode != "dns-01" {
+		return nil
+	}
+	if _, ok := dnsProviders[c.DNSProvider]; !ok {
 		return fmt.Errorf("dns_provider %q is not supported (use cloudflare, cloudns, route53 or webhook)", c.DNSProvider)
 	}
 	p := c.DNSCredentialsEnvFile
@@ -82,4 +89,18 @@ func validateCertificateDNS(stateDir string, c config.Certificate) error {
 		}
 	}
 	return fmt.Errorf("dns_credentials_env_file must be under /etc/easy-waf/ or %s/", filepath.Join(stateDir, "secrets"))
+}
+
+// normalizeDNSProvider stores the provider name the way acmed matches it.
+func normalizeDNSProvider(c *config.Certificate) {
+	c.DNSProvider = strings.ToLower(strings.TrimSpace(c.DNSProvider))
+}
+
+// writeDeleteError answers a failed delete: 404 for an unknown id, else 500.
+func writeDeleteError(w http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }

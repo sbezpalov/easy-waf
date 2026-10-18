@@ -29,7 +29,6 @@ func TestValidateCertificateDNS(t *testing.T) {
 		{"defaults", "", "", true},
 		{"etc file", "cloudflare", "/etc/easy-waf/dns/cf.env", true},
 		{"state secrets", "route53", "/var/lib/easy-waf/secrets/dns/r53.env", true},
-		{"provider case", "CloudNS", "", true},
 		{"unknown provider", "godaddy", "", false},
 		{"relative", "", "dns/cf.env", false},
 		{"traversal", "", "/etc/easy-waf/../shadow", false},
@@ -40,11 +39,29 @@ func TestValidateCertificateDNS(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateCertificateDNS(state, config.Certificate{DNSProvider: tc.provider, DNSCredentialsEnvFile: tc.env})
+			err := validateCertificateDNS(state, config.Certificate{Mode: "dns-01", DNSProvider: tc.provider, DNSCredentialsEnvFile: tc.env})
 			if (err == nil) != tc.ok {
 				t.Fatalf("err = %v, want ok=%v", err, tc.ok)
 			}
 		})
+	}
+}
+
+func TestValidateCertificateDNSOnlyAppliesToDNS01(t *testing.T) {
+	c := config.Certificate{Mode: "http-01", DNSProvider: "godaddy", DNSCredentialsEnvFile: "/etc/shadow"}
+	if err := validateCertificateDNS("/var/lib/easy-waf", c); err != nil {
+		t.Fatalf("stored DNS fields blocked an http-01 certificate: %v", err)
+	}
+}
+
+func TestNormalizeDNSProvider(t *testing.T) {
+	c := config.Certificate{Mode: "dns-01", DNSProvider: " CloudNS "}
+	normalizeDNSProvider(&c)
+	if c.DNSProvider != "cloudns" {
+		t.Fatalf("provider = %q", c.DNSProvider)
+	}
+	if err := validateCertificateDNS("/var/lib/easy-waf", c); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -82,7 +82,7 @@ func (s *Server) postRevisionRollback(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "revision not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeApplyRejected(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

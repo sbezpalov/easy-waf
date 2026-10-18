@@ -162,15 +162,25 @@ func (c *Client) DeleteDecision(ctx context.Context, decisionID string) error {
 	}
 }
 
-// AddDecision calls LAPI POST /v1/decisions with a single decision (ban by IP).
-func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error {
-	ip := strings.TrimSpace(req.IP)
+// ValidateDecisionIP reports whether ip can be the subject of a decision; the
+// error wraps ErrInvalidDecisionIP.
+func ValidateDecisionIP(ip string) error {
+	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		return fmt.Errorf("%w: empty", ErrInvalidDecisionIP)
 	}
 	if net.ParseIP(ip) == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidDecisionIP, ip)
 	}
+	return nil
+}
+
+// AddDecision calls LAPI POST /v1/decisions with a single decision (ban by IP).
+func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error {
+	if err := ValidateDecisionIP(req.IP); err != nil {
+		return err
+	}
+	ip := strings.TrimSpace(req.IP)
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return fmt.Errorf("crowdsec: lapi url not configured")
 	}

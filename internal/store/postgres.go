@@ -602,8 +602,7 @@ func (s *Store) UpsertIPWLLocal(ctx context.Context, e *config.IPWLLocalEntry) e
 
 // DeleteIPWLLocal removes a row by id.
 func (s *Store) DeleteIPWLLocal(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ipwl_local WHERE id = $1`, id)
-	return err
+	return s.deleteByID(ctx, `DELETE FROM ipwl_local WHERE id = $1`, id)
 }
 
 // --- IPBL ---
@@ -652,8 +651,7 @@ func (s *Store) UpsertIPBLLocal(ctx context.Context, e *config.IPBLLocalEntry) e
 
 // DeleteIPBLLocal removes a local entry.
 func (s *Store) DeleteIPBLLocal(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ipbl_local WHERE id = $1`, id)
-	return err
+	return s.deleteByID(ctx, `DELETE FROM ipbl_local WHERE id = $1`, id)
 }
 
 // ListIPBLExternalSources returns configured download sources.
@@ -783,8 +781,7 @@ func (s *Store) UpsertBlockedUserAgent(ctx context.Context, e *config.BlockedUse
 
 // DeleteBlockedUserAgent removes a row by id.
 func (s *Store) DeleteBlockedUserAgent(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM blocked_user_agents WHERE id = $1`, id)
-	return err
+	return s.deleteByID(ctx, `DELETE FROM blocked_user_agents WHERE id = $1`, id)
 }
 
 // FactoryReset removes all configuration rows (destructive). Schema is kept.
@@ -792,5 +789,18 @@ func (s *Store) FactoryReset(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
 		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, blocked_user_agents, users, operator_enrollment
 		RESTART IDENTITY CASCADE`)
+	return err
+}
+
+// deleteByID runs a single-row delete and returns sql.ErrNoRows when no row
+// had that id, so handlers can answer 404 instead of a silent 204.
+func (s *Store) deleteByID(ctx context.Context, query, id string) error {
+	res, err := s.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return sql.ErrNoRows
+	}
 	return err
 }

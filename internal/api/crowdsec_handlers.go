@@ -45,6 +45,10 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := crowdsec.ValidateDecisionIP(body.IP); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

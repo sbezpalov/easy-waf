@@ -80,6 +80,17 @@ func TestCrowdSecRejectedLAPIURLIsReported(t *testing.T) {
 	}
 }
 
+func TestCrowdSecAddDecisionChecksIPBeforeLAPIURL(t *testing.T) {
+	t.Setenv("CROWDSEC_LAPI_URL", "")
+	t.Setenv("CROWDSEC_LAPI_ALLOWED_ORIGINS", "")
+	s := engineServer(t, func(g *config.GlobalSettings) { g.CrowdSecLAPIURL = "http://192.0.2.1:8080" })
+	rec := httptest.NewRecorder()
+	s.crowdsecAddDecision(rec, httptest.NewRequest(http.MethodPost, "/api/v1/integrations/crowdsec/decisions", strings.NewReader(`{"ip":""}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d (%s), want 400 for the missing IP", rec.Code, rec.Body.String())
+	}
+}
+
 func TestProfilesUseSnakeCase(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
