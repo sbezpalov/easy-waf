@@ -46,6 +46,12 @@ type enrollRequest struct {
 
 const maxLoginRequestBodyBytes int64 = 16 << 10
 
+// maxPasswordBytes is bcrypt's input limit: GenerateFromPassword refuses
+// anything longer, which surfaced as a 500 instead of a validation error.
+const maxPasswordBytes = 72
+
+const errPasswordTooLong = "password must be at most 72 bytes"
+
 // sessionTTL is how long an issued management JWT stays valid.
 const sessionTTL = 24 * time.Hour
 
@@ -72,7 +78,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enrollment_required": pending,
-		"enrollment_file":     "stateDir/secrets/enrollment",
+		"enrollment_file":     enroll.FilePath(s.Eng.StateDir),
 	})
 }
 
@@ -116,6 +122,10 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(strings.TrimSpace(body.Password)) < 8 {
 		http.Error(w, "password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+	if len(body.Password) > maxPasswordBytes {
+		http.Error(w, errPasswordTooLong, http.StatusBadRequest)
 		return
 	}
 
@@ -317,6 +327,10 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "new password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
+	if len(body.NewPassword) > maxPasswordBytes {
+		http.Error(w, errPasswordTooLong, http.StatusBadRequest)
+		return
+	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u == nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -337,8 +351,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	u2, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u2 == nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "password changed but session could not be issued", http.StatusInternalServerError)
 		return
+	}
+	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
+		s.LoginRL.RecordSuccess(ip.String())
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, sessionTTL)
 	if err != nil {
