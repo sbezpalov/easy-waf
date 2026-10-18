@@ -5,7 +5,6 @@ package api
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -62,9 +61,8 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	body, ok := readJSONBody(w, r)
+	if !ok {
 		return
 	}
 	a, ok := s.loadApplication(w, r, id)

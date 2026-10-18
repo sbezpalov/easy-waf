@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +95,26 @@ func TestUpsertKeepsSecurityTogglesSentWithoutMode(t *testing.T) {
 	}
 	if !stored.Security.RateLimitEnabled || stored.Security.BasicWAFEnabled {
 		t.Fatalf("stored security %+v", stored.Security)
+	}
+}
+
+func TestUpsertCertificateRespondsWithStoredRow(t *testing.T) {
+	s := applyFailingServer(t)
+	body := fmt.Sprintf(`{"primary_domain":"c%d.example.com","mode":"http-01","acme_attempts":7}`, time.Now().UnixNano())
+	rec := httptest.NewRecorder()
+	s.upsertCert(rec, httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ID           string `json:"id"`
+		ACMEAttempts int    `json:"acme_attempts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), got.ID) })
+	if got.ACMEAttempts != 0 {
+		t.Fatalf("response echoed client acme_attempts=%d; the store never writes it", got.ACMEAttempts)
 	}
 }

@@ -40,10 +40,10 @@ func auditWhere(p AuditListParams) (string, []any) {
 		conds = append(conds, fmt.Sprintf(cond, len(args)))
 	}
 	if v := strings.TrimSpace(p.User); v != "" {
-		add("COALESCE(user_name,'') ILIKE '%%' || $%d || '%%'", v)
+		add(`COALESCE(user_name,'') ILIKE '%%' || $%d || '%%' ESCAPE '\'`, escapeLike(v))
 	}
 	if v := strings.TrimSpace(p.Action); v != "" {
-		add("action ILIKE '%%' || $%d || '%%'", v)
+		add(`action ILIKE '%%' || $%d || '%%' ESCAPE '\'`, escapeLike(v))
 	}
 	if p.From != nil {
 		add("at >= $%d", *p.From)
@@ -123,3 +123,9 @@ func (s *Store) CountAuditLogs(ctx context.Context, p AuditListParams) (int64, e
 	}
 	return n, nil
 }
+
+// likeEscaper makes a filter match literally: % and _ in a user or action
+// filter were LIKE wildcards, so "a_b" also matched "aXb".
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func escapeLike(s string) string { return likeEscaper.Replace(s) }

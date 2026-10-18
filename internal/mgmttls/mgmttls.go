@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -50,11 +51,15 @@ func (m *Manager) LoadFromFiles(certPath, keyPath string) error {
 	return nil
 }
 
+// ErrInvalidPEMPair marks a certificate/key pair that does not parse or match:
+// the caller's fault, unlike a failure to write the files.
+var ErrInvalidPEMPair = errors.New("invalid pem pair")
+
 // Store validates PEM material, persists atomically, and updates the manager.
 func (m *Manager) Store(certPath, keyPath string, certPEM, keyPEM []byte) error {
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return fmt.Errorf("invalid pem pair: %w", err)
+		return fmt.Errorf("%w: %v", ErrInvalidPEMPair, err)
 	}
 	if err := writePEMAtomic(certPath, certPEM, 0o644); err != nil {
 		return err
