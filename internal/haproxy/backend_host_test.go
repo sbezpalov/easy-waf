@@ -27,7 +27,7 @@ func TestBackendHostIsLiteralIP(t *testing.T) {
 
 func TestRenderBackendHostnameResolvers(t *testing.T) {
 	in := RenderInput{
-		Settings: goldenGlobalSettings("testdata/golden/spoe/minimal-spoe.cfg", "crowdsec"),
+		Settings: goldenGlobalSettings("testdata/golden/spoe/crowdsec-vendor.cfg", "crowdsec"),
 		Applications: []config.Application{
 			{
 				ID: "h1", Name: "NAS", PublicHost: "nas.example.com",
@@ -54,7 +54,7 @@ func TestRenderBackendHostnameResolvers(t *testing.T) {
 
 func TestRenderBackendIPNoResolvers(t *testing.T) {
 	in := RenderInput{
-		Settings: goldenGlobalSettings("testdata/golden/spoe/minimal-spoe.cfg", "crowdsec"),
+		Settings: goldenGlobalSettings("testdata/golden/spoe/crowdsec-vendor.cfg", "crowdsec"),
 		Applications: []config.Application{
 			{
 				ID: "ip1", Name: "IP", PublicHost: "ip.example.com",

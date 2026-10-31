@@ -41,8 +41,10 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	spoePath := filepath.Join(dir, "crowdsec-spoe.cfg")
-	if err := os.WriteFile(spoePath, []byte("# placeholder for SPOE (not loaded when filter is commented)\n"), 0o600); err != nil {
+	// The real vendor file: this test is what proves the generated config and
+	// the bouncer agree on the group, the backend and the engine.
+	spoePath, err := filepath.Abs(filepath.Join("testdata", "golden", "spoe", "crowdsec-vendor.cfg"))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,15 +96,8 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// SPOE agent file format depends on CrowdSec/haproxy integration; CI validates the rest of the template.
-	// HAProxy 3.x rejects send-spoe-group when the filter/engine is not loaded — comment both.
-	cfgBody := strings.ReplaceAll(r.HAProxyConfig, "\n\thttp-request send-spoe-group ", "\n\t# http-request send-spoe-group ")
-	cfgBody = strings.ReplaceAll(cfgBody, "\n\tfilter spoe ", "\n\t# filter spoe ")
-	if strings.Contains(cfgBody, "\n\tfilter spoe ") {
-		t.Fatal("could not comment all SPOE filter lines — update haproxy_validate_test.go if template indentation changed")
-	}
 	cfgPath := filepath.Join(hdir, "haproxy.cfg")
-	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(r.HAProxyConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

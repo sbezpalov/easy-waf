@@ -169,6 +169,17 @@ crowdsec_inject_spoa_api_key() {
   fi
 }
 
+# The package defaults to listen_tcp: 0.0.0.0:9000. HAProxy reaches the bouncer
+# over loopback (backend crowdsec-spoa), so nothing else needs that port.
+crowdsec_bind_spoa_loopback() {
+  local yaml="/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
+  if ! grep -qE '^[[:space:]]*listen_tcp:' "$yaml"; then
+    echo "[easy-waf] CrowdSec: no listen_tcp in $yaml — HAProxy expects the bouncer on 127.0.0.1:9000" >&2
+    return 1
+  fi
+  sed -i -E 's/^([[:space:]]*)listen_tcp:.*/\1listen_tcp: 127.0.0.1:9000/' "$yaml"
+}
+
 crowdsec_start_agent() {
   systemctl enable crowdsec.service 2>/dev/null || true
   local a

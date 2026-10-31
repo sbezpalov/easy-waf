@@ -29,7 +29,7 @@ Implementation: profile metadata lives in `internal/profiles`. The HAProxy templ
 | IP blacklist | Global map, per-app toggle | On when IPBL is maintained |
 | IP allowlist | Trusted bypass (global map + per-app) | When you need break-glass trusted IPs |
 | GeoIP | Per-app country allow/deny via batch map | When you need country policy for one hostname |
-| CrowdSec | SPOE group per request (if engine loaded) | When CrowdSec is deployed |
+| CrowdSec | SPOE group per request, 403 on a decision other than `allow` (fails open if the bouncer is down) | When CrowdSec is deployed |
 | Restricted paths | Per-prefix CIDR LAN walls | Sensitive paths (e.g. `/api`) |
 
 ## Mode presets (application scope)

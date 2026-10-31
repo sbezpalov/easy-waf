@@ -65,7 +65,7 @@ func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
 }
 
 func goldenFixture(name string) RenderInput {
-	spoeMin := "testdata/golden/spoe/minimal-spoe.cfg"
+	spoeMin := "testdata/golden/spoe/crowdsec-vendor.cfg"
 	spoeCustom := "testdata/golden/spoe/crowdsec-custom.cfg"
 	ipbl := "testdata/golden/ipbl/test.map"
 
@@ -554,7 +554,7 @@ func goldenListenModeFullSec(listenMode, host, certPath string, backendHTTPS boo
 		app.BackendPort = 8080
 	}
 	in := RenderInput{
-		Settings:           goldenGlobalSettings("testdata/golden/spoe/minimal-spoe.cfg", "crowdsec"),
+		Settings:           goldenGlobalSettings("testdata/golden/spoe/crowdsec-vendor.cfg", "crowdsec"),
 		UseIPBlacklist:     true,
 		UseIPAllowlist:     true,
 		IPBlacklistMapPath: "testdata/golden/ipbl/test.map",
