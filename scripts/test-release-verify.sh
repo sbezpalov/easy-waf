@@ -61,4 +61,35 @@ if ! EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 easy_waf_verify_release_artifact \
   fail "EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 did not override"
 fi
 
+# Signature check, with a stand-in cosign and bundle download.
+GH_URL="https://github.com/acme/easy-waf/releases/download/v9.9.9/SHA256SUMS"
+easy_waf_curl_https() { # -o <file> <url>
+  [[ "${FAKE_BUNDLE:-1}" == "1" ]] && : >"$2"
+}
+mkdir -p "${TMPD}/bin"
+cat >"${TMPD}/bin/cosign" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$FAKE_ARGS"
+exit "$FAKE_RC"
+FAKE
+chmod +x "${TMPD}/bin/cosign"
+export FAKE_ARGS="${TMPD}/args"
+SUMS="${TMPD}/sums"
+: >"$SUMS"
+
+EMPTY_PATH="${TMPD}/nothing"
+mkdir -p "$EMPTY_PATH"
+PATH="$EMPTY_PATH" easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null \
+  || fail "absent cosign must not block an install"
+PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null \
+  || fail "valid signature rejected"
+grep -qF '^https://github\.com/acme/easy-waf/\.github/workflows/release\.yml@refs/tags/v' "$FAKE_ARGS" \
+  || fail "signature not tied to this repository's release workflow"
+if PATH="${TMPD}/bin:$PATH" FAKE_RC=1 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null; then
+  fail "invalid signature accepted"
+fi
+if PATH="${TMPD}/bin:$PATH" FAKE_RC=0 FAKE_BUNDLE=0 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null; then
+  fail "missing signature accepted with cosign installed"
+fi
+
 echo "OK: release-verify checks passed"

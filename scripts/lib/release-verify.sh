@@ -50,6 +50,41 @@ easy_waf_verify_sha256() {
   return 0
 }
 
+# easy_waf_verify_sums_signature <SHA256SUMS-file> <SHA256SUMS-url>
+#
+# SHA256SUMS sits next to what it describes, so it catches corruption but not a
+# replaced release. .github/workflows/release.yml signs it with cosign, keyless:
+# the signature names the workflow that made it. cosign is not in Ubuntu's
+# archive, so without it this only says so. With it, a missing or wrong signature
+# is a failure: a release carrying no signature must not pass as an old one.
+easy_waf_verify_sums_signature() {
+  local sums="${1:?}" sums_url="${2:?}" bundle repo rc=0
+  if ! command -v cosign &>/dev/null; then
+    log_relv "cosign not installed — SHA256SUMS signature not checked"
+    return 0
+  fi
+  if [[ ! "$sums_url" =~ ^https://github\.com/([^/]+/[^/]+)/releases/ ]]; then
+    log_relv "not a GitHub release URL — SHA256SUMS signature not checked"
+    return 0
+  fi
+  repo="${BASH_REMATCH[1]}"
+  bundle="$(mktemp)" || return 1
+  if ! easy_waf_curl_https -o "$bundle" "${sums_url}.sigstore.json" 2>/dev/null; then
+    log_relv "no signature published at ${sums_url}.sigstore.json"
+    rc=1
+  elif ! cosign verify-blob --bundle "$bundle" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity-regexp "^https://github\.com/${repo//./\\.}/\.github/workflows/release\.yml@refs/tags/v" \
+    "$sums" >/dev/null 2>&1; then
+    log_relv "SHA256SUMS signature INVALID for ${repo}"
+    rc=1
+  else
+    log_relv "SHA256SUMS signature verified: ${repo}"
+  fi
+  rm -f "$bundle"
+  return "$rc"
+}
+
 # easy_waf_verify_release_artifact <file> <name-in-SHA256SUMS> <SHA256SUMS-url>
 # Fail-closed: missing SHA256SUMS, missing entry or mismatch → non-zero.
 easy_waf_verify_release_artifact() {
@@ -60,6 +95,8 @@ easy_waf_verify_release_artifact() {
 
   if ! easy_waf_curl_https -o "$sums" "$sums_url" 2>/dev/null; then
     log_relv "SHA256SUMS not published at $sums_url"
+    rc=1
+  elif ! easy_waf_verify_sums_signature "$sums" "$sums_url"; then
     rc=1
   else
     # Accept both "<hash>  name" and "<hash> *name" (sha256sum binary mode).
