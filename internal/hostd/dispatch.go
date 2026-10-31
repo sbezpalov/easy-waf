@@ -65,6 +65,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
+		if err := reloadNftGuard(ctx, r); err != nil {
+			return failResp(err.Error(), 1)
+		}
 		return okResp(stdout, stderr, code)
 
 	case "nft-install":
@@ -89,6 +92,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		stdout, stderr, code, err = runCmd(ctx, r, "/usr/sbin/nft", "-f", nftRulesPath)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
+		}
+		if err := reloadNftGuard(ctx, r); err != nil {
+			return failResp(err.Error(), 1)
 		}
 		return okResp(stdout, stderr, code)
 

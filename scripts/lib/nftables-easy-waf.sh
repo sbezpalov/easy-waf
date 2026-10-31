@@ -3,6 +3,7 @@
 # Sourced by install.sh — do not run standalone.
 
 EASY_WAF_NFT_RULES="/etc/nftables/easy-waf.nft"
+EASY_WAF_NFT_GUARD="/etc/nftables/easy-waf-guard.nft"
 EASY_WAF_NFT_CONF="/etc/nftables.conf"
 
 easy_waf_nft_private_nets() {
@@ -62,6 +63,47 @@ EOF
   chmod 0644 "$EASY_WAF_NFT_RULES"
 }
 
+# Keep the management ports closed to everything but the configured networks,
+# whatever the managed ruleset says. The API can replace that ruleset, so the
+# restriction lives in a root-owned file it cannot write: a drop in any base
+# chain is final, and easy-waf-hostd reloads this file after every ruleset it
+# loads. Addresses are matched by source, not iifname "lo": a netdev rule could
+# redirect outside traffic onto lo. mgmt_lan=0 means the operator runs the
+# firewall, so nothing is imposed.
+easy_waf_nft_write_guard() {
+  local mgmt_lan="${1:-1}"
+  local mgmt_ports="${2:-8000 8443}"
+  local extra_cidr="${3:-}"
+
+  if [[ "$mgmt_lan" != "1" ]]; then
+    rm -f "$EASY_WAF_NFT_GUARD"
+    return 0
+  fi
+  local port_list="" p
+  for p in $mgmt_ports; do
+    [[ -n "$port_list" ]] && port_list+=", "
+    port_list+="$p"
+  done
+  mkdir -p "$(dirname "$EASY_WAF_NFT_GUARD")"
+  cat >"$EASY_WAF_NFT_GUARD" <<EOF
+#!/usr/sbin/nft -f
+# Managed by the Easy Home WAF installer. Root-only by design: see docs/SECURITY.md.
+# Replaced atomically, so whatever a ruleset did to this table does not survive.
+table inet easy_waf_guard
+delete table inet easy_waf_guard
+
+table inet easy_waf_guard {
+  chain input {
+    type filter hook input priority filter - 10; policy accept;
+    ip saddr { $(easy_waf_nft_private_nets "$extra_cidr") } tcp dport { ${port_list} } accept
+    ip6 saddr ::1 tcp dport { ${port_list} } accept
+    tcp dport { ${port_list} } drop
+  }
+}
+EOF
+  chmod 0644 "$EASY_WAF_NFT_GUARD"
+}
+
 easy_waf_nft_ensure_main_conf() {
   if [[ ! -f "$EASY_WAF_NFT_CONF" ]]; then
     cat >"$EASY_WAF_NFT_CONF" <<EOF
@@ -69,10 +111,13 @@ easy_waf_nft_ensure_main_conf() {
 flush ruleset
 include "/etc/nftables/easy-waf.nft"
 EOF
-    return 0
   fi
   if ! grep -qF 'include "/etc/nftables/easy-waf.nft"' "$EASY_WAF_NFT_CONF" 2>/dev/null; then
     printf '\ninclude "/etc/nftables/easy-waf.nft"\n' >>"$EASY_WAF_NFT_CONF"
+  fi
+  # A wildcard, so a boot does not fail when the guard is absent (mgmt_lan=0).
+  if ! grep -qF 'include "/etc/nftables/easy-waf-guard*.nft"' "$EASY_WAF_NFT_CONF" 2>/dev/null; then
+    printf 'include "/etc/nftables/easy-waf-guard*.nft"\n' >>"$EASY_WAF_NFT_CONF"
   fi
 }
 
@@ -86,6 +131,11 @@ easy_waf_nft_apply() {
     return 1
   fi
   nft -f "$EASY_WAF_NFT_RULES"
+  if [[ -f "$EASY_WAF_NFT_GUARD" ]]; then
+    nft -f "$EASY_WAF_NFT_GUARD"
+  else
+    nft delete table inet easy_waf_guard 2>/dev/null || true
+  fi
   echo "[easy-waf] nftables: applied $EASY_WAF_NFT_RULES"
 }
 
@@ -97,6 +147,7 @@ easy_waf_nft_configure_appliance() {
   local extra_cidr="${4:-}"
 
   easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr"
+  easy_waf_nft_write_guard "$mgmt_lan" "$mgmt_ports" "$extra_cidr"
   easy_waf_nft_ensure_main_conf
   easy_waf_nft_apply || return 1
 

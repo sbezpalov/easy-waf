@@ -46,6 +46,9 @@ func rollbackTestEnv(t *testing.T) (*recordingRunner, string) {
 	restore := SetStateDirForTest(state)
 	oldNft, oldNetplan, oldRun, oldRunner := nftRulesPath, netplanPath, runtimeDir, DefaultRunner
 	nftRulesPath = filepath.Join(root, "easy-waf.nft")
+	oldGuard := nftGuardPath
+	nftGuardPath = filepath.Join(root, "easy-waf-guard.nft")
+	t.Cleanup(func() { nftGuardPath = oldGuard })
 	netplanPath = filepath.Join(root, "99-easy-waf.yaml")
 	runtimeDir = filepath.Join(root, "run")
 	m := &recordingRunner{failOn: map[string]bool{}}

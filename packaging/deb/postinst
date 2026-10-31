@@ -40,6 +40,9 @@ create_layout() {
 	chmod 0750 "${STATE_DIR}/haproxy" "${STATE_DIR}/certs" \
 		"${STATE_DIR}/revisions" "${STATE_DIR}/geoip" 2>/dev/null || true
 
+	# Left by old installers; easy-waf reaches every unit but haproxy through the broker.
+	rm -f /etc/polkit-1/rules.d/99-easy-waf-host.rules
+
 	if [ -f "${CFG_DIR}/easy-waf.env" ]; then
 		# systemd reads it as root; group easy-waf includes haproxy.
 		chown root:root "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
