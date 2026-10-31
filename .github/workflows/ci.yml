@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22.x"
+          go-version-file: go.mod
           cache: true
 
       - name: go vet
@@ -66,10 +66,13 @@ jobs:
       - name: golangci-lint
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-            | sh -s -- -b /usr/local/bin v1.62.2
+          GOBIN=/usr/local/bin go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(sed -n 's/^GOLANGCI_LINT_VER ?= //p' Makefile)"
           golangci-lint --version
           golangci-lint run ./... --timeout=5m
+
+      # Fails on a known vulnerability the code actually calls.
+      - name: govulncheck
+        run: make vuln
 
       - name: HAProxy render golden fixtures
         run: go test ./internal/haproxy/... -run Golden -count=1
@@ -102,7 +105,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22.x"
+          go-version-file: go.mod
           cache: true
 
       - name: Linux artifact + shell LF checks
@@ -157,7 +160,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22.x"
+          go-version-file: go.mod
           cache: true
 
       - name: go test internal/haproxy (includes haproxy -c validation)

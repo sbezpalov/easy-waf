@@ -45,7 +45,7 @@ func TestHostAptClean_freedBytes(t *testing.T) {
 			return nil, nil
 		}
 	})
-	defer apt.SetPrivilegedFnForTest(restore)
+	defer func() { _ = apt.SetPrivilegedFnForTest(restore) }()
 
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
@@ -77,7 +77,7 @@ func TestHostDisk_jsonShape(t *testing.T) {
 			return nil, nil
 		}
 	})
-	defer apt.SetPrivilegedFnForTest(restore)
+	defer func() { _ = apt.SetPrivilegedFnForTest(restore) }()
 
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}

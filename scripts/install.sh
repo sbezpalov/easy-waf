@@ -612,8 +612,8 @@ EOF
         easy_waf_apt_get_update
         log "Installing build toolchain (golang, make, git) via apt..."
         DEBIAN_FRONTEND=noninteractive apt-get install -y golang-go make git ca-certificates curl 2>/dev/null || true
-        if ! easy_waf_go_version_meets 1 22; then
-          log "Distro Go is older than 1.22 or missing — bootstrapping Go from go.dev..."
+        if ! easy_waf_go_version_meets 1 27; then
+          log "Distro Go is older than 1.27 or missing — bootstrapping Go from go.dev..."
           easy_waf_bootstrap_go_toolchain || die "Go bootstrap failed (network or arch?)"
         fi
         ;;
@@ -623,8 +623,8 @@ EOF
     esac
   fi
 
-  command -v go &>/dev/null || die "go not found — install Go 1.22+ (dnf install golang / apt install golang-go, or set EASY_WAF_DIST_DIR)"
-  easy_waf_go_version_meets 1 22 || die "go is older than 1.22 — use EASY_WAF_DIST_DIR, install newer Go, or set EASY_WAF_BOOTSTRAP_GO_VERSION"
+  command -v go &>/dev/null || die "go not found — install Go 1.27+ (dnf install golang / apt install golang-go, or set EASY_WAF_DIST_DIR)"
+  easy_waf_go_version_meets 1 27 || die "go is older than 1.27 — use EASY_WAF_DIST_DIR, install newer Go, or set EASY_WAF_BOOTSTRAP_GO_VERSION"
   command -v make &>/dev/null || die "make not found — install make (dnf/apt)"
   log "Building: go mod tidy && make build in $REPO_ROOT"
   (cd "$REPO_ROOT" && go mod tidy && make build) || die "Build failed — check Go/network, or use EASY_WAF_DIST_DIR with pre-built binaries"
@@ -672,7 +672,7 @@ install_binaries() {
 
 [easy-waf] ERROR: no binaries in DIST_DIR=$DIST_DIR
 
-Build from source on this machine (needs Go 1.22+, make):
+Build from source on this machine (needs Go 1.27+, make):
   cd $REPO_ROOT
   go mod tidy
   make build

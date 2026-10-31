@@ -249,8 +249,7 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 	}
 	accountKey := filepath.Join(eng.StateDir, "acme", "account.pem")
 
-	domains := []string{c.PrimaryDomain}
-	domains = append(domains, c.SAN...)
+	domains := append([]string{c.PrimaryDomain}, c.SAN...)
 
 	mode := strings.ToLower(strings.TrimSpace(c.Mode))
 	if mode == "" {

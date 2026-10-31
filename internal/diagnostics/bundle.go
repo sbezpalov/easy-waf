@@ -56,7 +56,7 @@ func BuildSupportBundleGzip(ctx context.Context, p Params) ([]byte, error) {
 	}
 	var gzipBuf bytes.Buffer
 	gw := gzip.NewWriter(&gzipBuf)
-	gw.Header.ModTime = time.Now().UTC()
+	gw.ModTime = time.Now().UTC()
 	if _, err := io.Copy(gw, bytes.NewReader(tarBuf.Bytes())); err != nil {
 		_ = gw.Close()
 		return nil, err
@@ -211,7 +211,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		var b strings.Builder
 		b.WriteString("id\tsha256\tcreated_at\n")
 		for _, r := range revs {
-			b.WriteString(fmt.Sprintf("%d\t%s\t%s\n", r.ID, r.HAProxySHA256, r.At.UTC().Format(time.RFC3339)))
+			fmt.Fprintf(&b, "%d\t%s\t%s\n", r.ID, r.HAProxySHA256, r.At.UTC().Format(time.RFC3339))
 		}
 		revBody = []byte(b.String())
 	}
@@ -285,11 +285,9 @@ var envSnapshotPrefixes = []string{"EASY_WAF_", "DATABASE_URL", "CROWDSEC_", "AC
 // cannot read it, but systemd handed it the same variables. The caller masks
 // the result like the file itself.
 func processEnvSnapshot(envPath string, readErr error) []byte {
-	lines := []string{
-		"# " + envPath + " could not be read (" + readErr.Error() + "; root-only by design).",
-		"# Variables of the running API process instead. For the file: sudo easy-waf-diagnostics",
-	}
-	var vars []string
+	header := "# " + envPath + " could not be read (" + readErr.Error() + "; root-only by design).\n" +
+		"# Variables of the running API process instead. For the file: sudo easy-waf-diagnostics\n"
+	vars := make([]string, 0, len(envSnapshotPrefixes))
 	for _, kv := range os.Environ() {
 		for _, prefix := range envSnapshotPrefixes {
 			if strings.HasPrefix(kv, prefix) {
@@ -299,5 +297,5 @@ func processEnvSnapshot(envPath string, readErr error) []byte {
 		}
 	}
 	sort.Strings(vars)
-	return []byte(strings.Join(append(lines, vars...), "\n") + "\n")
+	return []byte(header + strings.Join(vars, "\n") + "\n")
 }
