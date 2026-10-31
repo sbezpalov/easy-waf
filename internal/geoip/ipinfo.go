@@ -88,10 +88,10 @@ func (p *IPInfoProvider) Lookup(ctx context.Context, ip string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	// A header, not ?token=: net/http puts the full URL in its errors, which
+	// reach logs, API responses and audit details.
 	if p.Token != "" {
-		q := req.URL.Query()
-		q.Set("token", p.Token)
-		req.URL.RawQuery = q.Encode()
+		req.Header.Set("Authorization", "Bearer "+p.Token)
 	}
 	resp, err := p.HTTP.Do(req)
 	if err != nil {

@@ -187,11 +187,25 @@
 <div id="view-login" class="login-wrap">
   <div class="panel" style="max-width:420px">
     <h2>Sign in</h2>
-    <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel). Default <code>admin</code> / <code>admin</code> — change password after first login.</p>
+    <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel).</p>
     <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
     <div class="row"><label>Password <input id="login-pass" type="password" autocomplete="current-password" /></label></div>
     <div class="row"><button type="button" id="btn-login">Sign in</button></div>
     <p id="login-err" class="warn"></p>
+  </div>
+</div>
+
+<div id="view-enroll" class="login-wrap hidden">
+  <div class="panel" style="max-width:420px">
+    <h2>Create the operator account</h2>
+    <p>This appliance has no account yet. Get the one-time secret on the appliance:</p>
+    <p><code>sudo easy-waf-admin print-enrollment</code></p>
+    <div class="row"><label>Enrollment secret <input id="enroll-secret" type="password" autocomplete="off" /></label></div>
+    <div class="row"><label>Username <input id="enroll-user" value="admin" autocomplete="username" /></label></div>
+    <div class="row"><label>Password <input id="enroll-pass" type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label></div>
+    <div class="row"><label>Confirm password <input id="enroll-pass2" type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label></div>
+    <div class="row"><button type="button" id="btn-enroll">Create account</button></div>
+    <p id="enroll-err" class="warn"></p>
   </div>
 </div>
 
@@ -1066,7 +1080,16 @@
 
   async function refreshSession() {
     const t = getTok();
-    if (!t) { show('view-login', true); show('view-pass', false); show('view-app', false); return; }
+    if (!t) {
+      // Without a status answer, fall back to the sign-in form.
+      const st = await fetch('/api/v1/auth/status').then((r) => r.json()).catch(() => ({}));
+      show('view-enroll', !!st.enrollment_required);
+      show('view-login', !st.enrollment_required);
+      show('view-pass', false);
+      show('view-app', false);
+      return;
+    }
+    show('view-enroll', false);
     const r = await fetch('/api/v1/auth/me', { headers: hdr() });
     if (r.status === 401) { setTok(''); refreshSession(); return; }
     const me = await r.json();
@@ -1133,6 +1156,33 @@
       location.hash = '#dashboard';
       showTabFromHash();
     }
+  };
+
+  document.getElementById('btn-enroll').onclick = async () => {
+    const err = document.getElementById('enroll-err');
+    err.textContent = '';
+    const password = document.getElementById('enroll-pass').value;
+    if (password !== document.getElementById('enroll-pass2').value) {
+      err.textContent = 'Passwords do not match.';
+      return;
+    }
+    const body = {
+      secret: document.getElementById('enroll-secret').value.trim(),
+      username: document.getElementById('enroll-user').value.trim(),
+      password
+    };
+    const r = await fetch('/api/v1/auth/enroll', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+    if (r.status === 429) {
+      err.textContent = 'Too many attempts. Try again in ' + (r.headers.get('Retry-After') || '?') + ' seconds.';
+      return;
+    }
+    if (!r.ok) {
+      err.textContent = await apiMessage(r);
+      return;
+    }
+    const j = await r.json();
+    setTok(j.token);
+    await refreshSession();
   };
 
   document.getElementById('btn-pass').onclick = async () => {
