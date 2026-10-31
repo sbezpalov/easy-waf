@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,5 +37,15 @@ func TestListAuditLogs_ActionFilterIsLiteral(t *testing.T) {
 func TestEscapeLike(t *testing.T) {
 	if got := escapeLike(`a_b%c\d`); got != `a\_b\%c\\d` {
 		t.Fatalf("escapeLike = %q", got)
+	}
+}
+
+func TestAuditLogLineCannotForgeEntries(t *testing.T) {
+	line := auditLogLine("login\naudit action=\"fake\"", []byte(`{"u":"x"}`), "op\nerator", nil)
+	if strings.Contains(line, "\n") {
+		t.Fatalf("raw newline in %q", line)
+	}
+	if !strings.HasPrefix(line, `audit action="login\naudit action=\"fake\""`) {
+		t.Fatalf("line %s", line)
 	}
 }

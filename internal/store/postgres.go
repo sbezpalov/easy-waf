@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -242,6 +243,19 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
+// auditLogLine formats a record for the journal. Values are quoted because
+// some come from clients: a newline must not forge a second entry.
+func auditLogLine(action string, detail []byte, user, ip any) string {
+	return fmt.Sprintf("audit action=%q user=%q source_ip=%q detail=%q", action, fmt.Sprint(valueOr(user)), fmt.Sprint(valueOr(ip)), detail)
+}
+
+func valueOr(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
+}
+
 func auditRecordArgs(ctx context.Context, detail any) ([]byte, any, any, error) {
 	var b []byte
 	if detail != nil {
@@ -264,13 +278,18 @@ func auditRecordArgs(ctx context.Context, detail any) ([]byte, any, any, error) 
 	return b, userArg, ipArg, nil
 }
 
-// AppendAudit writes an append-only audit record. user_name and source_ip are taken from
+// AppendAudit writes an audit record. user_name and source_ip are taken from
 // audit.Meta on the context when present (see API attachAuditRequestMeta after auth.Session).
+//
+// The record also goes to the service log. The application's database role owns
+// audit_log, so whoever has that role can rewrite it; the journal is out of reach
+// of the easy-waf account and is what can be forwarded off the appliance.
 func (s *Store) AppendAudit(ctx context.Context, action string, detail any) error {
 	b, userArg, ipArg, err := auditRecordArgs(ctx, detail)
 	if err != nil {
 		return err
 	}
+	log.Print(auditLogLine(action, b, userArg, ipArg))
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
 		VALUES ($1,$2,$3,$4,$5)`,
