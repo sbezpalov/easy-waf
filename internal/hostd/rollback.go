@@ -5,6 +5,7 @@ package hostd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,8 @@ import (
 // Live files the broker manages (variables so tests can point them elsewhere).
 var (
 	nftRulesPath = "/etc/nftables/easy-waf.nft"
+	// nftGuardPath is the root-owned management port restriction; see reloadNftGuard.
+	nftGuardPath = "/etc/nftables/easy-waf-guard.nft"
 	netplanPath  = "/etc/netplan/99-easy-waf.yaml"
 	// runtimeDir holds root-only scratch files (materialized staging copies).
 	runtimeDir = "/run/easy-waf"
@@ -127,6 +130,26 @@ func readRollbackBackup(bak string) (data []byte, ok bool, err error) {
 	return b, true, nil
 }
 
+// reloadNftGuard puts the management port restriction back after a ruleset was
+// loaded. easy-waf-api chooses that ruleset, and a compromised one could accept
+// everything or flush the lot, so the restriction lives in a file only root can
+// write and is loaded last: a drop in any base chain is final, and the file
+// replaces its table whole. There is no file when the operator runs the
+// firewall (EASY_WAF_NFT_MGMT_LAN=0).
+func reloadNftGuard(ctx context.Context, r CommandRunner) error {
+	if _, err := os.Stat(nftGuardPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	_, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-f", nftGuardPath)
+	if err != nil {
+		return fmt.Errorf("reload firewall guard: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("reload firewall guard: %s", strings.TrimSpace(string(stderr)))
+	}
+	return nil
+}
+
 func revertNft(token string) error {
 	bak := rollbackBackupPath("nft", token)
 	data, ok, err := readRollbackBackup(bak)
@@ -151,6 +174,9 @@ func revertNft(token string) error {
 		if err := writeFileAtomic(nftRulesPath, []byte(nftEmptyRuleset), nftRulesMode); err != nil {
 			return err
 		}
+		if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
+			return err
+		}
 		_ = stateRemoveFile(bak)
 		logOp("nft reverted to no managed ruleset (token %s)", token)
 		return nil
@@ -166,6 +192,9 @@ func revertNft(token string) error {
 	_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", nftRulesPath)
 	if err != nil || code != 0 {
 		return fmt.Errorf("nft -f: %s", string(stderr))
+	}
+	if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
+		return err
 	}
 	_ = stateRemoveFile(bak)
 	logOp("nft reverted (token %s)", token)
@@ -317,6 +346,9 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	stdout, stderr, code, err = runCmd(ctx, r, "/usr/sbin/nft", "-f", nftRulesPath)
 	if err != nil || code != 0 {
 		return fail(failExec(stdout, stderr, code, err))
+	}
+	if err := reloadNftGuard(ctx, r); err != nil {
+		return fail(failResp(err.Error(), 1))
 	}
 	logOp("nft applied with rollback in %ds (token %s)", timeoutSec, token)
 	return okResp(stdout, stderr, 0)

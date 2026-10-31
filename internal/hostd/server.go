@@ -124,6 +124,10 @@ func writeResponse(c net.Conn, resp Response) error {
 func ServeDefault() error {
 	ctx := context.Background()
 	RevertPendingChanges()
+	// Also covers an appliance whose guard file arrived with an upgrade.
+	if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
+		logOp("%v", err)
+	}
 	return Serve(ctx, DefaultSocket)
 }
 
