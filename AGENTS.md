@@ -18,7 +18,7 @@
 настройки HAProxy. Ценность — «plug-and-play» edge-безопасность на одной VM.
 
 ## 2. Стек
-- **Язык:** Go (модуль `github.com/easy-waf/easy-waf`, go 1.22, `CGO_ENABLED=0`).
+- **Язык:** Go (модуль `github.com/easy-waf/easy-waf`, go 1.27, `CGO_ENABLED=0`).
 - **HTTP/API:** chi (`go-chi/chi/v5`), JWT (`golang-jwt/jwt/v5`), embedded static UI (`internal/webui/dist`).
 - **БД:** PostgreSQL (драйвер `jackc/pgx/v5`) — единый source of truth; SQL-миграции в `internal/store/migrations`.
 - **ACME/TLS:** Lego (`go-acme/lego/v4`) — HTTP-01 и DNS-01 (Cloudflare, CloudNS, Route53, webhook).

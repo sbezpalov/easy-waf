@@ -1,8 +1,9 @@
-.PHONY: build deb test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-backup-restore-e2e ci install-help clean clean-artifacts golden-update
+.PHONY: build deb test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-backup-restore-e2e vuln ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
-GOLANGCI_LINT_VER ?= v1.62.2
+GOLANGCI_LINT_VER ?= v2.15.0
+GOVULNCHECK_VER ?= v1.9.0
 # Debian package builder. Keep in sync with .github/workflows/release.yml.
 NFPM_VER ?= v2.41.1
 EASY_WAF_VERSION ?= $(shell head -1 VERSION | tr -d '[:space:]')
@@ -87,13 +88,16 @@ test:
 golden-update:
 	UPDATE_GOLDEN=1 go test ./internal/haproxy/... -run Golden -count=1
 
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VER) ./...
+
 lint:
 	go vet ./...
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./... --timeout=5m; \
 	else \
 		echo >&2 "golangci-lint not in PATH; using go run $(GOLANGCI_LINT_VER) (optional install: https://golangci-lint.run/welcome/install/)"; \
-		go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VER) run ./... --timeout=5m; \
+		go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VER) run ./... --timeout=5m; \
 	fi
 
 # Same gates as .github/workflows/ci.yml

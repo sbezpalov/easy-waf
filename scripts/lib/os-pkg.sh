@@ -54,8 +54,9 @@ easy_waf_apt_get_update() {
 
 # Install upstream Go toolchain to /usr/local/go when distro packages are too old.
 easy_waf_bootstrap_go_toolchain() {
-  local ver="${EASY_WAF_BOOTSTRAP_GO_VERSION:-1.22.11}"
-  local arch raw_arch
+  # A different version needs its checksum too: EASY_WAF_BOOTSTRAP_GO_SHA256 (go.dev/dl).
+  local ver="${EASY_WAF_BOOTSTRAP_GO_VERSION:-1.27.3}"
+  local arch raw_arch sha256 tarball
   raw_arch="$(uname -m)"
   case "$raw_arch" in
     x86_64) arch=amd64 ;;
@@ -70,9 +71,31 @@ easy_waf_bootstrap_go_toolchain() {
     echo "[easy-waf] ERROR: curl required to bootstrap Go" >&2
     return 1
   }
+  sha256="${EASY_WAF_BOOTSTRAP_GO_SHA256:-}"
+  if [[ -z "$sha256" && "$ver" == "1.27.3" ]]; then
+    case "$arch" in
+      amd64) sha256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 ;;
+      arm64) sha256=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49 ;;
+    esac
+  fi
+  if [[ -z "$sha256" ]]; then
+    echo "[easy-waf] ERROR: Go ${ver} needs EASY_WAF_BOOTSTRAP_GO_SHA256 (see go.dev/dl)" >&2
+    return 1
+  fi
   local url="https://go.dev/dl/go${ver}.linux-${arch}.tar.gz"
   echo "[easy-waf] Downloading Go ${ver} (${arch}) from go.dev..."
+  tarball="$(mktemp)"
+  curl -fsSL -o "$tarball" "$url" || {
+    rm -f "$tarball"
+    return 1
+  }
+  if ! printf '%s  %s\n' "$sha256" "$tarball" | sha256sum -c --status; then
+    echo "[easy-waf] ERROR: checksum mismatch for $url" >&2
+    rm -f "$tarball"
+    return 1
+  fi
   rm -rf /usr/local/go
-  curl -fsSL "$url" | tar -C /usr/local -xz
+  tar -C /usr/local -xzf "$tarball"
+  rm -f "$tarball"
   export PATH="/usr/local/go/bin:${PATH}"
 }

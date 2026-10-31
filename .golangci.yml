@@ -1,20 +1,53 @@
-# https://golangci-lint.run/usage/configuration/
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
+  settings:
+    staticcheck:
+      # The defaults, minus a style suggestion that makes guards harder to read.
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-QF1001"]
   enable:
-    - govet
-    - staticcheck
-    - ineffassign
-    - misspell
-    - gosec
     - errcheck
     - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
     - prealloc
     - revive
-
+    - staticcheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Fixtures: fake credentials, indexes the test just checked.
+      - path: _test\.go
+        linters: [gosec]
+        text: "G101|G602|G703"
+      # Paths and log values from env vars, flags or root-only files, set by the
+      # operator. Left on elsewhere, where the taint can come from a request.
+      - path: (cmd/easy-waf-acmed|internal/admin|internal/bootstrap|internal/auth/static_token)
+        linters: [gosec]
+        text: "G703|G706"
+      # Every args[i+1] follows an i+1 >= len(args) check.
+      - path: internal/host/hostspec/spec\.go
+        linters: [gosec]
+        text: "G602"
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-same-issues: 50
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
