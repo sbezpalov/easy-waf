@@ -24,7 +24,7 @@
 - **ACME/TLS:** Lego (`go-acme/lego/v4`) — HTTP-01 и DNS-01 (Cloudflare, CloudNS, Route53, webhook).
 - **GeoIP:** MaxMind MMDB (`oschwald/maxminddb-golang`, `maxmind/mmdbwriter`).
 - **Метрики:** Prometheus (`prometheus/client_golang`), дашборд Grafana в `configs/grafana`.
-- **Edge/инфра:** HAProxy 3.x, CrowdSec + SPOA, Fail2Ban, nftables, systemd, netplan.
+- **Edge/инфра:** HAProxy 2.8 LTS (пакет Ubuntu 24.04), CrowdSec + SPOA, Fail2Ban, nftables, systemd, netplan.
 - **Платформа:** **Ubuntu 24.04 LTS** (appliance OS). Разработка часто на Windows 11 / WSL.
 - **Сборка/CI:** Makefile (`make ci` = lint + test + verify), GitHub Actions (`ci.yml`, `release.yml`), golangci-lint, Docker Compose (только dev-PostgreSQL).
 
@@ -49,7 +49,7 @@
 ## 4. Статус / текущий приоритет
 - **Версия:** `1.4.2` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
 - **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply), `easy-waf-acmed` (ACME-воркер) и `easy-waf-hostd` (root-брокер привилегированных операций на unix-сокете).
-- Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 3.x, nftables, systemd.
+- Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 2.8 LTS, nftables, systemd.
 - Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.
 
 ## 5. Как вносить изменения (агент)

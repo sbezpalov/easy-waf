@@ -23,12 +23,13 @@ flowchart TB
   end
   subgraph Host["Ubuntu 24.04 host"]
     FW[nftables 80/443 + mgmt]
-    HA[HAProxy 3.x TLS + routing + ACL + SPOE]
+    HA[HAProxy 2.8 LTS TLS + routing + ACL + SPOE]
     CS[CrowdSec Agent + LAPI]
     SP[SPOE / CrowdSec bouncer]
     F2[Fail2Ban]
     API[easy-waf-api: API + UI + config gen]
     AC[easy-waf-acmed: ACME Lego worker]
+    HD[easy-waf-hostd: root broker]
     ST[(PostgreSQL)]
     FS[Config + cert files under /var/lib/easy-waf]
     NG[NGINX optional: ACME webroot or admin split]
@@ -45,6 +46,8 @@ flowchart TB
   AC --> ST
   AC --> FS
   API -->|reload| HA
+  API -->|unix socket| HD
+  HD -->|nftables, netplan, apt, users| FW
   HA --> B1
   F2 -.->|SSH jails| FW
 ```
@@ -109,7 +112,7 @@ everything goes to the journal — `journalctl -u easy-waf-api` and friends.
 |------|------|
 | `easy-waf-hostd.service` | Root privilege broker — unix socket `/run/easy-waf/hostd.sock` (`root:easy-waf` **0660**); host/netplan/nft/systemd/apt/users/journal/power |
 | `easy-waf-api.service` | API, UI, config apply (unprivileged; talks to hostd) |
-| `easy-waf-acmed.service` | ACME issuance/renewal (Lego HTTP-01), then triggers config reload via DB + optional apply |
+| `easy-waf-acmed.service` | ACME issuance/renewal (Lego HTTP-01 and DNS-01), then an apply to load the certificate |
 | `haproxy.service` | Stock; reload triggered after successful apply |
 | `crowdsec.service` | Stock |
 | `fail2ban.service` | Stock |
@@ -124,10 +127,10 @@ that merely exists, disabled, raises no warning.
 ## Security model
 
 - Dedicated user `easy-waf` (least privilege); `haproxy` remains isolated. Host mutations go through **`easy-waf-hostd`** (root), not `sudo` from the API process.
-- Secrets in `${EASY_WAF_STATE_DIR}/secrets/` (default `/var/lib/easy-waf/secrets/`, directory `0700`). HAProxy reads generated configs via group **`easy-waf`** (AppArmor stock profile on Ubuntu).
-- UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **nftables** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` (see `internal/api/mgmtacl.go`).
+- Secrets in `${EASY_WAF_STATE_DIR}/secrets/` (default `/var/lib/easy-waf/secrets/`, directory `0700`). `/etc/easy-waf/easy-waf.env` is `root:root 0600`: systemd reads it as root. HAProxy reads generated configs and certificates via group **`easy-waf`**, so nothing secret beyond those may be group-readable.
+- UI: session JWT (HS256) transmitted exclusively via `Authorization: Bearer` header (stored in browser `sessionStorage`, never in cookies). Because the token is not sent automatically by the browser on cross-origin requests, classical CSRF attacks do not apply. As defense-in-depth, the API validates a custom `X-Requested-With` header on all state-changing requests (see [SECURITY.md](SECURITY.md)). Default bind **all interfaces** on **8443** with **nftables** + **`management_allowed_cidrs`** (RFC1918 + loopback) in `easy-waf-api` for all routes except `/health` and `/health/ready` (see `internal/api/mgmtacl.go`).
 - Subprocess: no shell; explicit argv; timeouts.
-- Audit: append-only audit log for admin actions.
+- Audit: `audit_log` for admin actions, mirrored to the journal, which is the copy the `easy-waf` account cannot rewrite (see [SECURITY.md](SECURITY.md#audit)).
 
 ## TLS, SNI, and per-application certificates (one public IP)
 
@@ -163,7 +166,7 @@ sequenceDiagram
   participant Store
   participant Renderer
   participant HAProxy
-  UI->>API: PUT /applications
+  UI->>API: POST /applications
   API->>Store: acquire PostgreSQL advisory lock
   API->>API: snapshot current generated artifact set
   API->>Renderer: render templates
@@ -214,7 +217,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 ## Log and metrics flow
 
 - HAProxy → file → CrowdSec acquisition (user enables path in CrowdSec config; we ship samples).
-- **Runtime metrics:** generated `haproxy.cfg` includes a **stats Unix socket** (`stats socket … mode 660 level admin`, `stats timeout 30s`). The default path is **`/run/haproxy/easy-waf-admin.sock`**; override via settings **`haproxy_stats_socket_path`** (`internal/config/types.go`). `easy-waf-api` reads **`show stat`** CSV over that socket (cached ~5s) and exposes **`GET /api/v1/stats/haproxy`** and **`GET /api/v1/stats/summary`** (`internal/metrics`, `internal/api/stats_handlers.go`). The Dashboard polls summary + detail every **10s** while the Dashboard tab is open. The **`easy-waf`** user typically needs membership in the **`haproxy`** group so it can open the socket created by the HAProxy service.
+- **Runtime metrics:** generated `haproxy.cfg` includes a **stats Unix socket** (`stats socket … mode 660 level admin`, `stats timeout 30s`). The default path is **`/run/haproxy/easy-waf-admin.sock`**; override via settings **`haproxy_stats_socket_path`** (`internal/config/types.go`). `easy-waf-api` reads **`show stat`** CSV over that socket (cached ~5s) and exposes **`GET /api/v1/stats/haproxy`** and **`GET /api/v1/stats/summary`** (`internal/metrics`, `internal/api/stats_handlers.go`). The Dashboard polls summary + detail every **10s** while the Dashboard tab is open. The installer adds **`easy-waf`** to group **`haproxy`** so it can open the socket.
 - Optional future: HAProxy Prometheus exporter or persistence of aggregates to PostgreSQL / TSDB for SME dashboards.
 
 ## Local UI flow
@@ -264,7 +267,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 |-------|--------|
 | Control plane | `easy-waf-api`: Go 1.27+, Chi, embedded `internal/webui/dist` |
 | Host broker | `easy-waf-hostd`: root unix-socket broker (`internal/hostd`); long ops (e.g. `apt-upgrade-stream`) return **NDJSON** lines on the same socket instead of one JSON blob |
-| ACME worker | `easy-waf-acmed` — Lego v4 HTTP-01 (webroot) |
+| ACME worker | `easy-waf-acmed` — Lego v4, HTTP-01 (webroot) and DNS-01 |
 | State | PostgreSQL (`pgx` / `database/sql`) |
 | Templates | `text/template` for HAProxy / SPOE |
 | UI | Static HTML embedded (`internal/webui/dist`); global settings edited per tab (**Certificates** = ACME + management TLS, **CrowdSec** = LAPI/SPOE, **Security** = WAF/GeoIP/lists); **Settings** = load-all from API |

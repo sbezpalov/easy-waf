@@ -326,7 +326,7 @@ func joinCIDRs(cidrs []string) string {
 	return b.String()
 }
 
-// haproxyTemplate follows HAProxy 3.x syntax; validate with `haproxy -c`.
+// haproxyTemplate targets HAProxy 2.8, the Ubuntu 24.04 series, and is checked with `haproxy -c`.
 const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand */}}
 global
 	log stdout format raw local0
