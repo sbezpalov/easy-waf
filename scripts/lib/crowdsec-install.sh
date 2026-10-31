@@ -2,6 +2,36 @@
 # CrowdSec + HAProxy SPOA bouncer (official packagecloud repo: RPM or DEB).
 # Sourced by install-interactive.sh — requires root.
 
+# Set up the repository directly rather than piping packagecloud's script into a
+# root shell. apt then trusts this key only for this repository (signed-by), and
+# the key is pinned: a change of fingerprint needs a look before it is trusted.
+CROWDSEC_APT_KEY_FPR="6A89E3C2303A901A889971D3376ED5326E93CD0C"
+
+crowdsec_add_apt_repo() {
+  local key fpr keyring="/etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg"
+  key="$(mktemp)"
+  if ! curl -fsSL --proto '=https' --tlsv1.2 -o "$key" "https://packagecloud.io/crowdsec/crowdsec/gpgkey"; then
+    rm -f "$key"
+    echo "[easy-waf] CrowdSec: could not fetch the repository key" >&2
+    return 1
+  fi
+  fpr="$(gpg --show-keys --with-colons "$key" 2>/dev/null | awk -F: '/^fpr/{print $10; exit}')"
+  if [[ "$fpr" != "$CROWDSEC_APT_KEY_FPR" ]]; then
+    rm -f "$key"
+    echo "[easy-waf] CrowdSec: repository key fingerprint ${fpr:-unknown} is not the pinned $CROWDSEC_APT_KEY_FPR" >&2
+    return 1
+  fi
+  mkdir -p /etc/apt/keyrings
+  gpg --batch --yes --dearmor -o "$keyring" "$key"
+  rm -f "$key"
+  chmod 0644 "$keyring"
+  # shellcheck source=/dev/null
+  . /etc/os-release
+  printf 'deb [signed-by=%s] https://packagecloud.io/crowdsec/crowdsec/%s %s main\n' \
+    "$keyring" "$ID" "$VERSION_CODENAME" >/etc/apt/sources.list.d/crowdsec_crowdsec.list
+  apt-get update -qq
+}
+
 crowdsec_add_packagecloud_repo() {
   command -v curl &>/dev/null || {
     echo "[easy-waf] CrowdSec: install curl first" >&2
@@ -13,7 +43,7 @@ crowdsec_add_packagecloud_repo() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y --no-install-recommends gnupg ca-certificates curl
-    curl -sSf "https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh" | bash
+    crowdsec_add_apt_repo
   else
     echo "[easy-waf] CrowdSec: need dnf or apt-get" >&2
     return 1

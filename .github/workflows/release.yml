@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # keyless cosign signature of SHA256SUMS
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -18,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -69,6 +70,16 @@ jobs:
           # code execution just like an unverified tarball.
           sha256sum "${NAME}" "${DEB}" > SHA256SUMS
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      # Ties SHA256SUMS to this workflow on this repository; checked by
+      # scripts/lib/release-verify.sh and in docs/SECURITY.md.
+      - name: Sign SHA256SUMS
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+
       - name: Release notes from CHANGELOG
         run: |
           set -euo pipefail
@@ -84,11 +95,12 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           files: |
             easy-waf_*_amd64.deb
             easy-waf_*_linux_amd64.tar.gz
             SHA256SUMS
+            SHA256SUMS.sigstore.json
           body_path: release_notes.md
           fail_on_unmatched_files: true
