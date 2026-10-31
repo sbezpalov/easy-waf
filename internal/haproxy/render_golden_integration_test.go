@@ -39,7 +39,6 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			// Backend-TLS fixtures record an operator CA path that exists only on the
 			// appliance they were written for, and haproxy -c opens ca-file for real.
 			cfgBody = rewriteCAFilePathForHAProxyCheck(cfgBody, goldenCAFileForCheck(t, d))
-			cfgBody = augmentGoldenHAProxyCfgForHaproxyCheck(cfgBody)
 			tmp := filepath.Join(d, "c.cfg")
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
 				t.Fatal(err)

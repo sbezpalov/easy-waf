@@ -17,7 +17,7 @@ import (
 
 func injectionInput() RenderInput {
 	return RenderInput{
-		Settings: goldenGlobalSettings("testdata/golden/spoe/minimal-spoe.cfg", "crowdsec"),
+		Settings: goldenGlobalSettings("testdata/golden/spoe/crowdsec-vendor.cfg", "crowdsec"),
 		Applications: []config.Application{
 			{
 				ID: "a1", Name: "App", PublicHost: "app.example.com",

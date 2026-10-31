@@ -4,8 +4,8 @@
 package haproxy
 
 import (
-	"bytes"
 	"regexp"
+	"testing"
 )
 
 // statsSocketLine matches the first "stats socket <path> ..." in global (golden configs use one line).
@@ -50,24 +50,9 @@ func rewriteStatsSocketPathForHAProxyCheck(cfg []byte, absPath string) []byte {
 	})
 }
 
-// goldenSPOPBackendMarker is appended before a placeholder backend so `haproxy -c` can load
-// golden configs: SPOE files use use-backend crowdsec-socket, which must exist in the main cfg (HAProxy 2.8+).
-//
-// Use mode tcp (not spop): some distro packages (e.g. Alma/RHEL HAProxy 3.x) are built without the
-// spop proxy mode, then `mode spop` makes `haproxy -c` fail. A TCP backend is enough for syntax check.
-const goldenSPOPBackendMarker = "# -- easy-waf golden: SPOP backend for SPOE use-backend"
-
-var goldenSPOPBackendFragment = []byte("\n" + goldenSPOPBackendMarker + `
-backend crowdsec-socket
-	mode tcp
-	balance roundrobin
-	server spoa-placeholder 127.0.0.1:9000
-`)
-
-func augmentGoldenHAProxyCfgForHaproxyCheck(raw []byte) []byte {
-	if bytes.Contains(raw, []byte(goldenSPOPBackendMarker)) {
-		return raw
+func TestRewriteStatsSocketPathForHAProxyCheck(t *testing.T) {
+	got := rewriteStatsSocketPathForHAProxyCheck([]byte("\tstats socket rel.sock mode 660 level admin\n"), "/abs/s.sock")
+	if want := "\tstats socket /abs/s.sock mode 660 level admin\n"; string(got) != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
-	out := bytes.TrimSuffix(raw, []byte("\n"))
-	return append(out, goldenSPOPBackendFragment...)
 }

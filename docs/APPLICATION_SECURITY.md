@@ -32,7 +32,7 @@ The sequence below is shared by `fe_http` and `fe_https`. On port 80, HAProxy ha
 7. **Method filter** — `ExtraBlockedMethods` from the selected **profile**
 8. **Path ACL** — `BlockPaths` from the profile (`path_beg` denies)
 9. **Restricted paths** — per-path CIDR allowlists (always evaluated when configured)
-10. **CrowdSec** — `http-request send-spoe-group` when the SPOE filter is loaded and the app has `crowdsec_enabled`
+10. **CrowdSec** — `http-request send-spoe-group`, then a 403 for any remediation other than `allow`, when the SPOE filter is loaded and the app has `crowdsec_enabled`
 
 `use_backend` lines follow after all applications.
 

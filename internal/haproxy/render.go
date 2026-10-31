@@ -378,7 +378,9 @@ frontend fe_http
 	acl fe_http_keeps_plain hdr(host) -i {{range $i, $a := .HTTPApps}}{{if $i}} {{end}}{{$a.Application.PublicHost}}{{end}}
 {{- end}}
 {{if .UseCrowdSecHTTP}}
-	# CrowdSec SPOE — engine id must match spoe-agent section name in {{.Settings.SPOEConfigPath}}
+	# CrowdSec SPOE — engine id must match the [section] in {{.Settings.SPOEConfigPath}}.
+	# The bouncer's messages send unique-id, so the frontend must define one.
+	unique-id-format %[uuid()]
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
 {{end}}
 {{- if .RedirectApps}}
@@ -413,6 +415,16 @@ frontend fe_http
 backend bk_acme
 	mode http
 	server acme {{.ACMEBackendAddr}} check
+{{- if .UseCrowdSecFilter}}
+
+# CrowdSec SPOA bouncer. The name is fixed by use-backend in the vendor's SPOE file;
+# the installer binds the bouncer to this loopback address.
+backend crowdsec-spoa
+	mode tcp
+	timeout connect 2s
+	timeout server 60s
+	server spoa 127.0.0.1:9000
+{{- end}}
 {{if not .HasHTTPSFrontend}}
 
 # :80 catch-all when there is no fe_https (plain HTTP edge only)
@@ -428,7 +440,9 @@ frontend fe_https
 	mode http
 	option forwardfor
 {{if $.UseCrowdSecHTTPS}}
-	# CrowdSec SPOE — engine id must match spoe-agent section name in {{.Settings.SPOEConfigPath}}
+	# CrowdSec SPOE — engine id must match the [section] in {{.Settings.SPOEConfigPath}}.
+	# The bouncer's messages send unique-id, so the frontend must define one.
+	unique-id-format %[uuid()]
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
 {{end}}
 	http-request set-header X-Forwarded-Proto https
@@ -557,7 +571,11 @@ backend {{backendName $a.Application.PublicHost}}
 {{- end}}
 {{- end}}
 {{- if and $root.UseCrowdSecFilter $a.Application.Security.CrowdSecEnabled}}
-	http-request send-spoe-group {{$root.Settings.CrowdSecEngineName}} crowdsec-req if {{$host}}{{$acme}}
+	# No body group: nothing here inspects bodies, so no request is buffered for it.
+	# The bouncer answers in txn.crowdsec.remediation; without this deny its decisions do nothing.
+	# When it cannot be reached the variable stays unset and traffic passes (fail open).
+	http-request send-spoe-group {{$root.Settings.CrowdSecEngineName}} crowdsec-http-no-body if {{$host}}{{$acme}}
+	http-request deny deny_status 403 if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
 {{- end}}
 {{end}}
 `

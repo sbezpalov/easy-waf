@@ -39,7 +39,7 @@
 | `internal/` | store (PostgreSQL), haproxy, acme, api, ipbl, admin, webui и др. |
 | `internal/store/migrations/` | SQL-схема БД |
 | `internal/webui/dist/` | Встроенная статика UI |
-| `configs/` | Дефолты и примеры (haproxy, crowdsec-spoe, dns-*.env, grafana) |
+| `configs/` | Дефолты и примеры (haproxy, dns-*.env, grafana) |
 | `scripts/` | install, install-interactive, upgrade, backup/restore, check-linux-artifacts |
 | `packaging/` | systemd-юниты для api + acmed |
 | `docs/` | Архитектура, security, ACME/DNS, CrowdSec, Fail2Ban, IPBL, GeoIP и др. |

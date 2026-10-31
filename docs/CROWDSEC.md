@@ -65,6 +65,22 @@ filter spoe engine crowdsec config /etc/haproxy/crowdsec.cfg
 
 The engine id **`crowdsec`** must match the **`[crowdsec]`** section in that file (see [HAProxy SPOA bouncer](https://docs.crowdsec.net/u/bouncers/haproxy_spoa.md)). Full examples ship under `/usr/share/doc/crowdsec-haproxy-spoa-bouncer/examples/`.
 
+### How a decision blocks a request
+
+For an application with `crowdsec_enabled`, the generated config does all of this; the SPOE file alone only sets variables and blocks nothing:
+
+- `backend crowdsec-spoa` points at the bouncer on **`127.0.0.1:9000`**. The installer sets `listen_tcp: 127.0.0.1:9000` in `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml` (the package default is `0.0.0.0:9000`). The backend name is fixed by `use-backend` in the vendor file.
+- `http-request send-spoe-group <engine> crowdsec-http-no-body` asks the bouncer, after the application's other rules. No request body is sent or buffered, so WebSockets and large uploads are unaffected, and AppSec body inspection is not used.
+- `http-request deny deny_status 403` applies when `txn.crowdsec.remediation` is anything other than `allow`. **`ban`, `captcha` and any other remediation all get a plain 403**: there are no ban or captcha pages.
+
+An address on the application's IP allowlist is never refused by CrowdSec (its `http-request allow` comes first), and ACME challenges are exempt.
+
+**The check fails open.** If the bouncer is down or does not answer in time, the variable stays unset and traffic passes: a CrowdSec outage must not take every published service offline, at the price of no CrowdSec protection until it is back. Monitor `crowdsec-spoa-bouncer.service`. The other layers (IP lists, GeoIP, WAF rules) do not depend on it.
+
+The vendor file must define engine `<engine>` and group `crowdsec-http-no-body`, and must exist: otherwise `haproxy -c` refuses the config and the apply fails. Bouncer 0.3.1 and 0.4.0 both define that group; a copy of 0.4.0 lives in `internal/haproxy/testdata/golden/spoe/`, and `bash scripts/test-crowdsec-e2e.sh` proves a ban end to end in Docker (real LAPI, bouncer and HAProxy 2.8).
+
+To check an appliance: `sudo cscli decisions add --ip <test-ip> --duration 5m`, request a published host from that address and expect 403, then `sudo cscli decisions delete --ip <test-ip>`.
+
 For advanced behaviour (CAPTCHA, ban pages, AppSec), follow upstream docs: additional `global` **lua-load** lines and `http-request send-spoe-group` may be required beyond the minimal `filter spoe` line embedded in easy-waf’s template.
 
 ## Variables

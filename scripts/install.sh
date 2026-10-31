@@ -342,6 +342,7 @@ easy_waf_bootstrap_crowdsec_lapi() {
     log "ERROR: could not inject SPOA api_key into /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
     return 1
   fi
+  crowdsec_bind_spoa_loopback || return 1
 
   local spoa_unit
   spoa_unit="$(crowdsec_spoa_bouncer_unit)"

@@ -81,7 +81,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 ## Data flow (request)
 
 1. HAProxy terminates TLS for HTTPS applications; SNI / Host routes HTTP or HTTPS to the backend.
-2. SPOE asks CrowdSec bouncer for decision (engine name aligned with SPOE file).
+2. Rules below run in order. SPOE asks the CrowdSec bouncer (`backend crowdsec-spoa`, loopback) for a decision after the application's other checks; anything but `allow` gets a 403. If the bouncer is unavailable the request continues (fail open): see [CROWDSEC.md](CROWDSEC.md#how-a-decision-blocks-a-request).
 3. A reusable per-application block enforces IP lists, GeoIP, bot/User-Agent checks, optional **basic WAF** regex ACLs, methods, paths, restricted paths, and CrowdSec on every enabled HTTP/HTTPS frontend. Backend rate limiting runs once per request.
 4. HAProxy logs to files/socket; CrowdSec parses; decisions feed bouncer.
 5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists, and **IPWL** allowlist map from `ipwl_local`, before each HAProxy render.
@@ -242,7 +242,8 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 | Risk | Mitigation |
 |------|------------|
-| SPOE syntax fragility | Golden tests; `haproxy -c`; version-pinned examples |
+| SPOE syntax fragility | Golden configs pass `haproxy -c` against a pinned copy of the vendor file; `scripts/test-crowdsec-e2e.sh` proves a ban end to end |
+| CrowdSec outage | Fails open by design: published services stay up without CrowdSec checks; monitor the bouncer unit |
 | CrowdSec package drift | Health checks only; document version matrix; optional pin file |
 | HAProxy connect to backends | Unix groups + file permissions; AppArmor stock profile |
 | Lego DNS provider credentials | File permissions + optional secret dir outside VCS |

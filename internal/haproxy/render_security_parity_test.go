@@ -16,7 +16,7 @@ func TestListenModeSecurityParity(t *testing.T) {
 		"app_sec1_black src -f",
 		"app_sec1_empty_ua",
 		"app_sec1_sqli query",
-		"http-request send-spoe-group crowdsec crowdsec-req",
+		"http-request send-spoe-group crowdsec crowdsec-http-no-body",
 		"app_sec1_rp_0_path path_beg /admin",
 	}
 	for _, mode := range []string{"http_only", "https_only", "http_and_https"} {
@@ -47,14 +47,14 @@ func TestListenModeSecurityParity(t *testing.T) {
 				if strings.Contains(cfg, "frontend fe_https") {
 					t.Fatal("http_only must not emit fe_https")
 				}
-				if !strings.Contains(cfg, "http-request send-spoe-group crowdsec crowdsec-req if http_app_sec1_host !acme") {
+				if !strings.Contains(cfg, "http-request send-spoe-group crowdsec crowdsec-http-no-body if http_app_sec1_host !acme") {
 					t.Fatal("CrowdSec on HTTP must skip ACME")
 				}
 				if !strings.Contains(cfg, "filter spoe engine crowdsec") {
 					t.Fatal("expected SPOE filter on HTTP frontend")
 				}
 			case "https_only":
-				if !strings.Contains(cfg, "http-request send-spoe-group crowdsec crowdsec-req if app_sec1_host") {
+				if !strings.Contains(cfg, "http-request send-spoe-group crowdsec crowdsec-http-no-body if app_sec1_host") {
 					t.Fatal("CrowdSec on HTTPS")
 				}
 			case "http_and_https":
