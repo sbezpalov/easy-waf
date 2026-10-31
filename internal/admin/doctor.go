@@ -85,6 +85,7 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) DoctorReport {
 
 	// 1. Filesystem & State Directory
 	report.addChecks(checkStateDir(stateDir))
+	report.addChecks(checkEnvFile(envFile))
 	report.addChecks(checkDiskSpace(stateDir))
 
 	// 2. Database Checks
@@ -182,6 +183,34 @@ func checkStateDir(stateDir string) []CheckResult {
 	}
 
 	return checks
+}
+
+// checkEnvFile warns when easy-waf.env is readable beyond root. It holds
+// DATABASE_URL and API tokens, and group easy-waf includes haproxy.
+func checkEnvFile(envFile string) []CheckResult {
+	st, err := os.Stat(envFile)
+	if err != nil {
+		return []CheckResult{{
+			Category: "Storage",
+			Name:     "Env File",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("Cannot check %s: %v", envFile, err),
+		}}
+	}
+	if perm := st.Mode().Perm(); perm&0o077 != 0 {
+		return []CheckResult{{
+			Category: "Storage",
+			Name:     "Env File Permissions",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("Permissions %04o on %s expose its secrets (fix: chown root:root, chmod 0600)", perm, envFile),
+		}}
+	}
+	return []CheckResult{{
+		Category: "Storage",
+		Name:     "Env File",
+		Status:   StatusOK,
+		Message:  fmt.Sprintf("%s is not readable by group or others", envFile),
+	}}
 }
 
 func checkDiskSpace(stateDir string) []CheckResult {

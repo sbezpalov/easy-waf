@@ -7,7 +7,7 @@ Applies to the release from root [`VERSION`](../VERSION) (**1.4.2**). Acceptance
 ## Principles
 
 - **Least privilege**: user `easy-waf` owns `/var/lib/easy-waf` and generated files; HAProxy runs as `haproxy`; PostgreSQL uses a dedicated DB role with minimal privileges.
-- **Secrets**: never commit real credentials. Use `/etc/easy-waf/easy-waf.env` (root, 0640) and `/var/lib/easy-waf/secrets/` (0700) for DNS env files and similar. Prefer **short-lived tokens** (Cloudflare API tokens with DNS-only scope).
+- **Secrets**: never commit real credentials. Use `/etc/easy-waf/easy-waf.env` (`root:root 0600`: systemd reads it as root, and group `easy-waf` includes `haproxy`) and `/var/lib/easy-waf/secrets/` (0700) for DNS env files and similar. Prefer **short-lived tokens** (Cloudflare API tokens with DNS-only scope).
 - **AppArmor**: enforced by default on Ubuntu. Stock profile for `/usr/sbin/haproxy` is sufficient; no custom easy-waf profile required for MVP.
 - **PostgreSQL**: use `sslmode=require` or `verify-full` to the DB in production; avoid `trust`/`password` on the wire in SME deployments.
 

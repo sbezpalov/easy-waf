@@ -38,7 +38,7 @@ it starts in that state.
 
 Implemented via **Lego** (`easy-waf-acmed`): `dns_provider` is one of `cloudflare`, `cloudns` (default when empty), `route53`, `webhook` (Lego `httpreq`). Credentials live in an env file referenced by `dns_credentials_env_file` — see [DNS01.md](DNS01.md) and `configs/examples/dns-*.env.example`.
 
-The file must be **readable by `easy-waf`**, not root-only: `easy-waf-acmed` runs as `User=easy-waf` (`packaging/systemd/easy-waf-acmed.service`) and opens the file itself. `chown root:easy-waf` + `chmod 0640` works; `0600 root:root` fails issuance with `dns env: … permission denied`.
+The file must be **readable by `easy-waf`**, not root-only: `easy-waf-acmed` runs as `User=easy-waf` (`packaging/systemd/easy-waf-acmed.service`) and opens the file itself. Use `chown easy-waf:easy-waf` + `chmod 0600`: `0600 root:root` fails issuance with `dns env: … permission denied`.
 
 ### Split-DNS and propagation checks
 

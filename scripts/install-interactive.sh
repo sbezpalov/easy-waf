@@ -33,6 +33,8 @@ done
 source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
 # shellcheck source=lib/db-password.sh
 source "${SCRIPT_DIR}/lib/db-password.sh"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh"
 # shellcheck source=lib/management-listen.sh
 source "${SCRIPT_DIR}/lib/management-listen.sh"
 
@@ -68,12 +70,12 @@ ensure_env_template() {
   id easy-waf &>/dev/null || useradd -r -d /var/lib/easy-waf -s /sbin/nologin -c "Easy Home WAF" easy-waf
   if [[ ! -f "$ENV_FILE" ]]; then
     if [[ -f "${REPO_ROOT}/configs/defaults/easy-waf.env.example" ]]; then
-      install -m 0640 "${REPO_ROOT}/configs/defaults/easy-waf.env.example" "$ENV_FILE"
+      install -m 0600 "${REPO_ROOT}/configs/defaults/easy-waf.env.example" "$ENV_FILE"
     else
       die "missing configs/defaults/easy-waf.env.example"
     fi
   fi
-  chown root:easy-waf "$ENV_FILE" 2>/dev/null || chmod 0640 "$ENV_FILE"
+  easy_waf_secure_env_file "$ENV_FILE"
 }
 
 upsert_env_kv() {
@@ -84,9 +86,9 @@ upsert_env_kv() {
   [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE"
   grep -vE "^${key}=" "$ENV_FILE" >"$tmp" || true
   printf '%s=%s\n' "$key" "$val" >>"$tmp"
-  install -m 0640 "$tmp" "$ENV_FILE"
+  install -m 0600 "$tmp" "$ENV_FILE"
   rm -f "$tmp"
-  chown root:easy-waf "$ENV_FILE" 2>/dev/null || true
+  easy_waf_secure_env_file "$ENV_FILE"
 }
 
 main() {
@@ -116,7 +118,7 @@ main() {
 
   if grep -qE '^EASY_WAF_LISTEN=' "$ENV_FILE" 2>/dev/null; then
     grep -vE '^EASY_WAF_LISTEN=' "$ENV_FILE" >"${ENV_FILE}.tmp" && mv "${ENV_FILE}.tmp" "$ENV_FILE"
-    chown root:easy-waf "$ENV_FILE" 2>/dev/null || chmod 0640 "$ENV_FILE"
+    easy_waf_secure_env_file "$ENV_FILE"
   fi
 
   if [[ -t 0 ]]; then

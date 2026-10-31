@@ -52,6 +52,8 @@ LEGACY_BIN="${EASY_WAF_LEGACY_BIN:-/usr/sbin/easy-wafd}"
 ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh"
 REPO_ROOT="${EASY_WAF_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 DIST_DIR="${EASY_WAF_DIST_DIR:-${REPO_ROOT}/dist}"
 SYSTEMD_SRC="${REPO_ROOT}/packaging/systemd"
@@ -155,7 +157,7 @@ EOF
 install_env_file() {
   if [[ ! -s "$CFG_DIR/easy-waf.env" ]]; then
     if [[ -f "${REPO_ROOT}/configs/defaults/easy-waf.env.example" ]]; then
-      install -m 0640 "${REPO_ROOT}/configs/defaults/easy-waf.env.example" "$CFG_DIR/easy-waf.env"
+      install -m 0600 "${REPO_ROOT}/configs/defaults/easy-waf.env.example" "$CFG_DIR/easy-waf.env"
       log "Created $CFG_DIR/easy-waf.env — edit DATABASE_URL and EASY_WAF_ADMIN_TOKEN"
     else
       die "missing configs/defaults/easy-waf.env.example (set EASY_WAF_REPO_ROOT?)"
@@ -163,7 +165,7 @@ install_env_file() {
   else
     log "Keeping existing $CFG_DIR/easy-waf.env"
   fi
-  chown root:easy-waf "$CFG_DIR/easy-waf.env" 2>/dev/null || chmod 0640 "$CFG_DIR/easy-waf.env"
+  easy_waf_secure_env_file "$CFG_DIR/easy-waf.env"
 }
 
 # When NFT_* (or legacy FIREWALLD_*) were not exported, read from easy-waf.env.
@@ -200,9 +202,9 @@ easy_waf_env_upsert_kv() {
   tmp="$(mktemp)"
   grep -vE "^${key}=" "$env_file" >"$tmp" || true
   printf '%s=%s\n' "$key" "$val" >>"$tmp"
-  install -m 0640 "$tmp" "$env_file"
+  install -m 0600 "$tmp" "$env_file"
   rm -f "$tmp"
-  chown root:easy-waf "$env_file" 2>/dev/null || true
+  easy_waf_secure_env_file "$env_file"
 }
 
 # GET /v1/decisions with bouncer key (CrowdSec expects X-Api-Key, not Bearer).

@@ -5,8 +5,10 @@ package diagnostics
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -52,5 +54,23 @@ func TestManagedHAProxyConfigPathRejectsEscapingSymlink(t *testing.T) {
 	}
 	if _, err := managedHAProxyConfigPath(stateDir, link); err == nil {
 		t.Fatal("expected escaping symlink to fail")
+	}
+}
+
+func TestProcessEnvSnapshotMasksSecretsAndSkipsOtherVariables(t *testing.T) {
+	t.Setenv("EASY_WAF_LISTEN_HTTPS", "0.0.0.0:8443")
+	t.Setenv("EASY_WAF_ADMIN_TOKEN", "super-secret-token")
+	t.Setenv("DATABASE_URL", "postgres://easywaf:db-password@127.0.0.1:5432/easywaf")
+	t.Setenv("UNRELATED_SECRET_VALUE", "must-not-appear")
+
+	out := string(MaskEasyWAFEnvContent(processEnvSnapshot("/etc/easy-waf/easy-waf.env", errors.New("permission denied"))))
+
+	if !strings.Contains(out, "EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443") {
+		t.Errorf("settings missing:\n%s", out)
+	}
+	for _, leaked := range []string{"super-secret-token", "db-password", "must-not-appear"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("%q leaked:\n%s", leaked, out)
+		}
 	}
 }

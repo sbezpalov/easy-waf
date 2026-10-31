@@ -100,6 +100,14 @@ unit_installed() { systemctl list-unit-files "${1}.service" &>/dev/null; }
 # chroot) — a missing answer means "cannot tell", not "broken".
 unit_state() { systemctl is-active "${1}.service" 2>/dev/null; }
 
+section "secrets"
+env_mode="$(stat -c '%a %U:%G' "$ENV_FILE" 2>/dev/null || echo unknown)"
+if [[ "$env_mode" == "600 root:root" ]]; then
+  pass "$ENV_FILE is root-only"
+else
+  fail "$ENV_FILE is $env_mode, want 600 root:root (group easy-waf includes haproxy)"
+fi
+
 section "systemd units"
 for unit in easy-waf-hostd easy-waf-api easy-waf-acmed; do
   if ! unit_installed "$unit"; then

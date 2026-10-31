@@ -91,3 +91,21 @@ func TestRunDoctorBasic(t *testing.T) {
 		t.Fatal("expected diagnostic checks to be executed")
 	}
 }
+
+func TestCheckEnvFilePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "easy-waf.env")
+	if got := checkEnvFile(path); got[0].Status != StatusWarn {
+		t.Fatalf("missing file: %+v", got[0])
+	}
+	for mode, want := range map[os.FileMode]CheckStatus{0o600: StatusOK, 0o640: StatusWarn, 0o644: StatusWarn} {
+		if err := os.WriteFile(path, []byte("X=1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if got := checkEnvFile(path); got[0].Status != want {
+			t.Errorf("mode %04o: %+v, want %s", mode, got[0], want)
+		}
+	}
+}

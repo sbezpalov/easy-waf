@@ -102,9 +102,9 @@ contents:
     dst: /etc/easy-waf/easy-waf.env
     type: config|noreplace
     file_info:
-      mode: 0640
+      mode: 0600
       owner: root
-      group: easy-waf
+      group: root
 
 # Maintainer scripts. nfpm's generic names map onto dpkg's: preinstall→preinst,
 # postinstall→postinst, preremove→prerm, postremove→postrm. They are written

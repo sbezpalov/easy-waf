@@ -17,3 +17,12 @@ easy_waf_read_env_value() {
   done <"$file"
   printf '%s' "$found"
 }
+
+# easy-waf.env holds DATABASE_URL and API tokens. systemd reads it as root before
+# dropping privileges (EnvironmentFile=), so no service account needs access, and
+# group easy-waf must not get it: haproxy, the internet-facing process, is a
+# member so that it can read generated configs and certificates.
+easy_waf_secure_env_file() {
+  chown root:root "$1"
+  chmod 0600 "$1"
+}

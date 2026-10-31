@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -145,14 +146,12 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		}
 	}
 
-	if raw, err := os.ReadFile(envPath); err == nil {
-		if err := addTarBytes(tw, prefix+"config/easy-waf.env.masked", MaskEasyWAFEnvContent(raw), 0o640); err != nil {
-			return err
-		}
-	} else {
-		if err := addTarBytes(tw, prefix+"config/easy-waf.env.masked", []byte("(could not read: "+err.Error()+")\n"), 0o644); err != nil {
-			return err
-		}
+	raw, err := os.ReadFile(envPath)
+	if err != nil {
+		raw = processEnvSnapshot(envPath, err)
+	}
+	if err := addTarBytes(tw, prefix+"config/easy-waf.env.masked", MaskEasyWAFEnvContent(raw), 0o640); err != nil {
+		return err
 	}
 
 	cfgPath, cfgPathErr := managedHAProxyConfigPath(p.StateDir, p.Settings.HAProxyConfigPath)
@@ -277,4 +276,28 @@ func addTarBytes(tw *tar.Writer, name string, body []byte, mode int64) error {
 	}
 	_, err := tw.Write(body)
 	return err
+}
+
+// envSnapshotPrefixes select the process variables that come from easy-waf.env.
+var envSnapshotPrefixes = []string{"EASY_WAF_", "DATABASE_URL", "CROWDSEC_", "ACME_", "GEOIP_", "MAXMIND_"}
+
+// processEnvSnapshot stands in for easy-waf.env, which is root-only: the API
+// cannot read it, but systemd handed it the same variables. The caller masks
+// the result like the file itself.
+func processEnvSnapshot(envPath string, readErr error) []byte {
+	lines := []string{
+		"# " + envPath + " could not be read (" + readErr.Error() + "; root-only by design).",
+		"# Variables of the running API process instead. For the file: sudo easy-waf-diagnostics",
+	}
+	var vars []string
+	for _, kv := range os.Environ() {
+		for _, prefix := range envSnapshotPrefixes {
+			if strings.HasPrefix(kv, prefix) {
+				vars = append(vars, kv)
+				break
+			}
+		}
+	}
+	sort.Strings(vars)
+	return []byte(strings.Join(append(lines, vars...), "\n") + "\n")
 }

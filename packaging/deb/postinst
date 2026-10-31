@@ -41,8 +41,9 @@ create_layout() {
 		"${STATE_DIR}/revisions" "${STATE_DIR}/geoip" 2>/dev/null || true
 
 	if [ -f "${CFG_DIR}/easy-waf.env" ]; then
-		chown root:easy-waf "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
-		chmod 0640 "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
+		# systemd reads it as root; group easy-waf includes haproxy.
+		chown root:root "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
+		chmod 0600 "${CFG_DIR}/easy-waf.env" 2>/dev/null || true
 	fi
 }
 

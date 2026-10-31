@@ -121,6 +121,13 @@ chown -R easy-waf:easy-waf "$STATE" 2>/dev/null || true
 find "$CFG" -type d -exec chmod 0750 {} + 2>/dev/null || true
 find "$CFG" -type f -exec chmod 0640 {} + 2>/dev/null || true
 chown -R root:easy-waf "$CFG" 2>/dev/null || true
+# Secrets must not stay readable by group easy-waf, which includes haproxy.
+# DNS credential files are opened by easy-waf-acmed itself, so that account owns them.
+find "$CFG" -type f -name '*.env' -exec chown easy-waf:easy-waf {} + 2>/dev/null || true
+find "$CFG" -type f -name '*.env' -exec chmod 0600 {} + 2>/dev/null || true
+if [[ -f "$CFG/easy-waf.env" ]]; then
+  easy_waf_secure_env_file "$CFG/easy-waf.env"
+fi
 
 if command -v restorecon &>/dev/null; then
   echo "[easy-waf-restore] restorecon (legacy SELinux hosts only)…"
