@@ -161,10 +161,24 @@ the same checks CI runs.
 
 ## Status
 
-Used in production by its author on a home network; the interfaces documented here
-are stable, and anything breaking goes through `CHANGELOG.md` with an upgrade note.
-It is a young project maintained by one person — read
-[docs/SECURITY.md](docs/SECURITY.md) before putting it in front of something you
+**Beta.** Used by its author on a home network and maintained by one person. Releases
+from 1.5 on have been tested on clean Ubuntu 24.04 installs in containers, not yet on
+real hardware, and issuing and renewing with the real Let's Encrypt is still to be
+proven on them. Documented interfaces may change while this lasts; anything breaking
+goes through `CHANGELOG.md` with an upgrade note.
+
+Before you rely on it:
+
+- **It reduces exposure; it does not replace patching.** The WAF rules read the path,
+  the query and headers, not request bodies, so an exploit delivered in a body passes
+  them. CrowdSec adds IP reputation and fails open if its bouncer is down. Keep your
+  backends updated, and keep anything you cannot patch behind a VPN.
+- **Keep console access to the host.** Host management changes the network, the
+  firewall, packages and users, and a mistake can lock you out.
+- **Watch your certificates.** Failed renewals show on the dashboard, in the
+  `easy-waf-acmed` journal and in metrics; nothing is sent to you.
+
+Read [docs/SECURITY.md](docs/SECURITY.md) before putting it in front of something you
 cannot afford to lose, and keep backups (`scripts/backup.sh`).
 
 ## License

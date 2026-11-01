@@ -442,6 +442,7 @@ Dashboard view: status counters plus one compact row per certificate. The status
     - `status`: `valid`, `expiring`, `expired`, `pending` or `failed`
     - `mode`: `http-01`, `dns-01` or `manual`. Any stored mode other than an ACME one, including `self-signed`, is reported as `manual`.
     - `last_error`, `next_attempt_at`: only when `status` is `failed`.
+    - `attention`: why an operator should look at this certificate, omitted when nothing is wrong: `expired`, `issuance or renewal failed`, or `expires in N days` with fewer than 21 days left.
 - **Status rules, in order:**
   1. `not_after` in the past → `expired`.
   2. `acme_status` is `pending` or `issuing` → `pending`.
