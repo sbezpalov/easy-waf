@@ -124,8 +124,12 @@ transaction, so a failed migration leaves the schema as it was. Your `/etc/easy-
 a conffile, and if a release changes the shipped default you get a prompt with
 the usual `Y/I/N/O/D/Z` options rather than a silent overwrite.
 
-**Rollback** is `apt install ./easy-waf_<previous>_amd64.deb`, with the caveats
-that already apply to any downgrade: additive migration columns are not removed,
+**Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`;
+without the flag `apt` refuses. Below 1.5.0 the edge keeps serving its current
+config, but every Apply then fails `haproxy -c` while an application has CrowdSec
+on, because those releases do not match the bouncer's SPOE config. Turn CrowdSec
+off on those applications to apply changes. The caveats that apply to any
+downgrade: additive migration columns are not removed,
 so an older binary must tolerate them (it logs that the schema is newer than it
 knows and keeps running) — check the upgrade note in
 [`CHANGELOG.md`](../CHANGELOG.md) for the version you are leaving.
