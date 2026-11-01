@@ -7,6 +7,9 @@ GOVULNCHECK_VER ?= v1.9.0
 # Debian package builder. Keep in sync with .github/workflows/release.yml.
 NFPM_VER ?= v2.41.1
 EASY_WAF_VERSION ?= $(shell head -1 VERSION | tr -d '[:space:]')
+# dpkg sorts 1.7.0~rc.1 before 1.7.0, but reads 1.7.0-rc.1 as a later revision of it,
+# so a final release could not replace a release candidate.
+EASY_WAF_DEB_VERSION ?= $(subst -,~,$(EASY_WAF_VERSION))
 
 install-help:
 	@echo "Production install (Ubuntu 24.04 LTS, as root) — plug-and-play:"
@@ -30,10 +33,10 @@ build:
 deb: build
 	@mkdir -p $(DIST)
 	@if command -v nfpm >/dev/null 2>&1; then \
-		EASY_WAF_VERSION=$(EASY_WAF_VERSION) nfpm package --config packaging/nfpm.yaml --packager deb --target $(DIST)/; \
+		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) nfpm package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb; \
 	else \
 		echo >&2 "nfpm not in PATH; using go run $(NFPM_VER) (install: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER))"; \
-		EASY_WAF_VERSION=$(EASY_WAF_VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER) package --config packaging/nfpm.yaml --packager deb --target $(DIST)/; \
+		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER) package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb; \
 	fi
 	@echo "Built $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb"
 

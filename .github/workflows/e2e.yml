@@ -1,0 +1,27 @@
+name: E2E
+
+# Runs the generated config against real HAProxy and CrowdSec in containers. It
+# pulls images and takes minutes, so it runs nightly and before a release rather
+# than on every push.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  body-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Multipart block and body limit on HAProxy 2.8
+        run: bash scripts/test-body-policy-e2e.sh
+
+  crowdsec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: CrowdSec decisions through HAProxy 2.8
+        run: bash scripts/test-crowdsec-e2e.sh

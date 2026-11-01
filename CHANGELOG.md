@@ -5,17 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0-rc.1] - 2026-11-01
+
+Release candidate for a pilot on one real host. It is not marked as the latest
+release, and `main` stays on 1.6.0 for anyone installing from a clone. To install it:
+`sudo EASY_WAF_RELEASE_VERSION=1.7.0-rc.1 bash scripts/install.sh`.
 
 ### Added
 
+- **Nightly end-to-end runs in CI.** The body policy and CrowdSec container tests run nightly and on demand, in `.github/workflows/e2e.yml`.
 - **Body limit and multipart block, per profile and per application.** `max_body_bytes_override`, `block_multipart_override` and `multipart_allowed_paths` in application security, with fields in the UI, return 413, 411 and 415 at the edge. These work from headers: bodies are still not inspected. They narrow what reaches a vulnerable parser, such as the PHP flaws CVE-2026-109618 and CVE-2026-109619, and do not replace patching.
 - **Certificates that need attention are visible without Prometheus.** A failed issuance or renewal, or fewer than 21 days left, now shows on the dashboard and in a daily warning in the `easy-waf-acmed` journal. Nothing is sent to you yet. `GET /certificates/summary` gains `attention`.
 - **Profile `php-app`:** `balanced` plus a multipart block and a 32 MiB limit. No existing profile changes, so applications nobody touched behave as before.
 
 ### Upgrade notes
 
-A release that does not know `php-app` cannot render it. Before rolling back, move applications to another profile.
+The package version is `1.7.0~rc.1`, so the final `1.7.0` replaces it normally. A release that does not know `php-app` cannot render it. Before rolling back, move applications to another profile.
 
 ## [1.6.0] - 2026-11-01
 
