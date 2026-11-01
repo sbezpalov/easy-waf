@@ -75,7 +75,7 @@ sed -E \
 cp "$GOLDEN/spoe/crowdsec-vendor.cfg" "$WORK/crowdsec.cfg"
 chmod -R a+rX "$WORK"
 
-docker run -d --name cs-e2e-haproxy --network "$NET" --ip 10.77.0.40 -v "$WORK:/cfg:ro" \
+docker run -d --name cs-e2e-haproxy --network "$NET" --ip 10.77.0.40 --ulimit nofile=200000:200000 -v "$WORK:/cfg:ro" \
   haproxy:2.8 haproxy -f /cfg/haproxy.cfg >/dev/null
 sleep 3
 docker ps --format '{{.Names}}' | grep -q '^cs-e2e-haproxy$' || {
