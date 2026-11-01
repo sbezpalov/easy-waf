@@ -32,6 +32,8 @@ depends:
   - curl
   # adduser: the maintainer scripts create the easy-waf system account.
   - adduser
+  # polkitd: the rule that lets easy-waf reload haproxy.service needs the daemon.
+  - polkitd
 recommends:
   # An external database is a supported shape, so PostgreSQL is not a hard
   # dependency — DATABASE_URL may point anywhere.

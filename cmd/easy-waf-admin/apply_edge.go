@@ -37,6 +37,10 @@ func runApplyEdge() error {
 	}
 	defer st.Close()
 
+	if err := dropToStateOwner(*stateDir); err != nil {
+		return err
+	}
+
 	eng := engine.New(*stateDir, st, config.DefaultSettings(*stateDir))
 	if err := eng.LoadSettings(ctx); err != nil {
 		return err
