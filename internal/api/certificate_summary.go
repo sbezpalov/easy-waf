@@ -32,6 +32,7 @@ func BuildCertificateSummaryResponse(certs []config.Certificate, now time.Time) 
 	}
 	for i := range certs {
 		row := certificateSummaryEntry(&certs[i], now)
+		row.Attention = config.CertificateAttention(&certs[i], now)
 		out.Certificates = append(out.Certificates, row)
 		switch row.Status {
 		case "valid":

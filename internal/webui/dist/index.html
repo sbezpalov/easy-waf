@@ -267,6 +267,7 @@
           <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">—</p>
           <p id="dash-http-line" class="dash-note" style="color:#e6edf3;margin-top:0.35rem">—</p>
         </div>
+        <div id="dash-cert-warn" class="dash-sec-warn hidden"></div>
         <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
         <div id="dash-http-warn" class="dash-sec-warn hidden"></div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
@@ -2304,6 +2305,13 @@
     try {
       if (certSumR.ok) certSum = await certSumR.json();
     } catch (_) {}
+    const certAttention = ((certSum && certSum.certificates) || []).filter((c) => c.attention);
+    const dcw = document.getElementById('dash-cert-warn');
+    dcw.classList.toggle('hidden', certAttention.length === 0);
+    dcw.textContent = certAttention.length === 0 ? '' :
+      '⚠️ Certificates need attention: ' +
+      certAttention.map((c) => `${c.primary_domain || c.id} (${c.attention})`).join(', ') +
+      '. Details are on the Certificates tab.';
     if (certSum && typeof certSum.valid === 'number') {
       document.getElementById('dash-certs-stat').textContent =
         `${certSum.valid} / ${certSum.expiring_soon} / ${certSum.expired}`;

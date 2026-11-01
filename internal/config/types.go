@@ -159,6 +159,8 @@ type CertificateSummaryEntry struct {
 	// LastError and NextAttemptAt are set while Status is failed.
 	LastError     string     `json:"last_error,omitempty"`
 	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	// Attention is why an operator should look at this certificate; see CertificateAttention.
+	Attention string `json:"attention,omitempty"`
 }
 
 // CertificateSummaryResponse aggregates counts and per-certificate rows for dashboards.

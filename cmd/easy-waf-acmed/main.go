@@ -99,6 +99,7 @@ func main() {
 	}()
 	w := &worker{eng: eng}
 	for {
+		w.warnAboutCertificates(ctx, st)
 		w.runOnce(ctx, st)
 		select {
 		case <-ctx.Done():
@@ -114,10 +115,52 @@ type worker struct {
 	eng *engine.Engine
 	// lastTry is when reconcile last attempted an apply that failed.
 	lastTry time.Time
+	// lastWarned is when warnAboutCertificates last read the certificates.
+	lastWarned time.Time
 }
 
 // reconcileRetry spaces out reconcile attempts after a failed apply.
 const reconcileRetry = 5 * time.Minute
+
+// certificateWarningInterval keeps the journal warning daily, not per tick.
+const certificateWarningInterval = 24 * time.Hour
+
+// certificateWarnings renders a journal line for each certificate needing attention.
+func certificateWarnings(certs []config.Certificate, now time.Time) []string {
+	var lines []string
+	for i := range certs {
+		c := &certs[i]
+		why := config.CertificateAttention(c, now)
+		if why == "" {
+			continue
+		}
+		line := fmt.Sprintf("acmed: WARNING certificate %q needs attention: %s", c.PrimaryDomain, why)
+		if c.LastError != "" {
+			line += fmt.Sprintf(" (last error: %q)", c.LastError)
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// warnAboutCertificates runs before issuing, and not from runOnce, because an
+// acmed with no ACME email stays idle and its certificates still expire.
+func (w *worker) warnAboutCertificates(ctx context.Context, st *store.Store) {
+	if !w.lastWarned.IsZero() && time.Since(w.lastWarned) < certificateWarningInterval {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+	certs, err := st.ListCertificates(qctx)
+	if err != nil {
+		log.Printf("acmed: list certificates: %v", err)
+		return
+	}
+	w.lastWarned = time.Now()
+	for _, line := range certificateWarnings(certs, time.Now().UTC()) {
+		log.Print(line)
+	}
+}
 
 // applyPendingPath marks a certificate acmed stored whose HAProxy apply has
 // not succeeded yet. It is a file so it survives a stop or crash between the

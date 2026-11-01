@@ -37,6 +37,18 @@ Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after 
 
 Import **`configs/grafana/easy-waf-dashboard.json`** (Dashboards → Import → Upload JSON). Adjust datasource UID if yours differs from `prometheus`.
 
+## Certificate expiry
+
+Renewal starts 30 days before expiry and is silent when it fails, so alert on it. Without Prometheus, the dashboard shows a warning, and `easy-waf-acmed` writes one to its journal once a day (`journalctl -u easy-waf-acmed -g WARNING`), for a certificate that failed to renew or has fewer than 21 days left. Nothing is pushed to you.
+
+```yaml
+- alert: EasyWafCertificateNotRenewing
+  expr: easy_waf_certificate_days_remaining < 21
+  for: 1h
+  annotations:
+    summary: "{{ $labels.domain }}: {{ $value }} days left and not renewed"
+```
+
 ## Metrics reference
 
 All names use the `easy_waf_` prefix.
