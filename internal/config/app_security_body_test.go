@@ -53,6 +53,9 @@ func TestValidateBodyPolicy(t *testing.T) {
 		"injection":       {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"/a\n\tbind *:1"}}, wantErr: "multipart_allowed_paths"},
 		"dots":            {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"/a/../b"}}, wantErr: "multipart_allowed_paths"},
 		"root":            {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"/"}}, wantErr: "multipart_allowed_paths"},
+		"slashes only":    {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"//"}}, wantErr: "multipart_allowed_paths"},
+		"env expansion":   {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"/up$HOME"}}, wantErr: "multipart_allowed_paths"},
+		"quote":           {sec: ApplicationSecurity{MultipartAllowedPaths: []string{"/up'load"}}, wantErr: "multipart_allowed_paths"},
 		"too many":        {sec: ApplicationSecurity{MultipartAllowedPaths: make([]string, MaxMultipartAllowedPaths+1)}, wantErr: "multipart_allowed_paths"},
 	} {
 		t.Run(name, func(t *testing.T) {

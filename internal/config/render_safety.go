@@ -226,8 +226,13 @@ func validateBodyPolicy(sec ApplicationSecurity) error {
 	}
 	for i, p := range sec.MultipartAllowedPaths {
 		field := fmt.Sprintf("multipart_allowed_paths[%d]", i)
-		if p == "" || p == "/" || strings.Contains(strings.ToLower(p), "..") || strings.Contains(strings.ToLower(p), "%2e") {
+		lower := strings.ToLower(p)
+		if strings.Trim(p, "/") == "" || strings.Contains(lower, "..") || strings.Contains(lower, "%2e") {
 			return fmt.Errorf("%s must be a specific path prefix", field)
+		}
+		// HAProxy expands $NAME from its environment in unquoted config text.
+		if strings.ContainsAny(p, "$'") {
+			return fmt.Errorf("%s must not contain $ or '", field)
 		}
 		if err := ValidateHAProxyPath(field, p); err != nil {
 			return err
