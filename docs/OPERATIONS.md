@@ -2,7 +2,7 @@
 
 This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting generated config, manual validation, and toggles used during debugging.
 
-**Version:** [`VERSION`](../VERSION) — **1.5.1**.
+**Version:** [`VERSION`](../VERSION) — **1.5.2**.
 
 ## Layout (defaults)
 
