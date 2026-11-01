@@ -55,6 +55,9 @@ The revision it writes to `config_revisions` is labelled
 `EASY_WAF_SKIP_RELOAD` as a boolean (see [OPERATIONS.md](OPERATIONS.md)); when the
 reload is skipped it says so in its output.
 
+Started as root, it reads `easy-waf.env` and then continues as the owner of the
+state directory, so the files it writes stay readable by the API and HAProxy.
+
 ## Automated appliance reset (dev / lab)
 
 **`-bootstrap-credentials`** (run as **root** via `sudo`): one command to align PostgreSQL and easy-waf after a broken or unknown DB password:

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **HAProxy's master process stayed root after a fresh install.** The drop-in script called `easy-waf-admin apply-edge` as root, which left `haproxy.cfg` and the map files `root:root 0640`. The check that follows then failed as the `haproxy` user, and the script fell back to the root layout. `apply-edge` now continues as the owner of the state directory once it has read `easy-waf.env`. On a host already running the unprivileged unit, the same root-owned files made `sudo easy-waf-admin apply-edge` fail its reload and would have stopped HAProxy at its next restart.
+- **`scripts/smoke-appliance.sh` could not run.** It never created its temporary directory and stopped at the first check that used it. It now also fails when the HAProxy master is not running as `haproxy`.
+- **The package depends on `polkitd`.** Without the daemon, `easy-waf` cannot reload HAProxy, so every Apply fails.
+
+### Upgrade notes
+
+On 1.5.0, rerun `sudo bash scripts/fix-haproxy-easy-waf-dropin.sh` after upgrading to get the unprivileged master; check for the warning in its output.
+
 ## [1.5.0] - 2026-11-01
 
 An architecture review of the control plane, the host broker and the data layer,

@@ -61,6 +61,9 @@ command -v curl &>/dev/null || {
   exit 2
 }
 
+SMOKE_TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$SMOKE_TMPDIR"' EXIT
+
 set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
@@ -205,6 +208,15 @@ if [[ -f "$CFG" ]] && command -v haproxy &>/dev/null; then
 else
   skip "live config or haproxy binary not found"
 fi
+
+# The install keeps running with a root master when the preflight in
+# fix-haproxy-easy-waf-dropin.sh fails, so a working edge proves nothing here.
+haproxy_master_user="$(ps -o user= -p "$(systemctl show -p MainPID --value haproxy.service 2>/dev/null)" 2>/dev/null)"
+case "$haproxy_master_user" in
+  haproxy) pass "haproxy master runs as haproxy" ;;
+  "") skip "haproxy master not found" ;;
+  *) fail "haproxy master runs as $haproxy_master_user — see the warning from scripts/fix-haproxy-easy-waf-dropin.sh" ;;
+esac
 
 if unit_installed haproxy; then
   state="$(unit_state haproxy)"
