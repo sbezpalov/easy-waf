@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-11-01
 
 An architecture review of the control plane, the host broker and the data layer,
-and the fixes it led to. Two matter most: **HAProxy ran as root** on a stock
-appliance, and **a certificate whose issuance or renewal failed once was never
-retried**, so it expired silently.
+and the fixes it led to. Three matter most: **CrowdSec decisions were never
+enforced**, **HAProxy ran as root** on a stock appliance, and **a certificate
+whose issuance or renewal failed once was never retried**, so it expired
+silently. Built with Go 1.27.3, which also closes 55 reachable vulnerabilities.
+
+**Read the upgrade notes below first: CrowdSec starts blocking, and some API
+responses changed.** `install.sh` / `upgrade.sh` apply everything; a `.deb`
+upgrade leaves the nftables guard and the bouncer's loopback binding to you.
 
 **Upgrade note.** Run `sudo bash scripts/fix-haproxy-easy-waf-dropin.sh` (install.sh and
 upgrade.sh do it for you; a `.deb` upgrade does not). It switches HAProxy to run as the
