@@ -753,6 +753,9 @@ install_polkit_rules() {
       fi
     fi
   fi
+  # dbus only learns polkitd's bus policy on reload. A polkitd installed on this
+  # running system exits with "Lost the name", and every Apply then hangs on it.
+  systemctl reload dbus.service 2>/dev/null || true
 }
 
 cleanup_legacy_host_privilege() {

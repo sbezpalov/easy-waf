@@ -103,6 +103,9 @@ configure)
 
 	if systemd_available; then
 		systemctl daemon-reload || true
+		# dbus only learns the bus policy of a polkitd just installed as our
+		# dependency on reload; until then polkitd exits and Apply hangs on it.
+		systemctl reload dbus.service 2>/dev/null || true
 	fi
 
 	if [ -z "$2" ]; then

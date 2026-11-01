@@ -2,7 +2,7 @@
 
 [English](TROUBLESHOOTING.md) | [Русский](TROUBLESHOOTING.ru.md)
 
-This document matches release **1.5.1** (see [`VERSION`](../VERSION)).
+This document matches release **1.5.2** (see [`VERSION`](../VERSION)).
 
 ## `systemctl`: no `crowdsec.service` / SPOA bouncer unit
 

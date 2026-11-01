@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-11-01
+
+### Fixed
+
+- **Apply hung on a host where polkit was installed along with easy-waf.** dbus had not read polkitd's bus policy, so polkitd exited with `Lost the name org.freedesktop.PolicyKit1`, and the reload of HAProxy never completed. `POST /api/v1/apply` got no response until dbus was reloaded or the host rebooted. `install.sh` and the package now reload dbus. A host that is already affected needs `sudo systemctl reload dbus` once, or a reboot.
+
 ## [1.5.1] - 2026-11-01
 
 Fixes found by installing 1.5.0 on a clean Ubuntu 24.04 and upgrading 1.4.2 to
