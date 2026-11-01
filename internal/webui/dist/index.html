@@ -794,6 +794,93 @@
     return h;
   };
 
+  // Resolves to the password, or null when cancelled.
+  function passwordDialog(message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const form = document.createElement('form');
+      form.className = 'modal-box';
+      const p = document.createElement('p');
+      p.className = 'modal-message';
+      p.textContent = message;
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.autocomplete = 'current-password';
+      input.required = true;
+      input.setAttribute('aria-label', 'Password');
+      const actions = document.createElement('div');
+      actions.className = 'modal-actions row';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'secondary';
+      cancel.textContent = 'Cancel';
+      const ok = document.createElement('button');
+      ok.type = 'submit';
+      ok.textContent = 'Confirm';
+      const close = (val) => {
+        overlay.remove();
+        resolve(val);
+      };
+      cancel.onclick = () => close(null);
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        close(input.value);
+      };
+      actions.appendChild(cancel);
+      actions.appendChild(ok);
+      form.appendChild(p);
+      form.appendChild(input);
+      form.appendChild(actions);
+      overlay.appendChild(form);
+      document.body.appendChild(overlay);
+      input.focus();
+    });
+  }
+
+  const nativeFetch = window.fetch.bind(window);
+  let stepUpPrompt = null;
+
+  async function promptStepUp() {
+    let message = 'This is a privileged operation. Enter your password to continue.';
+    for (;;) {
+      const password = await passwordDialog(message);
+      if (password === null) return false;
+      const r = await nativeFetch('/api/v1/auth/confirm', {
+        method: 'POST',
+        headers: hdr(),
+        body: JSON.stringify({ password })
+      });
+      if (r.ok) {
+        const j = await r.json();
+        setTok(j.token);
+        return true;
+      }
+      message = r.status === 429 ? 'Too many attempts. Try again later.' : 'Incorrect password. Try again.';
+    }
+  }
+
+  // Requests made while the dialog is open wait for the same answer.
+  function confirmStepUp() {
+    if (!stepUpPrompt) {
+      stepUpPrompt = promptStepUp().finally(() => { stepUpPrompt = null; });
+    }
+    return stepUpPrompt;
+  }
+
+  const needsStepUp = (url) => typeof url === 'string'
+    && (url.startsWith('/api/v1/host/') || url === '/api/v1/settings/management-tls');
+
+  // Privileged operations answer 403 step_up_required until the password is
+  // confirmed; ask for it once here and repeat the request, so no caller has to know.
+  window.fetch = async (url, init) => {
+    const r = await nativeFetch(url, init);
+    if (r.status !== 403 || !needsStepUp(url)) return r;
+    const j = await r.clone().json().catch(() => null);
+    if (!j || j.error !== 'step_up_required' || !(await confirmStepUp())) return r;
+    return nativeFetch(url, { ...init, headers: { ...(init && init.headers), Authorization: 'Bearer ' + getTok() } });
+  };
+
   const HASH_TO_PANEL = {
     '#dashboard': 'dashboard',
     '#apps': 'apps',
@@ -851,6 +938,7 @@
 
   function humanizeCrowdSecErr(msg) {
     const s = String(msg || '');
+    if (s === 'step_up_required') return 'Cancelled: this operation needs your password.';
     if (/http 403|access forbidden/i.test(s)) {
       return 'CrowdSec LAPI access denied (403). The API key in settings does not match LAPI. Re-run on the host: sudo bash scripts/crowdsec-bootstrap-lapi.sh && sudo systemctl restart easy-waf-api';
     }

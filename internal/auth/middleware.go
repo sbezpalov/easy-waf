@@ -6,6 +6,7 @@ package auth
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -44,8 +45,30 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 			p := &Principal{
 				Username:           u.Username,
 				MustChangePassword: u.MustChangePassword,
+				ExpiresAt:          claims.ExpiresAt.Time,
+				StepUpAt:           claims.stepUpTime(),
 			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
+		})
+	}
+}
+
+// RequireStepUp returns 403 step_up_required unless the session confirmed its
+// password within window. The automation token passes: it is a root-only secret
+// from easy-waf.env, and no person is there to confirm anything.
+func RequireStepUp(window time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p, ok := PrincipalFrom(r.Context())
+			if !ok {
+				jsonErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if !p.IsLegacyToken && time.Since(p.StepUpAt) > window {
+				jsonErr(w, http.StatusForbidden, "step_up_required")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

@@ -81,6 +81,7 @@ func (s *Server) Router() chi.Router {
 			r.Post("/auth/change-password", s.handleChangePassword)
 			r.Group(func(r chi.Router) {
 				r.Use(auth.PasswordChangeGate)
+				r.Post("/auth/confirm", s.handleConfirmPassword)
 				r.Get("/status", s.handleStatus)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
@@ -110,7 +111,9 @@ func (s *Server) Router() chi.Router {
 				r.Get("/settings", s.getSettings)
 				r.Put("/settings", s.putSettings)
 				r.Patch("/settings", s.patchSettings)
-				r.Put("/settings/management-tls", s.putManagementTLS)
+				// Its own step-up: with this certificate, a stolen token could
+				// intercept the password that confirms everything else.
+				r.With(auth.RequireStepUp(stepUpWindow)).Put("/settings/management-tls", s.putManagementTLS)
 
 				r.Get("/ipbl/local", s.listIPBLLocal)
 				r.Post("/ipbl/local", s.upsertIPBLLocal)
