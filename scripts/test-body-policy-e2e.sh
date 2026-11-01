@@ -69,7 +69,10 @@ check 415 "multipart, PUT" $php -X PUT -F a=1 $base/
 check 415 "multipart, HTTP/2" $php --http2-prior-knowledge -F a=1 http://10.78.0.40:81/
 
 check 200 "allowed path" $up -F a=1 $base/upload/x
+check 200 "allowed path, exact" $up -F a=1 $base/upload
 check 415 "not an allowed path" $up -F a=1 $base/x
+check 415 "same prefix, other script" $up -F a=1 $base/upload.php
+check 415 "same prefix, other directory" $up -F a=1 $base/uploads/x.php
 check 415 "allowed path, dots" $up --path-as-is -F a=1 $base/upload/../x.php
 check 415 "allowed path, encoded dots" $up --path-as-is -F a=1 $base/upload/%2e%2e/x.php
 check 415 "allowed path, mixed dots" $up --path-as-is -F a=1 $base/upload/.%2E/x.php

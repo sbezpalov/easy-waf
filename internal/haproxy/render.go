@@ -580,7 +580,8 @@ backend {{backendName $a.Application.PublicHost}}
 	# or comma-joined Content-Type. Status via return: deny_status has no 411 or 415.
 	acl app_{{$a.ACLTag}}_multipart req.hdr(content-type) -m beg -i multipart/
 {{- if $a.Application.Security.MultipartAllowedPaths}}
-	acl app_{{$a.ACLTag}}_mp_allowed path_beg {{join $a.Application.Security.MultipartAllowedPaths " "}}
+	acl app_{{$a.ACLTag}}_mp_allowed path -m str {{exactPaths $a.Application.Security.MultipartAllowedPaths}}
+	acl app_{{$a.ACLTag}}_mp_allowed path_beg {{dirPrefixes $a.Application.Security.MultipartAllowedPaths}}
 	acl app_{{$a.ACLTag}}_mp_dots path -m reg -i (\.|%2e){2}
 	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart !app_{{$a.ACLTag}}_mp_allowed{{$acme}}
 	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart app_{{$a.ACLTag}}_mp_dots{{$acme}}
@@ -608,6 +609,8 @@ backend {{backendName $a.Application.PublicHost}}
 var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.FuncMap{
 	"backendName": sanitizeBackendName,
 	"join":        strings.Join,
+	"exactPaths":  exactPaths,
+	"dirPrefixes": dirPrefixes,
 	"joinCIDRs":   joinCIDRs,
 	"haDur":       formatHAProxyDuration,
 	"methodSlug":  methodSlug,

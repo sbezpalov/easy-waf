@@ -96,6 +96,10 @@ func ApplyMode(sec *config.ApplicationSecurity, mode SecurityMode) {
 // ApplyModePreset applies toggles and updates Application.Profile for built-in presets.
 func ApplyModePreset(a *config.Application, mode SecurityMode) {
 	ApplyMode(&a.Security, mode)
+	// php-app carries the body policy, which no preset's profile has.
+	if a.Profile == string(PHPApp) {
+		return
+	}
 	switch mode {
 	case ModeFull:
 		a.Profile = string(Strict)

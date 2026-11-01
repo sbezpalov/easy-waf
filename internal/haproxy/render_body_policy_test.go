@@ -75,10 +75,18 @@ func TestMultipartBlockWithoutExceptions(t *testing.T) {
 func TestMultipartExceptionDoesNotCoverPathTraversal(t *testing.T) {
 	cfg := renderBodyPolicy(t, "php-app", config.ApplicationSecurity{MultipartAllowedPaths: []string{"/upload", "/files/"}})
 
-	for _, want := range []string{"path_beg /upload /files/", `path -m reg -i (\.|%2e){2}`} {
+	for _, want := range []string{
+		"path -m str /upload /files\n",
+		"path_beg /upload/ /files/\n",
+		`path -m reg -i (\.|%2e){2}`,
+	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	// A bare prefix would also allow /upload.php.
+	if strings.Contains(cfg, "path_beg /upload ") {
+		t.Fatal("prefix without a trailing slash")
 	}
 	if strings.Count(cfg, "return status 415") < 2 {
 		t.Fatal("want one 415 rule for other paths and one for traversal")

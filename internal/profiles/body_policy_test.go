@@ -49,6 +49,33 @@ func TestOnlyPHPAppRestrictsBodiesByDefault(t *testing.T) {
 	}
 }
 
+// The presets set a profile, and only php-app carries the body policy, so
+// switching mode must not silently remove it.
+func TestModePresetKeepsPHPAppProfile(t *testing.T) {
+	for _, mode := range []SecurityMode{ModeFull, ModeBalanced, ModeTrustedLAN} {
+		app := config.Application{Profile: string(PHPApp)}
+
+		ApplyModePreset(&app, mode)
+
+		if app.Profile != string(PHPApp) {
+			t.Errorf("mode %s moved the application to profile %s", mode, app.Profile)
+		}
+		if app.Security.Mode != string(mode) {
+			t.Errorf("mode %s not applied: %s", mode, app.Security.Mode)
+		}
+	}
+}
+
+func TestModePresetStillSetsOtherProfiles(t *testing.T) {
+	app := config.Application{Profile: string(Balanced)}
+
+	ApplyModePreset(&app, ModeFull)
+
+	if app.Profile != string(Strict) {
+		t.Fatalf("profile %s", app.Profile)
+	}
+}
+
 func TestPHPAppIsResolvable(t *testing.T) {
 	p, err := Resolve("php-app")
 

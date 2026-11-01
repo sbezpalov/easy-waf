@@ -21,6 +21,24 @@ func appSec(root RenderInput, a AppRender, hostACL string, skipACME bool) appSec
 	return appSecCtx{Root: root, App: a, HostACL: hostACL, SkipACME: skipACME}
 }
 
+// exactPaths and dirPrefixes together match a configured path and what is below
+// it. A bare prefix would also match its neighbours: /upload would allow /upload.php.
+func exactPaths(paths []string) string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, strings.TrimRight(p, "/"))
+	}
+	return strings.Join(out, " ")
+}
+
+func dirPrefixes(paths []string) string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, strings.TrimRight(p, "/")+"/")
+	}
+	return strings.Join(out, " ")
+}
+
 func acmeSuffix(skip bool) string {
 	if skip {
 		return " !acme"
