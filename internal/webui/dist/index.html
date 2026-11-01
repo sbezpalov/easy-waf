@@ -330,6 +330,7 @@
             <option value="home-assistant">home-assistant</option>
             <option value="balanced">balanced</option>
             <option value="strict">strict</option>
+            <option value="php-app">php-app</option>
           </select>
           <label><input id="ws" type="checkbox" checked /> WebSocket</label>
           <button id="save">Save application</button>
@@ -355,6 +356,23 @@
         <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
         <div id="restricted-rows"></div>
         <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
+        <h4>Request bodies</h4>
+        <p><small>Leave empty to use the profile. A limit also refuses bodies of unknown length (chunked uploads), and blocking multipart breaks file uploads outside the allowed paths. This reduces exposure to request-parsing flaws; it does not replace patching.</small></p>
+        <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>Max body, MiB (0 = no limit)
+            <input id="body-max-mib" type="number" min="0" step="1" placeholder="profile" />
+          </label>
+          <label>Multipart
+            <select id="body-multipart">
+              <option value="">profile</option>
+              <option value="block">block</option>
+              <option value="allow">allow</option>
+            </select>
+          </label>
+          <label>Paths that may receive multipart (one per line)
+            <textarea id="body-mp-paths" rows="2" placeholder="/upload"></textarea>
+          </label>
+        </div>
         </div>
       </div>
 
@@ -1046,6 +1064,31 @@
     title.textContent = name ? ('Edit: ' + name) : 'Add or update application';
   }
 
+  const MIB = 1048576;
+
+  function fillBodyPolicy(sec) {
+    const max = sec.max_body_bytes_override;
+    document.getElementById('body-max-mib').value = max == null ? '' : String(max / MIB);
+    const block = sec.block_multipart_override;
+    document.getElementById('body-multipart').value = block == null ? '' : (block ? 'block' : 'allow');
+    document.getElementById('body-mp-paths').value = (sec.multipart_allowed_paths || []).join('\n');
+  }
+
+  // Returns sec with the form's body settings; empty fields fall back to the profile.
+  function withBodyPolicy(sec) {
+    const out = { ...sec };
+    delete out.max_body_bytes_override;
+    delete out.block_multipart_override;
+    delete out.multipart_allowed_paths;
+    const mib = document.getElementById('body-max-mib').value.trim();
+    if (mib !== '') out.max_body_bytes_override = Math.round(parseFloat(mib) * MIB);
+    const multipart = document.getElementById('body-multipart').value;
+    if (multipart) out.block_multipart_override = multipart === 'block';
+    const paths = document.getElementById('body-mp-paths').value.split('\n').map((p) => p.trim()).filter(Boolean);
+    if (paths.length) out.multipart_allowed_paths = paths;
+    return out;
+  }
+
   function clearAppFormFields() {
     document.getElementById('app-edit-id').value = '';
     document.getElementById('apps-edit-hint').classList.add('hidden');
@@ -1057,6 +1100,7 @@
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
     document.getElementById('app-cert').value = '';
+    fillBodyPolicy({});
     const nlm = document.getElementById('listen-mode');
     if (nlm) nlm.value = 'https_only';
     syncListenModeUI();
@@ -1562,6 +1606,7 @@
     }
     syncListenModeUI();
     document.getElementById('app-cert').value = a.certificate_id || '';
+    fillBodyPolicy(a.security || {});
     clearRestrictedPathRows();
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
     if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
@@ -3149,6 +3194,7 @@
         const prev = appsListCache.find((x) => x.id === editId);
         if (prev && prev.security) body.security = prev.security;
       }
+      body.security = withBodyPolicy(body.security || {});
       const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
       if (r.ok) {
         toast('Application saved. Apply on Config tab to activate.', 'ok');

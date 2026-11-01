@@ -44,6 +44,13 @@ type ApplicationSecurity struct {
 
 	RateLimitRPSOverride   *int `json:"rate_limit_rps_override,omitempty"`
 	RateLimitBurstOverride *int `json:"rate_limit_burst_override,omitempty"`
+
+	// Unset uses the profile's value. 0 means no limit.
+	MaxBodyBytesOverride *int64 `json:"max_body_bytes_override,omitempty"`
+	// Unset uses the profile's value.
+	BlockMultipartOverride *bool `json:"block_multipart_override,omitempty"`
+	// Path prefixes that may still receive multipart requests when they are blocked.
+	MultipartAllowedPaths []string `json:"multipart_allowed_paths,omitempty"`
 }
 
 // DefaultApplicationSecurity is used for new applications and when JSON is missing fields.
@@ -70,7 +77,13 @@ func NormalizeApplicationSecurity(s *ApplicationSecurity) {
 		return
 	}
 	if strings.TrimSpace(s.Mode) == "" {
-		*s = DefaultApplicationSecurity()
+		// The body settings alone must not turn the default protections off,
+		// so they do not count as "this block is set" and are kept here.
+		def := DefaultApplicationSecurity()
+		def.MaxBodyBytesOverride = s.MaxBodyBytesOverride
+		def.BlockMultipartOverride = s.BlockMultipartOverride
+		def.MultipartAllowedPaths = s.MultipartAllowedPaths
+		*s = def
 		return
 	}
 	p := strings.ToLower(strings.TrimSpace(s.GeoIPPolicy))

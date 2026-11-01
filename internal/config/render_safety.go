@@ -210,6 +210,32 @@ func ValidateHAProxyPath(field, path string) error {
 	return nil
 }
 
+const (
+	// MaxBodyBytesLimit caps max_body_bytes_override at 1 TiB.
+	MaxBodyBytesLimit int64 = 1 << 40
+	// MaxMultipartAllowedPaths caps multipart_allowed_paths.
+	MaxMultipartAllowedPaths = 32
+)
+
+func validateBodyPolicy(sec ApplicationSecurity) error {
+	if m := sec.MaxBodyBytesOverride; m != nil && (*m < 0 || *m > MaxBodyBytesLimit) {
+		return fmt.Errorf("max_body_bytes_override must be between 0 and %d", MaxBodyBytesLimit)
+	}
+	if len(sec.MultipartAllowedPaths) > MaxMultipartAllowedPaths {
+		return fmt.Errorf("multipart_allowed_paths allows at most %d entries", MaxMultipartAllowedPaths)
+	}
+	for i, p := range sec.MultipartAllowedPaths {
+		field := fmt.Sprintf("multipart_allowed_paths[%d]", i)
+		if p == "" || p == "/" || strings.Contains(strings.ToLower(p), "..") || strings.Contains(strings.ToLower(p), "%2e") {
+			return fmt.Errorf("%s must be a specific path prefix", field)
+		}
+		if err := ValidateHAProxyPath(field, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ValidateApplicationRenderSafety checks every application field that is
 // interpolated into HAProxy configuration.
 func ValidateApplicationRenderSafety(app *Application) error {
@@ -247,6 +273,9 @@ func ValidateApplicationRenderSafety(app *Application) error {
 		return err
 	}
 	if err := ValidateHAProxyPath("path_prefix", app.PathPrefix); err != nil {
+		return err
+	}
+	if err := validateBodyPolicy(app.Security); err != nil {
 		return err
 	}
 	for i, rp := range app.RestrictedPaths {

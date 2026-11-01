@@ -203,6 +203,8 @@ type profileJSON struct {
 	ExtraBlockedMethods []string `json:"extra_blocked_methods"`
 	GeoDefaultDeny      bool     `json:"geo_default_deny"`
 	Notes               string   `json:"notes,omitempty"`
+	MaxBodyBytes        int64    `json:"max_body_bytes"`
+	BlockMultipart      bool     `json:"block_multipart"`
 }
 
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
@@ -220,6 +222,8 @@ func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 			ExtraBlockedMethods: nonNil(v.ExtraBlockedMethods),
 			GeoDefaultDeny:      v.GeoDefaultDeny,
 			Notes:               v.Notes,
+			MaxBodyBytes:        v.MaxBodyBytes,
+			BlockMultipart:      v.BlockMultipart,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

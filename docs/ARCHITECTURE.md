@@ -94,7 +94,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 - **Source of truth**: PostgreSQL tables (`applications` including JSONB `restricted_paths` for LAN-only URL prefixes, `certificates`, `settings`, `audit_log`, `config_revisions`, `ipwl_local`, `ipbl_local`, `ipbl_external_sources`) + export bundles for backup.
 - **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), `ip_allowlist.map` (from `ipwl_local` when enabled), blocked User-Agent and global/per-app GeoIP maps.
 - **Artifact revisions**: each successful apply stores a checksum-verified manifest and private copies of the complete generated set under `revisions/artifacts-*/`. The legacy `haproxy-<sha12>.cfg` copy remains for UI previews and rollback compatibility with revisions created before artifact manifests.
-- **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
+- **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
 
 ## Directory layout (on appliance)
 

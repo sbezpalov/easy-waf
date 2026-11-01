@@ -6,6 +6,8 @@ package profiles
 import (
 	"fmt"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/config"
 )
 
 // ProfileName is a preset security posture.
@@ -16,6 +18,7 @@ const (
 	Strict        ProfileName = "strict"
 	TrustedLAN    ProfileName = "trusted-lan"
 	PublicApp     ProfileName = "public-app"
+	PHPApp        ProfileName = "php-app"
 	HomeAssistant ProfileName = "home-assistant"
 	None          ProfileName = "none"
 	Custom        ProfileName = "custom"
@@ -34,6 +37,21 @@ type Profile struct {
 	ExtraBlockedMethods []string // e.g. TRACE
 	GeoDefaultDeny      bool
 	Notes               string
+	MaxBodyBytes        int64 // 0 means no limit
+	BlockMultipart      bool
+}
+
+// BodyPolicy returns the body limit and multipart block in force for an
+// application: its own overrides where set, otherwise this profile's values.
+func (p Profile) BodyPolicy(sec config.ApplicationSecurity) (maxBodyBytes int64, blockMultipart bool) {
+	maxBodyBytes, blockMultipart = p.MaxBodyBytes, p.BlockMultipart
+	if sec.MaxBodyBytesOverride != nil {
+		maxBodyBytes = *sec.MaxBodyBytesOverride
+	}
+	if sec.BlockMultipartOverride != nil {
+		blockMultipart = *sec.BlockMultipartOverride
+	}
+	return maxBodyBytes, blockMultipart
 }
 
 // All returns built-in profiles for UI and validation.
@@ -81,6 +99,20 @@ func All() map[ProfileName]Profile {
 			ServerTimeout:       60 * time.Second,
 			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
+		},
+		PHPApp: {
+			Name:                PHPApp,
+			Description:         "PHP behind the edge: no multipart outside allowed paths, 32 MiB body limit",
+			RateLimitRPS:        50,
+			RateLimitBurst:      100,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       50 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          defaultBlockedPaths(),
+			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
+			MaxBodyBytes:        32 << 20,
+			BlockMultipart:      true,
+			Notes:               "Reduces exposure to PHP request-parsing flaws; patching PHP is still the fix",
 		},
 		HomeAssistant: {
 			Name:                HomeAssistant,

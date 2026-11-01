@@ -6,6 +6,7 @@
 | `strict` | 20 / 40 | 30s | extended | Hardened |
 | `trusted-lan` | 200 / 400 | 120s | minimal | High trust / LAN-heavy |
 | `public-app` | 30 / 60 | 60s | default | Internet-exposed generic |
+| `php-app` | 50 / 100 | 50s | default | PHP apps: blocks multipart, 32 MiB body limit |
 | `home-assistant` | 40 / 80 | 3600s | default | Long-lived WS/SSE |
 | `none` | 500 / 1000 | 300s | *(none)* | High limits; combine with per-app toggles |
 | `custom` | 50 / 100 | 50s | default | Alias of balanced numerics; tuning via toggles |
@@ -14,6 +15,15 @@ Implementation: profile metadata lives in `internal/profiles`. The HAProxy templ
 
 - **Enabled frontends (`fe_http` / `fe_https`):** when the app’s `path_acl_enabled` / `method_filter_enabled` toggles are on, `BlockPaths` and `ExtraBlockedMethods` from the profile are enforced for that host; other layers (WAF, bot checks, IPBL, GeoIP, CrowdSec) are also gated by per-app toggles (see [APPLICATION_SECURITY.md](APPLICATION_SECURITY.md)).
 - **Backend:** `ConnectTimeout`, `ServerTimeout`, `HTTPKeepAlive`, optional stick-table rate limit vs **`RateLimitBurst`** (with optional per-app overrides), plus WebSocket/health/`server` lines.
+
+## Request bodies
+
+HAProxy does not inspect request bodies here, so these rules work from headers. Only `php-app` sets them by default; any application can set them with `max_body_bytes_override`, `block_multipart_override` and `multipart_allowed_paths`.
+
+- **Multipart block:** a `multipart/*` request gets **415**, except on `multipart_allowed_paths`. Those paths remain exposed, and a path containing `..` never counts as allowed.
+- **Body limit:** a declared `Content-Length` over the limit gets **413**. HAProxy cannot count a streamed body, so a `POST`, `PUT` or `PATCH` without `Content-Length`, and anything with `Transfer-Encoding`, gets **411**. Check chunked clients (`git`, some WebDAV and backup tools), and an empty `POST` with no `Content-Length: 0`, before turning it on. Other methods without a declared length over HTTP/2 are not limited.
+
+This narrows what reaches a vulnerable parser, such as PHP's. **It is not a fix:** patch the backend.
 
 ## Per-application security layers
 
