@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.1] - 2026-11-01
+
+Fixes found by installing 1.5.0 on a clean Ubuntu 24.04 and upgrading 1.4.2 to
+it. The one that matters: **HAProxy's master process still ran as root** on both
+paths. Upgrade from 1.5.0 if you can.
 
 ### Fixed
 
@@ -15,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-On 1.5.0, rerun `sudo bash scripts/fix-haproxy-easy-waf-dropin.sh` after upgrading to get the unprivileged master; check for the warning in its output.
+`install.sh` and `upgrade.sh` switch HAProxy to the unprivileged master. After a `.deb` upgrade, run `sudo bash scripts/fix-haproxy-easy-waf-dropin.sh` yourself. Either way, check that its output has no `cannot validate` warning, then confirm with `scripts/smoke-appliance.sh`, or that `ps -o user= -C haproxy` shows only `haproxy`.
 
 ## [1.5.0] - 2026-11-01
 
