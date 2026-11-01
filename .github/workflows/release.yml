@@ -104,3 +104,6 @@ jobs:
             SHA256SUMS.sigstore.json
           body_path: release_notes.md
           fail_on_unmatched_files: true
+          # A tag like v1.7.0-rc.1 must not become what people install by default.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
