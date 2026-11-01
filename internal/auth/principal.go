@@ -3,7 +3,10 @@
 
 package auth
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type ctxKey int
 
@@ -14,6 +17,8 @@ type Principal struct {
 	Username           string
 	MustChangePassword bool
 	IsLegacyToken      bool // EASY_WAF_ADMIN_TOKEN — full API access without password gate
+	ExpiresAt          time.Time
+	StepUpAt           time.Time // last password confirmation in this session; zero if none
 }
 
 // WithPrincipal attaches a principal to the request context.

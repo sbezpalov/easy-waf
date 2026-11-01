@@ -86,14 +86,22 @@ password, every authenticated route except `GET /api/v1/auth/me` and
 `POST /api/v1/auth/change-password` returns **403**
 `{"error":"password_change_required","must_change_password":true}`.
 
+**Password confirmation.** `/api/v1/host/*` routes that change the host, and
+`PUT /settings/management-tls`, return **403** `{"error":"step_up_required"}` unless the session confirmed its password
+in the last **5 minutes**: call [`POST /auth/confirm`](#post-apiv1authconfirm) and
+repeat the request with the token it returns. Reads, `POST .../commit` and
+`POST /host/diagnostics/*` do not need it. A commit only keeps a change that was
+already confirmed, and a lapse must not let the auto-rollback undo it. The
+automation token does not need it either.
+
 **Automation token.** If `EASY_WAF_ADMIN_TOKEN` is set (at least 24
 characters), that value is also accepted as a bearer token. It acts as the
 principal `automation`, skips the password-change gate and is not revoked by
 logout — rotate it by changing the environment and restarting the API. Prefer
 a session token for anything interactive.
 
-**Login rate limit.** `POST /auth/login`, `POST /auth/enroll` and
-`POST /auth/change-password` share a per-IP limit: the 10th attempt within
+**Login rate limit.** `POST /auth/login`, `POST /auth/enroll`,
+`POST /auth/change-password` and `POST /auth/confirm` share a per-IP limit: the 10th attempt within
 5 minutes starts a **15-minute** lockout, during which they return **429**
 with `Retry-After: <seconds>`. A successful attempt resets the counter for that
 address.
@@ -205,6 +213,18 @@ Returns the caller's identity. Works while a password change is pending.
 Signs the caller out server-side by incrementing the user's `session_version`. This revokes every JWT issued to that user, on every device, not just the current one. No request body. The request produces two audit rows: the handler's own `logout` row and the generic `"POST /api/v1/auth/logout"` mutation row.
 - **Response:** `200` `{"revoked": true}`
 - **Errors:** `400` (text/plain) when called with the legacy automation token, which has no session to revoke. `404` (text/plain) if the user is not found. `500` (text/plain) on a database error.
+
+### `POST /api/v1/auth/confirm`
+Confirms the caller's password and returns a replacement token that passes the password-confirmation check for 5 minutes. The confirmation belongs to that token, so other sessions of the same user are unaffected, and the session's expiry does not change. Audit rows: `step_up_granted`, `step_up_failed`.
+- **Request body:** `password` (string, required)
+  ```json
+  {"password":"…"}
+  ```
+- **Response:** `200`
+  ```json
+  {"token":"<jwt>","expires_in_seconds":82800,"step_up_expires_in_seconds":300}
+  ```
+- **Errors:** `400` (text/plain) for malformed JSON or when called with the automation token. `401` `{"error":"password incorrect"}`. `403` while a password change is pending. `404` (text/plain) if the user is not found. `429` as described under the login rate limit.
 
 ### `POST /api/v1/auth/change-password`
 Changes the caller's password, clears `must_change_password`, revokes all existing sessions (by incrementing `session_version`), and returns a fresh token. Works while a password change is pending. Subject to the shared per-IP limiter; a successful change clears the counter for the caller's IP. The request produces two audit rows: `password_changed` and the generic `"POST /api/v1/auth/change-password"` mutation row.

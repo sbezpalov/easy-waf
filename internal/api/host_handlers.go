@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/host/apt"
 	"github.com/easy-waf/easy-waf/internal/host/diag"
 	"github.com/easy-waf/easy-waf/internal/host/disk"
@@ -31,43 +32,50 @@ import (
 func (s *Server) mountHostRoutes(r chi.Router) {
 	r.Route("/host", func(r chi.Router) {
 		r.Get("/network", s.hostGetNetwork)
-		r.Put("/network/netplan", s.hostPutNetplan)
-		r.Post("/network/netplan/apply", s.hostNetplanApply)
-		r.Post("/network/netplan/commit", s.hostNetplanCommit)
-
 		r.Get("/firewall", s.hostGetFirewall)
-		r.Put("/firewall/ruleset", s.hostPutFirewall)
-		r.Post("/firewall/apply", s.hostApplyFirewall)
-		r.Post("/firewall/apply-rollback", s.hostFirewallApplyRB)
-		r.Post("/firewall/commit", s.hostFirewallCommit)
-
 		r.Get("/services", s.hostListServices)
-		r.Post("/services/{unit}/{action}", s.hostServiceAction)
-
 		r.Get("/journal", s.hostGetJournal)
-
 		r.Get("/updates", s.hostGetUpdates)
-		r.Post("/updates/update", s.hostAptUpdate)
-		r.Post("/updates/upgrade", s.hostAptUpgrade)
-		r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
 		r.Get("/updates/upgrade/log", s.hostAptUpgradeLog)
 		r.Get("/updates/upgrade/status", s.hostAptUpgradeStatus)
 		r.Get("/updates/autoremove/preview", s.hostAutoremovePreview)
-		r.Post("/updates/autoremove/stream", s.hostAutoremoveStream)
-		r.Post("/updates/clean", s.hostAptClean)
-
 		r.Get("/disk", s.hostDisk)
-
-		r.Post("/power/reboot", s.hostReboot)
-		r.Post("/power/shutdown", s.hostPoweroff)
-
 		r.Get("/users", s.hostListUsers)
-		r.Post("/users", s.hostCreateUser)
-		r.Delete("/users/{name}", s.hostDeleteUser)
-		r.Put("/users/{name}/ssh-keys", s.hostPutSSHKeys)
+
+		// Outside the step-up group on purpose: a commit only keeps a change
+		// that was confirmed, and a lapsed confirmation must not let the
+		// auto-rollback undo it.
+		r.Post("/network/netplan/commit", s.hostNetplanCommit)
+		r.Post("/firewall/commit", s.hostFirewallCommit)
 
 		r.Post("/diagnostics/ping", s.hostPing)
 		r.Post("/diagnostics/trace", s.hostTrace)
+
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireStepUp(stepUpWindow))
+
+			r.Put("/network/netplan", s.hostPutNetplan)
+			r.Post("/network/netplan/apply", s.hostNetplanApply)
+
+			r.Put("/firewall/ruleset", s.hostPutFirewall)
+			r.Post("/firewall/apply", s.hostApplyFirewall)
+			r.Post("/firewall/apply-rollback", s.hostFirewallApplyRB)
+
+			r.Post("/services/{unit}/{action}", s.hostServiceAction)
+
+			r.Post("/updates/update", s.hostAptUpdate)
+			r.Post("/updates/upgrade", s.hostAptUpgrade)
+			r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
+			r.Post("/updates/autoremove/stream", s.hostAutoremoveStream)
+			r.Post("/updates/clean", s.hostAptClean)
+
+			r.Post("/power/reboot", s.hostReboot)
+			r.Post("/power/shutdown", s.hostPoweroff)
+
+			r.Post("/users", s.hostCreateUser)
+			r.Delete("/users/{name}", s.hostDeleteUser)
+			r.Put("/users/{name}/ssh-keys", s.hostPutSSHKeys)
+		})
 	})
 }
 

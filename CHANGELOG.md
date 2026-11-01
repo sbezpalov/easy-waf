@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Operations that run as root on the host need the password again.** A session could change the network, firewall, services, packages, power state, host users and the management certificate with nothing but its token. These `/api/v1/host/*` routes and `PUT /settings/management-tls` now return `403 step_up_required` until the session confirms its password through `POST /api/v1/auth/confirm`, which holds for 5 minutes. The UI asks for the password and repeats the request. Reads, commits of a pending network or firewall change and host diagnostics are unaffected, and so is `EASY_WAF_ADMIN_TOKEN`.
+
+### Upgrade notes
+
+Scripts that use a session token on these routes must confirm first; see [API.md](docs/API.md).
+
 ## [1.5.2] - 2026-11-01
 
 ### Fixed

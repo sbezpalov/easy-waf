@@ -13,7 +13,17 @@ import (
 // SessionClaims is the management-session JWT. SessionVersion must match users.session_version.
 type SessionClaims struct {
 	SessionVersion int `json:"sv"`
+	// StepUpAt is when the operator last confirmed their password in this
+	// session, in Unix seconds. Absent until they do.
+	StepUpAt int64 `json:"sua,omitempty"`
 	jwt.RegisteredClaims
+}
+
+func (c *SessionClaims) stepUpTime() time.Time {
+	if c.StepUpAt == 0 {
+		return time.Time{}
+	}
+	return time.Unix(c.StepUpAt, 0)
 }
 
 // minSigningKeyLen bounds both signing and verification. Verifying with a key
@@ -23,19 +33,29 @@ const minSigningKeyLen = 16
 
 // SignJWT issues an HS256 JWT for the given subject and session epoch.
 func SignJWT(secret []byte, username string, sessionVersion int, ttl time.Duration) (string, error) {
+	return signSession(secret, username, sessionVersion, time.Now().Add(ttl), 0)
+}
+
+// SignStepUpJWT reissues a session token with a password confirmation recorded.
+// It keeps expiresAt, so confirming never extends the session.
+func SignStepUpJWT(secret []byte, username string, sessionVersion int, expiresAt, stepUpAt time.Time) (string, error) {
+	return signSession(secret, username, sessionVersion, expiresAt, stepUpAt.Unix())
+}
+
+func signSession(secret []byte, username string, sessionVersion int, expiresAt time.Time, stepUpAt int64) (string, error) {
 	if len(secret) < minSigningKeyLen {
 		return "", fmt.Errorf("jwt secret too short")
 	}
 	if sessionVersion < 1 {
 		return "", fmt.Errorf("invalid session version")
 	}
-	now := time.Now()
 	claims := SessionClaims{
 		SessionVersion: sessionVersion,
+		StepUpAt:       stepUpAt,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
