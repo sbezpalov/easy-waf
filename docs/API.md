@@ -350,6 +350,9 @@ Deletes an application and applies the result to HAProxy (audit label `api-appli
 - `geoip_policy`: `allow` or `deny`. Any value other than `deny` is stored as `allow`.
 - `geoip_country_list`: an array of ISO 3166-1 alpha-2 codes.
 - `rate_limit_rps_override` and `rate_limit_burst_override`: optional integers.
+- `max_body_bytes_override`: optional integer from `0` to 1 TiB, in bytes; `0` means no limit. Unset uses the profile's `max_body_bytes`.
+- `block_multipart_override`: optional boolean. Unset uses the profile's `block_multipart`.
+- `multipart_allowed_paths`: optional array of at most 32 path prefixes that may still receive multipart requests. `/` and paths containing `..` are rejected.
 
 On PUT and PATCH, the server recomputes `mode` from the nine toggles. It becomes the name of the preset whose toggles match exactly, or `custom` if none does. All three write endpoints return the saved `ApplicationSecurity` and apply it to HAProxy, with the undo and `422`/`503` behaviour described under [Applications](#applications). For all four endpoints, an unknown application is `404` (text/plain, `not found`) and a database error while loading it is `500`.
 

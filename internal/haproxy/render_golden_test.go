@@ -41,6 +41,7 @@ var goldenScenarioNames = []string{
 	"backend-tls-verify-required",
 	"backend-tls-custom-ca",
 	"backend-tls-verify-none",
+	"app-body-policy",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -436,6 +437,30 @@ func goldenFixture(name string) RenderInput {
 				"c2": {ID: "c2", BundlePath: certB},
 			},
 			CRTListPath: "testdata/golden/mixed-apps.crt-list.txt",
+		}
+	case "app-body-policy":
+		smallBody := int64(1000)
+		noUploads := config.ApplicationSecurity{Mode: "reverse-proxy-only"}
+		capped := config.ApplicationSecurity{Mode: "reverse-proxy-only", MaxBodyBytesOverride: &smallBody, MultipartAllowedPaths: []string{"/upload"}}
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID: "bp1", Name: "PHP", PublicHost: "php.example.local", BackendHost: "192.168.1.60", BackendPort: 80,
+					Profile: "php-app", ListenMode: "http_only", Enabled: true, Security: noUploads,
+				},
+				{
+					ID: "bp2", Name: "Uploads", PublicHost: "up.example.local", BackendHost: "192.168.1.60", BackendPort: 80,
+					Profile: "php-app", ListenMode: "http_only", Enabled: true, Security: capped,
+				},
+				{
+					ID: "bp3", Name: "Open", PublicHost: "open.example.local", BackendHost: "192.168.1.60", BackendPort: 80,
+					Profile: "balanced", ListenMode: "http_only", Enabled: true, Security: noUploads,
+				},
+			},
+			Certificates: map[string]config.Certificate{},
+			CRTListPath:  "testdata/golden/app-body-policy.crt-list.txt",
 		}
 	case "http-only-app":
 		return RenderInput{

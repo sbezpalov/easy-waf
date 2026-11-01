@@ -1,4 +1,4 @@
-.PHONY: build deb test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-backup-restore-e2e vuln ci install-help clean clean-artifacts golden-update
+.PHONY: build deb test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
@@ -87,6 +87,9 @@ test:
 # Regenerate internal/haproxy/testdata/golden/*.cfg and companion .crt-list.txt from Render().
 golden-update:
 	UPDATE_GOLDEN=1 go test ./internal/haproxy/... -run Golden -count=1
+
+test-body-policy-e2e:
+	bash scripts/test-body-policy-e2e.sh
 
 vuln:
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VER) ./...

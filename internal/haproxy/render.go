@@ -27,6 +27,8 @@ type AppRender struct {
 	UsePerAppGeo      bool
 	RateLimitBurst    int
 	BackendUsesDNS    bool // backend_host is FQDN — use resolvers easy_waf_dns
+	MaxBodyBytes      int64
+	BlockMultipart    bool
 }
 
 // RenderInput is passed to the HAProxy template.
@@ -140,6 +142,7 @@ func Render(in RenderInput) (Rendered, error) {
 			burst = 1
 		}
 		usesDNS := !backendHostIsLiteralIP(app.BackendHost)
+		maxBody, blockMultipart := p.BodyPolicy(app.Security)
 		apps = append(apps, AppRender{
 			Application:       app,
 			Profile:           p,
@@ -148,6 +151,8 @@ func Render(in RenderInput) (Rendered, error) {
 			UsePerAppGeo:      useAppGeo,
 			RateLimitBurst:    burst,
 			BackendUsesDNS:    usesDNS,
+			MaxBodyBytes:      maxBody,
+			BlockMultipart:    blockMultipart,
 		})
 	}
 	in.NeedsDNSResolver = false
@@ -569,6 +574,26 @@ backend {{backendName $a.Application.PublicHost}}
 	acl app_{{$a.ACLTag}}_rp_{{$ri}}_net src {{$rpCidr}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_rp_{{$ri}}_path !app_{{$a.ACLTag}}_rp_{{$ri}}_net{{$acme}}
 {{- end}}
+{{- end}}
+{{- if $a.BlockMultipart}}
+	# Headers only: bodies are not inspected. req.hdr sees every value of a repeated
+	# or comma-joined Content-Type. Status via return: deny_status has no 411 or 415.
+	acl app_{{$a.ACLTag}}_multipart req.hdr(content-type) -m beg -i multipart/
+{{- if $a.Application.Security.MultipartAllowedPaths}}
+	acl app_{{$a.ACLTag}}_mp_allowed path_beg {{join $a.Application.Security.MultipartAllowedPaths " "}}
+	acl app_{{$a.ACLTag}}_mp_dots path -m reg -i (\.|%2e){2}
+	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart !app_{{$a.ACLTag}}_mp_allowed{{$acme}}
+	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart app_{{$a.ACLTag}}_mp_dots{{$acme}}
+{{- else}}
+	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart{{$acme}}
+{{- end}}
+{{- end}}
+{{- if $a.MaxBodyBytes}}
+	# HAProxy cannot count a streamed body, so one of undeclared length is refused.
+	acl app_{{$a.ACLTag}}_body_method method POST PUT PATCH
+	http-request return status 413 content-type text/plain string "request body too large" if {{$host}} { req.hdr_val(content-length) gt {{$a.MaxBodyBytes}} }{{$acme}}
+	http-request return status 411 content-type text/plain string "Content-Length required" if {{$host}} { req.fhdr(transfer-encoding) -m found }{{$acme}}
+	http-request return status 411 content-type text/plain string "Content-Length required" if {{$host}} app_{{$a.ACLTag}}_body_method !{ req.hdr(content-length) -m found }{{$acme}}
 {{- end}}
 {{- if and $root.UseCrowdSecFilter $a.Application.Security.CrowdSecEnabled}}
 	# No body group: nothing here inspects bodies, so no request is buffered for it.
