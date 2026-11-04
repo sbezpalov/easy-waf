@@ -116,7 +116,7 @@ Live upgrades use **`POST /api/v1/host/updates/upgrade/stream`** (NDJSON) via **
 1. **Broker running:** `systemctl status easy-waf-hostd` — socket `/run/easy-waf/hostd.sock`.
 2. **API rebuilt/restarted** after code changes: `systemctl restart easy-waf-api` (UI is embedded in the binary).
 3. **dpkg lock:** `sudo fuser -v /var/lib/dpkg/lock-frontend` — should be empty before a manual upgrade. If `apt-daily` / `unattended-upgrades` holds the lock, wait or stop them; the stream shows a line about waiting up to 120s (`DPkg::Lock::Timeout=120`).
-4. **Stale “in progress”** (rare): if the UI says upgrade is running but apt is gone, check `GET /api/v1/host/updates/upgrade/status` and `sudo tail -f /var/lib/easy-waf/apt-upgrade.log`, then restart **`easy-waf-hostd`** only if no apt/dpkg process is active.
+4. **Stale “in progress”** (rare): if the UI says upgrade is running but apt is gone, check `GET /api/v1/host/updates/upgrade/status` and `sudo tail -f /var/lib/easy-waf/apt-action.log`, then restart **`easy-waf-hostd`** only if no apt/dpkg process is active.
 5. **Hard refresh** the browser (Ctrl+Shift+R) after deploying new `easy-waf-api`.
 
 See [HOST-API.md](HOST-API.md) (upgrade stream section).
@@ -142,6 +142,7 @@ This script:
 2. Writes **`/etc/systemd/system/haproxy.service.d/easy-waf.conf`** so HAProxy loads only the generated **`haproxy.cfg`**  
 3. Ensures **`/run/haproxy/`** exists (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** for reboots)  
 4. Runs **`systemctl daemon-reload`**
+5. Regenerates **`haproxy.cfg`** from PostgreSQL with **`easy-waf-admin apply-edge`** (reload skipped), which writes as the owner of the state directory
 
 The script runs `haproxy -c` and restarts `haproxy` itself, failing loudly if either step fails — no manual restart is needed. The one exception is when the generated config is still missing or empty at that point: the script says so and tells you to Apply from the UI first, then restart HAProxy yourself.
 
@@ -218,6 +219,16 @@ until the whole render succeeds, so the running edge is unaffected meanwhile.
 1. `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`
 2. Compare with last good revision under `/var/lib/easy-waf/revisions/`.
 3. Use UI **Rollback** or `restore.sh`.
+
+## Apply hangs or times out right after install
+
+The UI or `POST /api/v1/apply` gets no answer, and `journalctl -u polkit` shows `Lost the name org.freedesktop.PolicyKit1`. polkit was installed while dbus was running and dbus has not read its policy, so `easy-waf` cannot reload HAProxy. 1.5.2 and later reload dbus on install; on an older host, or if it happens anyway:
+
+```bash
+sudo systemctl reload dbus
+```
+
+A reboot does the same.
 
 ## Certificate issuance fails
 

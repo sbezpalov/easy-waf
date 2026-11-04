@@ -26,7 +26,7 @@
 - **Метрики:** Prometheus (`prometheus/client_golang`), дашборд Grafana в `configs/grafana`.
 - **Edge/инфра:** HAProxy 2.8 LTS (пакет Ubuntu 24.04), CrowdSec + SPOA, Fail2Ban, nftables, systemd, netplan.
 - **Платформа:** **Ubuntu 24.04 LTS** (appliance OS). Разработка часто на Windows 11 / WSL.
-- **Сборка/CI:** Makefile (`make ci` = lint + test + verify), GitHub Actions (`ci.yml`, `release.yml`), golangci-lint, Docker Compose (только dev-PostgreSQL).
+- **Сборка/CI:** Makefile (`make ci` = lint + test + verify), GitHub Actions (`ci.yml`, `e2e.yml` — ночной контейнерный прогон, `release.yml`), golangci-lint, Docker Compose (только dev-PostgreSQL).
 
 ## 3. Структура
 | Каталог | Назначение |
@@ -41,7 +41,7 @@
 | `internal/webui/dist/` | Встроенная статика UI |
 | `configs/` | Дефолты и примеры (haproxy, dns-*.env, grafana) |
 | `scripts/` | install, install-interactive, upgrade, backup/restore, check-linux-artifacts |
-| `packaging/` | systemd-юниты для api + acmed |
+| `packaging/` | `.deb` (nfpm) и maintainer-скрипты, systemd-юниты (api, acmed, hostd), правило polkit, OVF |
 | `docs/` | Архитектура, security, ACME/DNS, CrowdSec, Fail2Ban, IPBL, GeoIP и др. |
 | `examples/` | Примеры определений приложений (Home Assistant, Wirenboard) |
 | `docker-compose.yml` | Только dev-PostgreSQL |

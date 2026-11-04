@@ -63,7 +63,7 @@ All names use the `easy_waf_` prefix.
 | `easy_waf_crowdsec_decisions_total` | Gauge | — | Length of the last LAPI decisions sample (capped at 100); not total decisions in CrowdSec. |
 | `easy_waf_ipbl_entries_total` | Gauge | `type=local\|external` | **local**: enabled local CIDR rows in DB. **external**: count of **enabled external feed URLs** configured (not merged line count from downloads). |
 | `easy_waf_applications_total` | Gauge | `mode` | Applications grouped by `security.mode`. |
-| `easy_waf_apply_total` | Counter | — | Successful `POST /api/v1/apply` completions. |
-| `easy_waf_apply_errors_total` | Counter | — | Failed apply attempts (same route, error response). |
+| `easy_waf_apply_total` | Counter | — | Successful applies started by the API: `POST /api/v1/apply` and the apply after each change. Applies by `easy-waf-acmed` are not counted. |
+| `easy_waf_apply_errors_total` | Counter | — | Failed applies, counted the same way. |
 
 Internal refresh cadence for HAProxy stats, certificates, apps, CrowdSec sample, and IPBL counts: **15 seconds** (independent of scrape interval).

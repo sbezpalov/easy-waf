@@ -27,7 +27,7 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 | **Host diag injection** | **Done** | `internal/host/diag` — host validation on Ping/Trace; `ping`/`traceroute`/`tracepath` use `--` before target; tests reject `-T`, `--port=22`, `; rm` |
 | **IPBL SSRF guard** | **Done** | `internal/ipbl/ssrfguard.go` — hard floor (loopback/metadata/link-local/CGNAT always blocked) + granular `ipbl_fetch_allowed_cidrs` for RFC1918 feeds; dial-time anti–DNS rebinding; `POST /ipbl/sources` validates URL |
 | **Split-DNS resilience** | **Done** | IPBL trusted CIDRs UI + `ipbl_fetch_allowed_cidrs`; HAProxy `resolvers easy_waf_dns` + `init-addr` for FQDN backends (`internal/haproxy/render.go`); `acme_dns_resolvers` for Lego DNS-01 propagation; [DNS.md](DNS.md) |
-| **Host systemd whitelist** | **Done** | `AllowedUnit` / `AllowedAction` in `internal/host/systemd/allow.go` (parity with `privileged.sh`); `host_handlers` 400 before privileged call |
+| **Host systemd whitelist** | **Done** | `AllowedUnit` / `AllowedAction` in `internal/host/systemd/allow.go`, with the allowlist the broker also enforces (`internal/host/systemdallow`); `host_handlers` 400 before privileged call |
 | **SSH authorized_keys** | **Done** | `internal/host/users/sshkeys.go` — OpenSSH line regex; reject embedded newlines; no file write on invalid key |
 | **Journal allowlist** | **Done** | `internal/host/journal` — only `-n`, `-u`, `--since`, `--until`, `-p`, `--no-pager`; unit on systemd whitelist |
 | **Host management in GUI** | **Done** | **System** tab: services (allowlisted systemd), apt check/upgrade (**live NDJSON stream** via `POST /host/updates/upgrade/stream`), reboot/shutdown. **Network** tab: read-only overview; netplan + nftables **Advanced** apply with 90s safety window + **Keep changes** (commit); auto-revert via `systemd-run` → `easy-waf-hostd revert`. **Users** tab: list/create/delete local accounts, SSH keys editor. Form-based netplan/nft editors — next iteration. |
@@ -61,7 +61,7 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 | Requirement | Status | Where |
 |-------------|--------|-------|
-| Web UI (LAN): 11 tabs — dashboard, apps, certs, config, network, security, crowdsec, logs, system, users, settings | **Done** | see **7.7**; `internal/webui/dist/index.html` |
+| Web UI (LAN): 12 tabs — dashboard, apps, certs, config, network, security, crowdsec, fail2ban, logs, system, users, settings | **Done** | see **7.7**; `internal/webui/dist/index.html` |
 | Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health` (liveness), `/health/ready` (503 without PostgreSQL), `/status` |
 | Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
@@ -89,7 +89,7 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 ### 7.3 HAProxy engine — **Done** (template, checksum, validate, revisions/rollback, golden)
 
-### 7.4 Security profiles — **Done** (profile names: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
+### 7.4 Security profiles — **Done** (profile names: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none`, `custom`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
 
 ### 7.5 CrowdSec — **Done** (ping LAPI, decisions in UI, **Unban** / **Ban IP** / **Allow IP (whitelist)** via LAPI; `cscli` ops outside UI — per docs)
 
@@ -113,7 +113,7 @@ Verified against code and scripts (iterations A–D).
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success `eng.Apply(ctx,"acme")`; needs `ACME_EMAIL`, DNS/HTTP-01, worker running (`docs/ACME.md`) |
 | **AC-04** | External access to published application | **Partial** | Render `fe_http`/`fe_https`, SNI, Host backends — **Done** in code; WAN/NAT/port-forward routing — outside the repo |
-| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Partial** | Template `filter spoe engine …` + ACL with `deny_status 403` (WAF, IPBL, GeoIP, UA); SPOA decision reaction — bouncer package config + `docs/CROWDSEC.md` |
+| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; not yet on a real host |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
 | **AC-08** | Survives reboot | **Done** | `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
@@ -124,14 +124,14 @@ Verified against code and scripts (iterations A–D).
 
 ## Roadmap (post-MVP)
 
-1. **Release pipeline (basics done):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push tag `v*`, `make build`, tarball + `SHA256SUMS`, GitHub Release notes from `CHANGELOG.md`. Next: artifact signing, pre-release/nightly.
+1. **Release pipeline (basics done):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push tag `v*`, `make build`, tarball + `SHA256SUMS`, GitHub Release notes from `CHANGELOG.md`. Done since: `SHA256SUMS` signed with cosign, `-` tags published as pre-releases, nightly end-to-end runs in [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml).
 2. **MaxMind MMDB (done):** see **`docs/GEOIP.md`**, **`scripts/update-geoip-db.sh`**. Next: MMDB signing, file size/epoch metrics.
 3. ~~**CrowdSec in UI**~~ — done (ban/unban/whitelist).
 4. ~~**Prometheus `/metrics`**~~ — done (`docs/MONITORING.md`).
 5. ~~**Diagnostics bundle**~~ — done (`scripts/diagnostics.sh`, API bundle, `docs/DIAGNOSTICS.md`).
 6. **OVA/OVF appliance template** for fast VM deployment.
-7. **Smoke test checklist** (manual / semi-automated post-install run).
-8. **Tests:** broader e2e / `tests/` tree against compose PostgreSQL.
+7. **Smoke test checklist** — partly done: `scripts/smoke-appliance.sh` runs after installs and upgrades.
+8. **Tests:** broader e2e — partly done: container runs for CrowdSec and the body policy in `.github/workflows/e2e.yml`; install, upgrade and ACME are still checked by hand.
 9. **UI:** optional separate frontend framework instead of a single `index.html`.
 
 Update this file when closing MVP items and when `VERSION` changes.
@@ -145,3 +145,4 @@ Update this file when closing MVP items and when `VERSION` changes.
 | Requirement | Status | Where |
 |-------------|--------|-------|
 | `go vet`, golangci-lint, `go test -run Golden` (HAProxy golden), `go test -race` (with `-skip TestGoldenRender` to avoid duplicating golden), Linux artifact / LF checks for `scripts/**/*.sh`, `haproxy -c` on generated config + golden (`-tags=integration`), store/engine/auth integration tests against a PostgreSQL 16 service container | **Done** | `.github/workflows/ci.yml`, `internal/haproxy/render_golden_test.go`, `internal/haproxy/haproxy_validate_test.go` |
+| Container end-to-end: the body policy and CrowdSec decisions against HAProxy 2.8 with a real LAPI and bouncer | **Done** | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml), nightly and on demand; `scripts/test-body-policy-e2e.sh`, `scripts/test-crowdsec-e2e.sh` |

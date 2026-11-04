@@ -34,9 +34,10 @@ Worth opening an issue **before** writing code:
 ## Documentation and translations
 
 `docs/` is written in **English**, and English is canonical: when a translation
-and the English text disagree, the English one is right. Three documents also
-exist in Russian — `QUICKSTART.ru.md`, `SECURITY.ru.md`, `TROUBLESHOOTING.ru.md`
-— because they are the ones an operator reads while something is broken.
+and the English text disagree, the English one is right. Four documents also
+exist in Russian — `QUICKSTART.ru.md`, `SECURITY.ru.md`, `TROUBLESHOOTING.ru.md`,
+`API.ru.md` — the ones an operator reads while something is broken, and the API
+reference.
 
 If you change one of those three, either update the Russian file in the same pull
 request or say in the PR that it now lags. A translation that quietly drifts is
@@ -65,7 +66,7 @@ make build
 Print the one-time enrollment secret to log in — there is no default password:
 
 ```bash
-./dist/easy-waf-admin print-enrollment
+./dist/easy-waf-admin print-enrollment -state-dir ./data
 ```
 
 **Linux only.** Development on Windows works through WSL or Git Bash, but shell
@@ -79,6 +80,7 @@ Run what CI runs:
 
 ```bash
 make ci     # go vet + golangci-lint + go test ./... + make verify
+make vuln   # govulncheck: CI fails on a reachable vulnerability
 ```
 
 CI additionally runs, and you should too if you touch the relevant area:
@@ -88,6 +90,10 @@ go test -race ./...                                    # concurrency
 go test ./internal/haproxy/... -tags=integration \
   -run TestGoldenConfigsPassHaproxyCheck               # needs haproxy in PATH
 ```
+
+If you change generated HAProxy rules, CrowdSec or the body policy, also run
+`make test-body-policy-e2e` and `bash scripts/test-crowdsec-e2e.sh` (Docker). They
+run nightly in [`e2e.yml`](.github/workflows/e2e.yml), not on every push.
 
 `golangci-lint` is pinned (see `GOLANGCI_LINT_VER` in the [Makefile](Makefile));
 please use that version, since newer ones surface different findings and turn the
@@ -157,9 +163,8 @@ There is **no Dependabot** on this repository, deliberately: a single maintainer
 reviewing a stream of bot branches is worse than a periodic pass, and every
 dependency bump here lands as an ordinary reviewed commit with the rest of the
 change history. Go modules and GitHub Actions are updated by hand — actions are
-pinned to a major version (`actions/checkout@v7`) in both workflows, so a bump is
-a find-and-replace across `.github/workflows/` — `ci.yml` pins each action three
-times, once per job.
+pinned to commit SHAs, with the major version in a comment (`actions/checkout@<sha> # v7`),
+in all three workflows, so a bump is a find-and-replace across `.github/workflows/`.
 
 If you send a dependency update, say in the PR **why** — a fix you need, a
 security advisory, or a scheduled refresh — and keep it separate from behaviour
@@ -170,7 +175,8 @@ changes.
 Maintainers only: bump [`VERSION`](VERSION), close the `[Unreleased]` section as
 `## [X.Y.Z] - YYYY-MM-DD`, align the version markers in `docs/`, tag `vX.Y.Z`.
 Pushing the tag triggers [`release.yml`](.github/workflows/release.yml), which
-builds the tarball, publishes `SHA256SUMS`, and takes the release notes from the
+builds the `.deb` and the tarball, publishes `SHA256SUMS` with its cosign signature, marks a
+`-rc` tag as a pre-release, and takes the release notes from the
 matching CHANGELOG section — a missing section fails the build on purpose.
 
 ## License

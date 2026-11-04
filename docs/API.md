@@ -82,8 +82,8 @@ not need it. See [SECURITY.md](SECURITY.md#csrf-protection).
 A missing, invalid, expired or revoked token gets **401** `{"error":"unauthorized"}`.
 
 **Password-change gate.** While an account still has to change its initial
-password, every authenticated route except `GET /api/v1/auth/me` and
-`POST /api/v1/auth/change-password` returns **403**
+password, every authenticated route except `GET /api/v1/auth/me`,
+`POST /api/v1/auth/logout` and `POST /api/v1/auth/change-password` returns **403**
 `{"error":"password_change_required","must_change_password":true}`.
 
 **Password confirmation.** `/api/v1/host/*` routes that change the host, and
@@ -117,7 +117,7 @@ Rely on the status code and treat the body as a human-readable message. The
 endpoint sections say which form a handler uses where it matters.
 
 Common statuses: **400** malformed JSON or failed validation, **401** no valid
-session, **403** ACL / `X-Requested-With` / password-change gate, **404**
+session, **403** ACL / `X-Requested-With` / password-change gate / missing password confirmation, **404**
 unknown id, **413** body over 4 MiB, **422** HAProxy rejected a change (it has
 been undone), **429** login lockout, **500** database or internal error,
 **502/503** an upstream (CrowdSec LAPI, the host broker, PostgreSQL) is
@@ -157,7 +157,7 @@ switch to `--cacert` once you install your own (`PUT /api/v1/settings/management
 
 ## Authentication
 
-`status`, `login` and `enroll` need no session. `login`, `enroll` and `change-password` share one per-IP limiter (`LoginRateLimiter`, configured in `internal/bootstrap/run.go` as 10 attempts per 5-minute sliding window, then a 15-minute lockout). Every request that gets past the limiter counts as an attempt, whether it succeeds or not. The 10th attempt in the window is still processed, but it starts the lockout. While the lockout runs, requests are refused without being counted. A successful login, enrollment or password change clears the counter for that IP. When the client IP cannot be determined, no limit is applied. These three handlers cap their own request body at 16 KiB (`maxLoginRequestBodyBytes`).
+`status`, `login` and `enroll` need no session. `login`, `enroll`, `change-password` and `confirm` share one per-IP limiter (`LoginRateLimiter`, configured in `internal/bootstrap/run.go` as 10 attempts per 5-minute sliding window, then a 15-minute lockout). Every request that gets past the limiter counts as an attempt, whether it succeeds or not. The 10th attempt in the window is still processed, but it starts the lockout. While the lockout runs, requests are refused without being counted. A successful login, enrollment or password change clears the counter for that IP. When the client IP cannot be determined, no limit is applied. These four handlers cap their own request body at 16 KiB (`maxLoginRequestBodyBytes`).
 
 ### `GET /api/v1/auth/status`
 Reports whether the appliance is still waiting for first-operator enrollment. Unauthenticated, read-only.
@@ -260,8 +260,8 @@ Reports the systemd `ActiveState` of the appliance's core units. Each unit is qu
 - **Errors:** none. Failures show up as `unknown`.
 
 ### `GET /api/v1/profiles`
-Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`, `none` and `custom`.
-- **Response:** `200`. Each value has the fields `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (integers, milliseconds), `http_keep_alive`, `block_paths` and `extra_blocked_methods` (arrays, `[]` when empty), `geo_default_deny`, and `notes` (omitted when empty).
+Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none` and `custom`.
+- **Response:** `200`. Each value has the fields `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (integers, milliseconds), `http_keep_alive`, `block_paths` and `extra_blocked_methods` (arrays, `[]` when empty), `geo_default_deny`, `max_body_bytes` (integer, bytes; `0` means no limit), `block_multipart`, and `notes` (omitted when empty).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
     "rate_limit_rps": 50, "rate_limit_burst": 100, "connect_timeout_ms": 5000, "server_timeout_ms": 50000,
@@ -352,7 +352,7 @@ Deletes an application and applies the result to HAProxy (audit label `api-appli
 - `rate_limit_rps_override` and `rate_limit_burst_override`: optional integers.
 - `max_body_bytes_override`: optional integer from `0` to 1 TiB, in bytes; `0` means no limit. Unset uses the profile's `max_body_bytes`.
 - `block_multipart_override`: optional boolean. Unset uses the profile's `block_multipart`.
-- `multipart_allowed_paths`: optional array of at most 32 path prefixes that may still receive multipart requests. `/` and paths containing `..` are rejected.
+- `multipart_allowed_paths`: optional array of at most 32 path prefixes that may still receive multipart requests. Each must be a specific path prefix that HAProxy can take as is: `/` and paths containing `..`, `%2e`, `$` or `'` are rejected. `POST /applications` returns `400` for an invalid value; `PUT` and `PATCH .../security` catch it when applying and return `422`.
 
 On PUT and PATCH, the server recomputes `mode` from the nine toggles. It becomes the name of the preset whose toggles match exactly, or `custom` if none does. All three write endpoints return the saved `ApplicationSecurity` and apply it to HAProxy, with the undo and `422`/`503` behaviour described under [Applications](#applications). For all four endpoints, an unknown application is `404` (text/plain, `not found`) and a database error while loading it is `500`.
 
@@ -455,7 +455,7 @@ Dashboard view: status counters plus one compact row per certificate. The status
   {"total":2,"valid":1,"expiring_soon":0,"expired":0,"failed":1,
    "certificates":[
     {"id":"c1","primary_domain":"app.example.com","not_after":"2027-01-10T08:00:00Z","days_remaining":82,"status":"valid","mode":"http-01"},
-    {"id":"c2","primary_domain":"nas.example.com","status":"failed","mode":"dns-01","last_error":"dns: timeout","next_attempt_at":"2026-10-19T14:00:00Z"}]}
+    {"id":"c2","primary_domain":"nas.example.com","status":"failed","mode":"dns-01","last_error":"dns: timeout","next_attempt_at":"2026-10-19T14:00:00Z","attention":"issuance or renewal failed"}]}
   ```
 - **Errors:** `500` (text/plain) on a database error.
 
@@ -579,6 +579,7 @@ Replaces the TLS certificate of the HTTPS management listener. The handler valid
   - `400` (JSON) with `{"error":"certificate_pem and private_key_pem required"}`.
   - `400` (JSON) with `{"error":"invalid pem pair: ..."}` for a bad or mismatched pair.
   - `400` (text/plain) for malformed JSON.
+  - `403` (JSON) with `{"error":"step_up_required"}` without a password confirmation in the last 5 minutes.
   - `500` (JSON) when the certificate or key file cannot be written.
 
 ## Statistics
@@ -1090,6 +1091,8 @@ Unlike `/health`, this route **is** subject to the management ACL. It does not a
 ## Host management
 
 The `/api/v1/host/*` routes manage the appliance host itself (network, firewall, services, packages, power, local users, network diagnostics). They do not run commands directly: each call goes through the privileged host broker (`easy-waf-hostd`). Network and firewall changes have a rollback flow: an `apply` returns a `token` and `expires_at`, and the change is reverted automatically unless it is confirmed with `commit` before it expires. See [HOST-API.md](HOST-API.md) for request and response details.
+
+Routes that change the host need a password confirmation from the last 5 minutes, except the network and firewall commits and the diagnostics; see **Password confirmation** above.
 
 | Method and path | Purpose |
 |---|---|

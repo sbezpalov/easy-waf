@@ -50,6 +50,8 @@ This narrows what reaches a vulnerable parser, such as PHP's. **It is not a fix:
 | **Balanced** | Default: all on except GeoIP; profile **balanced** |
 | **Trusted LAN** | Path ACL + basic WAF + bot off; profile **trusted-lan** |
 | **Reverse proxy only** | All protection toggles off — **routing + TLS only** for that app |
+
+An application on `php-app` keeps that profile when a preset is applied: the body policy comes from it.
 | **Custom** | Manual toggles |
 
 > **Warning — `reverse-proxy-only`:** This mode is for **debugging only**. It disables **all** WAF-style protections for the selected application (no rate limit, no CrowdSec hook, no IPBL/WAF/bot/geo for that host). Do **not** use it for production-facing hostnames.

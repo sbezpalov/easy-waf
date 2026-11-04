@@ -61,7 +61,7 @@ mapping to your **user** settings (not the repository's — the alias is yours):
 ## 3. Running the checks there
 
 The reference environment is Ubuntu 24.04, which is also what CI uses
-(`ubuntu:24.04` container in every job). On the dev host:
+(`ubuntu:24.04` container in every `ci.yml` job). On the dev host:
 
 ```bash
 ssh waf-dev 'cd ~/easy-waf && git pull && make ci'

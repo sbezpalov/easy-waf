@@ -32,7 +32,9 @@ The sequence below is shared by `fe_http` and `fe_https`. On port 80, HAProxy ha
 7. **Method filter** — `ExtraBlockedMethods` from the selected **profile**
 8. **Path ACL** — `BlockPaths` from the profile (`path_beg` denies)
 9. **Restricted paths** — per-path CIDR allowlists (always evaluated when configured)
-10. **CrowdSec** — `http-request send-spoe-group`, then a 403 for any remediation other than `allow`, when the SPOE filter is loaded and the app has `crowdsec_enabled`
+10. **Multipart block** — `415` for `multipart/*` outside `multipart_allowed_paths`, when the profile or the app turns it on ([SECURITY_PROFILES.md](SECURITY_PROFILES.md#request-bodies))
+11. **Body limit** — `413` over the limit, `411` for a body of undeclared length; headers only, bodies are not inspected
+12. **CrowdSec** — `http-request send-spoe-group`, then a 403 for any remediation other than `allow`, when the SPOE filter is loaded and the app has `crowdsec_enabled`
 
 `use_backend` lines follow after all applications.
 
@@ -51,7 +53,7 @@ Presets are applied with `POST /api/v1/applications/{id}/security/mode` (see `in
 
 - **Home Assistant on a public IP** — `balanced` (default) + **Restricted paths** on `/api` to LAN CIDRs; optionally enable **GeoIP** with an allow-list of home countries (`custom` + toggles).
 - **Debugging a new upstream** — `reverse-proxy-only`: TLS + Host routing only; **no** WAF, CrowdSec, IPBL, or rate limit for that hostname. Intended for short-lived troubleshooting, not production.
-- **Internal Zabbix** — `trusted-lan` preset: fewer path probes and no basic WAF/bot heuristics while keeping rate limits and CrowdSec.
+- **Internal Zabbix** — `trusted-lan` preset: no profile path blocks, basic WAF or bot heuristics while keeping rate limits and CrowdSec.
 - **Nextcloud with GeoIP deny list** — `custom`, enable **GeoIP**, policy `deny`, country list of regions to block; keep other layers as needed.
 
 ## API

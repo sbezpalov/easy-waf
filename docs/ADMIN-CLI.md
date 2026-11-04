@@ -2,7 +2,7 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`doctor`**, **`print-enrollment`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported.
+Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`doctor`**, **`apply-edge`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported. `reset-control-panel-access` has no `-database-url`, only `-env-file` and `-state-dir`. **`print-enrollment`** does not use the database at all.
 
 ## `print-enrollment`
 

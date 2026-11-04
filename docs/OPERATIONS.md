@@ -148,8 +148,7 @@ dirty and the next `apt install` silently reverts your build:
 sudo apt install ./easy-waf_X.Y.Z_amd64.deb   # or: sudo bash scripts/install.sh
 ```
 
-Hand-installing is for a source checkout that was never packaged (as root, or with
-rights to `make install`):
+Hand-installing is for a source checkout that was never packaged (as root):
 
 ```bash
 cd /path/to/easy-waf

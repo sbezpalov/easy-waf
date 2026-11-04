@@ -85,7 +85,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 
 1. HAProxy terminates TLS for HTTPS applications; SNI / Host routes HTTP or HTTPS to the backend.
 2. Rules below run in order. SPOE asks the CrowdSec bouncer (`backend crowdsec-spoa`, loopback) for a decision after the application's other checks; anything but `allow` gets a 403. If the bouncer is unavailable the request continues (fail open): see [CROWDSEC.md](CROWDSEC.md#how-a-decision-blocks-a-request).
-3. A reusable per-application block enforces IP lists, GeoIP, bot/User-Agent checks, optional **basic WAF** regex ACLs, methods, paths, restricted paths, and CrowdSec on every enabled HTTP/HTTPS frontend. Backend rate limiting runs once per request.
+3. A reusable per-application block enforces IP lists, GeoIP, bot/User-Agent checks, optional **basic WAF** regex ACLs, methods, paths, restricted paths, the multipart block and body limit, and CrowdSec on every enabled HTTP/HTTPS frontend. Backend rate limiting runs once per request.
 4. HAProxy logs to files/socket; CrowdSec parses; decisions feed bouncer.
 5. `easy-waf-api` exposes stats/API; state lives in **PostgreSQL**; **IPBL** map file is regenerated from DB + optional external lists, and **IPWL** allowlist map from `ipwl_local`, before each HAProxy render.
 
@@ -94,7 +94,7 @@ The WAF remains responsible for **per-hostname routing**, **ACME**, **CrowdSec S
 - **Source of truth**: PostgreSQL tables (`applications` including JSONB `restricted_paths` for LAN-only URL prefixes, `certificates`, `settings`, `audit_log`, `config_revisions`, `ipwl_local`, `ipbl_local`, `ipbl_external_sources`) + export bundles for backup.
 - **Generated artifacts**: `haproxy.cfg`, `crt-list.txt`, `ip_blacklist.map` (from local + synced external IPBL), `ip_allowlist.map` (from `ipwl_local` when enabled), blocked User-Agent and global/per-app GeoIP maps.
 - **Artifact revisions**: each successful apply stores a checksum-verified manifest and private copies of the complete generated set under `revisions/artifacts-*/`. The legacy `haproxy-<sha12>.cfg` copy remains for UI previews and rollback compatibility with revisions created before artifact manifests.
-- **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
+- **Profiles** (`balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none`, `custom`): declarative structs in Go → template variables (rate limits, paths, timeouts, WebSocket flags).
 
 ## Directory layout (on appliance)
 
@@ -113,7 +113,7 @@ everything goes to the journal — `journalctl -u easy-waf-api` and friends.
 | `easy-waf-hostd.service` | Root privilege broker — unix socket `/run/easy-waf/hostd.sock` (`root:easy-waf` **0660**); host/netplan/nft/systemd/apt/users/journal/power |
 | `easy-waf-api.service` | API, UI, config apply (unprivileged; talks to hostd) |
 | `easy-waf-acmed.service` | ACME issuance/renewal (Lego HTTP-01 and DNS-01), then an apply to load the certificate |
-| `haproxy.service` | Stock; reload triggered after successful apply |
+| `haproxy.service` | Stock unit with the easy-waf drop-in: runs as `haproxy` with only `CAP_NET_BIND_SERVICE`; reloaded after a successful apply |
 | `crowdsec.service` | Stock |
 | `fail2ban.service` | Stock |
 

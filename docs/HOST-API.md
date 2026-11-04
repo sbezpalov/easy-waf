@@ -1,6 +1,6 @@
 # Host management API (Ubuntu)
 
-Authenticated routes under **`/api/v1/host/*`** (JWT; `X-Requested-With` is required on `POST` / `PUT` / `PATCH` / `DELETE`, not on `GET`). Privileged work is delegated to **`easy-waf-hostd`** (root broker on **`/run/easy-waf/hostd.sock`**, `root:easy-waf` **0660**). **`easy-waf-api`** stays unprivileged (`NoNewPrivileges=true`, `ProtectSystem=strict`) and sends typed JSON requests over the socket; the broker re-validates every operation (same allowlists as the API) and runs **`exec.Command`** without a shell.
+Authenticated routes under **`/api/v1/host/*`** (JWT; `X-Requested-With` is required on `POST` / `PUT` / `PATCH` / `DELETE`, not on `GET`). Routes that change the host return **403** `{"error":"step_up_required"}` until the session confirms its password with `POST /api/v1/auth/confirm`, which holds for 5 minutes; reads, the netplan and firewall commits and the diagnostics do not need it ([API.md](API.md)). Privileged work is delegated to **`easy-waf-hostd`** (root broker on **`/run/easy-waf/hostd.sock`**, `root:easy-waf` **0660**). **`easy-waf-api`** stays unprivileged (`NoNewPrivileges=true`, `ProtectSystem=strict`) and sends typed JSON requests over the socket; the broker re-validates every operation (same allowlists as the API) and runs **`exec.Command`** without a shell.
 
 | Area | Methods | Notes |
 |------|---------|--------|

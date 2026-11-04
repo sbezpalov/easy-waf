@@ -83,8 +83,8 @@ HAProxy:
 Отсутствующий, недействительный, просроченный или отозванный токен получает **401** `{"error":"unauthorized"}`.
 
 **Барьер смены пароля.** Пока учётная запись ещё обязана сменить начальный
-пароль, все аутентифицированные маршруты, кроме `GET /api/v1/auth/me` и
-`POST /api/v1/auth/change-password`, возвращают **403**
+пароль, все аутентифицированные маршруты, кроме `GET /api/v1/auth/me`,
+`POST /api/v1/auth/logout` и `POST /api/v1/auth/change-password`, возвращают **403**
 `{"error":"password_change_required","must_change_password":true}`.
 
 **Подтверждение пароля.** Маршруты `/api/v1/host/*`, изменяющие хост, и
@@ -118,7 +118,7 @@ HAProxy:
 эндпоинтов указано, какую форму использует обработчик, там, где это важно.
 
 Типичные статусы: **400** — некорректный JSON или непройденная валидация, **401** — нет действительной
-сессии, **403** — ACL / `X-Requested-With` / барьер смены пароля, **404** —
+сессии, **403** — ACL / `X-Requested-With` / барьер смены пароля / нет подтверждения пароля, **404** —
 неизвестный id, **413** — тело больше 4 MiB, **422** — HAProxy отверг изменение (оно
 отменено), **429** — блокировка входа, **500** — ошибка базы данных или внутренняя ошибка,
 **502/503** — недоступен вышестоящий компонент (CrowdSec LAPI, брокер хоста, PostgreSQL).
@@ -157,7 +157,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 
 ## Аутентификация
 
-`status`, `login` и `enroll` не требуют сессии. `login`, `enroll` и `change-password` делят один лимитер на IP (`LoginRateLimiter`, настроен в `internal/bootstrap/run.go`: 10 попыток в скользящем окне 5 минут, затем блокировка на 15 минут). Каждый запрос, прошедший лимитер, считается попыткой — успешен он или нет. 10-я попытка в окне ещё обрабатывается, но запускает блокировку. Пока действует блокировка, запросы отклоняются и не засчитываются. Успешный вход, регистрация или смена пароля обнуляет счётчик для этого IP. Если IP клиента определить нельзя, лимит не применяется. Эти три обработчика сами ограничивают тело запроса 16 KiB (`maxLoginRequestBodyBytes`).
+`status`, `login` и `enroll` не требуют сессии. `login`, `enroll`, `change-password` и `confirm` делят один лимитер на IP (`LoginRateLimiter`, настроен в `internal/bootstrap/run.go`: 10 попыток в скользящем окне 5 минут, затем блокировка на 15 минут). Каждый запрос, прошедший лимитер, считается попыткой — успешен он или нет. 10-я попытка в окне ещё обрабатывается, но запускает блокировку. Пока действует блокировка, запросы отклоняются и не засчитываются. Успешный вход, регистрация или смена пароля обнуляет счётчик для этого IP. Если IP клиента определить нельзя, лимит не применяется. Эти четыре обработчика сами ограничивают тело запроса 16 KiB (`maxLoginRequestBodyBytes`).
 
 ### `GET /api/v1/auth/status`
 Сообщает, ждёт ли appliance ещё регистрации первого оператора. Без аутентификации, только чтение.
@@ -260,8 +260,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Ошибки:** нет. Сбои отображаются как `unknown`.
 
 ### `GET /api/v1/profiles`
-Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `home-assistant`, `none` и `custom`.
-- **Ответ:** `200`. У каждого значения есть поля `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (целые числа, миллисекунды), `http_keep_alive`, `block_paths` и `extra_blocked_methods` (массивы, `[]`, если пусто), `geo_default_deny` и `notes` (опускается, если пусто).
+Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none` и `custom`.
+- **Ответ:** `200`. У каждого значения есть поля `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (целые числа, миллисекунды), `http_keep_alive`, `block_paths` и `extra_blocked_methods` (массивы, `[]`, если пусто), `geo_default_deny`, `max_body_bytes` (целое, байты; `0` означает отсутствие лимита), `block_multipart` и `notes` (опускается, если пусто).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
     "rate_limit_rps": 50, "rate_limit_burst": 100, "connect_timeout_ms": 5000, "server_timeout_ms": 50000,
@@ -352,7 +352,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - `rate_limit_rps_override` и `rate_limit_burst_override`: необязательные целые числа.
 - `max_body_bytes_override`: необязательное целое от `0` до 1 ТиБ, в байтах; `0` означает отсутствие лимита. Если не задано, берётся `max_body_bytes` профиля.
 - `block_multipart_override`: необязательный булев флаг. Если не задан, берётся `block_multipart` профиля.
-- `multipart_allowed_paths`: необязательный массив не более чем из 32 префиксов путей, которые могут получать multipart-запросы. `/` и пути с `..` отклоняются.
+- `multipart_allowed_paths`: необязательный массив не более чем из 32 префиксов путей, которые могут получать multipart-запросы. Каждый должен быть конкретным префиксом, который HAProxy примет как есть: `/` и пути с `..`, `%2e`, `$` или `'` отклоняются. `POST /applications` возвращает `400` для недопустимого значения; `PUT` и `PATCH .../security` обнаруживают его при применении и возвращают `422`.
 
 При PUT и PATCH сервер заново вычисляет `mode` по девяти переключателям. Он становится именем пресета, переключатели которого совпадают в точности, или `custom`, если такого нет. Все три эндпоинта записи возвращают сохранённый `ApplicationSecurity` и применяют его к HAProxy — с отменой и поведением `422`/`503`, описанными в разделе [Приложения](#приложения). Для всех четырёх эндпоинтов неизвестное приложение — это `404` (text/plain, `not found`), а ошибка базы данных при его загрузке — `500`.
 
@@ -442,6 +442,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
     - `status`: `valid`, `expiring`, `expired`, `pending` или `failed`
     - `mode`: `http-01`, `dns-01` или `manual`. Любой сохранённый режим, кроме ACME, включая `self-signed`, отображается как `manual`.
     - `last_error`, `next_attempt_at`: только когда `status` равен `failed`.
+    - `attention`: почему оператору стоит посмотреть на сертификат; опускается, если всё в порядке: `expired`, `issuance or renewal failed` или `expires in N days`, если осталось меньше 21 дня.
 - **Правила статуса, по порядку:**
   1. `not_after` в прошлом → `expired`.
   2. `acme_status` равен `pending` или `issuing` → `pending`.
@@ -454,7 +455,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   {"total":2,"valid":1,"expiring_soon":0,"expired":0,"failed":1,
    "certificates":[
     {"id":"c1","primary_domain":"app.example.com","not_after":"2027-01-10T08:00:00Z","days_remaining":82,"status":"valid","mode":"http-01"},
-    {"id":"c2","primary_domain":"nas.example.com","status":"failed","mode":"dns-01","last_error":"dns: timeout","next_attempt_at":"2026-10-19T14:00:00Z"}]}
+    {"id":"c2","primary_domain":"nas.example.com","status":"failed","mode":"dns-01","last_error":"dns: timeout","next_attempt_at":"2026-10-19T14:00:00Z","attention":"issuance or renewal failed"}]}
   ```
 - **Ошибки:** `500` (text/plain) при ошибке базы данных.
 
@@ -578,6 +579,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `400` (JSON) с `{"error":"certificate_pem and private_key_pem required"}`.
   - `400` (JSON) с `{"error":"invalid pem pair: ..."}` для некорректной или несовпадающей пары.
   - `400` (text/plain) при некорректном JSON.
+  - `403` (JSON) с `{"error":"step_up_required"}` без подтверждения пароля за последние 5 минут.
   - `500` (JSON), когда не удаётся записать файл сертификата или ключа.
 
 ## Статистика
@@ -1089,6 +1091,8 @@ Readiness-проба. Пингует PostgreSQL с таймаутом 2 секу
 ## Управление хостом
 
 Маршруты `/api/v1/host/*` управляют самим хостом appliance (сеть, файрвол, службы, пакеты, питание, локальные пользователи, сетевая диагностика). Сами они команд не выполняют: каждый вызов проходит через привилегированный брокер хоста (`easy-waf-hostd`). Для изменений сети и файрвола есть процедура отката: `apply` возвращает `token` и `expires_at`, и изменение автоматически откатывается, если до истечения срока его не подтвердили через `commit`. Подробности запросов и ответов — в [HOST-API.md](HOST-API.md).
+
+Маршрутам, изменяющим хост, нужно подтверждение пароля не старше 5 минут, кроме commit сети и файрвола и диагностики; см. **Подтверждение пароля** выше.
 
 | Метод и путь | Назначение |
 |---|---|

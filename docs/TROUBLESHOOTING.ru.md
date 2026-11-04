@@ -115,7 +115,7 @@ sudo systemctl restart easy-waf-hostd easy-waf-api
 1. **Брокер запущен:** `systemctl status easy-waf-hostd` — сокет `/run/easy-waf/hostd.sock`.
 2. **API пересобран и перезапущен** после изменений кода: `systemctl restart easy-waf-api` (UI встроен в бинарник).
 3. **Блокировка dpkg:** `sudo fuser -v /var/lib/dpkg/lock-frontend` — перед ручным обновлением вывод должен быть пустым. Если блокировку держит `apt-daily` / `unattended-upgrades`, подождите или остановите их; в потоке появится строка об ожидании до 120 с (`DPkg::Lock::Timeout=120`).
-4. **Зависшее «in progress»** (редко): если UI показывает выполняющееся обновление, а процесса apt уже нет, проверьте `GET /api/v1/host/updates/upgrade/status` и `sudo tail -f /var/lib/easy-waf/apt-upgrade.log`, и только если ни один процесс apt/dpkg не активен — перезапустите **`easy-waf-hostd`**.
+4. **Зависшее «in progress»** (редко): если UI показывает выполняющееся обновление, а процесса apt уже нет, проверьте `GET /api/v1/host/updates/upgrade/status` и `sudo tail -f /var/lib/easy-waf/apt-action.log`, и только если ни один процесс apt/dpkg не активен — перезапустите **`easy-waf-hostd`**.
 5. **Жёстко обновите** страницу в браузере (Ctrl+Shift+R) после развёртывания нового `easy-waf-api`.
 
 См. [HOST-API.md](HOST-API.md) (раздел про поток обновления).
@@ -141,6 +141,7 @@ sudo bash scripts/fix-haproxy-easy-waf-dropin.sh
 2. Пишет **`/etc/systemd/system/haproxy.service.d/easy-waf.conf`**, чтобы HAProxy загружал только сгенерированный **`haproxy.cfg`**  
 3. Гарантирует наличие **`/run/haproxy/`** (stats socket; **`/etc/tmpfiles.d/easy-waf-haproxy.conf`** для перезагрузок)  
 4. Выполняет **`systemctl daemon-reload`**
+5. Пересобирает **`haproxy.cfg`** из PostgreSQL командой **`easy-waf-admin apply-edge`** (без reload), которая пишет файлы от имени владельца state-каталога
 
 Скрипт сам выполняет `haproxy -c` и перезапускает `haproxy`, явно завершаясь с ошибкой, если какой-то из шагов не прошёл, — вручную перезапускать не нужно. Исключение одно: если к этому моменту сгенерированный конфиг всё ещё отсутствует или пуст, скрипт сообщает об этом и просит сначала выполнить Apply в UI, а затем перезапустить HAProxy самостоятельно.
 
@@ -220,6 +221,16 @@ HAProxy слушает **`*:80`** и **`*:443`**; если **`ss -tlnp`** пок
 1. `sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg`
 2. Сравните с последней рабочей ревизией в `/var/lib/easy-waf/revisions/`.
 3. Используйте **Rollback** в UI или `restore.sh`.
+
+## Apply зависает или не отвечает сразу после установки
+
+UI или `POST /api/v1/apply` не получают ответа, а `journalctl -u polkit` показывает `Lost the name org.freedesktop.PolicyKit1`. polkit установился при работающем dbus, и dbus не перечитал его политику, поэтому `easy-waf` не может перезагрузить HAProxy. Начиная с 1.5.2 установка перечитывает dbus сама; на более старом хосте или если это всё же случилось:
+
+```bash
+sudo systemctl reload dbus
+```
+
+Перезагрузка хоста даёт тот же эффект.
 
 ## Не удаётся выпустить сертификат
 
