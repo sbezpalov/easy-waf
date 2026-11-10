@@ -16,7 +16,7 @@ sudo bash scripts/install-interactive.sh
 
 ### Non-interactive install (`install.sh`)
 
-Easy WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default. The Debian **`crowdsec`** postinst starts **`crowdsec.service`** once; on a fresh VM the local API can briefly return errors while SQLite and hub data settle. The installer **waits for LAPI** (any HTTP response on `127.0.0.1:8080`, not only `curl -f` success) and, on **first** agent install only, runs **`apt-get -f install` / `dpkg --configure` once** plus controlled restarts. **Re-runs** when `crowdsec` is already installed use **systemd-only** recovery (no repeated `apt-get` spam).
+Easy Home WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scripts/install.sh`** installs **`crowdsec`** and **`crowdsec-haproxy-spoa-bouncer`** by default. The Debian **`crowdsec`** postinst starts **`crowdsec.service`** once; on a fresh VM the local API can briefly return errors while SQLite and hub data settle. The installer **waits for LAPI** (any HTTP response on `127.0.0.1:8080`, not only `curl -f` success) and, on **first** agent install only, runs **`apt-get -f install` / `dpkg --configure` once** plus controlled restarts. **Re-runs** when `crowdsec` is already installed use **systemd-only** recovery (no repeated `apt-get` spam).
 
 | Variable | Default | Meaning |
 |----------|---------|--------|
@@ -118,7 +118,7 @@ The generic HTTP audit middleware also records mutating calls under category **c
 
 ## HAProxy logs and acquisition (align with easy-waf)
 
-Easy WAF generates **`log stdout format raw local0`** in the global section. Under **systemd**, these lines usually show up in the journal (e.g. `journalctl -u haproxy -f`), not in `/var/log/haproxy.log`.
+Easy Home WAF generates **`log stdout format raw local0`** in the global section. Under **systemd**, these lines usually show up in the journal (e.g. `journalctl -u haproxy -f`), not in `/var/log/haproxy.log`.
 
 CrowdSec’s stock **file** acquisition examples often assume a path such as `/var/log/haproxy.log`. To use hub parsers (e.g. `crowdsecurity/haproxy`) with a **file** source, pick one approach:
 

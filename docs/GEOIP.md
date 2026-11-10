@@ -1,6 +1,6 @@
 # GeoIP: ipinfo vs MaxMind (MMDB)
 
-Easy WAF resolves IP addresses to **ISO 3166-1 alpha-2** country codes for:
+Easy Home WAF resolves IP addresses to **ISO 3166-1 alpha-2** country codes for:
 
 - **Batch enforcement** — HAProxy map generation on Apply / IPBL sync (when GeoIP is enabled).
 - **Per-application GeoIP** — optional per-app policy and country lists.

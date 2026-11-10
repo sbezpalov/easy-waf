@@ -76,13 +76,11 @@ Automated GitHub Release build and publish: workflow **[`.github/workflows/relea
 
 **Which repository artifacts come from:** `install.sh` and `download-release.sh` derive `owner/name` from the **origin remote of the checkout they run from**, falling back to `easy-waf/easy-waf`. Override with **`EASY_WAF_GITHUB_REPO`** (installer) or **`GITHUB_REPOSITORY`** (download script). This matters on a fork or after a rename: with a wrong repository every download 404s. Before 1.3.0 the installer then quietly built from source, which also meant the `SHA256SUMS` verification never ran; since 1.4.0 it stops and says so instead.
 
-A release publishes **four** assets: `easy-waf_<version>_amd64.deb` (the primary
-install and upgrade path), `easy-waf_<version>_linux_amd64.tar.gz` (binaries for
-developers and manual placement), `SHA256SUMS` covering both, and its cosign
-signature `SHA256SUMS.sigstore.json`. A tag with `-` (`v1.7.0-rc.1`) is published as
-a pre-release, not the latest release.
+From the next tag, a release publishes **six** assets: `easy-waf_<version>_amd64.deb` and `easy-waf_<version>_arm64.deb` (the install and upgrade path; `install.sh` picks the machine's architecture), `easy-waf_<version>_linux_amd64.tar.gz` and `easy-waf_<version>_linux_arm64.tar.gz` (binaries for developers and manual placement), `SHA256SUMS` covering all four, and its cosign signature `SHA256SUMS.sigstore.json`. A tag with `-` (`v1.7.0-rc.1`) is published as a pre-release, not the latest release.
 
-Archive `easy-waf_<version>_linux_amd64.tar.gz` contains:
+The release already published as **1.6.0** has only the amd64 `.deb` and the amd64 tarball. arm64 files appear with the next tag, not by rewriting 1.6.0.
+
+Both tarballs contain the same layout:
 
 ```
 dist/easy-waf-api

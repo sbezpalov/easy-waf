@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs match the tree.** Release notes list amd64 and arm64 (the published 1.6.0 release stays amd64-only). Acceptance counts match the AC table. The product name in the CrowdSec, Fail2Ban, GeoIP and monitoring pages is Easy Home WAF. English remains the canonical documentation language.
 - **Test certificates are generated, not stored.** `go test ./internal/haproxy` writes throwaway bundles for the golden configs. The private keys are gitignored.
 - **README** says what Easy Home WAF is not, how the module path relates to the current git remote, and compares capabilities without performance numbers. Panel screenshots are left for a running appliance.
 

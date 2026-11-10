@@ -31,7 +31,7 @@ scrape_configs:
       insecure_skip_verify: true # bootstrap self-signed cert only
 ```
 
-Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after installing a management certificate that covers the scrape hostname. When Prometheus runs on the appliance, `127.0.0.1:8443` is also available in both installer defaults; copy the required CA/certificate to a Prometheus-readable path instead of granting access to the Easy WAF secrets directory.
+Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after installing a management certificate that covers the scrape hostname. When Prometheus runs on the appliance, `127.0.0.1:8443` is also available in both installer defaults; copy the required CA/certificate to a Prometheus-readable path instead of granting access to the Easy Home WAF secrets directory.
 
 ## Grafana
 
