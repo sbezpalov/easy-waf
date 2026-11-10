@@ -46,6 +46,12 @@ artifacts you already have (`sudo EASY_WAF_DIST_DIR=/path/to/dist bash
 scripts/install.sh`) or opt in explicitly with
 `sudo EASY_WAF_BUILD_FROM_SOURCE=1 bash scripts/install.sh`.
 
+For a fully disconnected production install, use the signed per-architecture
+offline ISO. It includes the Ubuntu and CrowdSec package dependency closure and
+temporarily restricts APT to the verified local repository. See
+[`OFFLINE_BUNDLE.md`](OFFLINE_BUNDLE.md); a standalone Easy WAF `.deb` is not a
+complete air-gap installation artifact.
+
 **External PostgreSQL only** (no local `postgresql` package):
 
 ```bash

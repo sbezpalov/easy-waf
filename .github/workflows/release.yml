@@ -112,3 +112,68 @@ jobs:
           # A tag like v1.7.0-rc.1 must not become what people install by default.
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
+
+  offline-bundle:
+    needs: build-and-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install offline bundle tools and configure CrowdSec repository
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends apt-rdepends apt-utils dpkg-dev xorriso gnupg ca-certificates curl
+          sudo bash -c 'source scripts/lib/crowdsec-install.sh; crowdsec_add_apt_repo'
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      - name: Download and verify the matching Easy WAF package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          DEB="easy-waf_${VERSION}_${{ matrix.arch }}.deb"
+          gh release download "${GITHUB_REF_NAME}" --dir dist \
+            --pattern "$DEB" --pattern SHA256SUMS --pattern SHA256SUMS.sigstore.json
+          cd dist
+          cosign verify-blob \
+            --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            SHA256SUMS
+          grep -F "  $DEB" SHA256SUMS >DEB_SHA256SUM
+          [[ "$(wc -l <DEB_SHA256SUM)" -eq 1 ]]
+          sha256sum -c DEB_SHA256SUM
+
+      - name: Build offline ISO
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          EASY_WAF_DEB="dist/easy-waf_${VERSION}_${{ matrix.arch }}.deb" bash scripts/build-offline-bundle.sh
+
+      - name: Sign and upload offline ISO
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="easy-waf_${VERSION}_offline_ubuntu24.04_${{ matrix.arch }}.iso"
+          cd dist
+          sha256sum "$NAME" >"${NAME}.sha256"
+          cosign sign-blob --yes --bundle "${NAME}.sigstore.json" "$NAME"
+          gh release upload "${GITHUB_REF_NAME}" "$NAME" "${NAME}.sha256" "${NAME}.sigstore.json" --clobber

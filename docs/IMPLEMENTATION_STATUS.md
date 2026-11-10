@@ -126,7 +126,7 @@ Verified against code and scripts (iterations A–D).
 
 ## Roadmap (post-MVP)
 
-1. **Release pipeline (basics done):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push tag `v*`, `make build` for **amd64 and arm64**, tarball + `.deb` for each, `SHA256SUMS`, GitHub Release notes from `CHANGELOG.md`. Done since: `SHA256SUMS` signed with cosign, `-` tags published as pre-releases, nightly end-to-end runs in [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml). The published 1.6.0 release is still amd64 only; arm64 assets appear on the next tag.
+1. **Release pipeline (basics done):** [`.github/workflows/release.yml`](../.github/workflows/release.yml) — push tag `v*`, `make build` for **amd64 and arm64**, tarball + `.deb` for each, `SHA256SUMS`, GitHub Release notes from `CHANGELOG.md`. Done since: `SHA256SUMS` signed with cosign, `-` tags published as pre-releases, nightly end-to-end runs in [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml), and signed per-architecture Ubuntu 24.04 offline repository ISOs ([OFFLINE_BUNDLE.md](OFFLINE_BUNDLE.md)). The published 1.6.0 release is still amd64 only; arm64 and offline assets appear on the next tag.
 2. **MaxMind MMDB (done):** see **`docs/GEOIP.md`**, **`scripts/update-geoip-db.sh`**. Next: MMDB signing, file size/epoch metrics.
 3. ~~**CrowdSec in UI**~~ — done (ban/unban/whitelist).
 4. ~~**Prometheus `/metrics`**~~ — done (`docs/MONITORING.md`).

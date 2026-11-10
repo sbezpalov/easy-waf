@@ -20,6 +20,7 @@
 #   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — install a release artifact whose SHA256SUMS entry is missing or mismatched (discouraged; default: refuse)
 #   EASY_WAF_GITHUB_REPO=owner/name  — where release artifacts come from (default: the origin remote of this checkout, else easy-waf/easy-waf)
 #   EASY_WAF_INSTALL_BUILD_DEPS=0    — do not install golang/make/git via apt before source build
+#   EASY_WAF_OFFLINE=1               — use only preconfigured local APT sources; never add Packagecloud
 #
 # How binaries are obtained, in order (docs/adr/0001-packaging-and-installer.md):
 #   1. EASY_WAF_DIST_DIR, if it already holds binaries;
@@ -252,10 +253,14 @@ easy_waf_install_crowdsec_packages() {
   # shellcheck source=lib/crowdsec-install.sh
   source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
 
-  if ! crowdsec_add_packagecloud_repo; then
-    log "ERROR: CrowdSec packagecloud repo setup failed — appliance stack incomplete (need outbound HTTPS; see docs/CROWDSEC.md)"
-    log "ERROR: re-run: sudo bash scripts/install.sh  OR  sudo bash scripts/crowdsec-bootstrap-lapi.sh after fixing network"
-    return 1
+  if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+    log "Offline mode: installing CrowdSec from the configured local APT repository"
+  else
+    if ! crowdsec_add_packagecloud_repo; then
+      log "ERROR: CrowdSec packagecloud repo setup failed — appliance stack incomplete (need outbound HTTPS; see docs/CROWDSEC.md)"
+      log "ERROR: re-run: sudo bash scripts/install.sh  OR  sudo bash scripts/crowdsec-bootstrap-lapi.sh after fixing network"
+      return 1
+    fi
   fi
 
   if [[ "$had_crowdsec_agent" -eq 1 ]]; then
@@ -489,6 +494,9 @@ install_release_package() {
     log "Installed easy-waf ${ver} from the Debian package"
   else
     rc=1
+    if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+      die "offline package install failed — the local repository is incomplete or incompatible"
+    fi
     log "apt-get install of the package failed — falling back to the release tarball"
   fi
 
@@ -522,6 +530,10 @@ retire_script_installed_units() {
 acquire_dist_binaries() {
   if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
     return 0
+  fi
+
+  if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+    die "offline mode requires the verified local easy-waf package; network fallback is disabled"
   fi
 
   mkdir -p "${REPO_ROOT}/dist"

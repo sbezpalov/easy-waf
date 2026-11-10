@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Production offline bundle.** Releases build signed Ubuntu 24.04 `amd64` and `arm64` ISO images containing a local APT repository, the Easy WAF package and the complete appliance dependency closure. The installer verifies the internal manifest, rejects the wrong OS/architecture, checks free space and prevents configured online APT sources from affecting resolution. See [docs/OFFLINE_BUNDLE.md](docs/OFFLINE_BUNDLE.md) and ADR 0007.
+
 - **Path exposure on an application.** `path_policy` can allowlist URL prefixes (everything else is 404), require a header or a write-only edge token (401, secret kept out of the database, the config and httplog, and stripped before the backend), set per-path server timeouts, and add a stick-table rate limit for a prefix. Profile block lists and `restricted_paths` are unchanged. HAProxy 2.8 cannot change `timeout client` per request, so a requested client timeout raises it for that frontend and sets `timeout http-request 10s`.
 - **Profile `ha-mcp`** and the guide [docs/HA-MCP.md](docs/HA-MCP.md) for publishing a Home Assistant MCP endpoint.
 - **Certificate webhook.** `notify_webhook_url` receives one JSON POST a day from `easy-waf-acmed` when a certificate failed or has fewer than 21 days left. Redirects are not followed, link-local addresses are refused, and the URL is not logged.
