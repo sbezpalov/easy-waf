@@ -160,6 +160,54 @@ the same checks CI runs.
 **Never report a security vulnerability in a public issue.** Use
 [private reporting](SECURITY.md).
 
+## What this is not
+
+- It is not a hosted WAF and it does not inspect request bodies. The rules look
+  at the path, the query and headers.
+- It is not a VPN, a mesh, or a way to avoid patching the service behind it.
+- It is not a Home Assistant add-on. Publishing Home Assistant, including its
+  MCP endpoint, is still an application you configure here and a user you
+  configure there.
+- It is one appliance. It does not cluster, and it does not replace the
+  firewall in front of a datacenter.
+
+A laptop browser talks to one hostname. Before, that meant a port forward and a
+hand-written proxy for every service. After, HAProxy on this VM terminates TLS
+and routes by hostname, and the panel is the only place that edits that route.
+
+```text
+before                         after
+phone --> router:8123 --> HA   phone --> router:443 --> Easy Home WAF --> HA
+phone --> router:5000 --> NAS  phone --> router:443 --> Easy Home WAF --> NAS
+```
+
+## How it compares
+
+No performance numbers: they depend on the hardware and were not measured here.
+
+| | Easy Home WAF | Hand-written HAProxy | Nginx Proxy Manager | Caddy |
+|---|---|---|---|---|
+| Hostname, TLS, reverse proxy | yes | yes, written by you | yes | yes |
+| Ubuntu appliance: nftables rollback, host panel | yes | no | no | no |
+| CrowdSec on the proxy | yes, SPOE | you wire it | not built in | a third-party module |
+| Per-application security presets | yes | you write the ACLs | access lists | you write the config |
+| Reads request bodies | no | only if you add that | no | no |
+
+## Screenshots
+
+Pictures of the panel are not in the repository. They have to be taken on a
+running appliance; a generated mock would show a UI this build might not match.
+The panel tabs are dashboard, applications, certificates, security, CrowdSec,
+Fail2Ban, logs, system, users and settings.
+
+## Name
+
+The product name is **Easy Home WAF**. The Go module is
+`github.com/easy-waf/easy-waf`. The git remote today is
+`github.com/sbezpalov/easy-waf`. The module path stays; moving the GitHub
+project into an `easy-waf` organization is a maintainer step and is not part of
+a code change.
+
 ## Status
 
 **Beta.** Used by its author on a home network and maintained by one person. Releases

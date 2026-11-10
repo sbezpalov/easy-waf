@@ -1,7 +1,10 @@
 # .ai/ — раскладка AI-инструментов
 
-**Источник истины — [`../AGENTS.md`](../AGENTS.md)** (читается нативно Cursor,
-Antigravity/Gemini и др.). Остальные файлы — тонкие редиректы/специфика.
+**Source of truth — [`../AGENTS.md`](../AGENTS.md).** The other files are the
+entry points each tool looks up by name (`CLAUDE.md`, `GEMINI.md`,
+`PERPLEXITY.md`, `.cursor/rules`). They are not a second copy of the project,
+and removing them would make that tool stop reading the repository. Tool
+specifics stay in the tool file. Project rules change in `AGENTS.md`.
 
 | Инструмент | Файл | Артефакты |
 |---|---|---|
