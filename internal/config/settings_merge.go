@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ApplySettingsJSONPatch merges a JSON object over base. Only keys present in the object are applied;
@@ -103,6 +104,17 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
 	case "prometheus_enabled":
 		return json.Unmarshal(raw, &out.PrometheusEnabled)
+	case "notify_webhook_url":
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		v = strings.TrimSpace(v)
+		if err := ValidateNotifyWebhookURL(v); err != nil {
+			return err
+		}
+		out.NotifyWebhookURL = v
+		return nil
 	default:
 		return nil
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/envflag"
+	"github.com/easy-waf/easy-waf/internal/notify"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -157,8 +158,35 @@ func (w *worker) warnAboutCertificates(ctx context.Context, st *store.Store) {
 		return
 	}
 	w.lastWarned = time.Now()
-	for _, line := range certificateWarnings(certs, time.Now().UTC()) {
+	now := time.Now().UTC()
+	for _, line := range certificateWarnings(certs, now) {
 		log.Print(line)
+	}
+	w.notifyCertificateAttention(qctx, certs, now)
+}
+
+// notifyCertificateAttention posts the same daily warning to notify_webhook_url
+// when one is set. The URL is not logged.
+func (w *worker) notifyCertificateAttention(ctx context.Context, certs []config.Certificate, now time.Time) {
+	if w.eng == nil {
+		return
+	}
+	if err := w.eng.LoadSettings(ctx); err != nil {
+		log.Printf("acmed: notification settings: %v", err)
+		return
+	}
+	raw := strings.TrimSpace(w.eng.Settings().NotifyWebhookURL)
+	if raw == "" {
+		return
+	}
+	notices := notify.Notices(certs, now)
+	if len(notices) == 0 {
+		return
+	}
+	nctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := notify.PostWebhook(nctx, raw, notices); err != nil {
+		log.Printf("acmed: certificate webhook failed: %v", err)
 	}
 }
 

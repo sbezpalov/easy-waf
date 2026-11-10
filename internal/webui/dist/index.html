@@ -773,6 +773,16 @@
             <button type="button" class="secondary" id="btn-prometheus-save">Save monitoring toggle</button>
           </div>
         </div>
+        <div class="panel" style="max-width:42rem;margin-top:0.75rem">
+          <h3>Certificate notifications</h3>
+          <p class="dash-note" style="margin-top:0">Once a day, <code>easy-waf-acmed</code> POSTs JSON here when a certificate failed to issue or renew, or has fewer than 21 days left. Leave empty to keep the warning in the journal only. The URL is not written to the log. Redirects are not followed.</p>
+          <label>Webhook URL
+            <input id="notify-webhook-url" type="url" placeholder="https://ntfy.example/easy-waf" style="min-width:22rem;width:100%" />
+          </label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-notify-save">Save notification URL</button>
+          </div>
+        </div>
         <p id="settings-msg" class="warn"></p>
       </div>
 
@@ -1957,6 +1967,8 @@
     document.getElementById('cs-engine-name').value = cachedSettings.crowdsec_engine_name || 'crowdsec';
     const promEl = document.getElementById('prometheus-enabled');
     if (promEl) promEl.checked = !!cachedSettings.prometheus_enabled;
+    const notifyEl = document.getElementById('notify-webhook-url');
+    if (notifyEl) notifyEl.value = cachedSettings.notify_webhook_url || '';
     if (sm) {
       sm.textContent = 'Loaded from server.';
       sm.className = 'ok';
@@ -2564,6 +2576,32 @@
       cachedSettings = await r.json();
       if (sm) {
         sm.textContent = 'Monitoring toggle saved.';
+        sm.className = 'ok';
+      }
+    };
+  }
+  const btnNotifySave = document.getElementById('btn-notify-save');
+  if (btnNotifySave) {
+    btnNotifySave.onclick = async () => {
+      const sm = document.getElementById('settings-msg');
+      if (sm) {
+        sm.textContent = '';
+        sm.className = 'warn';
+      }
+      if (!cachedSettings) await loadSettingsPanel();
+      if (!cachedSettings) {
+        if (sm) sm.textContent = 'Use Load from server first.';
+        return;
+      }
+      const patch = { notify_webhook_url: document.getElementById('notify-webhook-url').value.trim() };
+      const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
+      if (!r.ok) {
+        if (sm) sm.textContent = await r.text();
+        return;
+      }
+      cachedSettings = await r.json();
+      if (sm) {
+        sm.textContent = 'Notification URL saved.';
         sm.className = 'ok';
       }
     };
