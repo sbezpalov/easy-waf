@@ -560,6 +560,7 @@ Both methods behave identically: they **merge** the body over the stored setting
   - `acme_email`: an empty string keeps the stored value, so the address cannot be cleared through this API.
   - `management_allowed_cidrs`: `null` keeps the stored list. Otherwise the list must contain at least one entry, and every entry must be a valid CIDR prefix (`netip.ParsePrefix`, so a bare IP without `/n` is rejected). The new list is enforced from the next request on. A list that excludes your own address locks you out of the API and UI.
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
+  - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.
   - GeoIP:
     - `geoip_default_policy` must be `allow`, `deny` or empty.
     - `geoip_provider` must be `ipinfo`, `maxmind` or empty.

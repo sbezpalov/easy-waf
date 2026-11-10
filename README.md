@@ -164,9 +164,18 @@ the same checks CI runs.
 
 **Beta.** Used by its author on a home network and maintained by one person. Releases
 from 1.5 on have been tested on clean Ubuntu 24.04 installs in containers, not yet on
-real hardware, and issuing and renewing with the real Let's Encrypt is still to be
-proven on them. Documented interfaces may change while this lasts; anything breaking
-goes through `CHANGELOG.md` with an upgrade note.
+real hardware. Acceptance that needs a real host, a real domain, or the public
+Let's Encrypt — HTTP-01, DNS-01, renewal, CrowdSec on the host, a clean install
+and an upgrade from 1.6.0 — is listed in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)
+and is not claimed here. Documented interfaces may change while this lasts;
+anything breaking goes through `CHANGELOG.md` with an upgrade note.
+
+**Management listener.** `install.sh` copies `EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`
+(HTTP off). The process accepts connections on every interface so the UI works
+on the LAN after DHCP without pinning an address. nftables, installed by the
+same script, allows that port only from loopback and RFC1918. It is not a WAN
+listener. `install-interactive.sh` defaults to `127.0.0.1:8443` instead; set
+that value yourself when you want the same on a non-interactive install.
 
 Before you rely on it:
 
@@ -177,7 +186,8 @@ Before you rely on it:
 - **Keep console access to the host.** Host management changes the network, the
   firewall, packages and users, and a mistake can lock you out.
 - **Watch your certificates.** Failed renewals show on the dashboard, in the
-  `easy-waf-acmed` journal and in metrics; nothing is sent to you.
+  `easy-waf-acmed` journal and in metrics. Set `notify_webhook_url` if you also
+  want one HTTPS POST a day; nothing is emailed unless that URL is a mail bridge.
 
 Read [docs/SECURITY.md](docs/SECURITY.md) before putting it in front of something you
 cannot afford to lose, and keep backups (`scripts/backup.sh`).

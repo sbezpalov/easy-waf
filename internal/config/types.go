@@ -237,6 +237,10 @@ type GlobalSettings struct {
 	// ManagementAllowedCIDRs restricts who can reach the API and UI (not /health).
 	// Stored in DB; defaults are RFC1918 + loopback — narrow in Settings for stricter policy.
 	ManagementAllowedCIDRs []string `json:"management_allowed_cidrs,omitempty"`
+	// NotifyWebhookURL receives a JSON POST when a certificate needs attention
+	// (failed issuance or renewal, or fewer than 21 days left). Empty disables it.
+	// The URL is not written into HAProxy config and is not logged.
+	NotifyWebhookURL string `json:"notify_webhook_url,omitempty"`
 	// PrometheusEnabled exposes GET /metrics (Prometheus text format) for scrapers on the management listener.
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.

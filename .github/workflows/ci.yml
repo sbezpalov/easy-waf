@@ -133,6 +133,7 @@ jobs:
           bash -n scripts/lib/nftables-easy-waf.sh
           bash -n scripts/host/privileged.sh
           bash -n scripts/diagnostics.sh
+          bash -n scripts/acceptance-checklist.sh
 
   haproxy-config-test:
     runs-on: ubuntu-latest

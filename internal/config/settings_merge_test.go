@@ -109,3 +109,24 @@ func TestApplySettingsJSONPatch_prometheusEnabled(t *testing.T) {
 		t.Fatal("expected prometheus off")
 	}
 }
+
+func TestApplySettingsJSONPatch_notifyWebhook(t *testing.T) {
+	base := DefaultSettings("/x")
+	out, err := ApplySettingsJSONPatch(base, []byte(`{"notify_webhook_url":"https://alerts.example/hook"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.NotifyWebhookURL != "https://alerts.example/hook" {
+		t.Fatalf("%q", out.NotifyWebhookURL)
+	}
+	cleared, err := ApplySettingsJSONPatch(out, []byte(`{"notify_webhook_url":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.NotifyWebhookURL != "" {
+		t.Fatalf("not cleared: %q", cleared.NotifyWebhookURL)
+	}
+	if _, err := ApplySettingsJSONPatch(base, []byte(`{"notify_webhook_url":"file:///tmp/x"}`)); err == nil {
+		t.Fatal("file URL accepted")
+	}
+}

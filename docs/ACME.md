@@ -34,6 +34,12 @@ rendered backend follows the setting, so the two disagree and HTTP-01 fails on a
 backend nobody looks at. `easy-waf-api` logs a warning naming both addresses when
 it starts in that state.
 
+## When something needs attention
+
+A failed issuance or renewal, or fewer than 21 days left, is shown on the dashboard and once a day in the `easy-waf-acmed` journal. Set **`notify_webhook_url`** (`PATCH /api/v1/settings`, or Settings → Certificate notifications) to also POST a JSON body `{source, event, certificates}` to one URL. Point it at ntfy, a mail bridge, or a Telegram bridge. The worker does not follow redirects, refuses link-local addresses, and does not log the URL. Email and Telegram are not built in.
+
+Real Let's Encrypt issuance still has to be checked on a host that owns the domain. See [ACCEPTANCE.md](ACCEPTANCE.md).
+
 ## DNS-01
 
 Implemented via **Lego** (`easy-waf-acmed`): `dns_provider` is one of `cloudflare`, `cloudns` (default when empty), `route53`, `webhook` (Lego `httpreq`). Credentials live in an env file referenced by `dns_credentials_env_file` — see [DNS01.md](DNS01.md) and `configs/examples/dns-*.env.example`.
