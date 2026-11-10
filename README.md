@@ -118,6 +118,7 @@ this way: [ADR 0001](docs/adr/0001-packaging-and-installer.md).
 |-----|---------------|
 | [SECURITY](docs/SECURITY.md) | Hardening, privilege model, supply chain, checklist |
 | [APPLICATION_SECURITY](docs/APPLICATION_SECURITY.md) · [SECURITY_PROFILES](docs/SECURITY_PROFILES.md) | Per-application layers and presets |
+| [HA-MCP](docs/HA-MCP.md) | Publish a Home Assistant MCP endpoint without the rest of the UI |
 | [CROWDSEC](docs/CROWDSEC.md) · [FAIL2BAN](docs/FAIL2BAN.md) | Behavioural blocking |
 | [IPBL](docs/IPBL.md) · [GEOIP](docs/GEOIP.md) | IP lists, external feeds, country filtering |
 

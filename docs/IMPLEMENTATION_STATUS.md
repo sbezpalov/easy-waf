@@ -1,6 +1,6 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-01  
+**Last updated:** 2026-11-10  
 **Current VERSION:** 1.6.0 (see root `VERSION` file)
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **7**, Partial — **3** (AC-03, AC-04, AC-05).
 
@@ -89,7 +89,9 @@ and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
 ### 7.3 HAProxy engine — **Done** (template, checksum, validate, revisions/rollback, golden)
 
-### 7.4 Security profiles — **Done** (profile names: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none`, `custom`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
+### 7.4 Security profiles — **Done** (profile names: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `ha-mcp`, `none`, `custom`) — `internal/profiles/profiles.go`, `docs/SECURITY_PROFILES.md`
+
+### 7.9 Path exposure and Home Assistant MCP — **Done** (migration `020_path_policy.sql`, `Application.path_policy`, allowlist 404, required header / edge token 401, per-path stick-table and `set-timeout server`, frontend `timeout client` when HAProxy 2.8 cannot set it per request, preset `ha-mcp`, golden `ha-mcp`, live test `TestLivePathPolicy`, UI path exposure, [HA-MCP.md](HA-MCP.md))
 
 ### 7.5 CrowdSec — **Done** (ping LAPI, decisions in UI, **Unban** / **Ban IP** / **Allow IP (whitelist)** via LAPI; `cscli` ops outside UI — per docs)
 

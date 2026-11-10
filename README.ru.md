@@ -125,6 +125,7 @@ sudo apt install ./easy-waf_<version>_amd64.deb
 |----------|------------|
 | [SECURITY](docs/SECURITY.ru.md) 🇷🇺 | Hardening, модель привилегий, цепочка поставок, чеклист |
 | [APPLICATION_SECURITY](docs/APPLICATION_SECURITY.md) · [SECURITY_PROFILES](docs/SECURITY_PROFILES.md) | Слои защиты приложения и пресеты |
+| [HA-MCP](docs/HA-MCP.ru.md) 🇷🇺 | Публикация Home Assistant MCP без остального интерфейса |
 | [CROWDSEC](docs/CROWDSEC.md) · [FAIL2BAN](docs/FAIL2BAN.md) | Поведенческая блокировка |
 | [IPBL](docs/IPBL.md) · [GEOIP](docs/GEOIP.md) | Списки IP, внешние фиды, фильтрация по странам |
 

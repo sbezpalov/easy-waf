@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Path exposure on an application.** `path_policy` can allowlist URL prefixes (everything else is 404), require a header or a write-only edge token (401, secret kept out of the database, the config and httplog, and stripped before the backend), set per-path server timeouts, and add a stick-table rate limit for a prefix. Profile block lists and `restricted_paths` are unchanged. HAProxy 2.8 cannot change `timeout client` per request, so a requested client timeout raises it for that frontend and sets `timeout http-request 10s`.
+- **Profile `ha-mcp`** and the guide [docs/HA-MCP.md](docs/HA-MCP.md) for publishing a Home Assistant MCP endpoint.
+
 ## [1.7.0-rc.1] - 2026-11-01
 
 Release candidate for a pilot on one real host. It is not marked as the latest

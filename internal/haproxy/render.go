@@ -29,17 +29,23 @@ type AppRender struct {
 	BackendUsesDNS    bool // backend_host is FQDN — use resolvers easy_waf_dns
 	MaxBodyBytes      int64
 	BlockMultipart    bool
+	Exposure          pathExposure
 }
 
 // RenderInput is passed to the HAProxy template.
 type RenderInput struct {
-	Settings                 config.GlobalSettings
-	Applications             []config.Application
-	BackendApps              []AppRender                   `json:"-"` // every enabled app (backend definitions)
-	HTTPSApps                []AppRender                   `json:"-"` // fe_https: TLS edge (https_only, redirect_to_https, http_and_https)
-	HTTPApps                 []AppRender                   `json:"-"` // fe_http: plain routing (http_only, http_and_https)
-	RedirectApps             []AppRender                   `json:"-"` // fe_http: per-host redirect to HTTPS
-	HasHTTPSFrontend         bool                          `json:"-"` // false when no :443 TLS vhosts (crt-list may still list unused PEMs)
+	Settings         config.GlobalSettings
+	Applications     []config.Application
+	BackendApps      []AppRender `json:"-"` // every enabled app (backend definitions)
+	HTTPSApps        []AppRender `json:"-"` // fe_https: TLS edge (https_only, redirect_to_https, http_and_https)
+	HTTPApps         []AppRender `json:"-"` // fe_http: plain routing (http_only, http_and_https)
+	RedirectApps     []AppRender `json:"-"` // fe_http: per-host redirect to HTTPS
+	HasHTTPSFrontend bool        `json:"-"` // false when no :443 TLS vhosts (crt-list may still list unused PEMs)
+	// HTTPClientTimeout and HTTPSClientTimeout are the longest timeout client
+	// any app on that frontend asked for. HAProxy 2.8 cannot change it per
+	// request, so the frontend uses one value. Zero keeps the 50s default.
+	HTTPClientTimeout        int                           `json:"-"`
+	HTTPSClientTimeout       int                           `json:"-"`
 	Certificates             map[string]config.Certificate // id -> cert
 	CRTListPath              string                        // absolute path to generated crt-list file on disk
 	IPBlacklistMapPath       string
@@ -108,6 +114,9 @@ func Render(in RenderInput) (Rendered, error) {
 		if _, err := profiles.Resolve(in.Applications[i].Profile); err != nil {
 			return Rendered{}, err
 		}
+		// An unset policy on ha-mcp is the preset, including when the row was
+		// written by a caller that did not go through the HTTP API.
+		in.Applications[i].PathPolicy = profiles.ResolvePathPolicy(in.Applications[i].Profile, in.Applications[i].PathPolicy, nil)
 		// Re-validate on every render, not just on write: these fields are
 		// interpolated into config lines, so the generator must not depend on
 		// the API handler having been the only way the row was stored.
@@ -143,6 +152,10 @@ func Render(in RenderInput) (Rendered, error) {
 		}
 		usesDNS := !backendHostIsLiteralIP(app.BackendHost)
 		maxBody, blockMultipart := p.BodyPolicy(app.Security)
+		exposure, err := buildPathExposure(app, tag, in.StateDir)
+		if err != nil {
+			return Rendered{}, err
+		}
 		apps = append(apps, AppRender{
 			Application:       app,
 			Profile:           p,
@@ -153,6 +166,7 @@ func Render(in RenderInput) (Rendered, error) {
 			BackendUsesDNS:    usesDNS,
 			MaxBodyBytes:      maxBody,
 			BlockMultipart:    blockMultipart,
+			Exposure:          exposure,
 		})
 	}
 	in.NeedsDNSResolver = false
@@ -179,6 +193,8 @@ func Render(in RenderInput) (Rendered, error) {
 	in.HTTPSApps = httpsApps
 	in.HTTPApps = httpApps
 	in.RedirectApps = redirectApps
+	in.HTTPClientTimeout = maxClientTimeout(httpApps)
+	in.HTTPSClientTimeout = maxClientTimeout(httpsApps)
 
 	crtLines := buildCRTList(in)
 	in.HasHTTPSFrontend = len(httpsApps) > 0 && len(crtLines) > 0
@@ -371,7 +387,11 @@ resolvers easy_waf_dns
 frontend fe_http
 	bind *:80
 	mode http
-	acl acme path_beg /.well-known/acme-challenge/
+{{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
+	# timeout http-request still aborts an incomplete request, which the client timeout does not.
+	timeout client {{.HTTPClientTimeout}}s
+	timeout http-request 10s
+{{end}}	acl acme path_beg /.well-known/acme-challenge/
 {{range $a := .HTTPApps}}
 	# HTTP app: {{$a.Application.Name}} ({{$a.Application.PublicHost}})
 	acl http_app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
@@ -443,7 +463,11 @@ backend bk_http_default
 frontend fe_https
 	bind *:443 ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
 	mode http
-	option forwardfor
+{{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
+	# timeout http-request still aborts an incomplete request, which the client timeout does not.
+	timeout client {{.HTTPSClientTimeout}}s
+	timeout http-request 10s
+{{end}}	option forwardfor
 {{if $.UseCrowdSecHTTPS}}
 	# CrowdSec SPOE — engine id must match the [section] in {{.Settings.SPOEConfigPath}}.
 	# The bouncer's messages send unique-id, so the frontend must define one.
@@ -473,6 +497,9 @@ backend bk_not_found
 {{end}}
 
 {{range $i, $a := .BackendApps}}
+{{range $r := $a.Exposure.Rates}}backend {{$r.Stick}}
+	stick-table type ip size 50k expire 5m store http_req_rate(10s)
+{{end -}}
 backend {{backendName $a.Application.PublicHost}}
 	mode http
 	timeout connect {{haDur $a.Profile.ConnectTimeout}}
@@ -492,7 +519,15 @@ backend {{backendName $a.Application.PublicHost}}
 {{- else}}
 	http-request deny deny_status 429 if rl_abuse_{{$i}}
 {{- end}}
-{{- end}}
+{{- end}}{{if $a.Exposure.AppServer}}
+	http-request set-timeout server {{$a.Exposure.AppServer}}s{{end}}{{range $p := $a.Exposure.BackPaths}}
+	acl {{$p.Name}} path -m str {{$p.Exact}}
+	acl {{$p.Name}} path_beg {{$p.Dir}}{{end}}{{range $t := $a.Exposure.Timeouts}}
+	http-request set-timeout server {{$t.Server}}s if {{$t.PathName}}{{end}}{{range $r := $a.Exposure.Rates}}
+	http-request track-sc1 src table {{$r.Stick}} if {{$r.PathName}}{{if $r.Unless}} {{$r.Unless}}{{end}}
+	http-request deny deny_status 429 if {{$r.PathName}}{{if $r.Unless}} {{$r.Unless}}{{end}} { sc1_http_req_rate({{$r.Stick}}) gt {{$r.Limit}} }{{end}}{{range $h := $a.Exposure.Strip}}
+	# Removed before the backend sees the request. Not captured in httplog.
+	http-request del-header {{$h}}{{end}}
 	{{- if $a.Application.WebSocket }}
 	timeout tunnel 3600s
 	{{- end }}
@@ -519,7 +554,21 @@ backend {{backendName $a.Application.PublicHost}}
 {{- $host := .HostACL -}}
 {{- $acme := acmeSuffix .SkipACME -}}
 	# === Application: {{$a.Application.Name}} ({{$a.Application.PublicHost}}) ===
-{{- if and $root.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
+{{- if $a.Exposure.Allowlist}}
+	# Allowlist is evaluated before the IP allow shortcut, so a trusted source still cannot reach other paths.
+	acl app_{{$a.ACLTag}}_allow path -m str {{$a.Exposure.AllowExact}}
+	acl app_{{$a.ACLTag}}_allow path_beg {{$a.Exposure.AllowDirs}}
+	http-request deny deny_status 404 if {{$host}} !app_{{$a.ACLTag}}_allow{{$acme}}
+{{end}}{{range $p := $a.Exposure.FrontPaths}}
+	acl {{$p.Name}} path -m str {{$p.Exact}}
+	acl {{$p.Name}} path_beg {{$p.Dir}}
+{{end}}{{range $h := $a.Exposure.Headers}}
+{{if eq $h.Mode "found"}}	acl {{$h.CheckName}} req.hdr({{$h.Header}}) -m found
+{{else if eq $h.Mode "prefix"}}	acl {{$h.CheckName}} req.hdr({{$h.Header}}) -m beg "{{$h.Prefix}}"
+{{else if eq $h.Mode "file"}}	acl {{$h.CheckName}} req.hdr({{$h.Header}}) -m str -f {{$h.File}}
+{{end}}	# httplog stays on the request line; this header is not captured.
+	http-request deny deny_status 401 if {{$host}} {{$h.PathName}} !{{$h.CheckName}}{{$acme}}
+{{end}}{{- if and $root.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
 	acl app_{{$a.ACLTag}}_white src -f {{$root.IPAllowlistMapPath}}
 	http-request allow if {{$host}} app_{{$a.ACLTag}}_white{{$acme}}
 {{- end}}

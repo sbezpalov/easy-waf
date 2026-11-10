@@ -101,7 +101,7 @@ The default mode is **`https_loopback`** (HTTPS-only on `127.0.0.1:8443`). Selec
 ## First application
 
 1. Log in to the UI.
-2. **Applications → Add** → profile (e.g. `home-assistant`).
+2. **Applications → Add** → profile (e.g. `home-assistant`). For a Home Assistant MCP endpoint, use `ha-mcp` and read [HA-MCP.md](HA-MCP.md).
 3. Hostname, backend IP:port, WebSocket if needed.
 4. **Certificates** → issue (staging first).
 5. **Apply** → validates `haproxy -c` and reloads HAProxy.

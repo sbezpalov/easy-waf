@@ -42,6 +42,7 @@ var goldenScenarioNames = []string{
 	"backend-tls-custom-ca",
 	"backend-tls-verify-none",
 	"app-body-policy",
+	"ha-mcp",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -559,6 +560,27 @@ func goldenFixture(name string) RenderInput {
 		in.Applications[0].BackendTLSVerify = config.BackendTLSVerifyNone
 		in.CRTListPath = "testdata/golden/backend-tls-verify-none.crt-list.txt"
 		return in
+	case "ha-mcp":
+		return RenderInput{
+			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),
+			UseIPBlacklist: false,
+			Applications: []config.Application{
+				{
+					ID:            "mcp1",
+					Name:          "HA MCP",
+					PublicHost:    "mcp.example.com",
+					BackendHost:   "10.0.0.50",
+					BackendPort:   8123,
+					Profile:       "ha-mcp",
+					CertificateID: "c1",
+					Enabled:       true,
+				},
+			},
+			Certificates: map[string]config.Certificate{
+				"c1": {ID: "c1", BundlePath: certA},
+			},
+			CRTListPath: "testdata/golden/ha-mcp.crt-list.txt",
+		}
 	default:
 		return RenderInput{}
 	}

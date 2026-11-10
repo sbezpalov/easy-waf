@@ -20,8 +20,11 @@ const (
 	PublicApp     ProfileName = "public-app"
 	PHPApp        ProfileName = "php-app"
 	HomeAssistant ProfileName = "home-assistant"
-	None          ProfileName = "none"
-	Custom        ProfileName = "custom"
+	// HAMCP publishes a Home Assistant MCP endpoint with a tight path allowlist.
+	// The numeric limits live here; the path preset is HAMCPPathPolicy.
+	HAMCP  ProfileName = "ha-mcp"
+	None   ProfileName = "none"
+	Custom ProfileName = "custom"
 )
 
 // Profile defines tunables for HAProxy templates and ACLs.
@@ -125,6 +128,18 @@ func All() map[ProfileName]Profile {
 			BlockPaths:          defaultBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 			Notes:               "Long server timeout for SSE/WebSocket; still block obvious probes",
+		},
+		HAMCP: {
+			Name:                HAMCP,
+			Description:         "Home Assistant MCP: long SSE timeouts and a moderate request budget",
+			RateLimitRPS:        20,
+			RateLimitBurst:      40,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       3600 * time.Second,
+			HTTPKeepAlive:       true,
+			BlockPaths:          defaultBlockedPaths(),
+			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
+			Notes:               "Pair with the ha-mcp path preset. See docs/HA-MCP.md. Block lists still apply, including inside the allowlist.",
 		},
 		None: {
 			Name:                None,

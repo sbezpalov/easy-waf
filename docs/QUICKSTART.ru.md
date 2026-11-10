@@ -100,7 +100,7 @@ sudo bash scripts/install-interactive.sh
 ## Первое приложение
 
 1. Войдите в UI.
-2. **Applications → Add** → профиль (например, `home-assistant`).
+2. **Applications → Add** → профиль (например, `home-assistant`). Для конечной точки Home Assistant MCP выберите `ha-mcp` и прочитайте [HA-MCP.ru.md](HA-MCP.ru.md).
 3. Имя хоста, IP:порт бэкенда, при необходимости WebSocket.
 4. **Certificates** → выпустите сертификат (сначала staging).
 5. **Apply** → выполняется проверка `haproxy -c` и перезагрузка HAProxy.

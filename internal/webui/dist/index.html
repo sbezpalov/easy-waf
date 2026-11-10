@@ -353,6 +353,28 @@
             <select id="app-cert"><option value="">— none —</option></select>
           </label>
         </div>
+        <h4>Path exposure</h4>
+        <p><small>Leave this on <strong>profile default</strong> to keep a policy you did not edit. The <code>ha-mcp</code> profile then installs its preset (allowlist, Authorization on <code>/api/mcp</code>, a long SSE timeout). See the <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/HA-MCP.md">Home Assistant MCP guide</a>. Restricted paths and profile block lists still apply.</small></p>
+        <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>Mode
+            <select id="path-mode">
+              <option value="">profile default</option>
+              <option value="default">open (block lists only)</option>
+              <option value="allowlist">allowlist (other paths are 404)</option>
+            </select>
+          </label>
+          <label>Client timeout, seconds (0 = edge default)
+            <input id="path-client-timeout" type="number" min="0" max="86400" value="0" />
+          </label>
+          <label>Server timeout, seconds (0 = profile)
+            <input id="path-server-timeout" type="number" min="0" max="86400" value="0" />
+          </label>
+        </div>
+        <label>Allowed prefixes, one per line
+          <textarea id="path-allow" rows="4" placeholder="/api/mcp" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px"></textarea>
+        </label>
+        <div id="path-rules"></div>
+        <div class="row"><button type="button" class="secondary" id="btn-path-rule-add">Add path rule</button></div>
         <h4>Restricted paths</h4>
         <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
         <div id="restricted-rows"></div>
@@ -1102,6 +1124,7 @@
     document.getElementById('profile').value = 'balanced';
     document.getElementById('app-cert').value = '';
     fillBodyPolicy({});
+    fillPathPolicy(null);
     const nlm = document.getElementById('listen-mode');
     if (nlm) nlm.value = 'https_only';
     syncListenModeUI();
@@ -1427,6 +1450,88 @@
   }
   document.getElementById('audit-auto-refresh').onchange = () => { syncAuditAutoRefresh(); };
 
+  function fillPathPolicy(policy) {
+    const mode = document.getElementById('path-mode');
+    const allow = document.getElementById('path-allow');
+    const client = document.getElementById('path-client-timeout');
+    const server = document.getElementById('path-server-timeout');
+    const box = document.getElementById('path-rules');
+    if (!mode || !box) return;
+    box.innerHTML = '';
+    if (!policy) {
+      mode.value = '';
+      allow.value = '';
+      client.value = '0';
+      server.value = '0';
+      return;
+    }
+    mode.value = policy.mode || '';
+    allow.value = (policy.allow || []).join('\n');
+    client.value = String(policy.client_timeout_sec || 0);
+    server.value = String(policy.server_timeout_sec || 0);
+    (policy.rules || []).forEach((rule) => addPathRuleRow(rule));
+  }
+
+  function addPathRuleRow(rule) {
+    const box = document.getElementById('path-rules');
+    if (!box) return;
+    const row = rule || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'path-rule panel';
+    wrap.style.marginTop = '0.5rem';
+    const tokenNote = row.edge_token_configured ? 'A token is already stored. Leave the field empty to keep it.' : 'Optional. Stored outside the database and removed before the backend.';
+    wrap.innerHTML = `
+      <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.5rem">
+        <label>Path<br /><input class="pr-path" type="text" value="${esc(row.path_prefix || '')}" placeholder="/api/mcp" /></label>
+        <label>Require header<br /><input class="pr-header" type="text" value="${esc(row.require_header || '')}" placeholder="Authorization" /></label>
+        <label>Value prefix<br /><input class="pr-prefix" type="text" value="${esc(row.require_value_prefix || '')}" placeholder="Bearer " /></label>
+        <label>Client timeout<br /><input class="pr-client" type="number" min="0" max="86400" value="${esc(String(row.client_timeout_sec || 0))}" /></label>
+        <label>Server timeout<br /><input class="pr-server" type="number" min="0" max="86400" value="${esc(String(row.server_timeout_sec || 0))}" /></label>
+        <label>Requests / 10s<br /><input class="pr-rate" type="number" min="0" value="${esc(String(row.rate_per_10s || 0))}" /></label>
+        <label>Edge token header<br /><input class="pr-edge-header" type="text" value="${esc(row.edge_token_header || '')}" placeholder="X-Edge-Token" /></label>
+        <label>Edge token<br /><input class="pr-edge-token" type="password" autocomplete="new-password" value="" /></label>
+        <label><input class="pr-edge-clear" type="checkbox" /> Clear stored token</label>
+        <button type="button" class="secondary btn-pr-remove">Remove</button>
+      </div>
+      <p class="dash-note">${esc(tokenNote)}</p>`;
+    wrap.querySelector('.btn-pr-remove').onclick = () => wrap.remove();
+    box.appendChild(wrap);
+  }
+
+  function collectPathPolicy() {
+    const mode = document.getElementById('path-mode').value;
+    const allow = document.getElementById('path-allow').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const client = parseInt(document.getElementById('path-client-timeout').value, 10) || 0;
+    const server = parseInt(document.getElementById('path-server-timeout').value, 10) || 0;
+    const rules = [];
+    document.querySelectorAll('#path-rules .path-rule').forEach((row) => {
+      const rule = {
+        path_prefix: row.querySelector('.pr-path').value.trim(),
+        require_header: row.querySelector('.pr-header').value.trim(),
+        require_value_prefix: row.querySelector('.pr-prefix').value,
+        client_timeout_sec: parseInt(row.querySelector('.pr-client').value, 10) || 0,
+        server_timeout_sec: parseInt(row.querySelector('.pr-server').value, 10) || 0,
+        rate_per_10s: parseInt(row.querySelector('.pr-rate').value, 10) || 0,
+        edge_token_header: row.querySelector('.pr-edge-header').value.trim()
+      };
+      const token = row.querySelector('.pr-edge-token').value;
+      if (token) rule.edge_token = token;
+      if (row.querySelector('.pr-edge-clear').checked) rule.clear_edge_token = true;
+      if (rule.path_prefix) rules.push(rule);
+    });
+    if (!mode && !allow.length && !client && !server && !rules.length) return undefined;
+    const policy = {};
+    if (mode) policy.mode = mode;
+    if (allow.length) policy.allow = allow;
+    if (client) policy.client_timeout_sec = client;
+    if (server) policy.server_timeout_sec = server;
+    if (rules.length) policy.rules = rules;
+    return policy;
+  }
+
+  const btnPathRule = document.getElementById('btn-path-rule-add');
+  if (btnPathRule) btnPathRule.onclick = () => addPathRuleRow(null);
+
   function addRestrictedPathRow(prefix, cidrsText) {
     const wrap = document.createElement('div');
     wrap.className = 'rp-row panel';
@@ -1608,6 +1713,7 @@
     syncListenModeUI();
     document.getElementById('app-cert').value = a.certificate_id || '';
     fillBodyPolicy(a.security || {});
+    fillPathPolicy(a.path_policy || null);
     clearRestrictedPathRows();
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
     if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
@@ -3197,6 +3303,8 @@
         enabled: true,
         restricted_paths: collectRestrictedPaths()
       };
+      const pathPolicy = collectPathPolicy();
+      if (pathPolicy) body.path_policy = pathPolicy;
       if (editId) {
         body.id = editId;
         const prev = appsListCache.find((x) => x.id === editId);

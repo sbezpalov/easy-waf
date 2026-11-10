@@ -260,8 +260,8 @@ Reports the systemd `ActiveState` of the appliance's core units. Each unit is qu
 - **Errors:** none. Failures show up as `unknown`.
 
 ### `GET /api/v1/profiles`
-Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none` and `custom`.
-- **Response:** `200`. Each value has the fields `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (integers, milliseconds), `http_keep_alive`, `block_paths` and `extra_blocked_methods` (arrays, `[]` when empty), `geo_default_deny`, `max_body_bytes` (integer, bytes; `0` means no limit), `block_multipart`, and `notes` (omitted when empty).
+Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `ha-mcp`, `none` and `custom`.
+- **Response:** `200`. Each value has the fields `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (integers, milliseconds), `http_keep_alive`, `block_paths` and `extra_blocked_methods` (arrays, `[]` when empty), `geo_default_deny`, `max_body_bytes` (integer, bytes; `0` means no limit), `block_multipart`, and `notes` (omitted when empty). `ha-mcp` also includes `path_policy`, the exposure preset applied when an application of that profile is saved without one. See [HA-MCP.md](HA-MCP.md).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
     "rate_limit_rps": 50, "rate_limit_burst": 100, "connect_timeout_ms": 5000, "server_timeout_ms": 50000,
@@ -275,7 +275,17 @@ Returns the catalogue of security-mode presets (`profiles.SecurityModeCatalog()`
 
 ## Applications
 
-An application (`config.Application`, `internal/config/types.go`) maps a public hostname to a backend. Its JSON fields are `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (see [Application security](#application-security)), `created_at` and `updated_at`.
+An application (`config.Application`, `internal/config/types.go`) maps a public hostname to a backend. Its JSON fields are `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (see below; omitted when unset), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (see [Application security](#application-security)), `created_at` and `updated_at`.
+
+`path_policy` is optional exposure on top of profile block lists and restricted paths:
+
+- `mode`: omitted, `default` (block lists only), or `allowlist`.
+- `allow`: prefixes published in `allowlist` mode. A prefix matches that path and what is below it, not a longer sibling (`/api/mcp` matches `/api/mcp/assist`, not `/api/mcp-other`). Other paths are **404**. The IP allowlist shortcut does not bypass this deny.
+- `client_timeout_sec` / `server_timeout_sec`: inactivity timeouts for every request to the app. `0` leaves the default. On HAProxy 2.8 the client value raises `timeout client` for the whole frontend (the longest request wins) and sets `timeout http-request 10s`. The server value is applied with `http-request set-timeout server`.
+- `rules[]`: `path_prefix`, optional `require_header` and `require_value_prefix` (**401** when missing), optional `client_timeout_sec` / `server_timeout_sec` (longest matching prefix wins), optional `rate_per_10s` (its own stick-table, same 10 second unit as the application burst; the longest matching prefix owns the counter).
+- `rules[].edge_token_header` plus write-only `edge_token` stores a secret outside the database. GET returns `edge_token_configured` and never the secret. `clear_edge_token: true` removes it. The header is deleted before the backend and is not captured in httplog.
+
+Omitting `path_policy` on update keeps the stored policy. Profile `ha-mcp` with no policy yet receives the preset from `GET /profiles`. Timeouts are 1–86400 seconds. At most 32 allow entries and 8 rules.
 
 Mutating endpoints in this section and the next write to the database first and then apply the change to HAProxy. If the apply fails, the database change is undone and the endpoint returns an error (text/plain) with a message such as `change not saved, edge apply failed: …`. If the undo itself fails, the message instead reads `edge apply failed: …; undoing the database change also failed, so it is saved but not live: …`. The status code is:
 - `503` when the apply ran out of time. An apply waits at most 2 minutes, including the time spent waiting for the apply lock, so this typically means another apply was still running; a retry can succeed.
@@ -307,7 +317,8 @@ Creates or replaces an application (upsert), then applies it to HAProxy. A body 
   - `backend_host` must be `A-Za-z0-9._:-`.
   - `backend_port` must be between 1 and 65535.
   - `name` can be at most 200 bytes and must not contain control characters.
-  - `health_path`, `path_prefix` and `restricted_paths[].path_prefix` must pass HAProxy path validation. Each entry in `restricted_paths[].allowed_cidrs` must be an IP address or a CIDR.
+  - `health_path`, `path_prefix`, `restricted_paths[].path_prefix` and `path_policy` paths must pass HAProxy path validation. Each entry in `restricted_paths[].allowed_cidrs` must be an IP address or a CIDR.
+  - `path_policy`, when omitted on an update, is left as stored. An unset policy on profile `ha-mcp` is replaced with the preset. `edge_token` is write-only and is rejected (400) when it is shorter than 16 characters or the state directory is unavailable.
   - `backend_tls_verify` must be `required` (the default) or `none`. When it is empty on an update, the stored `backend_tls_verify`, `backend_tls_ca_file` and `backend_tls_server_name` are kept.
   - `backend_tls_ca_file` must be an absolute path to an allowlisted file.
   - `security`: the toggles and other fields sent are kept, and `security.mode` is ignored and recomputed from the nine toggles (`profiles.DetectMode`). Only a block with nothing set (no `mode`, every toggle false, no GeoIP policy or country list, no rate-limit overrides), including an omitted `security`, is replaced with the default `balanced` settings. To store every toggle off, include a `mode` or use `POST /applications/{id}/security/mode` with `reverse-proxy-only`.

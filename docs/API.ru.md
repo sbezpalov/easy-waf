@@ -260,8 +260,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Ошибки:** нет. Сбои отображаются как `unknown`.
 
 ### `GET /api/v1/profiles`
-Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `none` и `custom`.
-- **Ответ:** `200`. У каждого значения есть поля `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (целые числа, миллисекунды), `http_keep_alive`, `block_paths` и `extra_blocked_methods` (массивы, `[]`, если пусто), `geo_default_deny`, `max_body_bytes` (целое, байты; `0` означает отсутствие лимита), `block_multipart` и `notes` (опускается, если пусто).
+Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `ha-mcp`, `none` и `custom`.
+- **Ответ:** `200`. У каждого значения есть поля `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (целые числа, миллисекунды), `http_keep_alive`, `block_paths` и `extra_blocked_methods` (массивы, `[]`, если пусто), `geo_default_deny`, `max_body_bytes` (целое, байты; `0` означает отсутствие лимита), `block_multipart` и `notes` (опускается, если пусто). У `ha-mcp` дополнительно есть `path_policy` — пресет публикации, который применяется, если приложение с этим профилем сохраняют без своей политики. См. [HA-MCP.ru.md](HA-MCP.ru.md).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
     "rate_limit_rps": 50, "rate_limit_burst": 100, "connect_timeout_ms": 5000, "server_timeout_ms": 50000,
@@ -275,7 +275,17 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 
 ## Приложения
 
-Приложение (`config.Application`, `internal/config/types.go`) сопоставляет публичное имя хоста с бэкендом. Его JSON-поля: `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (см. [Безопасность приложений](#безопасность-приложений)), `created_at` и `updated_at`.
+Приложение (`config.Application`, `internal/config/types.go`) сопоставляет публичное имя хоста с бэкендом. Его JSON-поля: `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (см. ниже; отсутствует, если политика не задана), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (см. [Безопасность приложений](#безопасность-приложений)), `created_at` и `updated_at`.
+
+`path_policy` — необязательное ограничение публикации поверх блок-листов профиля и restricted paths:
+
+- `mode`: отсутствует, `default` (только блок-листы) или `allowlist`.
+- `allow`: префиксы, которые публикуются в режиме `allowlist`. Префикс совпадает с путём и тем, что под ним, но не с более длинным соседом (`/api/mcp` совпадает с `/api/mcp/assist`, но не с `/api/mcp-other`). Остальные пути — **404**. Короткое замыкание IP allowlist этот запрет не обходит.
+- `client_timeout_sec` / `server_timeout_sec`: таймауты простоя для всех запросов приложения. `0` оставляет значение по умолчанию. На HAProxy 2.8 клиентское значение поднимает `timeout client` всего фронтенда (берётся наибольший запрос) и ставит `timeout http-request 10s`. Серверное значение применяется через `http-request set-timeout server`.
+- `rules[]`: `path_prefix`, необязательные `require_header` и `require_value_prefix` (**401**, если заголовка нет), необязательные `client_timeout_sec` / `server_timeout_sec` (побеждает самый длинный совпавший префикс), необязательный `rate_per_10s` (своя stick-table, та же единица «запросы за 10 с», что и burst приложения; счётчик берёт самый длинный совпавший префикс).
+- `rules[].edge_token_header` вместе с write-only `edge_token` сохраняет секрет вне базы. GET возвращает `edge_token_configured` и никогда сам секрет. `clear_edge_token: true` удаляет его. Заголовок снимается до бэкенда и не попадает в httplog.
+
+Если при обновлении не передать `path_policy`, сохранится записанная политика. Профиль `ha-mcp` без политики получает пресет из `GET /profiles`. Таймауты — от 1 до 86400 секунд. Не больше 32 префиксов и 8 правил.
 
 Изменяющие эндпоинты этого и следующего раздела сначала пишут в базу данных, а затем применяют изменение к HAProxy. Если apply не удался, изменение в базе отменяется и эндпоинт возвращает ошибку (text/plain) с сообщением вида `change not saved, edge apply failed: …`. Если не удалась и сама отмена, сообщение выглядит так: `edge apply failed: …; undoing the database change also failed, so it is saved but not live: …`. Код статуса:
 - `503`, когда apply не уложился во время. Apply ждёт не более 2 минут, включая ожидание блокировки apply, поэтому обычно это значит, что ещё шёл другой apply; повтор может пройти успешно.
@@ -307,7 +317,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `backend_host` — только `A-Za-z0-9._:-`.
   - `backend_port` — от 1 до 65535.
   - `name` — не более 200 байт и без управляющих символов.
-  - `health_path`, `path_prefix` и `restricted_paths[].path_prefix` должны проходить валидацию путей HAProxy. Каждый элемент `restricted_paths[].allowed_cidrs` должен быть IP-адресом или CIDR.
+  - `health_path`, `path_prefix`, `restricted_paths[].path_prefix` и пути в `path_policy` должны проходить валидацию путей HAProxy. Каждый элемент `restricted_paths[].allowed_cidrs` должен быть IP-адресом или CIDR.
+  - Если `path_policy` не передан при обновлении, остаётся сохранённое значение. Незаданная политика у профиля `ha-mcp` заменяется пресетом. `edge_token` только на запись: 400, если он короче 16 символов или каталог состояния недоступен.
   - `backend_tls_verify` должен быть `required` (по умолчанию) или `none`. Если при обновлении он пуст, сохранённые `backend_tls_verify`, `backend_tls_ca_file` и `backend_tls_server_name` сохраняются.
   - `backend_tls_ca_file` должен быть абсолютным путём к файлу из allowlist.
   - `security`: переданные переключатели и прочие поля сохраняются, а `security.mode` игнорируется и вычисляется заново по девяти переключателям (`profiles.DetectMode`). Настройками `balanced` по умолчанию заменяется только блок, в котором ничего не задано (нет `mode`, все переключатели false, нет политики GeoIP или списка стран, нет переопределений rate limit), в том числе опущенный `security`. Чтобы сохранить все переключатели выключенными, укажите `mode` или используйте `POST /applications/{id}/security/mode` с `reverse-proxy-only`.

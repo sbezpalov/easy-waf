@@ -24,26 +24,30 @@ Notes:
 The sequence below is shared by `fe_http` and `fe_https`. On port 80, HAProxy handles `/.well-known/acme-challenge/` before application rules so ACME HTTP-01 is not blocked by WAF or path policy.
 
 1. Host match (`acl app_<id>_host hdr(host) -i …`)
-2. **Allowlist bypass** — `http-request allow` when global IP allowlist is enabled, the app allows it, and the source matches the map (short-circuits further rules for that request in the ruleset phase).
-3. **IP blacklist** deny
-4. **GeoIP** (per-app map `geoip_app_<id>.map`, built on Apply / IPBL sync when country targets exist)
-5. **Bot protection** — empty User-Agent (requires global `block_empty_ua`) and optional blocked UA map (requires global `blocked_user_agents_enabled`)
-6. **Basic WAF** — SQLi / XSS / `../` traversal ACLs
-7. **Method filter** — `ExtraBlockedMethods` from the selected **profile**
-8. **Path ACL** — `BlockPaths` from the profile (`path_beg` denies)
-9. **Restricted paths** — per-path CIDR allowlists (always evaluated when configured)
-10. **Multipart block** — `415` for `multipart/*` outside `multipart_allowed_paths`, when the profile or the app turns it on ([SECURITY_PROFILES.md](SECURITY_PROFILES.md#request-bodies))
-11. **Body limit** — `413` over the limit, `411` for a body of undeclared length; headers only, bodies are not inspected
-12. **CrowdSec** — `http-request send-spoe-group`, then a 403 for any remediation other than `allow`, when the SPOE filter is loaded and the app has `crowdsec_enabled`
+2. **Path allowlist** — when `path_policy.mode` is `allowlist`, any other path is **404**. This runs before the IP allow shortcut, so a trusted source still cannot reach an unpublished path. Profile block lists and restricted paths still apply to paths that are on the list.
+3. **Required headers** — `path_policy.rules` may require a header (and an optional value prefix) or an edge token. A miss is **401**. The edge-token header is removed before the backend. Neither value is captured in httplog.
+4. **Allowlist bypass** — `http-request allow` when global IP allowlist is enabled, the app allows it, and the source matches the map (short-circuits further rules for that request in the ruleset phase). It does not skip the two steps above.
+5. **IP blacklist** deny
+6. **GeoIP** (per-app map `geoip_app_<id>.map`, built on Apply / IPBL sync when country targets exist)
+7. **Bot protection** — empty User-Agent (requires global `block_empty_ua`) and optional blocked UA map (requires global `blocked_user_agents_enabled`)
+8. **Basic WAF** — SQLi / XSS / `../` traversal ACLs
+9. **Method filter** — `ExtraBlockedMethods` from the selected **profile**
+10. **Path ACL** — `BlockPaths` from the profile (`path_beg` denies)
+11. **Restricted paths** — per-path CIDR allowlists (always evaluated when configured)
+12. **Multipart block** — `415` for `multipart/*` outside `multipart_allowed_paths`, when the profile or the app turns it on ([SECURITY_PROFILES.md](SECURITY_PROFILES.md#request-bodies))
+13. **Body limit** — `413` over the limit, `411` for a body of undeclared length; headers only, bodies are not inspected
+14. **CrowdSec** — `http-request send-spoe-group`, then a 403 for any remediation other than `allow`, when the SPOE filter is loaded and the app has `crowdsec_enabled`
 
 `use_backend` lines follow after all applications.
 
 ## Backend (`be_<sanitized_host>`)
 
 1. **Rate limit** — stick-table + `http-request deny … 429` when `rate_limit_enabled` (allowlist sources may bypass 429 when the app enables allowlist check and global IPWL is on)
-2. Profile **timeouts** and **keep-alive** mode
-3. **WebSocket** tunnel timeout when flagged
-4. **Health check** / **server** line
+2. **Per-path rate limit** — a separate stick-table per `path_policy` rule with `rate_per_10s`. The longest matching prefix owns the counter.
+3. **Server timeout override** — `http-request set-timeout server` for the app and for path rules. HAProxy 2.8 cannot set `timeout client` per request; a requested client timeout raises it for the whole frontend and adds `timeout http-request 10s`. See [HA-MCP.md](HA-MCP.md).
+4. Profile **timeouts** and **keep-alive** mode
+5. **WebSocket** tunnel timeout when flagged
+6. **Health check** / **server** line
 
 ## Mode presets vs toggles
 

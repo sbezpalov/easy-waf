@@ -8,13 +8,14 @@
 | `public-app` | 30 / 60 | 60s | default | Internet-exposed generic |
 | `php-app` | 50 / 100 | 50s | default | PHP apps: blocks multipart, 32 MiB body limit |
 | `home-assistant` | 40 / 80 | 3600s | default | Long-lived WS/SSE |
+| `ha-mcp` | 20 / 40 | 3600s | default | Home Assistant MCP allowlist, bearer check, SSE server timeout. See [HA-MCP.md](HA-MCP.md) |
 | `none` | 500 / 1000 | 300s | *(none)* | High limits; combine with per-app toggles |
 | `custom` | 50 / 100 | 50s | default | Alias of balanced numerics; tuning via toggles |
 
 Implementation: profile metadata lives in `internal/profiles`. The HAProxy template (`internal/haproxy/render.go`) applies **per published application**:
 
 - **Enabled frontends (`fe_http` / `fe_https`):** when the app’s `path_acl_enabled` / `method_filter_enabled` toggles are on, `BlockPaths` and `ExtraBlockedMethods` from the profile are enforced for that host; other layers (WAF, bot checks, IPBL, GeoIP, CrowdSec) are also gated by per-app toggles (see [APPLICATION_SECURITY.md](APPLICATION_SECURITY.md)).
-- **Backend:** `ConnectTimeout`, `ServerTimeout`, `HTTPKeepAlive`, optional stick-table rate limit vs **`RateLimitBurst`** (with optional per-app overrides), plus WebSocket/health/`server` lines.
+- **Backend:** `ConnectTimeout`, `ServerTimeout`, `HTTPKeepAlive`, optional stick-table rate limit vs **`RateLimitBurst`** (with optional per-app overrides), plus WebSocket/health/`server` lines. `path_policy` can add an allowlist, required headers, per-path stick-tables and server timeouts; see [APPLICATION_SECURITY.md](APPLICATION_SECURITY.md) and [HA-MCP.md](HA-MCP.md).
 
 ## Request bodies
 
