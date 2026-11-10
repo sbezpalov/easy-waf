@@ -219,7 +219,8 @@ echo "[offline-build] isolated APT dependency solve passed"
   cd "$STAGE"
   find . -type f ! -name SHA256SUMS -print0 |
     LC_ALL=C sort -z |
-    xargs -0 sha256sum >SHA256SUMS
+    xargs -0 sha256sum >SHA256SUMS.tmp
+  mv SHA256SUMS.tmp SHA256SUMS
 )
 
 BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
