@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ADR 0005** (proposed): per-application forward auth, fail closed, panel excluded. Not implemented.
 - **ADR 0006** (proposed): Easy Home WAF stays an edge and a reverse proxy. Optional Coraza/CRS through coraza-spoa is described, including fail-open when the sidecar is down and fail-closed on a rule match, and is not implemented.
 
+### Fixed
+
+- **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.
+
 ### Changed
 
 - **Docs match the tree.** Release notes list amd64 and arm64 (the published 1.6.0 release stays amd64-only). Acceptance counts match the AC table. The product name in the CrowdSec, Fail2Ban, GeoIP and monitoring pages is Easy Home WAF. English remains the canonical documentation language.

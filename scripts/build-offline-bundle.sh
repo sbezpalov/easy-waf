@@ -31,7 +31,7 @@ if [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-for command_name in apt-get apt-rdepends apt-ftparchive dpkg dpkg-deb dpkg-scanpackages git sha256sum tar; do
+for command_name in apt-get apt-ftparchive dpkg dpkg-deb dpkg-scanpackages git sha256sum tar; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "[offline-build] missing command: $command_name" >&2
     exit 1
@@ -119,16 +119,35 @@ elif [[ "$INCLUDE_CROWDSEC" != "0" ]]; then
 fi
 
 echo "[offline-build] resolving ${#packages[@]} roots for Ubuntu 24.04/$ARCH"
-package_list="${WORK_DIR}/packages.txt"
-apt-rdepends --follow=Depends,PreDepends --show=Depends,PreDepends "${packages[@]}" 2>/dev/null |
-  awk '/^[^ ]/ { print $1 }' |
-  grep -E '^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?$' |
-  sort -u >"$package_list"
-
-while IFS= read -r package_name; do
-  echo "[offline-build] download $package_name"
-  (cd "$APT_REPO" && apt-get download "$package_name" >/dev/null)
-done <"$package_list"
+# Download the concrete closure APT would install on an empty system.
+# apt-rdepends also prints virtual names (dbus-system-bus, libgnutls30,
+# systemd-sysusers, ...). Those have no candidate, so apt-get download fails
+# before the repository exists. The solver below picks one real provider
+# (dbus rather than dbus-broker, debconf rather than cdebconf).
+RESOLVE="${WORK_DIR}/resolve"
+mkdir -p "${RESOLVE}/cache/archives/partial"
+: >"${RESOLVE}/status"
+apt_resolve_opts=(
+  -o "Dir::State::status=${RESOLVE}/status"
+  -o "Dir::State::lists=/var/lib/apt/lists"
+  -o "Dir::Cache=${RESOLVE}/cache"
+  -o "Dir::Cache::archives=${RESOLVE}/cache/archives"
+  -o "Dir::Etc::sourcelist=/etc/apt/sources.list"
+  -o "Dir::Etc::sourceparts=/etc/apt/sources.list.d"
+  -o "Debug::NoLocking=true"
+  -o "APT::Install-Recommends=false"
+  -o "APT::Install-Suggests=false"
+  -o "APT::Get::Assume-Yes=true"
+  -o "Acquire::Languages=none"
+)
+apt-get "${apt_resolve_opts[@]}" --download-only install "${packages[@]}"
+find "${RESOLVE}/cache/archives" -maxdepth 1 -type f -name '*.deb' -exec mv -t "$APT_REPO" {} +
+mapfile -d '' downloaded_debs < <(find "$APT_REPO" -maxdepth 1 -type f -name '*.deb' -print0)
+if [[ "${#downloaded_debs[@]}" -lt 1 ]]; then
+  echo "[offline-build] APT downloaded no packages" >&2
+  exit 1
+fi
+echo "[offline-build] downloaded ${#downloaded_debs[@]} packages"
 
 cp -a "$DEB" "$APT_REPO/"
 cp -a "$DEB" "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"

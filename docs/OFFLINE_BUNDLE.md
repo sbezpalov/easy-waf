@@ -68,10 +68,15 @@ Build on a native-architecture Ubuntu 24.04 host. Configure the pinned CrowdSec
 repository using `scripts/lib/crowdsec-install.sh`, then install the build tools:
 
 ```bash
-sudo apt-get install apt-rdepends apt-utils dpkg-dev xorriso
+sudo apt-get install apt-utils dpkg-dev xorriso
 make deb
 make offline-bundle
 ```
+
+The builder asks APT, against an empty package status, for the concrete packages
+a fresh Ubuntu 24.04 system would install. Virtual dependencies such as
+`dbus-system-bus` and `libgnutls30` are stored as the provider APT selects
+(`dbus`, `libgnutls30t64`), not as the virtual name.
 
 `EASY_WAF_OFFLINE_INCLUDE_CROWDSEC=0` builds a smaller base bundle, but that is
 not the default appliance profile; its installer automatically disables the
