@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ADR 0003** proposes an edge-only container and does not add one.
 - **ADR 0004** (proposed): optional TOTP for the panel, with hashed recovery codes. Not implemented. Host step-up stays a password confirmation.
 - **ADR 0005** (proposed): per-application forward auth, fail closed, panel excluded. Not implemented.
+- **ADR 0006** (proposed): Easy Home WAF stays an edge and a reverse proxy. Optional Coraza/CRS through coraza-spoa is described, including fail-open when the sidecar is down and fail-closed on a rule match, and is not implemented.
 
 ### Changed
 

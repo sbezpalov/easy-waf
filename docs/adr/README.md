@@ -15,6 +15,7 @@ rather than editing it, so the history of *why* stays readable.
 | [0003](0003-docker-edge-only.md) | A Docker image that is only the edge | proposed |
 | [0004](0004-panel-totp.md) | A second factor for the management panel | proposed |
 | [0005](0005-forward-auth.md) | Forward authentication in front of a published application | proposed |
+| [0006](0006-coraza-crs.md) | What kind of WAF this project is | proposed |
 
 Earlier architectural context that predates this directory:
 
