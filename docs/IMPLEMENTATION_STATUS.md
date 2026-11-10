@@ -131,7 +131,7 @@ Verified against code and scripts (iterations A–D).
 3. ~~**CrowdSec in UI**~~ — done (ban/unban/whitelist).
 4. ~~**Prometheus `/metrics`**~~ — done (`docs/MONITORING.md`).
 5. ~~**Diagnostics bundle**~~ — done (`scripts/diagnostics.sh`, API bundle, `docs/DIAGNOSTICS.md`).
-6. **OVA/OVF appliance template** for fast VM deployment.
+6. **OVA/OVF appliance template** for fast VM deployment. Signature WAF (Coraza/CRS) is a proposed ADR only: [docs/adr/0006-coraza-crs.md](adr/0006-coraza-crs.md).
 7. **Smoke test checklist** — partly done: `scripts/smoke-appliance.sh` runs after installs and upgrades.
 8. **Tests:** broader e2e — partly done: container runs for CrowdSec and the body policy in `.github/workflows/e2e.yml`; install, upgrade and ACME are still checked by hand.
 9. **UI:** optional separate frontend framework instead of a single `index.html`.
