@@ -283,6 +283,9 @@ func ValidateApplicationRenderSafety(app *Application) error {
 	if err := validateBodyPolicy(app.Security); err != nil {
 		return err
 	}
+	if err := ValidatePathPolicy(app.PathPolicy); err != nil {
+		return err
+	}
 	for i, rp := range app.RestrictedPaths {
 		if err := ValidateHAProxyPath(fmt.Sprintf("restricted_paths[%d].path_prefix", i), rp.PathPrefix); err != nil {
 			return err

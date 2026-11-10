@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -192,25 +193,26 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 // profileJSON is the API shape of profiles.Profile, which has no JSON tags
 // and used to come out with PascalCase keys and nanosecond durations.
 type profileJSON struct {
-	Name                string   `json:"name"`
-	Description         string   `json:"description"`
-	RateLimitRPS        int      `json:"rate_limit_rps"`
-	RateLimitBurst      int      `json:"rate_limit_burst"`
-	ConnectTimeoutMS    int64    `json:"connect_timeout_ms"`
-	ServerTimeoutMS     int64    `json:"server_timeout_ms"`
-	HTTPKeepAlive       bool     `json:"http_keep_alive"`
-	BlockPaths          []string `json:"block_paths"`
-	ExtraBlockedMethods []string `json:"extra_blocked_methods"`
-	GeoDefaultDeny      bool     `json:"geo_default_deny"`
-	Notes               string   `json:"notes,omitempty"`
-	MaxBodyBytes        int64    `json:"max_body_bytes"`
-	BlockMultipart      bool     `json:"block_multipart"`
+	Name                string             `json:"name"`
+	Description         string             `json:"description"`
+	RateLimitRPS        int                `json:"rate_limit_rps"`
+	RateLimitBurst      int                `json:"rate_limit_burst"`
+	ConnectTimeoutMS    int64              `json:"connect_timeout_ms"`
+	ServerTimeoutMS     int64              `json:"server_timeout_ms"`
+	HTTPKeepAlive       bool               `json:"http_keep_alive"`
+	BlockPaths          []string           `json:"block_paths"`
+	ExtraBlockedMethods []string           `json:"extra_blocked_methods"`
+	GeoDefaultDeny      bool               `json:"geo_default_deny"`
+	Notes               string             `json:"notes,omitempty"`
+	MaxBodyBytes        int64              `json:"max_body_bytes"`
+	BlockMultipart      bool               `json:"block_multipart"`
+	PathPolicy          *config.PathPolicy `json:"path_policy,omitempty"`
 }
 
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]profileJSON{}
 	for k, v := range profiles.All() {
-		out[string(k)] = profileJSON{
+		row := profileJSON{
 			Name:                string(v.Name),
 			Description:         v.Description,
 			RateLimitRPS:        v.RateLimitRPS,
@@ -225,6 +227,11 @@ func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 			MaxBodyBytes:        v.MaxBodyBytes,
 			BlockMultipart:      v.BlockMultipart,
 		}
+		if k == profiles.HAMCP {
+			preset := profiles.HAMCPPathPolicy()
+			row.PathPolicy = &preset
+		}
+		out[string(k)] = row
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -297,14 +304,38 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		// it); report that rather than whatever the client sent or omitted.
 		a.CreatedAt = old.CreatedAt
 	}
+	if strings.TrimSpace(a.ID) == "" {
+		a.ID = uuid.NewString()
+	}
+	var previousPolicy *config.PathPolicy
+	if haveOld {
+		previousPolicy = old.PathPolicy
+	}
+	a.PathPolicy = profiles.ResolvePathPolicy(a.Profile, a.PathPolicy, previousPolicy)
+	if err := config.ValidatePathPolicy(a.PathPolicy); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	restoreTokens, err := config.SyncEdgeTokens(s.Eng.StateDir, a.ID, a.PathPolicy, previousPolicy)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
+		_ = restoreTokens()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	undo := s.restoreApplication(old)
+	undoDB := s.restoreApplication(old)
 	if !haveOld {
 		newID := a.ID
-		undo = func(ctx context.Context) error { return s.Eng.Store.DeleteApplication(ctx, newID) }
+		undoDB = func(ctx context.Context) error { return s.Eng.Store.DeleteApplication(ctx, newID) }
+	}
+	undo := func(ctx context.Context) error {
+		if err := undoDB(ctx); err != nil {
+			return err
+		}
+		return restoreTokens()
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application", undo); err != nil {
 		writeApplyRejected(w, err)
