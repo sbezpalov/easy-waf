@@ -132,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends apt-rdepends apt-utils dpkg-dev xorriso gnupg ca-certificates curl
+          sudo apt-get install -y --no-install-recommends apt-utils dpkg-dev xorriso gnupg ca-certificates curl
           sudo bash -c 'source scripts/lib/crowdsec-install.sh; crowdsec_add_apt_repo'
 
       - name: Install cosign
