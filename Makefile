@@ -7,6 +7,9 @@ GOVULNCHECK_VER ?= v1.9.0
 # Debian package builder. Keep in sync with .github/workflows/release.yml.
 NFPM_VER ?= v2.41.1
 EASY_WAF_VERSION ?= $(shell head -1 VERSION | tr -d '[:space:]')
+# Release artifacts are named with the Debian architecture. Host default keeps
+# `make build` native; the release workflow sets this to amd64 and to arm64.
+EASY_WAF_ARCH ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 # dpkg sorts 1.7.0~rc.1 before 1.7.0, but reads 1.7.0-rc.1 as a later revision of it,
 # so a final release could not replace a release candidate.
 EASY_WAF_DEB_VERSION ?= $(subst -,~,$(EASY_WAF_VERSION))
@@ -22,23 +25,23 @@ install-help:
 build:
 	@mkdir -p $(DIST)
 	# If dist/* is root-owned (e.g. after sudo install), fix: sudo chown -R $$(id -u):$$(id -g) $(DIST)
-	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-api ./cmd/easy-waf-api
-	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-acmed ./cmd/easy-waf-acmed
-	CGO_ENABLED=0 go build -o $(DIST)/easy-wafd ./cmd/easy-wafd
-	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-admin ./cmd/easy-waf-admin
-	CGO_ENABLED=0 go build -o $(DIST)/easy-waf-hostd ./cmd/easy-waf-hostd
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-api ./cmd/easy-waf-api
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-acmed ./cmd/easy-waf-acmed
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-wafd ./cmd/easy-wafd
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-admin ./cmd/easy-waf-admin
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-hostd ./cmd/easy-waf-hostd
 
 # Debian package — the primary way the appliance is installed and upgraded.
 # Why: docs/adr/0001-packaging-and-installer.md
 deb: build
 	@mkdir -p $(DIST)
 	@if command -v nfpm >/dev/null 2>&1; then \
-		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) nfpm package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb; \
+		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) EASY_WAF_ARCH=$(EASY_WAF_ARCH) nfpm package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_$(EASY_WAF_ARCH).deb; \
 	else \
 		echo >&2 "nfpm not in PATH; using go run $(NFPM_VER) (install: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER))"; \
-		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER) package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb; \
+		EASY_WAF_VERSION=$(EASY_WAF_DEB_VERSION) EASY_WAF_ARCH=$(EASY_WAF_ARCH) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VER) package --config packaging/nfpm.yaml --packager deb --target $(DIST)/easy-waf_$(EASY_WAF_VERSION)_$(EASY_WAF_ARCH).deb; \
 	fi
-	@echo "Built $(DIST)/easy-waf_$(EASY_WAF_VERSION)_amd64.deb"
+	@echo "Built $(DIST)/easy-waf_$(EASY_WAF_VERSION)_$(EASY_WAF_ARCH).deb"
 
 check-linux:
 	bash scripts/check-linux-artifacts.sh

@@ -9,7 +9,7 @@
 # scripts/install.sh, which runs before and after dpkg.
 
 name: easy-waf
-arch: amd64
+arch: ${EASY_WAF_ARCH}
 platform: linux
 version: ${EASY_WAF_VERSION}
 version_schema: none

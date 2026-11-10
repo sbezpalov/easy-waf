@@ -23,6 +23,26 @@ Use **Ubuntu autoinstall** (subiquity) instead of kickstart — see [Ubuntu auto
 - **Proxmox/KVM:** install **qemu-guest-agent** (`apt install qemu-guest-agent`).
 - Avoid shipping with a default password on `root`; use cloud-init user or lock root and sudo.
 
+## What the image must and must not contain
+
+The image is Ubuntu 24.04 plus the packages `install.sh` asks apt for. It is not
+a place to bake extra databases or keys.
+
+- **Easy Home WAF** itself is Apache-2.0. Keep `LICENSE` and `NOTICE` on the image.
+- **HAProxy** and **Fail2Ban** are GPL-2.0 as shipped by Ubuntu. Do not vendor
+  their source into this repository. The corresponding source is the Ubuntu
+  archive: [haproxy](https://packages.ubuntu.com/noble/haproxy) and
+  [fail2ban](https://packages.ubuntu.com/noble/fail2ban) (`apt-get source` on
+  the same release). A published image should say that in its notes so the GPL
+  offer is the distro's, not a private tarball.
+- **GeoLite2 is not included.** MaxMind's database is not redistributable here.
+  The operator runs `scripts/update-geoip-db.sh` after boot if they want it.
+  `packaging/ovf/check-image-contents.sh` fails if a tree you point it at
+  already contains a GeoLite2 file.
+
+Building the qcow2 or OVA still happens on a hypervisor. This repository does
+not produce the disk image.
+
 ## Versioning
 
 Tag OVA with product version + build ID; keep checksum (SHA256) next to the download.

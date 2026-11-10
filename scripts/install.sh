@@ -451,7 +451,11 @@ install_release_package() {
   ver="$(easy_waf_target_version)"
   [[ -n "$ver" ]] || return 1
 
-  local deb="${REPO_ROOT}/dist/easy-waf_${ver}_amd64.deb"
+  # shellcheck source=lib/release-arch.sh
+  source "${SCRIPT_DIR}/lib/release-arch.sh"
+  local arch
+  arch="$(easy_waf_release_arch)"
+  local deb="${REPO_ROOT}/dist/easy-waf_${ver}_${arch}.deb"
   local tmpd=""
   if [[ -f "$deb" ]]; then
     log "Using local package: $deb"
@@ -461,7 +465,7 @@ install_release_package() {
     local gh base name url
     gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
     base="https://github.com/${gh}/releases/download/v${ver}"
-    name="easy-waf_${ver}_amd64.deb"
+    name="easy-waf_${ver}_${arch}.deb"
     url="${base}/${name}"
     # shellcheck source=lib/release-verify.sh
     source "${SCRIPT_DIR}/lib/release-verify.sh"
@@ -543,7 +547,11 @@ acquire_dist_binaries() {
     local gh
     gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
     local base="https://github.com/${gh}/releases/download/v${ver}"
-    local name="easy-waf_${ver}_linux_amd64.tar.gz"
+    # shellcheck source=lib/release-arch.sh
+    source "${SCRIPT_DIR}/lib/release-arch.sh"
+    local arch
+    arch="$(easy_waf_release_arch)"
+    local name="easy-waf_${ver}_linux_${arch}.tar.gz"
     local url="${base}/${name}"
     # shellcheck source=lib/release-verify.sh
     source "${SCRIPT_DIR}/lib/release-verify.sh"
@@ -578,7 +586,7 @@ acquire_dist_binaries() {
 
 [easy-waf] ERROR: no verified release artifact for v${ver}
 
-Neither easy-waf_${ver}_amd64.deb nor easy-waf_${ver}_linux_amd64.tar.gz could be
+Neither easy-waf_${ver}_${arch}.deb nor easy-waf_${ver}_linux_${arch}.tar.gz could be
 downloaded and matched against SHA256SUMS.
 
 Check first:
