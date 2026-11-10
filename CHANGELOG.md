@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Profile `ha-mcp`** and the guide [docs/HA-MCP.md](docs/HA-MCP.md) for publishing a Home Assistant MCP endpoint.
 - **Certificate webhook.** `notify_webhook_url` receives one JSON POST a day from `easy-waf-acmed` when a certificate failed or has fewer than 21 days left. Redirects are not followed, link-local addresses are refused, and the URL is not logged.
 - **Acceptance checklist** for the checks that need a real host or the public Let's Encrypt: [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md), `scripts/acceptance-checklist.sh`.
+- **arm64 release artifacts.** A `v*` tag builds `linux/arm64` and `linux/amd64` tarballs and `.deb` packages. `install.sh` downloads the architecture of the machine. One `SHA256SUMS` is signed, as before.
+- **VM image notes.** `packaging/ovf` states the GPL source for the Ubuntu HAProxy and Fail2Ban packages, forbids baking GeoLite2, and `check-image-contents.sh` checks a tree you mount. The disk image is still built on a hypervisor.
+- **ADR 0003** proposes an edge-only container and does not add one.
 
 ### Changed
 

@@ -134,6 +134,9 @@ jobs:
           bash -n scripts/host/privileged.sh
           bash -n scripts/diagnostics.sh
           bash -n scripts/acceptance-checklist.sh
+          bash -n scripts/lib/release-arch.sh
+          bash -n scripts/test-release-arch.sh
+          bash -n packaging/ovf/check-image-contents.sh
 
   haproxy-config-test:
     runs-on: ubuntu-latest
