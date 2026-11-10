@@ -21,4 +21,25 @@ if bash "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
   exit 1
 fi
 
+# Regression: hashing must not list a temporary checksum file that disappears
+# after rename. Writing SHA256SUMS.tmp inside the tree and then renaming it
+# leaves a dangling SHA256SUMS.tmp entry that makes install --verify-only fail.
+STAGE="${TEMP_DIR}/stage"
+OUTSIDE="${TEMP_DIR}/outside"
+mkdir -p "$STAGE" "$OUTSIDE"
+printf 'payload\n' >"${STAGE}/payload.txt"
+(
+  cd "$STAGE"
+  find . -type f ! -name SHA256SUMS -print0 |
+    LC_ALL=C sort -z |
+    xargs -0 sha256sum >"${OUTSIDE}/SHA256SUMS"
+  mv "${OUTSIDE}/SHA256SUMS" SHA256SUMS
+)
+if grep -q 'SHA256SUMS\.tmp' "${STAGE}/SHA256SUMS"; then
+  echo "test-offline-bundle: checksum list includes SHA256SUMS.tmp" >&2
+  exit 1
+fi
+cp "${SCRIPT_DIR}/install-offline-bundle.sh" "${STAGE}/install.sh"
+bash "${STAGE}/install.sh" --verify-only >/dev/null
+
 echo "test-offline-bundle: PASS"
