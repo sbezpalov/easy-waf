@@ -64,7 +64,18 @@ api_post() {
 
 echo "[e2e] prepare PEM under $STATE/certs/_e2e/"
 install -d -m0750 -o easy-waf -g easy-waf "${STATE}/certs/_e2e"
-[[ -f "$CERT_SRC" ]] || die "missing cert file: $CERT_SRC"
+if [[ ! -f "$CERT_SRC" ]]; then
+  command -v openssl >/dev/null || die "missing cert file: $CERT_SRC (and openssl is not installed)"
+  mkdir -p "$(dirname "$CERT_SRC")"
+  tmp="$(mktemp -d)"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" -days 3650 \
+    -subj "/CN=a.example.com" >/dev/null 2>&1 \
+    || die "openssl could not write a test certificate"
+  cat "$tmp/cert.pem" "$tmp/key.pem" >"$CERT_SRC"
+  rm -rf "$tmp"
+  chmod 600 "$CERT_SRC"
+fi
 install -m0640 -o easy-waf -g easy-waf "$CERT_SRC" "${STATE}/certs/_e2e/e2e-bundle.pem"
 
 BUNDLE_PATH="${STATE}/certs/_e2e/e2e-bundle.pem"

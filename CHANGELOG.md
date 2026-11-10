@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Certificate webhook.** `notify_webhook_url` receives one JSON POST a day from `easy-waf-acmed` when a certificate failed or has fewer than 21 days left. Redirects are not followed, link-local addresses are refused, and the URL is not logged.
 - **Acceptance checklist** for the checks that need a real host or the public Let's Encrypt: [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md), `scripts/acceptance-checklist.sh`.
 
+### Changed
+
+- **Test certificates are generated, not stored.** `go test ./internal/haproxy` writes throwaway bundles for the golden configs. The private keys are gitignored.
+- **README** says what Easy Home WAF is not, how the module path relates to the current git remote, and compares capabilities without performance numbers. Panel screenshots are left for a running appliance.
+
 ## [1.7.0-rc.1] - 2026-11-01
 
 Release candidate for a pilot on one real host. It is not marked as the latest

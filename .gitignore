@@ -18,6 +18,9 @@ $RECYCLE.BIN/
 # network, so they belong in user settings — see docs/DEV_HOST.md.
 .vscode/
 
+# Throwaway HAProxy test bundles (certificate + private key). go test writes them.
+internal/haproxy/testdata/golden/certs/bundle-*.pem
+
 # AI working documents: plans, research and review notes. Useful while the work
 # is in flight, misleading once it is done — a closed finding still reads as an
 # open one to anybody who finds the file later.

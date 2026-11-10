@@ -88,7 +88,7 @@ sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg
 
 ## End-to-end test (optional)
 
-**Destructive** (runs **factory-reset**, wipes DB and state, then restores). Requires a working appliance with **`EASY_WAF_ADMIN_TOKEN`** in `easy-waf.env`, **`curl`**, and repo test PEM at `internal/haproxy/testdata/golden/certs/bundle-a.pem` (or set **`EASY_WAF_E2E_CERT_PEM`**).
+**Destructive** (runs **factory-reset**, wipes DB and state, then restores). Requires a working appliance with **`EASY_WAF_ADMIN_TOKEN`** in `easy-waf.env` and **`curl`**. If `internal/haproxy/testdata/golden/certs/bundle-a.pem` is absent, the script writes a throwaway self-signed certificate there with `openssl` (or use **`EASY_WAF_E2E_CERT_PEM`**).
 
 ```bash
 cd /path/to/easy-waf

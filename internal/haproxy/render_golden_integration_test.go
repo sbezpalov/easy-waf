@@ -50,8 +50,8 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 	}
 }
 
-// goldenCAFileForCheck materializes a CA bundle for `haproxy -c` to open,
-// reusing a committed certificate fixture so no key material is generated here.
+// goldenCAFileForCheck materializes a CA bundle for `haproxy -c` to open.
+// TestMain has already written the throwaway bundle this copies.
 func goldenCAFileForCheck(t *testing.T, dir string) string {
 	t.Helper()
 	src := filepath.Join("testdata", "golden", "certs", "bundle-a.pem")
