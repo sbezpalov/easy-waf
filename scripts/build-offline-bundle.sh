@@ -215,12 +215,14 @@ apt-get "${apt_opts[@]}" update -qq
 apt-get "${apt_opts[@]}" --simulate install easy-waf "${packages[@]}" >/dev/null
 echo "[offline-build] isolated APT dependency solve passed"
 
+# Write the checksum file outside STAGE so the redirect cannot create a
+# temporary entry that find would then hash and leave dangling after mv.
 (
   cd "$STAGE"
   find . -type f ! -name SHA256SUMS -print0 |
     LC_ALL=C sort -z |
-    xargs -0 sha256sum >SHA256SUMS.tmp
-  mv SHA256SUMS.tmp SHA256SUMS
+    xargs -0 sha256sum >"${WORK_DIR}/SHA256SUMS"
+  mv "${WORK_DIR}/SHA256SUMS" SHA256SUMS
 )
 
 BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
