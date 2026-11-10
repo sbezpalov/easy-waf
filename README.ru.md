@@ -1,6 +1,6 @@
 # Easy Home WAF
 
-[English](README.md) | **Русский** · канонический документ — английский; при расхождении верна английская версия. Переведено с 1.6.0.
+[English](README.md) | **Русский** · каноническая документация — английская: при расхождении верна она, и часть страниц (APPLICATION_SECURITY, ACME, SECURITY_PROFILES, ADR и другие без пары `.ru`) есть только на английском. Переведено с 1.6.0.
 
 [![CI](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sbezpalov/easy-waf/actions/workflows/ci.yml)
 [![Release](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml/badge.svg)](https://github.com/sbezpalov/easy-waf/actions/workflows/release.yml)
