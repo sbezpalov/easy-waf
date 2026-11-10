@@ -82,7 +82,7 @@ func TestRenderEdgeTokenIsFileNotValue(t *testing.T) {
 	if err := os.MkdirAll(dir+"/secrets/edge-tokens/"+app.ID, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(file, []byte(secret+"\n"), 0o640); err != nil {
+	if err := os.WriteFile(file, []byte(secret+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	settings := config.DefaultSettings(dir)

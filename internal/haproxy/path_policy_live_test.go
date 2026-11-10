@@ -88,6 +88,8 @@ func TestLivePathPolicy(t *testing.T) {
 	}
 	cfg := got.HAProxyConfig
 	cfg = strings.ReplaceAll(cfg, "bind *:80", fmt.Sprintf("bind 127.0.0.1:%d", edgePort))
+	// GitHub's container cannot raise the FD limit high enough for maxconn 50000.
+	cfg = strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200")
 	cfg = stripPrivilegeDrop(cfg)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o640); err != nil {
 		t.Fatal(err)

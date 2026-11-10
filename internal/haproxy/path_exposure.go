@@ -221,18 +221,18 @@ func buildPathExposure(app config.Application, aclTag, stateDir string) (pathExp
 }
 
 func maxClientTimeout(apps []AppRender) int {
-	max := 0
+	longest := 0
 	for _, a := range apps {
-		if a.Exposure.AppClient > max {
-			max = a.Exposure.AppClient
+		if a.Exposure.AppClient > longest {
+			longest = a.Exposure.AppClient
 		}
 		for _, t := range a.Exposure.ClientTimeouts {
-			if t.Client > max {
-				max = t.Client
+			if t.Client > longest {
+				longest = t.Client
 			}
 		}
 	}
-	return max
+	return longest
 }
 
 func ruleDoesSomething(r config.PathRule) bool {

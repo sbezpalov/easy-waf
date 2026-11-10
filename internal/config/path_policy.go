@@ -451,7 +451,8 @@ func writeEdgeToken(path, token string) error {
 	// Group-readable so the haproxy user, which is in the easy-waf group, can
 	// compare the header. The value is not world-readable and is not copied
 	// into haproxy.cfg.
-	if err := os.WriteFile(tmp, []byte(token+"\n"), 0o640); err != nil {
+	// 0640: the haproxy user is in the easy-waf group and must read the token.
+	if err := os.WriteFile(tmp, []byte(token+"\n"), 0o640); err != nil { //nolint:gosec // group-readable for haproxy, not world-readable
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -494,7 +495,7 @@ func restoreTokenDir(dir string, snap map[string][]byte) error {
 		return err
 	}
 	for name, body := range snap {
-		if err := os.WriteFile(filepath.Join(dir, name), body, 0o640); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o640); err != nil { //nolint:gosec // restored token stays group-readable for haproxy
 			return err
 		}
 	}
