@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **arm64 release artifacts.** A `v*` tag builds `linux/arm64` and `linux/amd64` tarballs and `.deb` packages. `install.sh` downloads the architecture of the machine. One `SHA256SUMS` is signed, as before.
 - **VM image notes.** `packaging/ovf` states the GPL source for the Ubuntu HAProxy and Fail2Ban packages, forbids baking GeoLite2, and `check-image-contents.sh` checks a tree you mount. The disk image is still built on a hypervisor.
 - **ADR 0003** proposes an edge-only container and does not add one.
+- **ADR 0004** (proposed): optional TOTP for the panel, with hashed recovery codes. Not implemented. Host step-up stays a password confirmation.
+- **ADR 0005** (proposed): per-application forward auth, fail closed, panel excluded. Not implemented.
 
 ### Changed
 
