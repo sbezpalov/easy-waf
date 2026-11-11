@@ -299,6 +299,9 @@ func ValidateApplicationRenderSafety(app *Application) error {
 	if strings.ContainsAny(app.BackendHost, "\n\r\t;#") {
 		return fmt.Errorf("backend_host contains control characters")
 	}
+	if err := validateBackendServers(app); err != nil {
+		return err
+	}
 	if err := ValidateHAProxyPath("health_path", app.HealthPath); err != nil {
 		return err
 	}
@@ -332,4 +335,28 @@ func ValidateApplicationRenderSafety(app *Application) error {
 		return err
 	}
 	return ValidateBackendTLSServerName(app.BackendTLSServerName)
+}
+
+func validateBackendServers(app *Application) error {
+	if !slices.Contains(BackendBalances, app.BackendBalance) {
+		return fmt.Errorf("backend_balance must be roundrobin, leastconn or source")
+	}
+	if len(app.BackendServers) > MaxBackendServers {
+		return fmt.Errorf("backend_servers: at most %d entries", MaxBackendServers)
+	}
+	seen := map[string]bool{strings.ToLower(app.BackendHost) + ":" + strconv.Itoa(app.BackendPort): true}
+	for i, sv := range app.BackendServers {
+		if !validBackendHostRe.MatchString(sv.Host) {
+			return fmt.Errorf("backend_servers[%d].host contains invalid characters", i)
+		}
+		if sv.Port < 1 || sv.Port > 65535 {
+			return fmt.Errorf("backend_servers[%d].port must be 1-65535", i)
+		}
+		key := strings.ToLower(sv.Host) + ":" + strconv.Itoa(sv.Port)
+		if seen[key] {
+			return fmt.Errorf("backend_servers[%d]: %s is listed twice", i, key)
+		}
+		seen[key] = true
+	}
+	return nil
 }

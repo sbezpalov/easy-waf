@@ -295,6 +295,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		a.BackendTLSCAFile = old.BackendTLSCAFile
 		a.BackendTLSServerName = old.BackendTLSServerName
 	}
+	if haveOld && a.BackendServers == nil {
+		a.BackendServers = old.BackendServers
+		a.BackendBalance = old.BackendBalance
+	}
 	config.NormalizeBackendTLS(&a)
 	if err := validateBackendTLS(s.Eng.StateDir, &a); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

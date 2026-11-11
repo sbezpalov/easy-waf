@@ -46,8 +46,9 @@ func acmeSuffix(skip bool) string {
 	return ""
 }
 
-func backendTLSOptions(a AppRender) string {
-	app := a.Application
+// backendTLSOptions is the TLS part of the server line for host. Without a
+// backend_tls_server_name each server is verified against its own host.
+func backendTLSOptions(app config.Application, host string) string {
 	if !app.BackendHTTPS {
 		return ""
 	}
@@ -61,7 +62,7 @@ func backendTLSOptions(a AppRender) string {
 	}
 	verifyHost := strings.TrimSpace(app.BackendTLSServerName)
 	if verifyHost == "" {
-		verifyHost = strings.Trim(app.BackendHost, "[]")
+		verifyHost = strings.Trim(host, "[]")
 	}
 	return fmt.Sprintf(" ssl verify required ca-file %s sni str(%s) verifyhost %s", ca, verifyHost, verifyHost)
 }

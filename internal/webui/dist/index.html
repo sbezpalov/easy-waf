@@ -337,6 +337,18 @@
           <button id="save">Save application</button>
         </div>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>More backend servers <span class="dash-note">(one per line: <code>host:port</code>; add <code>backup</code> for failover only)</span>
+            <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="min-width:22rem"></textarea>
+          </label>
+          <label>Load balancing
+            <select id="backend-balance">
+              <option value="">Round robin</option>
+              <option value="leastconn">Least connections</option>
+              <option value="source">Same client, same server (source IP)</option>
+            </select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>Listen mode
             <select id="listen-mode">
               <option value="https_only">HTTPS only (HTTP → redirect)</option>
@@ -1191,6 +1203,22 @@
     return out;
   }
 
+  function formatBackendServers(list) {
+    return (Array.isArray(list) ? list : []).map((s) => s.host + ':' + s.port + (s.backup ? ' backup' : '')).join('\n');
+  }
+
+  // "host:port [backup]" per line; the last colon splits, so IPv6 needs [brackets].
+  function parseBackendServers(text) {
+    const out = [];
+    const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const m = /^(\S+):(\d{1,5})(\s+backup)?$/i.exec(line);
+      if (!m) throw new Error('Backend server "' + line + '": use host:port, optionally followed by backup');
+      out.push({ host: m[1], port: parseInt(m[2], 10), backup: !!m[3] });
+    }
+    return out;
+  }
+
   function clearAppFormFields() {
     document.getElementById('app-edit-id').value = '';
     document.getElementById('apps-edit-hint').classList.add('hidden');
@@ -1198,6 +1226,8 @@
     document.getElementById('host').value = '';
     document.getElementById('backend').value = '';
     document.getElementById('port').value = '';
+    document.getElementById('backend-servers').value = '';
+    document.getElementById('backend-balance').value = '';
     document.getElementById('behttps').checked = false;
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
@@ -1787,6 +1817,8 @@
     document.getElementById('host').value = a.public_host || '';
     document.getElementById('backend').value = a.backend_host || '';
     document.getElementById('port').value = String(a.backend_port != null ? a.backend_port : 80);
+    document.getElementById('backend-servers').value = formatBackendServers(a.backend_servers);
+    document.getElementById('backend-balance').value = a.backend_balance || '';
     document.getElementById('behttps').checked = !!a.backend_https;
     document.getElementById('ws').checked = !!a.websocket;
     document.getElementById('profile').value = a.profile || 'balanced';
@@ -1844,7 +1876,7 @@
   <div class="app-card-head">
     <div>
       <p class="app-card-title">${esc(a.name)}</p>
-      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${ws}${lmb}</p>
+      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${(a.backend_servers || []).length ? ' <span class="app-badge">+' + a.backend_servers.length + ' server(s)</span>' : ''}${ws}${lmb}</p>
     </div>
     <div class="row" style="margin:0;gap:0.35rem">
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
@@ -3556,11 +3588,20 @@
         toast('Certificate is required for listen mode: ' + listenMode, 'err');
         return;
       }
+      let backendServers;
+      try {
+        backendServers = parseBackendServers(document.getElementById('backend-servers').value);
+      } catch (e) {
+        toast(e.message, 'err');
+        return;
+      }
       const body = {
         name: document.getElementById('name').value,
         public_host: document.getElementById('host').value,
         backend_host: document.getElementById('backend').value,
         backend_port: parseInt(document.getElementById('port').value, 10),
+        backend_servers: backendServers,
+        backend_balance: document.getElementById('backend-balance').value,
         backend_https: document.getElementById('behttps').checked,
         websocket: document.getElementById('ws').checked,
         profile: document.getElementById('profile').value,

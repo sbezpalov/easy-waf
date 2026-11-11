@@ -105,11 +105,17 @@ type Application struct {
 	// BackendTLSCAFile is an allowlisted CA bundle path; empty uses the Ubuntu system bundle.
 	BackendTLSCAFile string `json:"backend_tls_ca_file,omitempty"`
 	// BackendTLSServerName overrides SNI/verifyhost (DNS name or IP). Empty uses backend_host.
-	BackendTLSServerName string           `json:"backend_tls_server_name,omitempty"`
-	WebSocket            bool             `json:"websocket"`
-	HealthPath           string           `json:"health_path,omitempty"`
-	PathPrefix           string           `json:"path_prefix,omitempty"`
-	RestrictedPaths      []RestrictedPath `json:"restricted_paths,omitempty"`
+	BackendTLSServerName string `json:"backend_tls_server_name,omitempty"`
+	// BackendServers are added next to backend_host:backend_port and share its
+	// TLS and health-check settings. A backup server gets traffic only while
+	// every other server is down. nil on an update keeps the stored list.
+	BackendServers []BackendServer `json:"backend_servers,omitempty"`
+	// BackendBalance is empty (roundrobin), roundrobin, leastconn or source.
+	BackendBalance  string           `json:"backend_balance,omitempty"`
+	WebSocket       bool             `json:"websocket"`
+	HealthPath      string           `json:"health_path,omitempty"`
+	PathPrefix      string           `json:"path_prefix,omitempty"`
+	RestrictedPaths []RestrictedPath `json:"restricted_paths,omitempty"`
 	// PathPolicy is optional exposure control (allowlist, required headers, per-path timeouts and rate limits).
 	// A nil value means the client omitted it. On update the API keeps the stored policy.
 	PathPolicy    *PathPolicy `json:"path_policy,omitempty"`
@@ -122,6 +128,19 @@ type Application struct {
 	CreatedAt  time.Time           `json:"created_at"`
 	UpdatedAt  time.Time           `json:"updated_at"`
 }
+
+// BackendServer is one extra server behind an application.
+type BackendServer struct {
+	Host   string `json:"host"`
+	Port   int    `json:"port"`
+	Backup bool   `json:"backup,omitempty"`
+}
+
+// MaxBackendServers caps backend_servers (the primary server comes on top).
+const MaxBackendServers = 15
+
+// BackendBalances are the accepted backend_balance values.
+var BackendBalances = []string{"", "roundrobin", "leastconn", "source"}
 
 // Certificate stores metadata for HAProxy PEM material.
 type Certificate struct {

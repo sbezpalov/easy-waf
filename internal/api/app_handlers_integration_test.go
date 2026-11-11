@@ -4,9 +4,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/easy-waf/easy-waf/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,5 +118,55 @@ func TestUpsertCertificateRespondsWithStoredRow(t *testing.T) {
 	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), got.ID) })
 	if got.ACMEAttempts != 0 {
 		t.Fatalf("response echoed client acme_attempts=%d; the store never writes it", got.ACMEAttempts)
+	}
+}
+
+func TestUpsertBackendServersRoundTripAndKeep(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("servers%d", time.Now().UnixNano()))
+	a.BackendBalance = "leastconn"
+	a.BackendServers = []config.BackendServer{{Host: "10.0.0.50", Port: 8080}, {Host: "standby.lan", Port: 8080, Backup: true}}
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+
+	a.BackendServers = nil // a client that omits backend_servers keeps them
+	a.BackendBalance = ""
+	if rec := putApp(t, s, a); rec.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+	}
+	stored, err := s.Eng.Store.GetApplication(context.Background(), a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.BackendBalance != "leastconn" || len(stored.BackendServers) != 2 || !stored.BackendServers[1].Backup || stored.BackendServers[1].Host != "standby.lan" {
+		t.Fatalf("stored %q %+v", stored.BackendBalance, stored.BackendServers)
+	}
+
+	// An explicit [] clears them (omitempty would drop an empty Go slice).
+	var body map[string]any
+	b, _ := json.Marshal(a)
+	_ = json.Unmarshal(b, &body)
+	body["backend_servers"] = []any{}
+	b, _ = json.Marshal(body)
+	rec = httptest.NewRecorder()
+	s.upsertApp(rec, httptest.NewRequest(http.MethodPut, "/api/v1/applications", bytes.NewReader(b)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body.String())
+	}
+	stored, err = s.Eng.Store.GetApplication(context.Background(), a.ID)
+	if err != nil || len(stored.BackendServers) != 0 {
+		t.Fatalf("cleared: %+v %v", stored.BackendServers, err)
+	}
+
+	a.BackendServers = []config.BackendServer{{Host: a.BackendHost, Port: a.BackendPort}}
+	if rec := putApp(t, s, a); rec.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate of the primary server: %d", rec.Code)
 	}
 }

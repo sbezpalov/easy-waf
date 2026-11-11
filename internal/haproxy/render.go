@@ -26,10 +26,34 @@ type AppRender struct {
 	GeoEnforceMapPath string
 	UsePerAppGeo      bool
 	RateLimitBurst    int
-	BackendUsesDNS    bool // backend_host is FQDN — use resolvers easy_waf_dns
+	BackendUsesDNS    bool // a server host is an FQDN — the config needs resolvers easy_waf_dns
+	Servers           []ServerRender
 	MaxBodyBytes      int64
 	BlockMultipart    bool
 	Exposure          pathExposure
+}
+
+// ServerRender is one `server` line of an application backend.
+type ServerRender struct {
+	Name    string
+	Host    string
+	Port    int
+	TLS     string
+	UsesDNS bool
+	Backup  bool
+}
+
+func appServers(app config.Application) []ServerRender {
+	out := make([]ServerRender, 0, 1+len(app.BackendServers))
+	out = append(out, ServerRender{Name: "s1", Host: app.BackendHost, Port: app.BackendPort})
+	for i, sv := range app.BackendServers {
+		out = append(out, ServerRender{Name: fmt.Sprintf("s%d", i+2), Host: sv.Host, Port: sv.Port, Backup: sv.Backup})
+	}
+	for i := range out {
+		out[i].TLS = backendTLSOptions(app, out[i].Host)
+		out[i].UsesDNS = !backendHostIsLiteralIP(out[i].Host)
+	}
+	return out
 }
 
 // RenderInput is passed to the HAProxy template.
@@ -161,7 +185,11 @@ func Render(in RenderInput) (Rendered, error) {
 		if burst < 1 {
 			burst = 1
 		}
-		usesDNS := !backendHostIsLiteralIP(app.BackendHost)
+		servers := appServers(app)
+		usesDNS := false
+		for _, sv := range servers {
+			usesDNS = usesDNS || sv.UsesDNS
+		}
 		maxBody, blockMultipart := p.BodyPolicy(app.Security)
 		exposure, err := buildPathExposure(app, tag, in.StateDir)
 		if err != nil {
@@ -175,6 +203,7 @@ func Render(in RenderInput) (Rendered, error) {
 			UsePerAppGeo:      useAppGeo,
 			RateLimitBurst:    burst,
 			BackendUsesDNS:    usesDNS,
+			Servers:           servers,
 			MaxBodyBytes:      maxBody,
 			BlockMultipart:    blockMultipart,
 			Exposure:          exposure,
@@ -578,18 +607,11 @@ backend {{backendName $a.Application.PublicHost}}
 	{{- if $a.Application.HealthPath }}
 	option httpchk GET {{$a.Application.HealthPath}}
 	{{- end }}
-	{{- if $a.Application.BackendHTTPS }}
-	{{- if $a.BackendUsesDNS }}
-	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}}{{backendTLS $a}} resolvers easy_waf_dns init-addr last,libc,none check inter 3s fall 3 rise 2
-	{{- else }}
-	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}}{{backendTLS $a}} check inter 3s fall 3 rise 2
+	{{- if $a.Application.BackendBalance }}
+	balance {{$a.Application.BackendBalance}}
 	{{- end }}
-	{{- else }}
-	{{- if $a.BackendUsesDNS }}
-	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} resolvers easy_waf_dns init-addr last,libc,none check inter 3s fall 3 rise 2
-	{{- else }}
-	server s1 {{$a.Application.BackendHost}}:{{$a.Application.BackendPort}} check inter 3s fall 3 rise 2
-	{{- end }}
+	{{- range $s := $a.Servers }}
+	server {{$s.Name}} {{$s.Host}}:{{$s.Port}}{{$s.TLS}}{{if $s.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 3s fall 3 rise 2{{if $s.Backup}} backup{{end}}
 	{{- end }}
 {{end}}
 {{define "realIP"}}
@@ -757,7 +779,6 @@ var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.Func
 	"methodSlug":  methodSlug,
 	"appSec":      appSec,
 	"acmeSuffix":  acmeSuffix,
-	"backendTLS":  backendTLSOptions,
 }).Parse(haproxyTemplate))
 
 // Paths under stateDir for generated artifacts.
