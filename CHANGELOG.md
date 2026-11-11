@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TCP services.** `tcp_services` publishes raw TCP ports (MQTT, RTSP, ...) through HAProxy `mode tcp`, with an optional source allowlist, the IP blacklist and a health check (Security → Edge network → TCP services). Open each port in the host firewall.
 - **Panel roles.** Panel users are `admin` or `viewer` (read-only: no writes, no host management, no diagnostics bundle; enforced by the API). Users → Panel users creates users with a one-time temporary password, changes roles, resets passwords and deletes users (`/api/v1/panel-users`, step-up, audited; the last admin is protected). Existing users stay admins. Migration `023_user_roles.sql`.
 - **Maintenance mode.** Per application, `maintenance` returns a 503 maintenance page (`Retry-After: 600`) without reaching the servers, except from `maintenance_bypass_cidrs`. Applications → **Maintenance** toggles it (`POST /api/v1/applications/{id}/maintenance`, audited). Migration `022_maintenance.sql`.
 - **Error pages.** Responses HAProxy makes itself (403, 404, 429, 502, 503, 504 and others) get short neutral HTML pages instead of HAProxy's built-in bodies, which named the proxy.

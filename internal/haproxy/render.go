@@ -35,6 +35,13 @@ type AppRender struct {
 	Exposure             pathExposure
 }
 
+// TCPServiceRender is one enabled tcp_services entry.
+type TCPServiceRender struct {
+	config.TCPService
+	AllowSrc string
+	UsesDNS  bool
+}
+
 // ServerRender is one `server` line of an application backend.
 type ServerRender struct {
 	Name    string
@@ -78,13 +85,14 @@ type RenderInput struct {
 	IPAllowlistMapPath       string
 	UseIPBlacklist           bool
 	UseIPAllowlist           bool
-	BlockedUserAgentsMapPath string // absolute path to generated substring map (-m sub -f)
-	UseBlockedUserAgents     bool   // enabled in settings and map has at least one pattern line
-	StateDir                 string // state directory for per-app GeoIP map paths
-	UseCrowdSecFilter        bool   // at least one routed app requests CrowdSec and SPOE path is configured
-	UseCrowdSecHTTP          bool   // SPOE on fe_http
-	UseCrowdSecHTTPS         bool   // SPOE on fe_https
-	NeedsDNSResolver         bool   // any backend uses DNS name (split-DNS / DHCP)
+	BlockedUserAgentsMapPath string             // absolute path to generated substring map (-m sub -f)
+	UseBlockedUserAgents     bool               // enabled in settings and map has at least one pattern line
+	StateDir                 string             // state directory for per-app GeoIP map paths
+	UseCrowdSecFilter        bool               // at least one routed app requests CrowdSec and SPOE path is configured
+	UseCrowdSecHTTP          bool               // SPOE on fe_http
+	UseCrowdSecHTTPS         bool               // SPOE on fe_https
+	NeedsDNSResolver         bool               // any backend uses DNS name (split-DNS / DHCP)
+	TCPServices              []TCPServiceRender `json:"-"`
 	// ACMEBackendAddr is the ip:port the generated bk_acme backend points at.
 	// Render fills it from Settings.ACMEInternalHTTP; callers do not set it.
 	ACMEBackendAddr string `json:"-"`
@@ -213,6 +221,15 @@ func Render(in RenderInput) (Rendered, error) {
 		})
 	}
 	in.NeedsDNSResolver = false
+	in.TCPServices = nil
+	for _, t := range in.Settings.TCPServices {
+		if !t.Enabled {
+			continue
+		}
+		tr := TCPServiceRender{TCPService: t, AllowSrc: joinCIDRs(t.AllowCIDRs), UsesDNS: !backendHostIsLiteralIP(t.BackendHost)}
+		in.NeedsDNSResolver = in.NeedsDNSResolver || tr.UsesDNS
+		in.TCPServices = append(in.TCPServices, tr)
+	}
 	for _, a := range apps {
 		if a.BackendUsesDNS {
 			in.NeedsDNSResolver = true
@@ -574,6 +591,31 @@ backend bk_not_found
 	http-request deny deny_status 404
 {{end}}
 
+{{range $t := .TCPServices}}
+# TCP service {{$t.Name}}: raw TCP, no HTTP rules apply.
+frontend tcp_{{$t.Name}}
+	mode tcp
+	option tcplog
+	no option http-server-close
+	bind *:{{$t.ListenPort}}
+{{- if $.Settings.ListenIPv6}}
+	bind :::{{$t.ListenPort}} v6only
+{{- end}}
+{{- if $t.AllowSrc}}
+	tcp-request connection reject if !{ src {{$t.AllowSrc}} }
+{{- end}}
+{{- if $.UseIPBlacklist}}
+	tcp-request connection reject if { src -f {{$.IPBlacklistMapPath}} }
+{{- end}}
+	timeout client 1h
+	default_backend tcpbk_{{$t.Name}}
+
+backend tcpbk_{{$t.Name}}
+	mode tcp
+	no option http-server-close
+	timeout server 1h
+	server s1 {{$t.BackendHost}}:{{$t.BackendPort}}{{if $t.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 5s fall 3 rise 2
+{{end -}}
 {{range $i, $a := .BackendApps}}
 {{range $r := $a.Exposure.Rates}}backend {{$r.Stick}}
 	stick-table type ip size 50k expire 5m store http_req_rate(10s)

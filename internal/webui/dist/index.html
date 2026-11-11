@@ -501,6 +501,8 @@
           <p><small>Only requests whose source is in <strong>Trusted proxies</strong> may replace their address with the header below; others keep their own. Without this, behind Cloudflare or a tunnel every client looks like the proxy to IP lists, GeoIP, CrowdSec and rate limits.</small></p>
           <label>Trusted proxies (IP or CIDR, one per line)
             <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
+            <p class="dash-note" style="margin:0.75rem 0 0.25rem"><b>TCP services</b> (MQTT, RTSP, ...): one per line, <code>name listen_port backend_host:backend_port [allow=CIDR,CIDR] [off]</code>. Raw TCP: no HTTP rules apply; the IP blacklist does. Allow each listen port in Network → Firewall.</p>
+            <textarea id="edge-tcp-services" rows="3" style="width:100%;font-family:monospace" placeholder="mqtt 8883 192.168.1.20:1883 allow=192.168.0.0/16"></textarea>
           </label>
           <div class="row" style="margin-top:0.3rem">
             <label>Client IP header
@@ -2202,6 +2204,8 @@
     document.getElementById('edge-security-headers').checked = cachedSettings.security_headers_enabled !== false;
     document.getElementById('edge-hsts-subdomains').checked = !!cachedSettings.hsts_include_subdomains;
     document.getElementById('edge-trusted-proxies').value = (cachedSettings.trusted_proxy_cidrs || []).join('\n');
+    document.getElementById('edge-tcp-services').value = (cachedSettings.tcp_services || []).map((t) =>
+      [t.name, t.listen_port, t.backend_host + ':' + t.backend_port].concat((t.allow_cidrs || []).length ? ['allow=' + t.allow_cidrs.join(',')] : [], t.enabled ? [] : ['off']).join(' ')).join('\n');
     document.getElementById('edge-real-ip-header').value = cachedSettings.real_ip_header || '';
     document.getElementById('edge-proxy-protocol').value = (cachedSettings.proxy_protocol_cidrs || []).join('\n');
   }
@@ -2225,6 +2229,14 @@
       security_headers_enabled: document.getElementById('edge-security-headers').checked,
       hsts_include_subdomains: document.getElementById('edge-hsts-subdomains').checked,
       trusted_proxy_cidrs: edgeLines('edge-trusted-proxies'),
+      tcp_services: edgeLines('edge-tcp-services').map((line) => {
+        const f = line.split(/\s+/);
+        const hp = /^(\S+):(\d{1,5})$/.exec(f[2] || '');
+        if (f.length < 3 || !hp) throw new Error('TCP service "' + line + '": use name listen_port host:port [allow=...] [off]');
+        const allow = f.find((x) => x.startsWith('allow='));
+        return { name: f[0], listen_port: parseInt(f[1], 10), backend_host: hp[1], backend_port: parseInt(hp[2], 10),
+          allow_cidrs: allow ? allow.slice(6).split(',').filter(Boolean) : [], enabled: !f.includes('off') };
+      }),
       real_ip_header: document.getElementById('edge-real-ip-header').value,
       proxy_protocol_cidrs: edgeLines('edge-proxy-protocol'),
     };

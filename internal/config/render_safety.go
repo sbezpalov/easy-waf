@@ -103,6 +103,9 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 	if err := ValidateListenAddr("acme_internal_http", s.ACMEInternalHTTP); err != nil {
 		return err
 	}
+	if err := validateTCPServices(s.TCPServices); err != nil {
+		return err
+	}
 	if err := validateSourceList("trusted_proxy_cidrs", s.TrustedProxyCIDRs); err != nil {
 		return err
 	}
@@ -363,6 +366,41 @@ func validateBackendServers(app *Application) error {
 			return fmt.Errorf("backend_servers[%d]: %s is listed twice", i, key)
 		}
 		seen[key] = true
+	}
+	return nil
+}
+
+var tcpServiceNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+func validateTCPServices(list []TCPService) error {
+	if len(list) > MaxTCPServices {
+		return fmt.Errorf("tcp_services: at most %d entries", MaxTCPServices)
+	}
+	names, ports := map[string]bool{}, map[int]bool{}
+	for i, t := range list {
+		if !tcpServiceNameRe.MatchString(t.Name) {
+			return fmt.Errorf("tcp_services[%d].name: 1-32 of a-z, 0-9, -", i)
+		}
+		if names[t.Name] {
+			return fmt.Errorf("tcp_services[%d]: name %q is used twice", i, t.Name)
+		}
+		names[t.Name] = true
+		if t.ListenPort < 1 || t.ListenPort > 65535 || ReservedTCPPorts[t.ListenPort] {
+			return fmt.Errorf("tcp_services[%d].listen_port must be 1-65535 and not 22, 80, 443, 8000, 8089, 8443 or 9000", i)
+		}
+		if ports[t.ListenPort] {
+			return fmt.Errorf("tcp_services[%d]: listen_port %d is used twice", i, t.ListenPort)
+		}
+		ports[t.ListenPort] = true
+		if !validBackendHostRe.MatchString(t.BackendHost) {
+			return fmt.Errorf("tcp_services[%d].backend_host contains invalid characters", i)
+		}
+		if t.BackendPort < 1 || t.BackendPort > 65535 {
+			return fmt.Errorf("tcp_services[%d].backend_port must be 1-65535", i)
+		}
+		if err := validateSourceList(fmt.Sprintf("tcp_services[%d].allow_cidrs", i), t.AllowCIDRs); err != nil {
+			return err
+		}
 	}
 	return nil
 }

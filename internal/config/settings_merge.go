@@ -155,6 +155,13 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		}
 		out.NotifyTelegramBotToken = v
 		return nil
+	case "tcp_services":
+		var v []TCPService
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		out.TCPServices = v
+		return nil
 	case "notify_blocked_spike_threshold":
 		var v int
 		if err := json.Unmarshal(raw, &v); err != nil {

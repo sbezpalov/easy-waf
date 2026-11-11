@@ -54,6 +54,10 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	st.ListenIPv6 = true
 	st.TrustedProxyCIDRs = []string{"173.245.48.0/20", "2400:cb00::/32"}
 	st.ProxyProtocolCIDRs = []string{"192.168.88.1"}
+	st.TCPServices = []config.TCPService{
+		{Name: "mqtt", ListenPort: 8883, BackendHost: "127.0.0.1", BackendPort: 1883, AllowCIDRs: []string{"192.168.0.0/16"}, Enabled: true},
+		{Name: "rtsp", ListenPort: 8554, BackendHost: "frigate.lan", BackendPort: 8554, Enabled: true},
+	}
 
 	crtListPath := filepath.Join(hdir, "crt-list.txt")
 	in := RenderInput{

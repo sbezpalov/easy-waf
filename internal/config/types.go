@@ -133,6 +133,23 @@ type Application struct {
 	UpdatedAt  time.Time           `json:"updated_at"`
 }
 
+// TCPService forwards one TCP port to a backend, optionally only from AllowCIDRs.
+type TCPService struct {
+	Name        string   `json:"name"`
+	ListenPort  int      `json:"listen_port"`
+	BackendHost string   `json:"backend_host"`
+	BackendPort int      `json:"backend_port"`
+	AllowCIDRs  []string `json:"allow_cidrs,omitempty"`
+	Enabled     bool     `json:"enabled"`
+}
+
+// MaxTCPServices caps tcp_services.
+const MaxTCPServices = 32
+
+// ReservedTCPPorts cannot be a tcp_services listen_port: SSH, the edge, the
+// management listeners, the ACME helper and the CrowdSec bouncer.
+var ReservedTCPPorts = map[int]bool{22: true, 80: true, 443: true, 8000: true, 8089: true, 8443: true, 9000: true}
+
 // BackendServer is one extra server behind an application.
 type BackendServer struct {
 	Host   string `json:"host"`
@@ -272,6 +289,9 @@ type GlobalSettings struct {
 	// NotifyBlockedSpikeThreshold alerts when the edge refuses at least this
 	// many requests within 5 minutes. 0 turns the alert off.
 	NotifyBlockedSpikeThreshold int `json:"notify_blocked_spike_threshold"`
+	// TCPServices publishes raw TCP ports (MQTT, RTSP, ...) through HAProxy
+	// mode tcp. The host firewall must allow each listen_port.
+	TCPServices []TCPService `json:"tcp_services,omitempty"`
 	// PrometheusEnabled exposes GET /metrics (Prometheus text format) for scrapers on the management listener.
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.

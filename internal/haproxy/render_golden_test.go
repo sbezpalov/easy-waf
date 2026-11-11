@@ -46,6 +46,7 @@ var goldenScenarioNames = []string{
 	"edge-network",
 	"backend-failover",
 	"app-maintenance",
+	"tcp-services",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -570,6 +571,21 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/backend-failover.crt-list.txt",
+		}
+	case "tcp-services":
+		st := goldenGlobalSettings(spoeMin, "crowdsec")
+		st.TCPServices = []config.TCPService{
+			{Name: "mqtt", ListenPort: 8883, BackendHost: "10.0.0.30", BackendPort: 1883, AllowCIDRs: []string{"192.168.0.0/16", "fd00::/8"}, Enabled: true},
+			{Name: "rtsp", ListenPort: 8554, BackendHost: "frigate.lan", BackendPort: 8554, Enabled: true},
+			{Name: "off", ListenPort: 9999, BackendHost: "10.0.0.31", BackendPort: 9999},
+		}
+		return RenderInput{
+			Settings: st,
+			Applications: []config.Application{
+				{ID: "t1", Name: "Web", PublicHost: "web.example.com", BackendHost: "10.0.0.40", BackendPort: 80, Profile: "balanced", CertificateID: "c1", Enabled: true},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/tcp-services.crt-list.txt",
 		}
 	case "app-maintenance":
 		return RenderInput{
