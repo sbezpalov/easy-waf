@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Easy Home WAF backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=30min
+# Run a missed backup at boot when the appliance was off at 03:30.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

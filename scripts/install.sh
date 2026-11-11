@@ -514,7 +514,7 @@ retire_script_installed_units() {
     return 0
   fi
   local u moved=0
-  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service; do
+  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
     if [[ -f "/etc/systemd/system/${u}" ]]; then
       mv -f "/etc/systemd/system/${u}" "/etc/systemd/system/${u}.replaced-by-package"
       log "Retired /etc/systemd/system/${u} (the package unit in /lib now applies)"
@@ -687,6 +687,13 @@ install_binaries() {
     install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" "/usr/sbin/easy-waf-diagnostics"
     log "Installed /usr/sbin/easy-waf-diagnostics (support bundle — run as root, see docs/DIAGNOSTICS.md)"
   fi
+  if [[ -f "${REPO_ROOT}/scripts/backup.sh" ]]; then
+    install -d -m 0755 /usr/share/easy-waf/scripts/lib
+    install -m 0755 "${REPO_ROOT}/scripts/backup.sh" /usr/share/easy-waf/scripts/backup.sh
+    install -m 0644 "${REPO_ROOT}/scripts/lib/env-file.sh" "${REPO_ROOT}/scripts/lib/backup-rotate.sh" /usr/share/easy-waf/scripts/lib/
+    ln -sfn /usr/share/easy-waf/scripts/backup.sh /usr/sbin/easy-waf-backup
+    log "Installed /usr/sbin/easy-waf-backup (see docs/BACKUP_RESTORE.md)"
+  fi
   if [[ "$found" -eq 0 ]]; then
     cat >&2 <<EOF
 
@@ -720,13 +727,16 @@ install_systemd_units() {
     return 0
   fi
   [[ -d "$SYSTEMD_SRC" ]] || die "missing systemd units: $SYSTEMD_SRC"
-  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service; do
+  for u in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
     if [[ -f "${SYSTEMD_SRC}/${u}" ]]; then
       install -m 0644 "${SYSTEMD_SRC}/${u}" "/etc/systemd/system/${u}"
       log "Installed /etc/systemd/system/${u}"
     fi
   done
   systemctl daemon-reload
+  if [[ -f /etc/systemd/system/easy-waf-backup.timer ]] && systemctl enable --now easy-waf-backup.timer >/dev/null 2>&1; then
+    log "Daily backups enabled: easy-waf-backup.timer -> /var/backups/easy-waf (7 kept)"
+  fi
   log "Run: systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service"
 }
 

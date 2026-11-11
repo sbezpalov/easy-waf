@@ -6,7 +6,7 @@
 
 set -e
 
-UNITS="easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service"
+UNITS="easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service easy-waf-backup.timer easy-waf-backup.service"
 
 case "$1" in
 remove | deconfigure)

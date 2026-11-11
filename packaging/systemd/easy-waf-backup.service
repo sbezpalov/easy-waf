@@ -1,0 +1,23 @@
+[Unit]
+Description=Easy Home WAF backup (PostgreSQL dump, state, /etc/easy-waf)
+After=postgresql.service
+ConditionPathExists=/etc/easy-waf/easy-waf.env
+
+[Service]
+Type=oneshot
+# Override in /etc/easy-waf/easy-waf.env: values there win over these.
+Environment=EASY_WAF_BACKUP_DIR=/var/backups/easy-waf
+Environment=EASY_WAF_BACKUP_KEEP=7
+EnvironmentFile=-/etc/easy-waf/easy-waf.env
+# Root: the archive includes easy-waf.env (0600 root) and the secrets under the state dir.
+ExecStart=/usr/share/easy-waf/scripts/backup.sh --dir ${EASY_WAF_BACKUP_DIR} --keep ${EASY_WAF_BACKUP_KEEP}
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true

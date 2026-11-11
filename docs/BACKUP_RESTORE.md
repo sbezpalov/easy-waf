@@ -34,6 +34,23 @@ Environment:
 
 Requires **`pg_dump`** on `PATH` (PostgreSQL client packages).
 
+## Scheduled backups
+
+The package installs **`easy-waf-backup.timer`** and enables it once, on the first install or on the upgrade that brings it (disable it with `sudo systemctl disable --now easy-waf-backup.timer` and it stays off across upgrades). Every day at about 03:30 (randomized by up to 30 minutes; a missed run happens at the next boot) `easy-waf-backup.service` runs, as root:
+
+```bash
+/usr/share/easy-waf/scripts/backup.sh --dir /var/backups/easy-waf --keep 7
+```
+
+It writes `easy-waf-backup-<timestamp>.tar.gz` (0600) into the directory (created 0700), then deletes all but the 7 newest archives with that name pattern. Other files there are left alone, and a failed run leaves no partial archive. Set these in `/etc/easy-waf/easy-waf.env` to change it:
+
+| Variable | Default | Meaning |
+|----------|---------|--------|
+| `EASY_WAF_BACKUP_DIR` | `/var/backups/easy-waf` | Where archives go. Use a mounted NAS share or a second disk: a backup on the same disk does not survive the disk. |
+| `EASY_WAF_BACKUP_KEEP` | `7` | Archives kept; `0` keeps all. |
+
+Run one now with `sudo systemctl start easy-waf-backup.service` (or `sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7`), check the last result with `systemctl status easy-waf-backup.service` and the schedule with `systemctl list-timers easy-waf-backup.timer`. Each archive holds TLS keys, the JWT secret and `DATABASE_URL`: protect copies taken off the box accordingly.
+
 ## Restore
 
 Run as **root**. Pass the path to a backup produced by `scripts/backup.sh` (v1).

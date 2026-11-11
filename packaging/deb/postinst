@@ -65,6 +65,23 @@ link_haproxy_groups() {
 	fi
 }
 
+# The daily backup timer is enabled once: on the first install or on the
+# upgrade that brings it. An operator who disables it later stays opted out.
+enable_backup_timer() {
+	marker="${STATE_DIR}/.backup-timer-enabled"
+	[ -e "$marker" ] && return 0
+	systemd_available || return 0
+	if systemctl enable easy-waf-backup.timer >/dev/null 2>&1; then
+		# On an upgrade the services run already; a first install starts at boot.
+		if [ -n "$1" ]; then
+			systemctl start easy-waf-backup.timer >/dev/null 2>&1 || true
+		fi
+		: >"$marker" || true
+		info "Daily backups: easy-waf-backup.timer -> /var/backups/easy-waf, 7 kept"
+		info "  (EASY_WAF_BACKUP_DIR / EASY_WAF_BACKUP_KEEP in ${CFG_DIR}/easy-waf.env)"
+	fi
+}
+
 systemd_available() {
 	command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
@@ -135,6 +152,7 @@ configure)
 		info "Upgraded from ${2}. Verify with: sudo easy-waf-admin doctor"
 		info "Post-upgrade checks against this live appliance: sudo bash scripts/smoke-appliance.sh"
 	fi
+	enable_backup_timer "$2"
 	;;
 abort-upgrade | abort-remove | abort-deconfigure) ;;
 *)

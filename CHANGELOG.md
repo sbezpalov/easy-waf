@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scheduled backups.** `easy-waf-backup.timer` runs `backup.sh --dir /var/backups/easy-waf --keep 7` daily and keeps the 7 newest archives (`EASY_WAF_BACKUP_DIR`, `EASY_WAF_BACKUP_KEEP` in `easy-waf.env`). The package enables it once; `easy-waf-backup` is now on `PATH`. `backup.sh` writes through a `.partial` file, so a failed run leaves no truncated archive.
 - **Notifications.** Telegram next to the webhook, and new events: failed HAProxy apply, backend server down/up, and a spike of blocked requests (`notify_blocked_spike_threshold` per 5 minutes). Settings → Notifications, with **Send test** (`POST /api/v1/notify/test`). The Telegram token is never returned by the API.
 - **CrowdSec block page.** A CrowdSec decision now returns a short HTML 403 page that names CrowdSec and shows the visitor's address, instead of a bare 403. Captcha decisions still get this page; there is no captcha challenge.
 - **Blocked requests view.** Logs / Audit shows what the edge refused over the last hour, day or week: counts by rule, top clients (with country and a one-click blacklist) and hosts, and the latest requests. `GET /api/v1/security/blocked` reads the HAProxy journal through `easy-waf-hostd`; the frontends now log `{host|rule}` in httplog so each refusal names its rule.

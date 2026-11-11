@@ -3,22 +3,68 @@
 # Run as root (reads /etc, may run pg_dump). See docs/BACKUP_RESTORE.md
 #
 # Usage: sudo bash scripts/backup.sh [output.tar.gz]
+#        sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7
+#          (writes easy-waf-backup-<timestamp>.tar.gz into the directory, then
+#           deletes all but the 7 newest; what easy-waf-backup.timer runs daily)
 # Env: EASY_WAF_STATE_DIR (default /var/lib/easy-waf)
 #      EASY_WAF_ENV_FILE  (default /etc/easy-waf/easy-waf.env) — for DATABASE_URL
 
 set -euo pipefail
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# readlink: the package links /usr/sbin/easy-waf-backup to this file.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=lib/env-file.sh
 source "${SCRIPT_DIR}/lib/env-file.sh"
+# shellcheck source=lib/backup-rotate.sh
+source "${SCRIPT_DIR}/lib/backup-rotate.sh"
 
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 CFG="/etc/easy-waf"
 ENV_FILE="${EASY_WAF_ENV_FILE:-${CFG}/easy-waf.env}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DEFAULT_NAME="easy-waf-backup-${STAMP}.tar.gz"
-OUT="${1:-$DEFAULT_NAME}"
+DIR=""
+KEEP=0
+OUT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)
+      DIR="${2:-}"
+      [[ -n "$DIR" ]] || { echo "ERROR: --dir needs a path" >&2; exit 2; }
+      shift 2
+      ;;
+    --keep)
+      KEEP="${2:-}"
+      shift 2 || { echo "ERROR: --keep needs a number" >&2; exit 2; }
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      [[ -z "$OUT" ]] || { echo "ERROR: more than one output path" >&2; exit 2; }
+      OUT="$1"
+      shift
+      ;;
+  esac
+done
+if [[ ! "$KEEP" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: --keep must be a whole number" >&2
+  exit 2
+fi
+if [[ -n "$DIR" && -n "$OUT" ]]; then
+  echo "ERROR: give either --dir or an output path, not both" >&2
+  exit 2
+fi
+if [[ "$KEEP" -gt 0 && -z "$DIR" ]]; then
+  echo "ERROR: --keep needs --dir" >&2
+  exit 2
+fi
+if [[ -n "$DIR" ]]; then
+  OUT="${DIR%/}/${DEFAULT_NAME}"
+fi
+OUT="${OUT:-$DEFAULT_NAME}"
 if [[ "$OUT" != /* ]]; then
   OUT="$(pwd)/${OUT#./}"
 fi
@@ -48,8 +94,13 @@ if [[ -z "$DATABASE_URL" ]]; then
   exit 1
 fi
 
+if [[ -n "$DIR" && ! -d "$DIR" ]]; then
+  install -d -m 0700 "$DIR"
+fi
+
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
-cleanup() { rm -rf "$WORKDIR"; }
+# A failed run leaves no truncated archive for rotation to count.
+cleanup() { rm -rf "$WORKDIR"; rm -f "${OUT}.partial"; }
 trap cleanup EXIT
 
 TOP="easy-waf-backup-${STAMP}"
@@ -79,8 +130,13 @@ tar -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
 
 mkdir -p "$(dirname "$OUT")"
 echo "[easy-waf-backup] packing → $OUT"
-tar -czf "$OUT" -C "$WORKDIR" "$TOP"
-chmod 0600 "$OUT"
+tar -czf "${OUT}.partial" -C "$WORKDIR" "$TOP"
+chmod 0600 "${OUT}.partial"
+mv -f "${OUT}.partial" "$OUT"
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
 echo "[easy-waf-backup] done: $OUT (size $SIZE)"
+
+if [[ -n "$DIR" ]]; then
+  easy_waf_rotate_backups "$DIR" "$KEEP"
+fi
