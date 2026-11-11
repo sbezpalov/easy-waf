@@ -473,6 +473,9 @@
           <h3>Edge network</h3>
           <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
           <label><input id="edge-listen-ipv6" type="checkbox" /> Listen on IPv6 too (<code>[::]:80</code>, <code>[::]:443</code>). The host must have IPv6 enabled; publish AAAA records only after this is on.</label>
+          <h4 style="margin:0.9rem 0 0.3rem">Response headers</h4>
+          <label><input id="edge-security-headers" type="checkbox" checked /> Add <code>X-Content-Type-Options: nosniff</code> and <code>Referrer-Policy: strict-origin-when-cross-origin</code> when the backend did not, and remove <code>Server</code> / <code>X-Powered-By</code></label>
+          <label><input id="edge-hsts-subdomains" type="checkbox" /> HSTS <code>includeSubDomains</code>. Browsers will then refuse plain HTTP on every subdomain of a published host, for six months.</label>
           <h4 style="margin:0.9rem 0 0.3rem">Real client IP behind a proxy</h4>
           <p><small>Only requests whose source is in <strong>Trusted proxies</strong> may replace their address with the header below; others keep their own. Without this, behind Cloudflare or a tunnel every client looks like the proxy to IP lists, GeoIP, CrowdSec and rate limits.</small></p>
           <label>Trusted proxies (IP or CIDR, one per line)
@@ -2013,6 +2016,8 @@
   function loadEdgeNetworkFromSettings() {
     if (!cachedSettings) return;
     document.getElementById('edge-listen-ipv6').checked = !!cachedSettings.listen_ipv6;
+    document.getElementById('edge-security-headers').checked = cachedSettings.security_headers_enabled !== false;
+    document.getElementById('edge-hsts-subdomains').checked = !!cachedSettings.hsts_include_subdomains;
     document.getElementById('edge-trusted-proxies').value = (cachedSettings.trusted_proxy_cidrs || []).join('\n');
     document.getElementById('edge-real-ip-header').value = cachedSettings.real_ip_header || '';
     document.getElementById('edge-proxy-protocol').value = (cachedSettings.proxy_protocol_cidrs || []).join('\n');
@@ -2034,6 +2039,8 @@
   function edgeNetworkPatch() {
     return {
       listen_ipv6: document.getElementById('edge-listen-ipv6').checked,
+      security_headers_enabled: document.getElementById('edge-security-headers').checked,
+      hsts_include_subdomains: document.getElementById('edge-hsts-subdomains').checked,
       trusted_proxy_cidrs: edgeLines('edge-trusted-proxies'),
       real_ip_header: document.getElementById('edge-real-ip-header').value,
       proxy_protocol_cidrs: edgeLines('edge-proxy-protocol'),

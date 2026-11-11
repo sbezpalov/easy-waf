@@ -171,6 +171,7 @@ func (e *Engine) readSettings(ctx context.Context) (config.GlobalSettings, error
 	var settingsKeyProbe struct {
 		WAFBasic   *bool `json:"waf_basic_rules_enabled"`
 		BlockEmpty *bool `json:"block_empty_ua"`
+		SecHeaders *bool `json:"security_headers_enabled"`
 	}
 	_ = json.Unmarshal([]byte(raw), &settingsKeyProbe)
 	if settingsKeyProbe.WAFBasic == nil {
@@ -178,6 +179,9 @@ func (e *Engine) readSettings(ctx context.Context) (config.GlobalSettings, error
 	}
 	if settingsKeyProbe.BlockEmpty == nil {
 		s.BlockEmptyUA = def.BlockEmptyUA
+	}
+	if settingsKeyProbe.SecHeaders == nil {
+		s.SecurityHeadersEnabled = def.SecurityHeadersEnabled
 	}
 	if s.HAProxyConfigPath == "" {
 		s.HAProxyConfigPath = def.HAProxyConfigPath

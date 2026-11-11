@@ -483,6 +483,8 @@ func goldenFixture(name string) RenderInput {
 		in.Settings.TrustedProxyCIDRs = []string{"173.245.48.0/20", "2400:cb00::/32"}
 		in.Settings.RealIPHeader = "CF-Connecting-IP"
 		in.Settings.ProxyProtocolCIDRs = []string{"192.168.88.1"}
+		in.Settings.SecurityHeadersEnabled = true
+		in.Settings.HSTSIncludeSubdomains = true
 		in.CRTListPath = "testdata/golden/edge-network.crt-list.txt"
 		return in
 	case "mixed-listen-modes":

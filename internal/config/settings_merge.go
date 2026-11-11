@@ -112,6 +112,10 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.RealIPHeader)
 	case "proxy_protocol_cidrs":
 		return json.Unmarshal(raw, &out.ProxyProtocolCIDRs)
+	case "security_headers_enabled":
+		return json.Unmarshal(raw, &out.SecurityHeadersEnabled)
+	case "hsts_include_subdomains":
+		return json.Unmarshal(raw, &out.HSTSIncludeSubdomains)
 	case "notify_webhook_url":
 		var v string
 		if err := json.Unmarshal(raw, &v); err != nil {

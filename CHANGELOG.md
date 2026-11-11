@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **TLS hardening on :443.** The generated config sets TLS 1.2 as the minimum, ECDHE AEAD ciphers only (Mozilla "intermediate" without DHE) and disables session tickets. Clients from before roughly 2014 can no longer connect.
 - **Built with Go 1.27.4.** It fixes GO-2026-6859 in `net/http`, which `govulncheck` reports as reachable from the API, the ACME worker and the CrowdSec client. `go.mod` and the installer's Go bootstrap (`EASY_WAF_BOOTSTRAP_GO_VERSION`, with its checksums) move to 1.27.4.
 
 ### Added
 
+- **Security response headers.** `security_headers_enabled` (on by default, also for existing installs) adds `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` when the backend sent none, and removes `Server` and `X-Powered-By`.
 - **IPv6 edge listeners.** `listen_ipv6` (Security → Edge network) adds `[::]:80` and `[::]:443` binds next to the IPv4 ones. It is off by default, and the API refuses it on a host with IPv6 disabled, where HAProxy could not bind on reload.
 - **Real client IP behind a proxy.** `trusted_proxy_cidrs` with `real_ip_header` (`X-Forwarded-For`, `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`) restores the client address with `http-request set-src` before IP lists, GeoIP, CrowdSec and rate limits; only listed sources may set it. `proxy_protocol_cidrs` requires PROXY protocol from a load balancer or NGFW while other sources connect directly. The Edge network panel can fill Cloudflare's ranges.
 - **Production offline bundle.** Releases build signed Ubuntu 24.04 `amd64` and `arm64` ISO images containing a local APT repository, the Easy WAF package and the complete appliance dependency closure. The installer verifies the internal manifest, rejects the wrong OS/architecture, checks free space and prevents configured online APT sources from affecting resolution. See [docs/OFFLINE_BUNDLE.md](docs/OFFLINE_BUNDLE.md) and ADR 0007.
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HSTS no longer breaks plain HTTP.** It was sent with `includeSubDomains` on every HTTPS response, so an `http_and_https` host lost its HTTP side, and so did any plain-HTTP host below a published one. HSTS now skips `http_and_https` hosts, and `includeSubDomains` is opt-in (`hsts_include_subdomains`).
 - **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.
 - **Offline bundle checksums.** `SHA256SUMS` is written outside the ISO tree and then moved in, so the list no longer names a `SHA256SUMS.tmp` that is gone after the rename and makes `install.sh --verify-only` fail.
 

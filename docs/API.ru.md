@@ -562,6 +562,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `prometheus_enabled`: немедленно включает или выключает `GET /metrics`.
   - `notify_webhook_url`: пустая строка выключает уведомления о сертификатах. Иначе это абсолютный URL `http` или `https`. `easy-waf-acmed` раз в сутки отправляет туда JSON, если сертификат требует внимания. Пустая строка стирает сохранённый URL. Значение не пишется в журнал.
   - `listen_ipv6`: при следующем apply добавляет `bind :::80 v6only` и `bind :::443 v6only` рядом с IPv4. Отклоняется с `400`, если на хосте выключен IPv6 (нет `/proc/net/if_inet6`): иначе HAProxy не смог бы открыть сокет при reload.
+  - `security_headers_enabled` (по умолчанию `true`): на обоих frontend выставляет `X-Content-Type-Options: nosniff` и `Referrer-Policy: strict-origin-when-cross-origin`, если бэкенд их не прислал, и удаляет `Server` и `X-Powered-By`.
+  - `hsts_include_subdomains` (по умолчанию `false`): добавляет `includeSubDomains` в `Strict-Transport-Security`. HSTS отправляется на `fe_https`, кроме хостов `http_and_https`, которые обслуживают и обычный HTTP.
   - `trusted_proxy_cidrs`, `real_ip_header`: запросы с источником из `trusted_proxy_cidrs` (IP или CIDR) получают адрес клиента из последнего значения `real_ip_header` (`X-Forwarded-For`, если пусто; также `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`) через `http-request set-src` до любого правила, которое читает источник. Остальные источники сохраняют свой адрес, поэтому клиент не может подделать заголовок.
   - `proxy_protocol_cidrs`: IP или CIDR, которые обязаны присылать заголовок PROXY protocol v1/v2 на `:80` и `:443` (`tcp-request connection expect-proxy layer4`). Остальные подключаются без него.
   - GeoIP:

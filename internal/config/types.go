@@ -258,6 +258,13 @@ type GlobalSettings struct {
 	// ProxyProtocolCIDRs must send a PROXY protocol v1/v2 header on :80 and :443.
 	// Connections from other sources are accepted without one.
 	ProxyProtocolCIDRs []string `json:"proxy_protocol_cidrs,omitempty"`
+	// SecurityHeadersEnabled adds X-Content-Type-Options and Referrer-Policy
+	// when the backend did not set them, and removes Server and X-Powered-By.
+	SecurityHeadersEnabled bool `json:"security_headers_enabled"`
+	// HSTSIncludeSubdomains adds includeSubDomains to Strict-Transport-Security.
+	// Off by default: it would force HTTPS on any plain-HTTP host below a
+	// published one.
+	HSTSIncludeSubdomains bool `json:"hsts_include_subdomains"`
 }
 
 // RealIPHeaders are the accepted values of GlobalSettings.RealIPHeader.
@@ -311,5 +318,6 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		BlockedUserAgentsEnabled: false,
 		ManagementAllowedCIDRs:   DefaultManagementCIDRs(),
 		PrometheusEnabled:        false,
+		SecurityHeadersEnabled:   true,
 	}
 }

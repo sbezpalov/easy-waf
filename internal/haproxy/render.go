@@ -67,6 +67,9 @@ type RenderInput struct {
 	TrustedProxySrc  string `json:"-"`
 	ProxyProtocolSrc string `json:"-"`
 	RealIPFetch      string `json:"-"`
+	// HSTSExemptHosts are fe_https hosts that also serve plain HTTP
+	// (http_and_https): HSTS there would make browsers refuse the HTTP side.
+	HSTSExemptHosts string `json:"-"`
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -201,6 +204,13 @@ func Render(in RenderInput) (Rendered, error) {
 	in.HTTPSApps = httpsApps
 	in.HTTPApps = httpApps
 	in.RedirectApps = redirectApps
+	exempt := make([]string, 0, len(httpsApps))
+	for _, a := range httpsApps {
+		if a.Application.ListenMode == "http_and_https" {
+			exempt = append(exempt, a.Application.PublicHost)
+		}
+	}
+	in.HSTSExemptHosts = strings.Join(exempt, " ")
 	in.HTTPClientTimeout = maxClientTimeout(httpApps)
 	in.HTTPSClientTimeout = maxClientTimeout(httpsApps)
 
@@ -366,6 +376,10 @@ global
 	stats socket {{.Settings.HAProxyStatsSocketPath}} mode 660 level admin
 	stats timeout 30s
 	# pidfile omitted: systemd supplies -p /run/haproxy/haproxy.pid (see haproxy.service.d drop-in).
+	# Mozilla "intermediate" without DHE: TLS 1.2 with ECDHE AEAD suites, and TLS 1.3.
+	ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
+	ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+	ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
 
 defaults
 	log	global
@@ -399,6 +413,7 @@ frontend fe_http
 {{- end}}
 	mode http
 {{- template "realIP" .}}
+{{- template "securityHeaders" .}}
 {{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPClientTimeout}}s
@@ -479,6 +494,7 @@ frontend fe_https
 {{- end}}
 	mode http
 {{- template "realIP" .}}
+{{- template "securityHeaders" .}}
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPSClientTimeout}}s
@@ -491,7 +507,12 @@ frontend fe_https
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
 {{end}}
 	http-request set-header X-Forwarded-Proto https
-	http-response set-header Strict-Transport-Security "max-age=15552000; includeSubDomains" if { ssl_fc }
+{{- if .HSTSExemptHosts}}
+	acl hsts_exempt hdr(host) -i {{.HSTSExemptHosts}}
+	http-response set-header Strict-Transport-Security "max-age=15552000{{if .Settings.HSTSIncludeSubdomains}}; includeSubDomains{{end}}" if { ssl_fc } !hsts_exempt
+{{- else}}
+	http-response set-header Strict-Transport-Security "max-age=15552000{{if .Settings.HSTSIncludeSubdomains}}; includeSubDomains{{end}}" if { ssl_fc }
+{{- end}}
 	# Universal blocks (all vhosts)
 	acl p_git     path_beg /.git
 	acl p_env     path_beg /.env
@@ -572,6 +593,15 @@ backend {{backendName $a.Application.PublicHost}}
 {{- if .TrustedProxySrc}}
 	# Before any rule that reads src: IP lists, GeoIP, CrowdSec, rate limits and logs see the client.
 	http-request set-src {{.RealIPFetch}} if { src {{.TrustedProxySrc}} } { {{.RealIPFetch}} -m found }
+{{- end}}
+{{- end}}
+{{- define "securityHeaders"}}
+{{- if .Settings.SecurityHeadersEnabled}}
+	# Added only when the backend did not send them; version banners are removed.
+	http-response set-header X-Content-Type-Options nosniff unless { res.hdr(X-Content-Type-Options) -m found }
+	http-response set-header Referrer-Policy strict-origin-when-cross-origin unless { res.hdr(Referrer-Policy) -m found }
+	http-response del-header Server
+	http-response del-header X-Powered-By
 {{- end}}
 {{- end}}
 {{- define "appSecurity"}}
