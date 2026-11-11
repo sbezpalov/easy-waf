@@ -12,7 +12,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
-const crowdSecDeny = `http-request deny deny_status 403 if app_cs1_host { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }`
+const crowdSecDeny = `http-request return status 403 content-type "text/html; charset=utf-8" hdr Cache-Control no-store lf-string "<!doctype html><title>Access denied</title><h1>Access denied</h1><p>Your address %[src] is blocked on this site by CrowdSec, a shared reputation service. If this is a mistake, send this address to the site owner.</p>" if app_cs1_host { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }`
 
 func crowdSecInput(enabled bool) RenderInput {
 	sec := config.DefaultApplicationSecurity()

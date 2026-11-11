@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CrowdSec block page.** A CrowdSec decision now returns a short HTML 403 page that names CrowdSec and shows the visitor's address, instead of a bare 403. Captcha decisions still get this page; there is no captcha challenge.
 - **Blocked requests view.** Logs / Audit shows what the edge refused over the last hour, day or week: counts by rule, top clients (with country and a one-click blacklist) and hosts, and the latest requests. `GET /api/v1/security/blocked` reads the HAProxy journal through `easy-waf-hostd`; the frontends now log `{host|rule}` in httplog so each refusal names its rule.
 - **Security response headers.** `security_headers_enabled` (on by default, also for existing installs) adds `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` when the backend sent none, and removes `Server` and `X-Powered-By`.
 - **IPv6 edge listeners.** `listen_ipv6` (Security → Edge network) adds `[::]:80` and `[::]:443` binds next to the IPv4 ones. It is off by default, and the API refuses it on a host with IPv6 disabled, where HAProxy could not bind on reload.

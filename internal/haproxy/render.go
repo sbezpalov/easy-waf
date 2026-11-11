@@ -741,7 +741,8 @@ backend {{backendName $a.Application.PublicHost}}
 	# When it cannot be reached the variable stays unset and traffic passes (fail open).
 	http-request send-spoe-group {{$root.Settings.CrowdSecEngineName}} crowdsec-http-no-body if {{$host}}{{$acme}}
 	http-request capture str(crowdsec) id 1 if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
-	http-request deny deny_status 403 if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
+	# A page rather than a bare 403: the visitor learns why and what to send the owner.
+	http-request return status 403 content-type "text/html; charset=utf-8" hdr Cache-Control no-store lf-string "<!doctype html><title>Access denied</title><h1>Access denied</h1><p>Your address %[src] is blocked on this site by CrowdSec, a shared reputation service. If this is a mistake, send this address to the site owner.</p>" if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
 {{- end}}
 {{end}}
 `

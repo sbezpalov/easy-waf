@@ -71,7 +71,7 @@ For an application with `crowdsec_enabled`, the generated config does all of thi
 
 - `backend crowdsec-spoa` points at the bouncer on **`127.0.0.1:9000`**. The installer sets `listen_tcp: 127.0.0.1:9000` in `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml` (the package default is `0.0.0.0:9000`). The backend name is fixed by `use-backend` in the vendor file.
 - `http-request send-spoe-group <engine> crowdsec-http-no-body` asks the bouncer, after the application's other rules. No request body is sent or buffered, so WebSockets and large uploads are unaffected, and AppSec body inspection is not used.
-- `http-request deny deny_status 403` applies when `txn.crowdsec.remediation` is anything other than `allow`. **`ban`, `captcha` and any other remediation all get a plain 403**: there are no ban or captcha pages.
+- `http-request return status 403` applies when `txn.crowdsec.remediation` is anything other than `allow`, with a short HTML page that says CrowdSec blocked the visitor's address and shows it, so a false positive can be reported to the owner. **`ban`, `captcha` and any other remediation all get this page**: there is no captcha challenge.
 
 An address on the application's IP allowlist is never refused by CrowdSec (its `http-request allow` comes first), and ACME challenges are exempt.
 
