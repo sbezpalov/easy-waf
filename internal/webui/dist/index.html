@@ -195,6 +195,7 @@
     <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel).</p>
     <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
     <div class="row"><label>Password <input id="login-pass" type="password" autocomplete="current-password" /></label></div>
+    <div class="row hidden" id="login-totp-row"><label>Code <input id="login-totp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456 or a recovery code" /></label></div>
     <div class="row"><button type="button" id="btn-login">Sign in</button></div>
     <p id="login-err" class="warn"></p>
   </div>
@@ -825,6 +826,17 @@
 
       <div id="tab-settings" class="tab-panel">
         <h2>✎ Settings</h2>
+        <div class="panel" style="max-width:42rem;margin-bottom:0.75rem">
+          <h3>Two-factor sign-in (TOTP)</h3>
+          <p class="dash-note" id="totp-status" style="margin-top:0"></p>
+          <div class="row"><button type="button" id="btn-totp-setup">Set up</button> <button type="button" class="secondary hidden" id="btn-totp-disable">Turn off</button></div>
+          <div id="totp-setup-box" class="hidden">
+            <p class="dash-note">Add this key to an authenticator app (Aegis, Google Authenticator, 1Password, ...) as a time-based key, or open the link on the phone, then enter the current code.</p>
+            <p><code id="totp-secret"></code> · <a id="totp-uri" href="#">otpauth link</a></p>
+            <div class="row"><label>Code <input id="totp-code" inputmode="numeric" autocomplete="one-time-code" /></label> <button type="button" id="btn-totp-enable">Turn on</button></div>
+          </div>
+          <pre id="totp-recovery" class="hidden"></pre>
+        </div>
         <p class="dash-note" style="margin-top:0">Service-specific options live under <strong>Certificates</strong> (ACME, management TLS), <strong>CrowdSec</strong> (LAPI / SPOE), and <strong>Security</strong> (WAF, IP lists, GeoIP). Use <strong>Load from server</strong> here to fill all tabs from <code>GET /api/v1/settings</code>.</p>
         <div class="row">
           <button type="button" id="btn-settings-load">Load from server</button>
@@ -1024,7 +1036,7 @@
   }
 
   const needsStepUp = (url) => typeof url === 'string'
-    && (url.startsWith('/api/v1/host/') || url.startsWith('/api/v1/panel-users') || url === '/api/v1/settings/management-tls');
+    && (url.startsWith('/api/v1/host/') || url.startsWith('/api/v1/panel-users') || url.startsWith('/api/v1/auth/totp/') || url === '/api/v1/settings/management-tls');
 
   // Privileged operations answer 403 step_up_required until the password is
   // confirmed; ask for it once here and repeat the request, so no caller has to know.
@@ -1253,7 +1265,8 @@
       list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select class="pu-role" data-user="' + esc(u.username) + '">' +
         '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
         '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>viewer</option></select></td><td>' +
-        (u.must_change_password ? 'must change password' : 'active') + '</td><td>' +
+        (u.must_change_password ? 'must change password' : 'active') + (u.totp_enabled ? ', 2FA on' : '') + '</td><td>' +
+        (u.totp_enabled ? '<button type="button" class="secondary pu-2fa" data-user="' + esc(u.username) + '">Reset 2FA</button> ' : '') +
         '<button type="button" class="secondary pu-reset" data-user="' + esc(u.username) + '">Reset password</button> ' +
         '<button type="button" class="secondary pu-del" data-user="' + esc(u.username) + '">Delete</button></td></tr>').join('') +
       '</tbody></table>';
@@ -1274,6 +1287,14 @@
         loadPanelUsers();
       };
     });
+    box.querySelectorAll('.pu-2fa').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await confirmDialog('Turn off two-factor sign-in for ' + btn.dataset.user + '?', { okLabel: 'Reset 2FA' }))) return;
+        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user) + '/totp', { method: 'DELETE', headers: hdr() });
+        if (!r.ok) toast(await apiMessage(r), 'err');
+        loadPanelUsers();
+      };
+    });
     box.querySelectorAll('.pu-del').forEach((btn) => {
       btn.onclick = async () => {
         if (!(await confirmDialog('Delete panel user ' + btn.dataset.user + '?', { danger: true, okLabel: 'Delete' }))) return;
@@ -1282,6 +1303,15 @@
         loadPanelUsers();
       };
     });
+  }
+
+  function renderTOTPStatus(on) {
+    const st = document.getElementById('totp-status');
+    if (!st) return;
+    st.textContent = on ? 'On: sign-in asks for a code from your authenticator app.' : 'Off: sign-in needs only the password.';
+    document.getElementById('btn-totp-setup').classList.toggle('hidden', on);
+    document.getElementById('btn-totp-disable').classList.toggle('hidden', !on);
+    document.getElementById('totp-setup-box').classList.add('hidden');
   }
 
   function clearAppFormFields() {
@@ -1442,6 +1472,7 @@
         hu.classList.remove('hidden');
       }
       document.body.classList.toggle('role-viewer', me.role === 'viewer');
+      renderTOTPStatus(!!me.totp_enabled);
       await loadSettingsPanel();
       loadProfileSelect();
       initRestrictedPathRows();
@@ -1469,7 +1500,8 @@
     document.getElementById('login-err').textContent = '';
     const body = {
       username: document.getElementById('login-user').value.trim(),
-      password: document.getElementById('login-pass').value
+      password: document.getElementById('login-pass').value,
+      totp_code: document.getElementById('login-totp').value.trim()
     };
     const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
     if (r.status === 429) {
@@ -1479,7 +1511,17 @@
       return;
     }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { document.getElementById('login-err').textContent = j.error || r.statusText; return; }
+    if (!r.ok) {
+      if (j.error === 'totp_required') {
+        document.getElementById('login-totp-row').classList.remove('hidden');
+        document.getElementById('login-totp').focus();
+        document.getElementById('login-err').textContent = 'Enter the 6-digit code from your authenticator app, or a recovery code.';
+        return;
+      }
+      document.getElementById('login-err').textContent = j.error || r.statusText;
+      return;
+    }
+    document.getElementById('login-totp').value = '';
     setTok(j.token);
     if (j.must_change_password) {
       show('view-login', false); show('view-pass', true); show('view-app', false);
@@ -1991,6 +2033,34 @@
       sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));
     });
   }
+
+  document.getElementById('btn-totp-setup').onclick = async () => {
+    const r = await fetch('/api/v1/auth/totp/setup', { method: 'POST', headers: hdr() });
+    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    const j = await r.json();
+    document.getElementById('totp-secret').textContent = j.secret;
+    document.getElementById('totp-uri').href = j.otpauth_uri;
+    document.getElementById('totp-recovery').classList.add('hidden');
+    document.getElementById('totp-setup-box').classList.remove('hidden');
+  };
+  document.getElementById('btn-totp-enable').onclick = async () => {
+    const code = document.getElementById('totp-code').value.trim();
+    const r = await fetch('/api/v1/auth/totp/enable', { method: 'POST', headers: hdr(), body: JSON.stringify({ code }) });
+    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    const j = await r.json();
+    document.getElementById('totp-code').value = '';
+    renderTOTPStatus(true);
+    const pre = document.getElementById('totp-recovery');
+    pre.textContent = 'Recovery codes: each works once instead of a code. Store them now; they are not shown again.\n\n' + j.recovery_codes.join('\n');
+    pre.classList.remove('hidden');
+  };
+  document.getElementById('btn-totp-disable').onclick = async () => {
+    if (!(await confirmDialog('Turn off two-factor sign-in?', { danger: true, okLabel: 'Turn off' }))) return;
+    const r = await fetch('/api/v1/auth/totp/disable', { method: 'POST', headers: hdr() });
+    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    renderTOTPStatus(false);
+    document.getElementById('totp-recovery').classList.add('hidden');
+  };
 
   document.getElementById('btn-pu-create').onclick = async () => {
     const username = document.getElementById('pu-new-name').value.trim();

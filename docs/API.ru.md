@@ -248,6 +248,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 
 Эндпоинты (только для админов; изменения требуют step-up и пишутся в аудит): `GET /api/v1/panel-users` — список `[{username, role, must_change_password, created_at}]`; `POST /api/v1/panel-users` с `{"username", "role"}` — создаёт пользователя со случайным временным паролем (`201`, `temporary_password` показывается один раз; `409`, если пользователь есть); `PATCH /api/v1/panel-users/{username}` с `{"role"}`; `POST /api/v1/panel-users/{username}/reset-password` — новый временный пароль, смена при входе, сессии завершаются; `DELETE /api/v1/panel-users/{username}` (`400` для своей учётки). Понизить или удалить последнего админа нельзя: `409`.
 
+**Двухфакторный вход (TOTP)** включается каждым пользователем отдельно (ADR 0004, вариант C). Если он включён, `POST /api/v1/auth/login` с верным паролем без `totp_code` отвечает `401 {"error":"totp_required"}`; запрос повторяется с `"totp_code"` — текущим 6-значным кодом (RFC 6238, SHA-1, 30 с, допуск ±1 шаг, каждый шаг принимается один раз) или неиспользованным кодом восстановления. Эндпоинты: `POST /api/v1/auth/totp/setup` (step-up; возвращает `secret` и `otpauth_uri`), `POST /api/v1/auth/totp/enable` с `{"code"}` (возвращает 10 кодов восстановления один раз, хранятся только SHA-256-хэши), `POST /api/v1/auth/totp/disable` (step-up). Админ сбрасывает чужой TOTP через `DELETE /api/v1/panel-users/{username}/totp`, с консоли — `easy-waf-admin disable-totp -user NAME`. `totp_enabled` есть в `/auth/me` и в списке пользователей.
+
 ## Статус и каталог
 
 ### `GET /api/v1/status`

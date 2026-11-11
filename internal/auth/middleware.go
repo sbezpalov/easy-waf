@@ -103,6 +103,9 @@ var viewerAllowedPOST = map[string]bool{
 	"/api/v1/auth/logout":          true,
 	"/api/v1/auth/change-password": true,
 	"/api/v1/auth/confirm":         true,
+	"/api/v1/auth/totp/setup":      true,
+	"/api/v1/auth/totp/enable":     true,
+	"/api/v1/auth/totp/disable":    true,
 }
 
 // viewerDeniedPrefixes stay closed to viewers even for reads: host

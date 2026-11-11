@@ -156,7 +156,12 @@ func (s *Server) Router() chi.Router {
 					r.Patch("/panel-users/{username}", s.patchPanelUser)
 					r.Post("/panel-users/{username}/reset-password", s.resetPanelUserPassword)
 					r.Delete("/panel-users/{username}", s.deletePanelUser)
+					r.Delete("/panel-users/{username}/totp", s.resetPanelUserTOTP)
 				})
+
+				r.With(auth.RequireStepUp(stepUpWindow)).Post("/auth/totp/setup", s.totpSetup)
+				r.Post("/auth/totp/enable", s.totpEnable)
+				r.With(auth.RequireStepUp(stepUpWindow)).Post("/auth/totp/disable", s.totpDisable)
 
 				r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 

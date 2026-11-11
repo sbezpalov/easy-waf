@@ -13,7 +13,7 @@ rather than editing it, so the history of *why* stays readable.
 | [0001](0001-packaging-and-installer.md) | Packaging: how Easy Home WAF gets onto an appliance | accepted |
 | [0002](0002-mcp-server.md) | An MCP server for management and diagnostic verbs | proposed |
 | [0003](0003-docker-edge-only.md) | A Docker image that is only the edge | proposed |
-| [0004](0004-panel-totp.md) | A second factor for the management panel | proposed |
+| [0004](0004-panel-totp.md) | A second factor for the management panel | accepted |
 | [0005](0005-forward-auth.md) | Forward authentication in front of a published application | proposed |
 | [0006](0006-coraza-crs.md) | What kind of WAF this project is | proposed |
 | [0007](0007-offline-bundle.md) | Production offline distribution | accepted |

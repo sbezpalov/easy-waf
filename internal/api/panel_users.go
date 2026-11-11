@@ -28,6 +28,7 @@ type panelUserJSON struct {
 	Role               string `json:"role"`
 	MustChangePassword bool   `json:"must_change_password"`
 	CreatedAt          string `json:"created_at"`
+	TOTPEnabled        bool   `json:"totp_enabled"`
 }
 
 // temporaryPassword is shown once; the user must change it at first sign-in.
@@ -47,7 +48,7 @@ func (s *Server) listPanelUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]panelUserJSON, 0, len(list))
 	for _, u := range list {
-		out = append(out, panelUserJSON{Username: u.Username, Role: u.Role, MustChangePassword: u.MustChangePassword, CreatedAt: u.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")})
+		out = append(out, panelUserJSON{Username: u.Username, Role: u.Role, MustChangePassword: u.MustChangePassword, TOTPEnabled: u.TOTPEnabled, CreatedAt: u.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -263,6 +263,17 @@ Sets a new temporary password, requires a change at next sign-in and ends the us
 
 ### `DELETE /api/v1/panel-users/{username}`
 Needs step-up. Audit: `panel_user_deleted`. `204`; `400` for your own account, `404` unknown user, `409` the last admin.
+### `DELETE /api/v1/panel-users/{username}/totp`
+Turns off another user's two-factor sign-in (lost phone). Needs step-up. Audit: `panel_user_totp_reset`. `204`; `404` unknown user. From the console: `easy-waf-admin disable-totp -user NAME`.
+
+## Two-factor sign-in (TOTP)
+
+Optional per user (ADR 0004, option C). When it is on, `POST /api/v1/auth/login` with a correct password and no `totp_code` answers `401 {"error":"totp_required"}`; repeat the request with `"totp_code"` set to the current 6-digit code (RFC 6238, SHA-1, 30 s, one step of skew; each step works once) or to an unused recovery code. A wrong code answers `401 {"error":"invalid two-factor code"}` and counts against the login rate limit. Step-up (`/auth/confirm`) stays a password confirmation. `GET /api/v1/auth/me` and `GET /api/v1/panel-users` return `totp_enabled`.
+
+- `POST /api/v1/auth/totp/setup` (step-up): stores a new pending secret and returns `{"secret", "otpauth_uri"}`. `409` when TOTP is already on.
+- `POST /api/v1/auth/totp/enable` `{"code"}`: activates the pending secret if the code matches and returns `{"recovery_codes": [10 codes]}`, shown once and stored only as SHA-256 hashes. Audit: `totp_enabled`.
+- `POST /api/v1/auth/totp/disable` (step-up): turns it off and drops the recovery codes. Audit: `totp_disabled`.
+
 
 ## Status and catalogue
 

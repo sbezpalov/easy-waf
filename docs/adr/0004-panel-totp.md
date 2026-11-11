@@ -1,11 +1,12 @@
 # ADR 0004 — A second factor for the management panel
 
-- **Status:** proposed
+- **Status:** accepted (option C)
 - **Date:** 2026-11-10
 - **Deciders:** repository maintainer
 - **Context version:** 1.6.0
-- **Implementation:** none. Login stays a password and a JWT. Host operations
-  stay behind the existing password step-up.
+- **Implementation:** option C — optional TOTP at login, hashed one-time
+  recovery codes, admin reset and `easy-waf-admin disable-totp`. Host step-up
+  stays a password confirmation.
 
 ## Context
 

@@ -31,6 +31,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "disable-totp":
+		disableTOTPCLI()
 	case "reset-control-panel-access":
 		resetManagementACLCLI()
 	case "management-config":
@@ -64,6 +66,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "      -bootstrap-credentials (root): new random 19-char DB password + EASY_WAF_ADMIN_TOKEN, updates env file, then wipes; GUI requires one-time enrollment after API start.")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin factory-reset [-state-dir path] [-env-file path] [-database-url URL] [-bootstrap-credentials] [-credentials-out path] -i-am-sure")
 	fmt.Fprintln(os.Stderr, "      Same as reset-appliance (legacy flag name).")
+	fmt.Fprintln(os.Stderr, "  easy-waf-admin disable-totp -user NAME [-env-file path] [-database-url URL]")
+	fmt.Fprintln(os.Stderr, "      Turn off two-factor sign-in for a panel user (lost phone and recovery codes).")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin print-enrollment [-state-dir path]")
 	fmt.Fprintln(os.Stderr, "      Print the one-time operator enrollment secret from the root-only 0600 file (stdout only; never journal).")
 	fmt.Fprintln(os.Stderr, "  easy-waf-admin apply-edge [-env-file path] [-state-dir path] [-database-url URL] [-label text]")

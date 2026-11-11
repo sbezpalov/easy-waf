@@ -35,6 +35,10 @@ Applies to the release from root [`VERSION`](../VERSION) (**1.6.0**). Acceptance
 
 Panel users are `admin` or `viewer`. `auth.ReadOnlyGate` refuses a viewer every write except its own sign-out, password change and step-up confirmation, and every request (reads too) under `/api/v1/host/`, `/api/v1/diagnostics/` and `/api/v1/panel-users`, so a viewer account never reaches the root broker. The role is read from the database on every request, so a demotion applies at once. Creating, changing, resetting and deleting panel users needs a step-up password confirmation; the last admin cannot be demoted or deleted. Temporary passwords are random (96 bits), shown once and must be changed at first sign-in.
 
+## Two-factor sign-in
+
+Each panel user can turn on TOTP (RFC 6238, ADR 0004 option C). The secret is created only after a step-up, becomes active only after a correct code, and is stored in PostgreSQL next to the password hash; each 30-second step is accepted once (`totp_last_step`). Ten recovery codes (80 bits each) are shown once and stored as SHA-256 hashes; each works once. Wrong codes count against the login rate limit. Step-up for host operations stays a password confirmation. An admin can reset another user's TOTP; with no admin left, `easy-waf-admin disable-totp -user NAME` on the console turns it off.
+
 ## CSRF Protection
 
 The management API uses **JWT Bearer tokens** in the `Authorization` header, stored in `sessionStorage` (not cookies). Browsers do not attach custom headers automatically on cross-origin form submissions or link navigations, which makes traditional CSRF attacks ineffective against this API.

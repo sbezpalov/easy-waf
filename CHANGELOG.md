@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Two-factor sign-in (TOTP).** Optional per panel user (Settings → Two-factor sign-in): authenticator-app codes at login, 10 one-time recovery codes stored as hashes, admin reset in Users → Panel users and `easy-waf-admin disable-totp` on the console. ADR 0004 accepted (option C). Migration `024_user_totp.sql`.
 - **TCP services.** `tcp_services` publishes raw TCP ports (MQTT, RTSP, ...) through HAProxy `mode tcp`, with an optional source allowlist, the IP blacklist and a health check (Security → Edge network → TCP services). Open each port in the host firewall.
 - **Panel roles.** Panel users are `admin` or `viewer` (read-only: no writes, no host management, no diagnostics bundle; enforced by the API). Users → Panel users creates users with a one-time temporary password, changes roles, resets passwords and deletes users (`/api/v1/panel-users`, step-up, audited; the last admin is protected). Existing users stay admins. Migration `023_user_roles.sql`.
 - **Maintenance mode.** Per application, `maintenance` returns a 503 maintenance page (`Retry-After: 600`) without reaching the servers, except from `maintenance_bypass_cidrs`. Applications → **Maintenance** toggles it (`POST /api/v1/applications/{id}/maintenance`, audited). Migration `022_maintenance.sql`.

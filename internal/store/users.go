@@ -25,9 +25,10 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (*config.AdminUser, error) {
 	var u config.AdminUser
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, must_change_password, session_version, role, created_at, updated_at
+		SELECT id, username, password_hash, must_change_password, session_version, role, totp_secret, totp_last_step, created_at, updated_at
 		FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.MustChangePassword, &u.SessionVersion, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.MustChangePassword, &u.SessionVersion, &u.Role, &u.TOTPSecret, &u.TOTPLastStep, &u.CreatedAt, &u.UpdatedAt)
+	u.TOTPEnabled = u.TOTPSecret != ""
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -241,7 +242,7 @@ var ErrLastAdmin = errors.New("the last admin cannot be removed or demoted")
 // ListUsers returns all panel users ordered by username.
 func (s *Store) ListUsers(ctx context.Context) ([]config.AdminUser, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, must_change_password, role, created_at, updated_at
+		SELECT id, username, must_change_password, role, totp_secret <> '', created_at, updated_at
 		FROM users ORDER BY username`)
 	if err != nil {
 		return nil, err
@@ -250,7 +251,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]config.AdminUser, error) {
 	var out []config.AdminUser
 	for rows.Next() {
 		var u config.AdminUser
-		if err := rows.Scan(&u.ID, &u.Username, &u.MustChangePassword, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.MustChangePassword, &u.Role, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

@@ -21,6 +21,7 @@ import (
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	TOTPCode string `json:"totp_code,omitempty"`
 }
 
 type loginResponse struct {
@@ -33,6 +34,7 @@ type meResponse struct {
 	Username           string `json:"username"`
 	MustChangePassword bool   `json:"must_change_password"`
 	Role               string `json:"role"`
+	TOTPEnabled        bool   `json:"totp_enabled"`
 }
 
 type changePasswordRequest struct {
@@ -208,7 +210,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "username and password required", http.StatusBadRequest)
 		return
 	}
-	if len(user) > 128 || len(body.Password) > 256 {
+	if len(user) > 128 || len(body.Password) > 256 || len(body.TOTPCode) > 64 {
 		http.Error(w, "credentials are too long", http.StatusBadRequest)
 		return
 	}
@@ -241,6 +243,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	if u.TOTPEnabled {
+		if strings.TrimSpace(body.TOTPCode) == "" {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "totp_required"})
+			return
+		}
+		if !s.checkSecondFactor(r.Context(), u, body.TOTPCode, ipStr) {
+			_ = s.Eng.Store.AppendAudit(r.Context(), "login_failed", map[string]any{
+				"source_ip": ipStr,
+				"username":  user,
+				"reason":    "totp",
+			})
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid two-factor code"})
+			return
+		}
+	}
 	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -271,7 +288,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword, Role: u.Role})
+	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword, Role: u.Role, TOTPEnabled: u.TOTPEnabled})
 }
 
 // handleLogout invalidates every session token issued to the caller.
