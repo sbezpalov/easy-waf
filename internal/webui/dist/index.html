@@ -347,6 +347,10 @@
               <option value="source">Same client, same server (source IP)</option>
             </select>
           </label>
+          <label class="row" style="margin:0"><input id="app-maint" type="checkbox" /> Maintenance mode</label>
+          <label>Maintenance bypass <span class="dash-note">(IPs/CIDRs that still reach the app)</span>
+            <input id="app-maint-bypass" placeholder="192.168.1.0/24, 10.0.0.5" style="min-width:16rem" />
+          </label>
         </div>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>Listen mode
@@ -1228,6 +1232,8 @@
     document.getElementById('port').value = '';
     document.getElementById('backend-servers').value = '';
     document.getElementById('backend-balance').value = '';
+    document.getElementById('app-maint').checked = false;
+    document.getElementById('app-maint-bypass').value = '';
     document.getElementById('behttps').checked = false;
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
@@ -1784,6 +1790,18 @@
       : '<span class="app-badge">(layers off)</span>';
   }
 
+  async function setAppMaintenance(id, enabled, btn) {
+    if (enabled && !(await confirmDialog('Put this application into maintenance?\n\nVisitors get a 503 maintenance page until you end it; the bypass sources set in the form still reach the app.', { okLabel: 'Start maintenance' }))) return;
+    await withBusy(btn, async () => {
+      const r = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/maintenance', {
+        method: 'POST', headers: hdr(), body: JSON.stringify({ enabled })
+      });
+      if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+      toast(enabled ? 'Maintenance page is live.' : 'Maintenance ended.', 'ok');
+      await loadApps();
+    });
+  }
+
   async function postAppModeChange(id, mode, selEl) {
     const prev = (appsListCache.find((x) => x.id === id) || {}).security;
     const prevMode = (prev && prev.mode) || 'balanced';
@@ -1819,6 +1837,8 @@
     document.getElementById('port').value = String(a.backend_port != null ? a.backend_port : 80);
     document.getElementById('backend-servers').value = formatBackendServers(a.backend_servers);
     document.getElementById('backend-balance').value = a.backend_balance || '';
+    document.getElementById('app-maint').checked = !!a.maintenance;
+    document.getElementById('app-maint-bypass').value = (a.maintenance_bypass_cidrs || []).join(', ');
     document.getElementById('behttps').checked = !!a.backend_https;
     document.getElementById('ws').checked = !!a.websocket;
     document.getElementById('profile').value = a.profile || 'balanced';
@@ -1876,9 +1896,10 @@
   <div class="app-card-head">
     <div>
       <p class="app-card-title">${esc(a.name)}</p>
-      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${(a.backend_servers || []).length ? ' <span class="app-badge">+' + a.backend_servers.length + ' server(s)</span>' : ''}${ws}${lmb}</p>
+      <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${(a.backend_servers || []).length ? ' <span class="app-badge">+' + a.backend_servers.length + ' server(s)</span>' : ''}${ws}${lmb}${a.maintenance ? ' <span class="app-badge" style="background:#9a6700;color:#fff">MAINTENANCE</span>' : ''}</p>
     </div>
     <div class="row" style="margin:0;gap:0.35rem">
+      <button type="button" class="secondary btn-app-maint" data-id="${esc(a.id)}" data-on="${a.maintenance ? '1' : ''}">${a.maintenance ? 'End maintenance' : 'Maintenance'}</button>
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
     </div>
   </div>
@@ -1899,6 +1920,9 @@
     }).join('');
     box.querySelectorAll('.btn-app-edit').forEach((btn) => {
       btn.onclick = () => fillAppFormFromApp(btn.getAttribute('data-id'));
+    });
+    box.querySelectorAll('.btn-app-maint').forEach((btn) => {
+      btn.onclick = () => setAppMaintenance(btn.getAttribute('data-id'), !btn.getAttribute('data-on'), btn);
     });
     box.querySelectorAll('.app-mode-sel').forEach((sel) => {
       sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));
@@ -3602,6 +3626,8 @@
         backend_port: parseInt(document.getElementById('port').value, 10),
         backend_servers: backendServers,
         backend_balance: document.getElementById('backend-balance').value,
+        maintenance: document.getElementById('app-maint').checked,
+        maintenance_bypass_cidrs: document.getElementById('app-maint-bypass').value.split(/[\s,]+/).filter(Boolean),
         backend_https: document.getElementById('behttps').checked,
         websocket: document.getElementById('ws').checked,
         profile: document.getElementById('profile').value,

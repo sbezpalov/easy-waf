@@ -28,9 +28,11 @@ type AppRender struct {
 	RateLimitBurst    int
 	BackendUsesDNS    bool // a server host is an FQDN — the config needs resolvers easy_waf_dns
 	Servers           []ServerRender
-	MaxBodyBytes      int64
-	BlockMultipart    bool
-	Exposure          pathExposure
+	// MaintenanceBypassSrc is maintenance_bypass_cidrs joined for `src`.
+	MaintenanceBypassSrc string
+	MaxBodyBytes         int64
+	BlockMultipart       bool
+	Exposure             pathExposure
 }
 
 // ServerRender is one `server` line of an application backend.
@@ -196,17 +198,18 @@ func Render(in RenderInput) (Rendered, error) {
 			return Rendered{}, err
 		}
 		apps = append(apps, AppRender{
-			Application:       app,
-			Profile:           p,
-			ACLTag:            tag,
-			GeoEnforceMapPath: geoPath,
-			UsePerAppGeo:      useAppGeo,
-			RateLimitBurst:    burst,
-			BackendUsesDNS:    usesDNS,
-			Servers:           servers,
-			MaxBodyBytes:      maxBody,
-			BlockMultipart:    blockMultipart,
-			Exposure:          exposure,
+			Application:          app,
+			Profile:              p,
+			ACLTag:               tag,
+			GeoEnforceMapPath:    geoPath,
+			UsePerAppGeo:         useAppGeo,
+			RateLimitBurst:       burst,
+			BackendUsesDNS:       usesDNS,
+			Servers:              servers,
+			MaintenanceBypassSrc: joinCIDRs(app.MaintenanceBypassCIDRs),
+			MaxBodyBytes:         maxBody,
+			BlockMultipart:       blockMultipart,
+			Exposure:             exposure,
 		})
 	}
 	in.NeedsDNSResolver = false
@@ -421,6 +424,8 @@ defaults
 	timeout client  50s
 	timeout server  50s
 	timeout tunnel  3600s
+	# Bodies of the responses HAProxy makes itself: denials, no server, timeouts.
+{{errorPages}}
 
 {{if .NeedsDNSResolver}}
 # System DNS (split-DNS / internal forwarders via /etc/resolv.conf)
@@ -581,6 +586,10 @@ backend {{backendName $a.Application.PublicHost}}
 	option http-keep-alive
 	{{- else }}
 	option http-server-close
+	{{- end }}
+	{{- if $a.Application.Maintenance }}
+	# Maintenance mode: a 503 page without reaching the servers{{if $a.MaintenanceBypassSrc}}, except from the bypass sources{{end}}.
+	http-request return status 503 content-type "text/html; charset=utf-8" hdr Retry-After 600 hdr Cache-Control no-store string "{{maintenancePage}}"{{if $a.MaintenanceBypassSrc}} if !{ src {{$a.MaintenanceBypassSrc}} }{{end}}
 	{{- end }}
 {{- if $a.Application.Security.RateLimitEnabled}}
 	stick-table type ip size 200k expire 5m store http_req_rate(10s)
@@ -770,15 +779,17 @@ backend {{backendName $a.Application.PublicHost}}
 `
 
 var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.FuncMap{
-	"backendName": sanitizeBackendName,
-	"join":        strings.Join,
-	"exactPaths":  exactPaths,
-	"dirPrefixes": dirPrefixes,
-	"joinCIDRs":   joinCIDRs,
-	"haDur":       formatHAProxyDuration,
-	"methodSlug":  methodSlug,
-	"appSec":      appSec,
-	"acmeSuffix":  acmeSuffix,
+	"errorPages":      errorPages,
+	"maintenancePage": maintenancePage,
+	"backendName":     sanitizeBackendName,
+	"join":            strings.Join,
+	"exactPaths":      exactPaths,
+	"dirPrefixes":     dirPrefixes,
+	"joinCIDRs":       joinCIDRs,
+	"haDur":           formatHAProxyDuration,
+	"methodSlug":      methodSlug,
+	"appSec":          appSec,
+	"acmeSuffix":      acmeSuffix,
 }).Parse(haproxyTemplate))
 
 // Paths under stateDir for generated artifacts.

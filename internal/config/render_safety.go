@@ -302,6 +302,12 @@ func ValidateApplicationRenderSafety(app *Application) error {
 	if err := validateBackendServers(app); err != nil {
 		return err
 	}
+	if len(app.MaintenanceBypassCIDRs) > 64 {
+		return fmt.Errorf("maintenance_bypass_cidrs: at most 64 entries")
+	}
+	if err := validateSourceList("maintenance_bypass_cidrs", app.MaintenanceBypassCIDRs); err != nil {
+		return err
+	}
 	if err := ValidateHAProxyPath("health_path", app.HealthPath); err != nil {
 		return err
 	}

@@ -275,7 +275,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 
 ## Приложения
 
-Приложение (`config.Application`, `internal/config/types.go`) сопоставляет публичное имя хоста с бэкендом. Его JSON-поля: `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `backend_servers`, `backend_balance`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (см. ниже; отсутствует, если политика не задана), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (см. [Безопасность приложений](#безопасность-приложений)), `created_at` и `updated_at`.
+Приложение (`config.Application`, `internal/config/types.go`) сопоставляет публичное имя хоста с бэкендом. Его JSON-поля: `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `backend_servers`, `backend_balance`, `maintenance`, `maintenance_bypass_cidrs`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (см. ниже; отсутствует, если политика не задана), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (см. [Безопасность приложений](#безопасность-приложений)), `created_at` и `updated_at`.
 
 `path_policy` — необязательное ограничение публикации поверх блок-листов профиля и restricted paths:
 
@@ -317,6 +317,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `backend_host` — только `A-Za-z0-9._:-`.
   - `backend_port` — от 1 до 65535.
   - `backend_servers` (`[{host, port, backup}]`, не больше 15) добавляет серверы рядом с `backend_host:backend_port`; они рендерятся как `s2`, `s3`, ... с теми же настройками TLS, health check и резолвера. Без `backend_tls_server_name` каждый сервер проверяется по своему хосту. Сервер `backup` получает трафик, только пока все остальные лежат. Хосты подчиняются правилам `backend_host`, один `host:port` нельзя указать дважды. `backend_balance`: пусто (`roundrobin` HAProxy), `roundrobin`, `leastconn` или `source` (клиентский IP закрепляется за сервером). Если при обновлении `backend_servers` не передан, сохранённые серверы и `backend_balance` остаются; `[]` их удаляет.
+  - `maintenance` (по умолчанию `false`) отвечает на любой запрос страницей обслуживания `503` (`Retry-After: 600`) в бэкенде приложения, не обращаясь к серверам, кроме источников из `maintenance_bypass_cidrs` (IP или CIDR, не больше 64). Если при обновлении `maintenance_bypass_cidrs` не передан, сохранённый список остаётся.
   - `name` — не более 200 байт и без управляющих символов.
   - `health_path`, `path_prefix`, `restricted_paths[].path_prefix` и пути в `path_policy` должны проходить валидацию путей HAProxy. Каждый элемент `restricted_paths[].allowed_cidrs` должен быть IP-адресом или CIDR.
   - Если `path_policy` не передан при обновлении, остаётся сохранённое значение. Незаданная политика у профиля `ha-mcp` заменяется пресетом. `edge_token` только на запись: 400, если он короче 16 символов или каталог состояния недоступен.
@@ -405,6 +406,11 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Тело запроса:** `{"mode": "trusted-lan"}`. `mode` обязателен и сопоставляется без учёта регистра после обрезки пробелов.
 - **Ответ:** `200`, итоговый `config.ApplicationSecurity`.
 - **Ошибки:** `400` (text/plain) при некорректном JSON, `unknown mode` или неизвестном профиле. `404`, если приложения не существует. `422` / `503`, если apply не удался и изменение отменено. `500` при ошибке базы данных.
+
+### `POST /api/v1/applications/{id}/maintenance`
+Включает или выключает режим обслуживания и применяет конфиг. Тело: `{"enabled": true, "bypass_cidrs": ["192.168.1.0/24"]}`; `bypass_cidrs` необязателен и, если передан, заменяет сохранённый `maintenance_bypass_cidrs`. Аудит: `app_maintenance_changed`.
+- **Ответ:** `200`, сохранённое приложение.
+- **Ошибки:** `400` при неверном теле или записи обхода, `404` для неизвестного ID, `422`, если HAProxy отклонил изменение (прежнее состояние восстанавливается).
 
 ## Apply и ревизии
 

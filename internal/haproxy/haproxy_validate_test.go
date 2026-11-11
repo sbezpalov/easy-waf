@@ -69,6 +69,12 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 				CertificateID: "c1",
 				Enabled:       true,
 			},
+			{
+				ID: "a2", Name: "Failover in maintenance", PublicHost: "down.example.com", BackendHost: "127.0.0.1", BackendPort: 8081,
+				BackendBalance: "source", BackendServers: []config.BackendServer{{Host: "127.0.0.2", Port: 8081, Backup: true}},
+				Maintenance: true, MaintenanceBypassCIDRs: []string{"192.168.1.0/24", "fd00::1"},
+				Profile: "balanced", CertificateID: "c1", Enabled: true,
+			},
 		},
 		Certificates: map[string]config.Certificate{
 			"c1": {ID: "c1", BundlePath: bundle},

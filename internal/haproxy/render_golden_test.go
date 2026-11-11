@@ -45,6 +45,7 @@ var goldenScenarioNames = []string{
 	"ha-mcp",
 	"edge-network",
 	"backend-failover",
+	"app-maintenance",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -569,6 +570,23 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/backend-failover.crt-list.txt",
+		}
+	case "app-maintenance":
+		return RenderInput{
+			Settings: goldenGlobalSettings(spoeMin, "crowdsec"),
+			Applications: []config.Application{
+				{
+					ID: "m1", Name: "Down", PublicHost: "down.example.com", BackendHost: "10.0.0.20", BackendPort: 80,
+					Maintenance: true, MaintenanceBypassCIDRs: []string{"192.168.1.0/24", "fd00::/8"},
+					Profile: "balanced", CertificateID: "c1", Enabled: true,
+				},
+				{
+					ID: "m2", Name: "DownForAll", PublicHost: "closed.example.com", BackendHost: "10.0.0.21", BackendPort: 80,
+					Maintenance: true, Profile: "balanced", CertificateID: "c1", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-maintenance.crt-list.txt",
 		}
 	case "listen-http-only-full-sec":
 		return goldenListenModeFullSec("http_only", "plain-sec.example.local", "", false)

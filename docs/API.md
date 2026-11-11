@@ -275,7 +275,7 @@ Returns the catalogue of security-mode presets (`profiles.SecurityModeCatalog()`
 
 ## Applications
 
-An application (`config.Application`, `internal/config/types.go`) maps a public hostname to a backend. Its JSON fields are `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `backend_servers`, `backend_balance`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (see below; omitted when unset), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (see [Application security](#application-security)), `created_at` and `updated_at`.
+An application (`config.Application`, `internal/config/types.go`) maps a public hostname to a backend. Its JSON fields are `id`, `name`, `public_host`, `backend_host`, `backend_port`, `backend_https`, `backend_tls_verify`, `backend_tls_ca_file`, `backend_tls_server_name`, `backend_servers`, `backend_balance`, `maintenance`, `maintenance_bypass_cidrs`, `websocket`, `health_path`, `path_prefix`, `restricted_paths` (`[{path_prefix, allowed_cidrs}]`), `path_policy` (see below; omitted when unset), `profile`, `certificate_id`, `listen_mode`, `enabled`, `security` (see [Application security](#application-security)), `created_at` and `updated_at`.
 
 `path_policy` is optional exposure on top of profile block lists and restricted paths:
 
@@ -317,6 +317,7 @@ Creates or replaces an application (upsert), then applies it to HAProxy. A body 
   - `backend_host` must be `A-Za-z0-9._:-`.
   - `backend_port` must be between 1 and 65535.
   - `backend_servers` (`[{host, port, backup}]`, at most 15) adds servers next to `backend_host:backend_port`, rendered as `s2`, `s3`, ... with the same TLS, health-check and resolver settings; without `backend_tls_server_name` each server is verified against its own host. A `backup` server gets traffic only while every non-backup server is down. Hosts follow the `backend_host` rules, and no `host:port` may appear twice. `backend_balance` is empty (HAProxy's `roundrobin`), `roundrobin`, `leastconn` or `source` (a client IP keeps its server). When `backend_servers` is omitted on an update, the stored servers and `backend_balance` are kept; send `[]` to remove them.
+  - `maintenance` (default `false`) answers every request with a `503` maintenance page (`Retry-After: 600`) in the application's backend, before any server is tried, except from `maintenance_bypass_cidrs` (IPs or CIDRs, at most 64). When `maintenance_bypass_cidrs` is omitted on an update, the stored list is kept.
   - `name` can be at most 200 bytes and must not contain control characters.
   - `health_path`, `path_prefix`, `restricted_paths[].path_prefix` and `path_policy` paths must pass HAProxy path validation. Each entry in `restricted_paths[].allowed_cidrs` must be an IP address or a CIDR.
   - `path_policy`, when omitted on an update, is left as stored. An unset policy on profile `ha-mcp` is replaced with the preset. `edge_token` is write-only and is rejected (400) when it is shorter than 16 characters or the state directory is unavailable.
@@ -405,6 +406,11 @@ GeoIP policy, the country list and the rate-limit overrides are never changed by
 - **Request body:** `{"mode": "trusted-lan"}`. `mode` is required and is matched case-insensitively after trimming.
 - **Response:** `200`, the resulting `config.ApplicationSecurity`.
 - **Errors:** `400` (text/plain) for invalid JSON, `unknown mode`, or an unknown profile. `404` if the application does not exist. `422` / `503` if the apply failed and the change was undone. `500` on a database error.
+
+### `POST /api/v1/applications/{id}/maintenance`
+Switches maintenance mode on or off and applies. Body: `{"enabled": true, "bypass_cidrs": ["192.168.1.0/24"]}`; `bypass_cidrs` is optional and replaces the stored `maintenance_bypass_cidrs` when present. Audit: `app_maintenance_changed`.
+- **Response:** `200`, the stored application.
+- **Errors:** `400` for an invalid body or bypass entry, `404` for an unknown ID, `422` when HAProxy rejected the change (the previous state is restored).
 
 ## Apply and revisions
 

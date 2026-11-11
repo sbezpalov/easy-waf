@@ -170,3 +170,40 @@ func TestUpsertBackendServersRoundTripAndKeep(t *testing.T) {
 		t.Fatalf("duplicate of the primary server: %d", rec.Code)
 	}
 }
+
+func TestAppMaintenanceToggle(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("maint%d", time.Now().UnixNano()))
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+	post := func(body string) int {
+		rec := httptest.NewRecorder()
+		req := withURLParam(httptest.NewRequest(http.MethodPost, "/api/v1/applications/x/maintenance", strings.NewReader(body)), "id", a.ID)
+		s.postAppMaintenance(rec, req)
+		return rec.Code
+	}
+	if code := post(`{"enabled":true,"bypass_cidrs":["192.168.1.0/24"]}`); code != http.StatusOK {
+		t.Fatalf("enable: %d", code)
+	}
+	stored, err := s.Eng.Store.GetApplication(context.Background(), a.ID)
+	if err != nil || !stored.Maintenance || len(stored.MaintenanceBypassCIDRs) != 1 {
+		t.Fatalf("stored %+v %v", stored, err)
+	}
+	if code := post(`{"enabled":false}`); code != http.StatusOK {
+		t.Fatalf("disable: %d", code)
+	}
+	stored, _ = s.Eng.Store.GetApplication(context.Background(), a.ID)
+	if stored.Maintenance || len(stored.MaintenanceBypassCIDRs) != 1 {
+		t.Fatalf("disable keeps the bypass list: %+v", stored)
+	}
+	if code := post(`{"enabled":true,"bypass_cidrs":["not-an-ip"]}`); code != http.StatusBadRequest {
+		t.Fatalf("bad bypass: %d", code)
+	}
+}

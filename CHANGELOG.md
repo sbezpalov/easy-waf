@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Maintenance mode.** Per application, `maintenance` returns a 503 maintenance page (`Retry-After: 600`) without reaching the servers, except from `maintenance_bypass_cidrs`. Applications → **Maintenance** toggles it (`POST /api/v1/applications/{id}/maintenance`, audited). Migration `022_maintenance.sql`.
+- **Error pages.** Responses HAProxy makes itself (403, 404, 429, 502, 503, 504 and others) get short neutral HTML pages instead of HAProxy's built-in bodies, which named the proxy.
 - **Several backend servers per application.** `backend_servers` adds servers next to `backend_host` (load balanced with `backend_balance`: round robin, least connections or source IP), and `backup: true` makes one a failover target used only while the others are down. Applications → More backend servers. Migration `021_backend_servers.sql`.
 - **Scheduled backups.** `easy-waf-backup.timer` runs `backup.sh --dir /var/backups/easy-waf --keep 7` daily and keeps the 7 newest archives (`EASY_WAF_BACKUP_DIR`, `EASY_WAF_BACKUP_KEEP` in `easy-waf.env`). The package enables it once; `easy-waf-backup` is now on `PATH`. `backup.sh` writes through a `.partial` file, so a failed run leaves no truncated archive.
 - **Notifications.** Telegram next to the webhook, and new events: failed HAProxy apply, backend server down/up, and a spike of blocked requests (`notify_blocked_spike_threshold` per 5 minutes). Settings → Notifications, with **Send test** (`POST /api/v1/notify/test`). The Telegram token is never returned by the API.

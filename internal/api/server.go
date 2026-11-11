@@ -95,6 +95,7 @@ func (s *Server) Router() chi.Router {
 				r.Put("/applications/{id}/security", s.putAppSecurity)
 				r.Patch("/applications/{id}/security", s.patchAppSecurity)
 				r.Post("/applications/{id}/security/mode", s.postAppSecurityMode)
+				r.Post("/applications/{id}/maintenance", s.postAppMaintenance)
 				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)
 				r.Post("/certificates", s.upsertCert)
@@ -294,6 +295,9 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		a.BackendTLSVerify = old.BackendTLSVerify
 		a.BackendTLSCAFile = old.BackendTLSCAFile
 		a.BackendTLSServerName = old.BackendTLSServerName
+	}
+	if haveOld && a.MaintenanceBypassCIDRs == nil {
+		a.MaintenanceBypassCIDRs = old.MaintenanceBypassCIDRs
 	}
 	if haveOld && a.BackendServers == nil {
 		a.BackendServers = old.BackendServers

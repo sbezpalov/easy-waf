@@ -38,3 +38,15 @@ func TestValidateBackendServers(t *testing.T) {
 		}
 	}
 }
+
+func TestMaintenanceBypassValidation(t *testing.T) {
+	app := Application{Name: "a", PublicHost: "a.example.com", BackendHost: "10.0.0.1", BackendPort: 80, Maintenance: true,
+		MaintenanceBypassCIDRs: []string{"192.168.1.0/24", "fd00::1"}}
+	if err := ValidateApplicationRenderSafety(&app); err != nil {
+		t.Fatal(err)
+	}
+	app.MaintenanceBypassCIDRs = []string{"192.168.1.0/24 } || { always_true"}
+	if err := ValidateApplicationRenderSafety(&app); err == nil {
+		t.Fatal("accepted an injected bypass entry")
+	}
+}

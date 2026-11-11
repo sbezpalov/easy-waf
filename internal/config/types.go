@@ -111,11 +111,15 @@ type Application struct {
 	// every other server is down. nil on an update keeps the stored list.
 	BackendServers []BackendServer `json:"backend_servers,omitempty"`
 	// BackendBalance is empty (roundrobin), roundrobin, leastconn or source.
-	BackendBalance  string           `json:"backend_balance,omitempty"`
-	WebSocket       bool             `json:"websocket"`
-	HealthPath      string           `json:"health_path,omitempty"`
-	PathPrefix      string           `json:"path_prefix,omitempty"`
-	RestrictedPaths []RestrictedPath `json:"restricted_paths,omitempty"`
+	BackendBalance string `json:"backend_balance,omitempty"`
+	// Maintenance answers every request with a 503 maintenance page, without
+	// reaching the backend, except from MaintenanceBypassCIDRs.
+	Maintenance            bool             `json:"maintenance"`
+	MaintenanceBypassCIDRs []string         `json:"maintenance_bypass_cidrs,omitempty"`
+	WebSocket              bool             `json:"websocket"`
+	HealthPath             string           `json:"health_path,omitempty"`
+	PathPrefix             string           `json:"path_prefix,omitempty"`
+	RestrictedPaths        []RestrictedPath `json:"restricted_paths,omitempty"`
 	// PathPolicy is optional exposure control (allowlist, required headers, per-path timeouts and rate limits).
 	// A nil value means the client omitted it. On update the API keeps the stored policy.
 	PathPolicy    *PathPolicy `json:"path_policy,omitempty"`
