@@ -197,8 +197,8 @@ No performance numbers: they depend on the hardware and were not measured here.
 
 Pictures of the panel are not in the repository. They have to be taken on a
 running appliance; a generated mock would show a UI this build might not match.
-The panel tabs are dashboard, applications, certificates, security, CrowdSec,
-Fail2Ban, logs, system, users and settings.
+The panel tabs are dashboard, applications, certificates, configuration,
+network, security, CrowdSec, Fail2Ban, logs, system, users and settings.
 
 ## Name
 

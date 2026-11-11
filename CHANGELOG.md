@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.
+- **Offline bundle checksums.** `SHA256SUMS` is written outside the ISO tree and then moved in, so the list no longer names a `SHA256SUMS.tmp` that is gone after the rename and makes `install.sh --verify-only` fail.
 
 ### Changed
 

@@ -16,6 +16,7 @@ rather than editing it, so the history of *why* stays readable.
 | [0004](0004-panel-totp.md) | A second factor for the management panel | proposed |
 | [0005](0005-forward-auth.md) | Forward authentication in front of a published application | proposed |
 | [0006](0006-coraza-crs.md) | What kind of WAF this project is | proposed |
+| [0007](0007-offline-bundle.md) | Production offline distribution | accepted |
 
 Earlier architectural context that predates this directory:
 
