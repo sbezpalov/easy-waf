@@ -414,6 +414,7 @@ frontend fe_http
 	mode http
 {{- template "realIP" .}}
 {{- template "securityHeaders" .}}
+{{- template "blockCapture"}}
 {{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPClientTimeout}}s
@@ -447,9 +448,12 @@ frontend fe_http
 	# Universal blocks (plain HTTP vhosts; ACME excluded)
 	acl p_http_git     path_beg /.git
 	acl p_http_env     path_beg /.env
+	http-request capture str(sensitive_path) id 1 if p_http_git !acme
 	http-request deny deny_status 403 if p_http_git !acme
+	http-request capture str(sensitive_path) id 1 if p_http_env !acme
 	http-request deny deny_status 403 if p_http_env !acme
 	acl http_bad_method method TRACE CONNECT
+	http-request capture str(method) id 1 if http_bad_method !acme
 	http-request deny deny_status 405 if http_bad_method !acme
 {{- end}}
 {{range $a := .HTTPApps}}
@@ -495,6 +499,7 @@ frontend fe_https
 	mode http
 {{- template "realIP" .}}
 {{- template "securityHeaders" .}}
+{{- template "blockCapture"}}
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPSClientTimeout}}s
@@ -516,8 +521,10 @@ frontend fe_https
 	# Universal blocks (all vhosts)
 	acl p_git     path_beg /.git
 	acl p_env     path_beg /.env
+	http-request capture str(sensitive_path) id 1 if p_git || p_env
 	http-request deny deny_status 403 if p_git || p_env
 	acl bad_method method TRACE CONNECT
+	http-request capture str(method) id 1 if bad_method
 	http-request deny deny_status 405 if bad_method
 {{range $i, $a := .HTTPSApps}}
 	acl app_{{$a.ACLTag}}_host hdr(host) -i {{$a.Application.PublicHost}}
@@ -604,6 +611,12 @@ backend {{backendName $a.Application.PublicHost}}
 	http-response del-header X-Powered-By
 {{- end}}
 {{- end}}
+{{- define "blockCapture"}}
+	# httplog shows {host|rule}: the rule that refused a request (Logs → Blocked requests).
+	declare capture request len 64
+	declare capture request len 24
+	http-request capture req.hdr(host) id 0
+{{- end}}
 {{- define "appSecurity"}}
 {{- $root := .Root -}}
 {{- $a := .App -}}
@@ -614,6 +627,7 @@ backend {{backendName $a.Application.PublicHost}}
 	# Allowlist is evaluated before the IP allow shortcut, so a trusted source still cannot reach other paths.
 	acl app_{{$a.ACLTag}}_allow path -m str {{$a.Exposure.AllowExact}}
 	acl app_{{$a.ACLTag}}_allow path_beg {{$a.Exposure.AllowDirs}}
+	http-request capture str(path_allowlist) id 1 if {{$host}} !app_{{$a.ACLTag}}_allow{{$acme}}
 	http-request deny deny_status 404 if {{$host}} !app_{{$a.ACLTag}}_allow{{$acme}}
 {{end}}{{range $p := $a.Exposure.FrontPaths}}
 	acl {{$p.Name}} path -m str {{$p.Exact}}
@@ -623,6 +637,7 @@ backend {{backendName $a.Application.PublicHost}}
 {{else if eq $h.Mode "prefix"}}	acl {{$h.CheckName}} req.hdr({{$h.Header}}) -m beg "{{$h.Prefix}}"
 {{else if eq $h.Mode "file"}}	acl {{$h.CheckName}} req.hdr({{$h.Header}}) -m str -f {{$h.File}}
 {{end}}	# httplog stays on the request line; this header is not captured.
+	http-request capture str(path_header) id 1 if {{$host}} {{$h.PathName}} !{{$h.CheckName}}{{$acme}}
 	http-request deny deny_status 401 if {{$host}} {{$h.PathName}} !{{$h.CheckName}}{{$acme}}
 {{end}}{{- if and $root.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
 	acl app_{{$a.ACLTag}}_white src -f {{$root.IPAllowlistMapPath}}
@@ -630,22 +645,27 @@ backend {{backendName $a.Application.PublicHost}}
 {{- end}}
 {{- if and $root.UseIPBlacklist $a.Application.Security.IPBlacklistEnabled}}
 	acl app_{{$a.ACLTag}}_black src -f {{$root.IPBlacklistMapPath}}
+	http-request capture str(ip_blacklist) id 1 if {{$host}} app_{{$a.ACLTag}}_black{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_black{{$acme}}
 {{- end}}
 {{- if $a.UsePerAppGeo}}
 	acl app_{{$a.ACLTag}}_geo src -f {{$a.GeoEnforceMapPath}}
 {{- if eq $a.Application.Security.GeoIPPolicy "deny"}}
+	http-request capture str(geoip) id 1 if {{$host}} app_{{$a.ACLTag}}_geo{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_geo{{$acme}}
 {{- else}}
+	http-request capture str(geoip) id 1 if {{$host}} !app_{{$a.ACLTag}}_geo{{$acme}}
 	http-request deny deny_status 403 if {{$host}} !app_{{$a.ACLTag}}_geo{{$acme}}
 {{- end}}
 {{- end}}
 {{- if and $root.Settings.BlockEmptyUA $a.Application.Security.BotProtectionEnabled}}
 	acl app_{{$a.ACLTag}}_empty_ua req.hdr(User-Agent) -m len 0
+	http-request capture str(empty_ua) id 1 if {{$host}} app_{{$a.ACLTag}}_empty_ua{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_empty_ua{{$acme}}
 {{- end}}
 {{- if and $root.UseBlockedUserAgents $a.Application.Security.BotProtectionEnabled}}
 	acl app_{{$a.ACLTag}}_bad_ua req.hdr(User-Agent) -m sub -i -f {{$root.BlockedUserAgentsMapPath}}
+	http-request capture str(bad_ua) id 1 if {{$host}} app_{{$a.ACLTag}}_bad_ua{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_bad_ua{{$acme}}
 {{- end}}
 {{- if $a.Application.Security.BasicWAFEnabled}}
@@ -654,20 +674,27 @@ backend {{backendName $a.Application.PublicHost}}
 	acl app_{{$a.ACLTag}}_xss query -m reg -i (<script|javascript:|on(error|load|click|mouse)\s*=)
 	acl app_{{$a.ACLTag}}_xss_path path -m reg -i (<script|javascript:)
 	acl app_{{$a.ACLTag}}_traversal path -m reg -i \.\./
+	http-request capture str(sqli) id 1 if {{$host}} app_{{$a.ACLTag}}_sqli{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_sqli{{$acme}}
+	http-request capture str(sqli) id 1 if {{$host}} app_{{$a.ACLTag}}_sqli_path{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_sqli_path{{$acme}}
+	http-request capture str(xss) id 1 if {{$host}} app_{{$a.ACLTag}}_xss{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_xss{{$acme}}
+	http-request capture str(xss) id 1 if {{$host}} app_{{$a.ACLTag}}_xss_path{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_xss_path{{$acme}}
+	http-request capture str(traversal) id 1 if {{$host}} app_{{$a.ACLTag}}_traversal{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_traversal{{$acme}}
 {{- end}}
 {{- if $a.Application.Security.MethodFilterEnabled}}
 {{- range $k, $m := $a.Profile.ExtraBlockedMethods}}
 	acl app_{{$a.ACLTag}}_bm_{{$k}}_{{methodSlug $m}} method {{$m}}
+	http-request capture str(method) id 1 if {{$host}} app_{{$a.ACLTag}}_bm_{{$k}}_{{methodSlug $m}}{{$acme}}
 	http-request deny deny_status 405 if {{$host}} app_{{$a.ACLTag}}_bm_{{$k}}_{{methodSlug $m}}{{$acme}}
 {{- end}}
 {{- end}}
 {{- if $a.Application.Security.PathACLEnabled}}
 {{- range $j, $p := $a.Profile.BlockPaths}}
+	http-request capture str(blocked_path) id 1 if {{$host}}{{$acme}} { path_beg {{$p}} }
 	http-request deny deny_status 403 if {{$host}}{{$acme}} { path_beg {{$p}} }
 {{- end}}
 {{- end}}
@@ -677,6 +704,7 @@ backend {{backendName $a.Application.PublicHost}}
 	# Per-app restricted path: {{$a.Application.Name}} {{$rp.PathPrefix}}
 	acl app_{{$a.ACLTag}}_rp_{{$ri}}_path path_beg {{$rp.PathPrefix}}
 	acl app_{{$a.ACLTag}}_rp_{{$ri}}_net src {{$rpCidr}}
+	http-request capture str(restricted_path) id 1 if {{$host}} app_{{$a.ACLTag}}_rp_{{$ri}}_path !app_{{$a.ACLTag}}_rp_{{$ri}}_net{{$acme}}
 	http-request deny deny_status 403 if {{$host}} app_{{$a.ACLTag}}_rp_{{$ri}}_path !app_{{$a.ACLTag}}_rp_{{$ri}}_net{{$acme}}
 {{- end}}
 {{- end}}
@@ -688,17 +716,23 @@ backend {{backendName $a.Application.PublicHost}}
 	acl app_{{$a.ACLTag}}_mp_allowed path -m str {{exactPaths $a.Application.Security.MultipartAllowedPaths}}
 	acl app_{{$a.ACLTag}}_mp_allowed path_beg {{dirPrefixes $a.Application.Security.MultipartAllowedPaths}}
 	acl app_{{$a.ACLTag}}_mp_dots path -m reg -i (\.|%2e){2}
+	http-request capture str(multipart) id 1 if {{$host}} app_{{$a.ACLTag}}_multipart !app_{{$a.ACLTag}}_mp_allowed{{$acme}}
 	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart !app_{{$a.ACLTag}}_mp_allowed{{$acme}}
+	http-request capture str(multipart) id 1 if {{$host}} app_{{$a.ACLTag}}_multipart app_{{$a.ACLTag}}_mp_dots{{$acme}}
 	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart app_{{$a.ACLTag}}_mp_dots{{$acme}}
 {{- else}}
+	http-request capture str(multipart) id 1 if {{$host}} app_{{$a.ACLTag}}_multipart{{$acme}}
 	http-request return status 415 content-type text/plain string "multipart requests are blocked on this path" if {{$host}} app_{{$a.ACLTag}}_multipart{{$acme}}
 {{- end}}
 {{- end}}
 {{- if $a.MaxBodyBytes}}
 	# HAProxy cannot count a streamed body, so one of undeclared length is refused.
 	acl app_{{$a.ACLTag}}_body_method method POST PUT PATCH
+	http-request capture str(body_size) id 1 if {{$host}} { req.hdr_val(content-length) gt {{$a.MaxBodyBytes}} }{{$acme}}
 	http-request return status 413 content-type text/plain string "request body too large" if {{$host}} { req.hdr_val(content-length) gt {{$a.MaxBodyBytes}} }{{$acme}}
+	http-request capture str(content_length) id 1 if {{$host}} { req.fhdr(transfer-encoding) -m found }{{$acme}}
 	http-request return status 411 content-type text/plain string "Content-Length required" if {{$host}} { req.fhdr(transfer-encoding) -m found }{{$acme}}
+	http-request capture str(content_length) id 1 if {{$host}} app_{{$a.ACLTag}}_body_method !{ req.hdr(content-length) -m found }{{$acme}}
 	http-request return status 411 content-type text/plain string "Content-Length required" if {{$host}} app_{{$a.ACLTag}}_body_method !{ req.hdr(content-length) -m found }{{$acme}}
 {{- end}}
 {{- if and $root.UseCrowdSecFilter $a.Application.Security.CrowdSecEnabled}}
@@ -706,6 +740,7 @@ backend {{backendName $a.Application.PublicHost}}
 	# The bouncer answers in txn.crowdsec.remediation; without this deny its decisions do nothing.
 	# When it cannot be reached the variable stays unset and traffic passes (fail open).
 	http-request send-spoe-group {{$root.Settings.CrowdSecEngineName}} crowdsec-http-no-body if {{$host}}{{$acme}}
+	http-request capture str(crowdsec) id 1 if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
 	http-request deny deny_status 403 if {{$host}}{{$acme}} { var(txn.crowdsec.remediation) -m found } !{ var(txn.crowdsec.remediation) -m str allow }
 {{- end}}
 {{end}}

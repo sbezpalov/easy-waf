@@ -820,6 +820,33 @@
 
       <div id="tab-logs" class="tab-panel">
         <h2>◈ Logs / Audit</h2>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <h3>Blocked requests</h3>
+          <p class="dash-note" style="margin-top:0">Requests the edge refused, read from the HAProxy journal: the rule, the client and what it asked for. Backend errors are not included.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.5rem 0">
+            <label>Period
+              <select id="blocked-period">
+                <option value="1h">Last hour</option>
+                <option value="24h" selected>Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-blocked-refresh">Refresh</button>
+            <span id="blocked-total" class="dash-note"></span>
+          </div>
+          <p id="blocked-err" class="warn" style="min-height:1rem"></p>
+          <div class="row" style="flex-wrap:wrap;gap:1.5rem;align-items:flex-start">
+            <div><h4 style="margin:0.3rem 0">By rule</h4><table><tbody id="blocked-rules"></tbody></table></div>
+            <div><h4 style="margin:0.3rem 0">Top clients</h4><table><tbody id="blocked-ips"></tbody></table></div>
+            <div><h4 style="margin:0.3rem 0">Top hosts</h4><table><tbody id="blocked-hosts"></tbody></table></div>
+          </div>
+          <table style="margin-top:0.75rem">
+            <thead>
+              <tr><th>Time (UTC)</th><th>Client</th><th>Host</th><th>Request</th><th>Status</th><th>Rule</th></tr>
+            </thead>
+            <tbody id="blocked-tbody"></tbody>
+          </table>
+        </div>
         <p class="dash-note" style="margin-top:0">Append-only administrative audit (mutating HTTP requests and engine events). Request bodies are not stored.</p>
         <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.75rem 0">
           <label>Action filter
@@ -1256,6 +1283,7 @@
         loadSettingsPanel();
         break;
       case 'logs':
+        loadBlocked();
         loadAuditPage(true);
         syncAuditAutoRefresh();
         break;
@@ -1427,6 +1455,12 @@
   };
 
   document.getElementById('btn-audit-refresh').onclick = () => { loadAuditPage(true); };
+  document.getElementById('btn-blocked-refresh').onclick = () => { loadBlocked(); };
+  document.getElementById('blocked-period').onchange = () => { loadBlocked(); };
+  document.getElementById('blocked-ips').onclick = (e) => {
+    const b = e.target.closest('button[data-block-ip]');
+    if (b) blockIPFromLog(b.getAttribute('data-block-ip'));
+  };
   document.getElementById('btn-audit-more').onclick = () => { loadAuditPage(false); };
   document.getElementById('audit-filter-action').onchange = () => { loadAuditPage(true); syncAuditAutoRefresh(); };
 
@@ -2253,6 +2287,73 @@
     } catch (_) {
       return String(ts);
     }
+  }
+
+  const BLOCKED_RULES = {
+    sensitive_path: '.git / .env', method: 'blocked method', path_allowlist: 'path not allowed',
+    path_header: 'missing header / token', ip_blacklist: 'IP blacklist', geoip: 'GeoIP',
+    empty_ua: 'empty User-Agent', bad_ua: 'blocked User-Agent', sqli: 'SQL injection', xss: 'XSS',
+    traversal: 'path traversal', blocked_path: 'profile path block', restricted_path: 'restricted path',
+    multipart: 'multipart', body_size: 'body too large', content_length: 'no Content-Length',
+    crowdsec: 'CrowdSec', rate_limit: 'rate limit', unknown_host: 'unknown host',
+    bad_request: 'malformed request', other: 'other',
+  };
+  let blockedGen = 0;
+
+  function blockedRuleLabel(r) {
+    return BLOCKED_RULES[r] || r;
+  }
+
+  async function blockIPFromLog(ip) {
+    if (!confirm('Add ' + ip + ' to the local IP blacklist?')) return;
+    const r = await fetch('/api/v1/ipbl/local', {
+      method: 'POST', headers: hdr(),
+      body: JSON.stringify({ cidr: ip, note: 'from Blocked requests', enabled: true }),
+    });
+    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    markPendingApply(true);
+    toast(ip + ' blacklisted. Apply HAProxy to enforce it.', 'ok');
+  }
+
+  async function loadBlocked() {
+    const errEl = document.getElementById('blocked-err');
+    const tbody = document.getElementById('blocked-tbody');
+    if (!tbody || panelFromHash() !== 'logs') return;
+    const gen = ++blockedGen;
+    errEl.textContent = '';
+    tbody.innerHTML = '<tr><td colspan="6" class="dash-note">Loading…</td></tr>';
+    const period = document.getElementById('blocked-period').value;
+    let data;
+    try {
+      const r = await fetch('/api/v1/security/blocked?period=' + encodeURIComponent(period), { headers: hdr() });
+      if (gen !== blockedGen) return;
+      if (r.status === 401) { setTok(''); refreshSession(); return; }
+      if (!r.ok) { tbody.innerHTML = ''; errEl.textContent = await apiMessage(r); return; }
+      data = await r.json();
+    } catch (e) {
+      if (gen !== blockedGen) return;
+      tbody.innerHTML = '';
+      errEl.textContent = 'Request failed: ' + (e && e.message ? e.message : String(e));
+      return;
+    }
+    if (gen !== blockedGen) return;
+    const sum = data.summary || {};
+    document.getElementById('blocked-total').textContent = (sum.total || 0) + ' blocked' +
+      (data.truncated ? ' (only the newest ' + 5000 + ' journal matches were read)' : '');
+    const rows = (list, fmt) => (list || []).map(fmt).join('') || '<tr><td class="dash-note">—</td></tr>';
+    document.getElementById('blocked-rules').innerHTML = rows(sum.by_rule, (c) =>
+      '<tr><td>' + esc(blockedRuleLabel(c.key)) + '</td><td>' + c.count + '</td></tr>');
+    document.getElementById('blocked-ips').innerHTML = rows(sum.top_ips, (c) =>
+      '<tr><td><code>' + esc(c.key) + '</code></td><td>' + esc(c.country || '') + '</td><td>' + c.count +
+      '</td><td><button type="button" class="secondary" data-block-ip="' + esc(c.key) + '">Blacklist</button></td></tr>');
+    document.getElementById('blocked-hosts').innerHTML = rows(sum.top_hosts, (c) =>
+      '<tr><td>' + esc(c.key) + '</td><td>' + c.count + '</td></tr>');
+    const events = Array.isArray(data.events) ? data.events : [];
+    tbody.innerHTML = events.map((ev) =>
+      '<tr><td>' + esc(formatAuditTime(ev.time)) + '</td><td><code>' + esc(ev.client_ip) + '</code></td><td>' +
+      esc(ev.host || '—') + '</td><td><code>' + esc((ev.method || '') + ' ' + (ev.path || '')) + '</code></td><td>' +
+      ev.status + '</td><td>' + esc(blockedRuleLabel(ev.rule)) + '</td></tr>').join('') ||
+      '<tr><td colspan="6" class="dash-note">Nothing blocked in this period.</td></tr>';
   }
 
   async function loadAuditPage(reset) {

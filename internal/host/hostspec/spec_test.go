@@ -79,6 +79,17 @@ func TestValidIP(t *testing.T) {
 	}
 }
 
+func TestValidateJournalArgsGrepAllowlist(t *testing.T) {
+	if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--grep", JournalGrepBlocked}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]string{{"--grep"}, {"--grep", ".*"}, {"--grep", "(?i)pr--"}} {
+		if err := ValidateJournalArgs(bad); err == nil {
+			t.Fatalf("%v accepted", bad)
+		}
+	}
+}
+
 func TestValidateJournalArgs(t *testing.T) {
 	if err := ValidateJournalArgs([]string{"--no-pager", "-n", "10", "-u", "haproxy.service"}); err != nil {
 		t.Fatal(err)

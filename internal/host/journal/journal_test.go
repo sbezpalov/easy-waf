@@ -5,6 +5,7 @@ package journal
 
 import (
 	"testing"
+	"time"
 
 	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 )
@@ -36,5 +37,23 @@ func TestBuildJournalArgs_rejectsInjectionSince(t *testing.T) {
 func TestBuildJournalArgs_haproxyOnSystemdList(t *testing.T) {
 	if !hostsystemd.AllowedUnit("haproxy.service") {
 		t.Fatal("haproxy.service must be allowed")
+	}
+}
+
+func TestBuildBlockedArgs(t *testing.T) {
+	since := time.Date(2026, 11, 11, 9, 5, 0, 0, time.Local)
+	args, err := buildBlockedArgs(since, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"journal", "--no-pager", "-n", "5000", "-u", "haproxy.service",
+		"--since", "2026-11-11 09:05:00", "--grep", "[PL]R--", "--output", "json"}
+	if len(args) != len(want) {
+		t.Fatalf("args: %v", args)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args[%d] = %q, want %q", i, args[i], want[i])
+		}
 	}
 }

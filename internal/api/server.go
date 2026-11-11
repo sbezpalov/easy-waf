@@ -128,6 +128,7 @@ func (s *Server) Router() chi.Router {
 				r.Post("/ipwl/local", s.upsertIPWLLocal)
 				r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
 
+				r.Get("/security/blocked", s.listBlocked)
 				r.Get("/security/blocked-ua", s.listBlockedUA)
 				r.Post("/security/blocked-ua", s.addBlockedUA)
 				r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)

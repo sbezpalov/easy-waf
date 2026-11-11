@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
@@ -84,6 +85,37 @@ func buildJournalArgs(q Query) ([]string, error) {
 		}
 		args = append(args, "-p", p)
 	}
+	if err := hostspec.ValidateJournalArgs(args[1:]); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+// BlockedLines caps one ReadBlocked call.
+const BlockedLines = 5000
+
+// ReadBlocked returns haproxy.service journal entries since the given time whose
+// message looks refused by the edge, newest last, as journalctl JSON lines.
+func ReadBlocked(ctx context.Context, since time.Time, lines int) (string, error) {
+	args, err := buildBlockedArgs(since, lines)
+	if err != nil {
+		return "", err
+	}
+	out, err := runner.Privileged(ctx, args...)
+	// With --grep, journalctl (systemd 255) exits 1 silently when nothing matches.
+	if err != nil && len(out) == 0 && err.Error() == "exit code 1" {
+		return "", nil
+	}
+	return string(out), err
+}
+
+func buildBlockedArgs(since time.Time, lines int) ([]string, error) {
+	if lines <= 0 || lines > BlockedLines {
+		lines = BlockedLines
+	}
+	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", "haproxy.service",
+		"--since", since.Local().Format("2006-01-02 15:04:05"),
+		"--grep", hostspec.JournalGrepBlocked, "--output", "json"}
 	if err := hostspec.ValidateJournalArgs(args[1:]); err != nil {
 		return nil, err
 	}

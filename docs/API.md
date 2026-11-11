@@ -842,6 +842,31 @@ Deletes an allowlist entry.
 - **Response:** `204`, no body.
 - **Errors (text/plain):** `404` (`not found`) for an unknown id. `500` on a database error.
 
+## Blocked requests
+
+### `GET /api/v1/security/blocked`
+Requests the edge refused, read from the `haproxy.service` journal through `easy-waf-hostd` (`journalctl --grep '[PL]R--'`, at most 5000 matches per call). A request counts when an `http-request deny` refused it (termination state `PR`) or HAProxy answered it with a 4xx itself (`LR`, e.g. body policy); backend errors are not included. The frontends log `{host|rule}` in httplog through `declare capture` slots; when no rule was captured, `rule` is `rate_limit` (429), `unknown_host` (`bk_not_found`), `bad_request` (400) or `other`.
+- **Query:** `period` = `1h`, `24h` (default) or `7d`; `limit` = 1–1000 events (default 200).
+- **Response:** `200`:
+  ```json
+  {
+    "period": "24h", "since": "2026-11-10T19:00:00Z", "truncated": false,
+    "summary": {
+      "total": 2,
+      "by_rule": [{ "key": "sqli", "count": 2 }],
+      "top_ips": [{ "key": "203.0.113.9", "count": 2, "country": "NL" }],
+      "top_hosts": [{ "key": "app.example.com", "count": 2 }]
+    },
+    "events": [
+      { "time": "2026-11-11T19:47:40.418Z", "client_ip": "203.0.113.9", "frontend": "fe_https", "backend": "fe_https",
+        "status": 403, "host": "app.example.com", "method": "GET", "path": "/?q=union%20select", "rule": "sqli" }
+    ]
+  }
+  ```
+  Events are newest first. `summary` covers every match read, `events` only the first `limit`. `truncated` is true when the journal had more matches than one read returns. `country` is set for the top 10 clients only, when GeoIP is enabled.
+  Rules: `sensitive_path`, `method`, `path_allowlist`, `path_header`, `ip_blacklist`, `geoip`, `empty_ua`, `bad_ua`, `sqli`, `xss`, `traversal`, `blocked_path`, `restricted_path`, `multipart`, `body_size`, `content_length`, `crowdsec`, plus the fallbacks above.
+- **Errors:** `400` (text/plain) for another `period` or `limit`; `503` (`{"error": ...}`) when the journal cannot be read (for example, `easy-waf-hostd` is down).
+
 ## Blocked user agents
 
 Patterns are written to a HAProxy map and matched as **case-insensitive substrings** of the `User-Agent` header (`-m sub -i`). They are enforced only when the global `blocked_user_agents_enabled` setting is on, and only for applications with bot protection enabled. Fresh installs seed several scanner patterns (`Nmap`, `Nikto`, `sqlmap`, ...).

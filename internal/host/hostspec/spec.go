@@ -114,6 +114,13 @@ func ValidRollbackTimeout(s string) bool {
 	return n >= RollbackMinSec && n <= RollbackMaxSec
 }
 
+// JournalGrepBlocked selects HAProxy httplog lines the edge refused: PR-- is an
+// http-request deny, LR-- a local response such as http-request return.
+const JournalGrepBlocked = "[PL]R--"
+
+// journalGrep is the only set of --grep patterns accepted: the value is a regex.
+var journalGrep = map[string]struct{}{JournalGrepBlocked: {}}
+
 // ValidateJournalArgs validates journalctl arguments (not including the "journal" opcode).
 func ValidateJournalArgs(args []string) error {
 	if len(args) == 0 {
@@ -161,6 +168,14 @@ func ValidateJournalArgs(args []string) error {
 			}
 			if _, ok := journalPriority[strings.ToLower(args[i+1])]; !ok {
 				return fmt.Errorf("journal: invalid priority")
+			}
+			i++
+		case "--grep":
+			if i+1 >= len(args) {
+				return fmt.Errorf("journal: --grep requires value")
+			}
+			if _, ok := journalGrep[args[i+1]]; !ok {
+				return fmt.Errorf("journal: grep pattern not allowed")
 			}
 			i++
 		case "--output":
