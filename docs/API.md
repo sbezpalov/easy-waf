@@ -561,6 +561,8 @@ Both methods behave identically: they **merge** the body over the stored setting
   - `management_allowed_cidrs`: `null` keeps the stored list. Otherwise the list must contain at least one entry, and every entry must be a valid CIDR prefix (`netip.ParsePrefix`, so a bare IP without `/n` is rejected). The new list is enforced from the next request on. A list that excludes your own address locks you out of the API and UI.
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
   - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.
+  - `notify_telegram_chat_id`, `notify_telegram_bot_token`: send the same notifications to a Telegram chat through the Bot API (`sendMessage`). The chat is a numeric ID or `@channel`; the token is the one @BotFather issued. The token is never returned: `GET` shows `notify_telegram_bot_token_set` instead, an empty token keeps the stored one, and clearing the chat ID clears the token.
+  - `notify_blocked_spike_threshold` (default `0`, off): notify when the frontends refuse at least this many requests (HAProxy `dreq`) within 5 minutes; at most once per 30 minutes.
   - `listen_ipv6`: adds `bind :::80 v6only` and `bind :::443 v6only` next to the IPv4 binds on the next apply. Rejected with `400` when the host has IPv6 disabled (`/proc/net/if_inet6` missing), because HAProxy could not bind on reload.
   - `security_headers_enabled` (default `true`): on both frontends, sets `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` when the backend response has none, and removes `Server` and `X-Powered-By`.
   - `hsts_include_subdomains` (default `false`): appends `includeSubDomains` to `Strict-Transport-Security`. HSTS is sent on `fe_https` except for `http_and_https` hosts, which also serve plain HTTP.
@@ -598,6 +600,11 @@ Replaces the TLS certificate of the HTTPS management listener. The handler valid
   - `400` (text/plain) for malformed JSON.
   - `403` (JSON) with `{"error":"step_up_required"}` without a password confirmation in the last 5 minutes.
   - `500` (JSON) when the certificate or key file cannot be written.
+
+### `POST /api/v1/notify/test`
+Sends one test notification to every configured channel (webhook and Telegram).
+- **Response:** `200` `{"status":"sent"}`.
+- **Errors:** `400` (`{"error": ...}`) when no channel is configured; `502` (`{"error": ...}`) when a channel failed, with the reason (never the URL or token).
 
 ## Statistics
 

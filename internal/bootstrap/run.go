@@ -26,6 +26,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
+	"github.com/easy-waf/easy-waf/internal/notify"
 	"github.com/easy-waf/easy-waf/internal/store"
 	"github.com/easy-waf/easy-waf/internal/webui"
 )
@@ -201,6 +202,7 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	ctxRefresh, stopPromRefresh := context.WithCancel(context.Background())
 	defer stopPromRefresh()
 	go prometheusRefreshLoop(ctxRefresh, srv, stateDir)
+	go notifyMonitorLoop(ctxRefresh, srv, stateDir)
 
 	r := srv.Router()
 
@@ -318,6 +320,36 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 		_ = acmeInternalSrv.Shutdown(ctx2)
 	}
 	return nil
+}
+
+// notifyMonitorLoop sends backend down/up and blocked-spike notifications
+// from HAProxy stats while a notification channel is configured.
+func notifyMonitorLoop(ctx context.Context, srv *api.Server, stateDir string) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	mon := notify.NewMonitor()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		gs := srv.Eng.Settings()
+		if !notify.Enabled(gs) {
+			mon = notify.NewMonitor()
+			continue
+		}
+		fctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		rep, _ := srv.HAProxyMetrics.FetchContext(fctx, metrics.StatsSocketPath(gs, stateDir))
+		cancel()
+		for _, ev := range mon.Observe(rep, time.Now(), gs.NotifyBlockedSpikeThreshold) {
+			sctx, scancel := context.WithTimeout(ctx, 20*time.Second)
+			if err := notify.Send(sctx, gs, ev); err != nil {
+				log.Printf("notify: %s: %v", ev.Kind, err)
+			}
+			scancel()
+		}
+	}
 }
 
 // promRefreshTimeout bounds one Prometheus refresh (all its queries together);

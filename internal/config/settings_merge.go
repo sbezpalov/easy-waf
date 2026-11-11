@@ -28,6 +28,9 @@ func ApplySettingsJSONPatch(base GlobalSettings, body []byte) (GlobalSettings, e
 			return base, fmt.Errorf("%s: %w", k, err)
 		}
 	}
+	if out.NotifyTelegramChatID == "" {
+		out.NotifyTelegramBotToken = ""
+	}
 	return out, nil
 }
 
@@ -126,6 +129,41 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 			return err
 		}
 		out.NotifyWebhookURL = v
+		return nil
+	case "notify_telegram_chat_id":
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		v = strings.TrimSpace(v)
+		if err := ValidateTelegramChatID(v); err != nil {
+			return err
+		}
+		out.NotifyTelegramChatID = v
+		return nil
+	case "notify_telegram_bot_token":
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		v = strings.TrimSpace(v)
+		if v == "" { // keep the stored token: the API never returns it
+			return nil
+		}
+		if err := ValidateTelegramBotToken(v); err != nil {
+			return err
+		}
+		out.NotifyTelegramBotToken = v
+		return nil
+	case "notify_blocked_spike_threshold":
+		var v int
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		if v < 0 || v > 1000000 {
+			return fmt.Errorf("must be 0-1000000")
+		}
+		out.NotifyBlockedSpikeThreshold = v
 		return nil
 	default:
 		return nil

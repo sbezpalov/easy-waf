@@ -112,6 +112,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/settings", s.getSettings)
 				r.Put("/settings", s.putSettings)
 				r.Patch("/settings", s.patchSettings)
+				r.Post("/notify/test", s.notifyTest)
 				// Its own step-up: with this certificate, a stolen token could
 				// intercept the password that confirms everything else.
 				r.With(auth.RequireStepUp(stepUpWindow)).Put("/settings/management-tls", s.putManagementTLS)
@@ -537,12 +538,17 @@ func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
 type settingsAPIJSON struct {
 	config.GlobalSettings
 	CrowdSecLAPIKeySet bool `json:"crowdsec_lapi_key_set"`
+	// Shadows the embedded field so the stored token is never returned.
+	NotifyTelegramBotToken    string `json:"notify_telegram_bot_token,omitempty"`
+	NotifyTelegramBotTokenSet bool   `json:"notify_telegram_bot_token_set"`
 }
 
 func (s *Server) writeSettingsResponse(w http.ResponseWriter, code int, gs config.GlobalSettings) {
 	writeJSON(w, code, settingsAPIJSON{
 		GlobalSettings:     gs,
 		CrowdSecLAPIKeySet: strings.TrimSpace(gs.CrowdSecLAPIKey) != "",
+
+		NotifyTelegramBotTokenSet: strings.TrimSpace(gs.NotifyTelegramBotToken) != "",
 	})
 }
 

@@ -241,6 +241,14 @@ type GlobalSettings struct {
 	// (failed issuance or renewal, or fewer than 21 days left). Empty disables it.
 	// The URL is not written into HAProxy config and is not logged.
 	NotifyWebhookURL string `json:"notify_webhook_url,omitempty"`
+	// NotifyTelegramChatID and NotifyTelegramBotToken also send notifications to
+	// a Telegram chat. The API never returns the token; clearing the chat ID
+	// clears it.
+	NotifyTelegramChatID   string `json:"notify_telegram_chat_id,omitempty"`
+	NotifyTelegramBotToken string `json:"notify_telegram_bot_token,omitempty"`
+	// NotifyBlockedSpikeThreshold alerts when the edge refuses at least this
+	// many requests within 5 minutes. 0 turns the alert off.
+	NotifyBlockedSpikeThreshold int `json:"notify_blocked_spike_threshold"`
 	// PrometheusEnabled exposes GET /metrics (Prometheus text format) for scrapers on the management listener.
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.

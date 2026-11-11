@@ -54,14 +54,8 @@ func Notices(certs []config.Certificate, now time.Time) []Notice {
 // including cloud metadata, are refused. Loopback and private addresses are
 // allowed so a webhook on the appliance or the LAN works.
 func PostWebhook(ctx context.Context, rawURL string, notices []Notice) error {
-	if err := config.ValidateNotifyWebhookURL(rawURL); err != nil {
-		return err
-	}
-	if strings.TrimSpace(rawURL) == "" {
-		return errors.New("webhook url is empty")
-	}
 	if len(notices) == 0 {
-		return nil
+		return config.ValidateNotifyWebhookURL(rawURL)
 	}
 	body, err := json.Marshal(payload{
 		Source:       "easy-waf",
@@ -71,20 +65,34 @@ func PostWebhook(ctx context.Context, rawURL string, notices []Notice) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(rawURL), bytes.NewReader(body))
-	if err != nil {
-		return errors.New("webhook url is not usable")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "easy-waf-acmed")
-	client := &http.Client{
+	return postJSON(ctx, rawURL, body, "easy-waf-acmed")
+}
+
+// newClient refuses redirects and link-local destinations (see dialWebhook).
+func newClient() *http.Client {
+	return &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("webhook redirects are not followed")
 		},
 		Transport: &http.Transport{DialContext: dialWebhook},
 	}
-	resp, err := client.Do(req)
+}
+
+func postJSON(ctx context.Context, rawURL string, body []byte, userAgent string) error {
+	if err := config.ValidateNotifyWebhookURL(rawURL); err != nil {
+		return err
+	}
+	if strings.TrimSpace(rawURL) == "" {
+		return errors.New("webhook url is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(rawURL), bytes.NewReader(body))
+	if err != nil {
+		return errors.New("webhook url is not usable")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := newClient().Do(req)
 	if err != nil {
 		if errors.Is(err, errWebhookBlocked) {
 			return errWebhookBlocked

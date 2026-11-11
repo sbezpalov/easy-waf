@@ -540,6 +540,7 @@ func (e *Engine) refreshForApply(ctx context.Context) (config.GlobalSettings, er
 // configuration when one existed.
 func (e *Engine) Apply(ctx context.Context, label string) error {
 	_, err := e.apply(ctx, label, false)
+	e.notifyApplyFailure(label, err)
 	return err
 }
 
@@ -549,7 +550,9 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 // restored behind the edge's back, the edge is brought in line without a
 // reload (or an empty revision) on every ordinary restart.
 func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error) {
-	return e.apply(ctx, label, true)
+	applied, err := e.apply(ctx, label, true)
+	e.notifyApplyFailure(label, err)
+	return applied, err
 }
 
 func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (applied bool, retErr error) {

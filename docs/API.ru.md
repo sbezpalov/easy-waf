@@ -561,6 +561,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `management_allowed_cidrs`: `null` сохраняет прежний список. В остальных случаях список должен содержать хотя бы один элемент, и каждый элемент должен быть допустимым CIDR-префиксом (`netip.ParsePrefix`, поэтому голый IP без `/n` отклоняется). Новый список действует начиная со следующего запроса. Список, не включающий ваш собственный адрес, закроет вам доступ к API и UI.
   - `prometheus_enabled`: немедленно включает или выключает `GET /metrics`.
   - `notify_webhook_url`: пустая строка выключает уведомления о сертификатах. Иначе это абсолютный URL `http` или `https`. `easy-waf-acmed` раз в сутки отправляет туда JSON, если сертификат требует внимания. Пустая строка стирает сохранённый URL. Значение не пишется в журнал.
+  - `notify_telegram_chat_id`, `notify_telegram_bot_token`: те же уведомления в чат Telegram через Bot API (`sendMessage`). Чат — числовой ID или `@channel`, токен — выданный @BotFather. Токен никогда не возвращается: `GET` показывает вместо него `notify_telegram_bot_token_set`, пустой токен оставляет сохранённый, а очистка chat ID стирает и токен.
+  - `notify_blocked_spike_threshold` (по умолчанию `0`, выключено): уведомить, если frontend отклонили не меньше этого числа запросов (HAProxy `dreq`) за 5 минут; не чаще раза в 30 минут.
   - `listen_ipv6`: при следующем apply добавляет `bind :::80 v6only` и `bind :::443 v6only` рядом с IPv4. Отклоняется с `400`, если на хосте выключен IPv6 (нет `/proc/net/if_inet6`): иначе HAProxy не смог бы открыть сокет при reload.
   - `security_headers_enabled` (по умолчанию `true`): на обоих frontend выставляет `X-Content-Type-Options: nosniff` и `Referrer-Policy: strict-origin-when-cross-origin`, если бэкенд их не прислал, и удаляет `Server` и `X-Powered-By`.
   - `hsts_include_subdomains` (по умолчанию `false`): добавляет `includeSubDomains` в `Strict-Transport-Security`. HSTS отправляется на `fe_https`, кроме хостов `http_and_https`, которые обслуживают и обычный HTTP.
@@ -598,6 +600,11 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `400` (text/plain) при некорректном JSON.
   - `403` (JSON) с `{"error":"step_up_required"}` без подтверждения пароля за последние 5 минут.
   - `500` (JSON), когда не удаётся записать файл сертификата или ключа.
+
+### `POST /api/v1/notify/test`
+Отправляет одно тестовое уведомление во все настроенные каналы (webhook и Telegram).
+- **Ответ:** `200` `{"status":"sent"}`.
+- **Ошибки:** `400` (`{"error": ...}`), если ни один канал не настроен; `502` (`{"error": ...}`), если канал не принял сообщение, с причиной (без URL и токена).
 
 ## Статистика
 

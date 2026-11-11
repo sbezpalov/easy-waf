@@ -53,6 +53,7 @@ type FrontendStat struct {
 	HTTP4xx      int64  `json:"http_4xx"`
 	HTTP5xx      int64  `json:"http_5xx"`
 	TotalReqHint int64  `json:"total_req_hint"` // sum of hrsp_* columns (cumulative responses)
+	DeniedReq    int64  `json:"denied_req"`     // dreq: requests refused by http-request deny (cumulative)
 }
 
 // ServerStat is one server line under a backend.
@@ -309,6 +310,7 @@ func ParseShowStatCSV(data []byte) (*HAProxyReport, error) {
 				HTTP4xx:      parseInt64(field(rec, idx, "hrsp_4xx")),
 				HTTP5xx:      parseInt64(field(rec, idx, "hrsp_5xx")),
 				TotalReqHint: hrspTotal(rec, idx),
+				DeniedReq:    parseInt64(field(rec, idx, "dreq")),
 			})
 			continue
 		}

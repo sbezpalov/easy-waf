@@ -175,8 +175,9 @@ func (w *worker) notifyCertificateAttention(ctx context.Context, certs []config.
 		log.Printf("acmed: notification settings: %v", err)
 		return
 	}
-	raw := strings.TrimSpace(w.eng.Settings().NotifyWebhookURL)
-	if raw == "" {
+	gs := w.eng.Settings()
+	raw := strings.TrimSpace(gs.NotifyWebhookURL)
+	if raw == "" && !notify.TelegramEnabled(gs) {
 		return
 	}
 	notices := notify.Notices(certs, now)
@@ -185,8 +186,13 @@ func (w *worker) notifyCertificateAttention(ctx context.Context, certs []config.
 	}
 	nctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := notify.PostWebhook(nctx, raw, notices); err != nil {
-		log.Printf("acmed: certificate webhook failed: %v", err)
+	if raw != "" {
+		if err := notify.PostWebhook(nctx, raw, notices); err != nil {
+			log.Printf("acmed: certificate webhook failed: %v", err)
+		}
+	}
+	if err := notify.SendTelegram(nctx, gs, notify.CertificateEvent(notices)); err != nil {
+		log.Printf("acmed: certificate Telegram notification failed: %v", err)
 	}
 }
 

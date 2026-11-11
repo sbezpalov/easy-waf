@@ -806,13 +806,23 @@
           </div>
         </div>
         <div class="panel" style="max-width:42rem;margin-top:0.75rem">
-          <h3>Certificate notifications</h3>
-          <p class="dash-note" style="margin-top:0">Once a day, <code>easy-waf-acmed</code> POSTs JSON here when a certificate failed to issue or renew, or has fewer than 21 days left. Leave empty to keep the warning in the journal only. The URL is not written to the log. Redirects are not followed.</p>
+          <h3>Notifications</h3>
+          <p class="dash-note" style="margin-top:0">Sent to a webhook (JSON), a Telegram chat, or both: a failed HAProxy apply, a backend server going down or coming back, a spike of blocked requests, and once a day certificates that failed to issue or renew or have fewer than 21 days left. Leave both empty to keep warnings in the journal only. The URL and token are not written to the log; redirects are not followed.</p>
           <label>Webhook URL
             <input id="notify-webhook-url" type="url" placeholder="https://ntfy.example/easy-waf" style="min-width:22rem;width:100%" />
           </label>
-          <div class="row" style="margin-top:0.5rem">
-            <button type="button" class="secondary" id="btn-notify-save">Save notification URL</button>
+          <label>Telegram chat ID
+            <input id="notify-telegram-chat" type="text" placeholder="-1001234567890 or @channel" style="min-width:22rem;width:100%" />
+          </label>
+          <label>Telegram bot token
+            <input id="notify-telegram-token" type="password" autocomplete="off" placeholder="123456:ABC... from @BotFather" style="min-width:22rem;width:100%" />
+          </label>
+          <label>Blocked-requests spike alert (refused requests per 5 minutes, 0 = off)
+            <input id="notify-spike-threshold" type="number" min="0" max="1000000" step="1" style="width:10rem" />
+          </label>
+          <div class="row" style="margin-top:0.5rem;gap:0.5rem">
+            <button type="button" class="secondary" id="btn-notify-save">Save notifications</button>
+            <button type="button" class="secondary" id="btn-notify-test">Send test</button>
           </div>
         </div>
         <p id="settings-msg" class="warn"></p>
@@ -2036,6 +2046,17 @@
     if (promEl) promEl.checked = !!cachedSettings.prometheus_enabled;
     const notifyEl = document.getElementById('notify-webhook-url');
     if (notifyEl) notifyEl.value = cachedSettings.notify_webhook_url || '';
+    const tgChatEl = document.getElementById('notify-telegram-chat');
+    if (tgChatEl) tgChatEl.value = cachedSettings.notify_telegram_chat_id || '';
+    const tgTokEl = document.getElementById('notify-telegram-token');
+    if (tgTokEl) {
+      tgTokEl.value = '';
+      tgTokEl.placeholder = cachedSettings.notify_telegram_bot_token_set
+        ? '•••• token stored — enter a new one to replace'
+        : '123456:ABC... from @BotFather';
+    }
+    const spikeEl = document.getElementById('notify-spike-threshold');
+    if (spikeEl) spikeEl.value = String(cachedSettings.notify_blocked_spike_threshold || 0);
     if (sm) {
       sm.textContent = 'Loaded from server.';
       sm.className = 'ok';
@@ -2761,7 +2782,13 @@
         if (sm) sm.textContent = 'Use Load from server first.';
         return;
       }
-      const patch = { notify_webhook_url: document.getElementById('notify-webhook-url').value.trim() };
+      const spike = parseInt(document.getElementById('notify-spike-threshold').value || '0', 10);
+      const patch = {
+        notify_webhook_url: document.getElementById('notify-webhook-url').value.trim(),
+        notify_telegram_chat_id: document.getElementById('notify-telegram-chat').value.trim(),
+        notify_telegram_bot_token: document.getElementById('notify-telegram-token').value.trim(),
+        notify_blocked_spike_threshold: Number.isFinite(spike) ? spike : 0,
+      };
       const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
       if (!r.ok) {
         if (sm) sm.textContent = await r.text();
@@ -2769,9 +2796,18 @@
       }
       cachedSettings = await r.json();
       if (sm) {
-        sm.textContent = 'Notification URL saved.';
+        sm.textContent = 'Notifications saved.';
         sm.className = 'ok';
       }
+      loadSettingsPanel();
+    };
+  }
+  const btnNotifyTest = document.getElementById('btn-notify-test');
+  if (btnNotifyTest) {
+    btnNotifyTest.onclick = async () => {
+      const r = await fetch('/api/v1/notify/test', { method: 'POST', headers: hdr() });
+      if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+      toast('Test notification sent.', 'ok');
     };
   }
 

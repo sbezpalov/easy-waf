@@ -36,7 +36,7 @@ it starts in that state.
 
 ## When something needs attention
 
-A failed issuance or renewal, or fewer than 21 days left, is shown on the dashboard and once a day in the `easy-waf-acmed` journal. Set **`notify_webhook_url`** (`PATCH /api/v1/settings`, or Settings → Certificate notifications) to also POST a JSON body `{source, event, certificates}` to one URL. Point it at ntfy, a mail bridge, or a Telegram bridge. The worker does not follow redirects, refuses link-local addresses, and does not log the URL. Email and Telegram are not built in.
+A failed issuance or renewal, or fewer than 21 days left, is shown on the dashboard and once a day in the `easy-waf-acmed` journal. Set **`notify_webhook_url`** (`PATCH /api/v1/settings`, or Settings → Certificate notifications) to also POST a JSON body `{source, event, certificates}` to one URL. Point it at ntfy, a mail bridge, or a Telegram bridge. The worker does not follow redirects, refuses link-local addresses, and does not log the URL. The same warning also goes to Telegram when `notify_telegram_chat_id` and `notify_telegram_bot_token` are set (see [MONITORING.md](MONITORING.md#notifications)); email is not built in.
 
 Real Let's Encrypt issuance still has to be checked on a host that owns the domain. See [ACCEPTANCE.md](ACCEPTANCE.md).
 
