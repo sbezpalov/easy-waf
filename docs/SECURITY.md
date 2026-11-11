@@ -31,6 +31,10 @@ Applies to the release from root [`VERSION`](../VERSION) (**1.6.0**). Acceptance
 - **Operations that run as root on the host need the password again.** Changing the network, firewall, services, packages, power, host users or the management certificate requires a confirmation from the last 5 minutes, recorded in the session token. A stolen token alone cannot reach them, but a stolen password can: this is not a second factor. Nor does it stop script already running in the UI, which could capture the password or the confirmed token; the strict CSP is the defence there. `EASY_WAF_ADMIN_TOKEN` skips the check, so treat it as root.
 - Plan for **MFA** at the reverse proxy (e.g. OAuth2 proxy) if the UI must be reachable beyond strict LAN.
 
+## Panel roles
+
+Panel users are `admin` or `viewer`. `auth.ReadOnlyGate` refuses a viewer every write except its own sign-out, password change and step-up confirmation, and every request (reads too) under `/api/v1/host/`, `/api/v1/diagnostics/` and `/api/v1/panel-users`, so a viewer account never reaches the root broker. The role is read from the database on every request, so a demotion applies at once. Creating, changing, resetting and deleting panel users needs a step-up password confirmation; the last admin cannot be demoted or deleted. Temporary passwords are random (96 bits), shown once and must be changed at first sign-in.
+
 ## CSRF Protection
 
 The management API uses **JWT Bearer tokens** in the `Authorization` header, stored in `sessionStorage` (not cookies). Browsers do not attach custom headers automatically on cross-origin form submissions or link navigations, which makes traditional CSRF attacks ineffective against this API.

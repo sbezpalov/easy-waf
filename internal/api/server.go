@@ -82,6 +82,7 @@ func (s *Server) Router() chi.Router {
 			r.Post("/auth/change-password", s.handleChangePassword)
 			r.Group(func(r chi.Router) {
 				r.Use(auth.PasswordChangeGate)
+				r.Use(auth.ReadOnlyGate)
 				r.Post("/auth/confirm", s.handleConfirmPassword)
 				r.Get("/status", s.handleStatus)
 				r.Get("/system/services", s.listSystemServices)
@@ -147,6 +148,15 @@ func (s *Server) Router() chi.Router {
 				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 
 				r.Get("/audit", s.listAudit)
+
+				r.Get("/panel-users", s.listPanelUsers)
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequireStepUp(stepUpWindow))
+					r.Post("/panel-users", s.createPanelUser)
+					r.Patch("/panel-users/{username}", s.patchPanelUser)
+					r.Post("/panel-users/{username}/reset-password", s.resetPanelUserPassword)
+					r.Delete("/panel-users/{username}", s.deletePanelUser)
+				})
 
 				r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 

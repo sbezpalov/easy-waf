@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -205,5 +207,77 @@ func TestAppMaintenanceToggle(t *testing.T) {
 	}
 	if code := post(`{"enabled":true,"bypass_cidrs":["not-an-ip"]}`); code != http.StatusBadRequest {
 		t.Fatalf("bad bypass: %d", code)
+	}
+}
+
+func TestPanelUsersLifecycle(t *testing.T) {
+	s := applyFailingServer(t)
+	ctx := context.Background()
+	admin := fmt.Sprintf("adm%d", time.Now().UnixNano())
+	if err := s.Eng.Store.CreateUser(ctx, &config.AdminUser{Username: admin, PasswordHash: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteUserByUsername(ctx, admin) })
+	do := func(method, path, user, body string, h http.HandlerFunc) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if user != "" {
+			req = withURLParam(req, "username", user)
+		}
+		rec := httptest.NewRecorder()
+		h(rec, req)
+		return rec
+	}
+	viewer := fmt.Sprintf("view%d", time.Now().UnixNano())
+	rec := do(http.MethodPost, "/api/v1/panel-users", "", `{"username":"`+viewer+`","role":"viewer"}`, s.createPanelUser)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), "temporary_password") {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteUserByUsername(ctx, viewer) })
+	u, _ := s.Eng.Store.GetUserByUsername(ctx, viewer)
+	if u == nil || u.Role != config.RoleViewer || !u.MustChangePassword {
+		t.Fatalf("stored viewer %+v", u)
+	}
+	if rec := do(http.MethodPost, "/", "", `{"username":"`+viewer+`","role":"viewer"}`, s.createPanelUser); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate: %d", rec.Code)
+	}
+	if rec := do(http.MethodPost, "/", "", `{"username":"x","role":"root"}`, s.createPanelUser); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad role: %d", rec.Code)
+	}
+	if rec := do(http.MethodPost, "/", viewer, ``, s.resetPanelUserPassword); rec.Code != http.StatusOK {
+		t.Fatalf("reset: %d", rec.Code)
+	}
+	if rec := do(http.MethodPatch, "/", viewer, `{"role":"admin"}`, s.patchPanelUser); rec.Code != http.StatusOK {
+		t.Fatalf("promote: %d", rec.Code)
+	}
+	if rec := do(http.MethodDelete, "/", viewer, ``, s.deletePanelUser); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if rec := do(http.MethodDelete, "/", viewer, ``, s.deletePanelUser); rec.Code != http.StatusNotFound {
+		t.Fatalf("delete again: %d", rec.Code)
+	}
+}
+
+func TestLastAdminIsProtected(t *testing.T) {
+	s := applyFailingServer(t)
+	ctx := context.Background()
+	users, err := s.Eng.Store.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range users {
+		if u.Role == config.RoleAdmin {
+			t.Skip("database already has admins; the guard is covered when it has none")
+		}
+	}
+	only := fmt.Sprintf("only%d", time.Now().UnixNano())
+	if err := s.Eng.Store.CreateUser(ctx, &config.AdminUser{Username: only, PasswordHash: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteUserByUsername(ctx, only) })
+	if err := s.Eng.Store.SetUserRole(ctx, only, config.RoleViewer); !errors.Is(err, store.ErrLastAdmin) {
+		t.Fatalf("demote last admin: %v", err)
+	}
+	if err := s.Eng.Store.DeleteUser(ctx, only); !errors.Is(err, store.ErrLastAdmin) {
+		t.Fatalf("delete last admin: %v", err)
 	}
 }

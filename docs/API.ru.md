@@ -242,6 +242,12 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `429` (JSON) с `Retry-After`: `{"error": "too many attempts, try again later"}`.
   - `500` (text/plain): ошибка хеширования или базы данных либо `password changed but session could not be issued`, когда пароль сменён, но пользователя не удалось перечитать, чтобы подписать новый токен.
 
+## Пользователи панели и роли
+
+У каждого пользователя панели есть `role`: `admin` (всё) или `viewer`. Viewer может читать панель (`GET`), подтверждать пароль, менять свой пароль и выходить; любая другая запись, а также все запросы к `/api/v1/host/*`, `/api/v1/diagnostics/*` и `/api/v1/panel-users*` получают `403 {"error":"read_only"}`. Существующие пользователи и учётка из enrollment — админы; токен автоматизации (`EASY_WAF_ADMIN_TOKEN`) действует как админ. `GET /api/v1/auth/me` возвращает `role`.
+
+Эндпоинты (только для админов; изменения требуют step-up и пишутся в аудит): `GET /api/v1/panel-users` — список `[{username, role, must_change_password, created_at}]`; `POST /api/v1/panel-users` с `{"username", "role"}` — создаёт пользователя со случайным временным паролем (`201`, `temporary_password` показывается один раз; `409`, если пользователь есть); `PATCH /api/v1/panel-users/{username}` с `{"role"}`; `POST /api/v1/panel-users/{username}/reset-password` — новый временный пароль, смена при входе, сессии завершаются; `DELETE /api/v1/panel-users/{username}` (`400` для своей учётки). Понизить или удалить последнего админа нельзя: `409`.
+
 ## Статус и каталог
 
 ### `GET /api/v1/status`

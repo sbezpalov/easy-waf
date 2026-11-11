@@ -25,9 +25,9 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (*config.AdminUser, error) {
 	var u config.AdminUser
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, must_change_password, session_version, created_at, updated_at
+		SELECT id, username, password_hash, must_change_password, session_version, role, created_at, updated_at
 		FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.MustChangePassword, &u.SessionVersion, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.MustChangePassword, &u.SessionVersion, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -48,13 +48,16 @@ func (s *Store) CreateUser(ctx context.Context, u *config.AdminUser) error {
 	if u.SessionVersion < 1 {
 		u.SessionVersion = 1
 	}
+	if u.Role == "" {
+		u.Role = config.RoleAdmin
+	}
 	now := time.Now().UTC()
 	u.CreatedAt = now
 	u.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, must_change_password, session_version, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		u.ID, u.Username, u.PasswordHash, u.MustChangePassword, u.SessionVersion, u.CreatedAt, u.UpdatedAt)
+		INSERT INTO users (id, username, password_hash, must_change_password, session_version, role, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		u.ID, u.Username, u.PasswordHash, u.MustChangePassword, u.SessionVersion, u.Role, u.CreatedAt, u.UpdatedAt)
 	return err
 }
 
@@ -230,4 +233,69 @@ func (s *Store) EnrollmentPending(ctx context.Context) (bool, error) {
 func (s *Store) DeleteUserByUsername(ctx context.Context, username string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE username = $1`, username)
 	return err
+}
+
+// ErrLastAdmin refuses a change that would leave no admin.
+var ErrLastAdmin = errors.New("the last admin cannot be removed or demoted")
+
+// ListUsers returns all panel users ordered by username.
+func (s *Store) ListUsers(ctx context.Context) ([]config.AdminUser, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, username, must_change_password, role, created_at, updated_at
+		FROM users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []config.AdminUser
+	for rows.Next() {
+		var u config.AdminUser
+		if err := rows.Scan(&u.ID, &u.Username, &u.MustChangePassword, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetUserRole changes a user's role. Demoting the last admin returns
+// ErrLastAdmin; an unknown user returns sql.ErrNoRows.
+func (s *Store) SetUserRole(ctx context.Context, username, role string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE users SET role = $2, updated_at = $3
+		WHERE username = $1
+		  AND ($2 = 'admin' OR role <> 'admin'
+		       OR (SELECT count(*) FROM users WHERE role = 'admin' AND username <> $1) > 0)`,
+		username, role, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return s.lastAdminOrMissing(ctx, res, username)
+}
+
+// DeleteUser removes a panel user unless it is the last admin.
+func (s *Store) DeleteUser(ctx context.Context, username string) error {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM users
+		WHERE username = $1
+		  AND (role <> 'admin' OR (SELECT count(*) FROM users WHERE role = 'admin' AND username <> $1) > 0)`,
+		username)
+	if err != nil {
+		return err
+	}
+	return s.lastAdminOrMissing(ctx, res, username)
+}
+
+func (s *Store) lastAdminOrMissing(ctx context.Context, res sql.Result, username string) error {
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	u, err := s.GetUserByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return sql.ErrNoRows
+	}
+	return ErrLastAdmin
 }

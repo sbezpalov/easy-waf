@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -24,7 +25,7 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 				return
 			}
 			if legacy.Matches(raw) {
-				p := &Principal{Username: "automation", IsLegacyToken: true}
+				p := &Principal{Username: "automation", IsLegacyToken: true, Role: config.RoleAdmin}
 				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 				return
 			}
@@ -45,6 +46,7 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 			p := &Principal{
 				Username:           u.Username,
 				MustChangePassword: u.MustChangePassword,
+				Role:               u.Role,
 				ExpiresAt:          claims.ExpiresAt.Time,
 				StepUpAt:           claims.stepUpTime(),
 			}
@@ -93,6 +95,41 @@ func PasswordChangeGate(next http.Handler) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":"password_change_required","must_change_password":true}` + "\n"))
+	})
+}
+
+// viewerAllowedPOST are the writes a viewer may make: its own session and password.
+var viewerAllowedPOST = map[string]bool{
+	"/api/v1/auth/logout":          true,
+	"/api/v1/auth/change-password": true,
+	"/api/v1/auth/confirm":         true,
+}
+
+// viewerDeniedPrefixes stay closed to viewers even for reads: host
+// management, support bundles and the panel user list.
+var viewerDeniedPrefixes = []string{"/api/v1/host/", "/api/v1/diagnostics/", "/api/v1/panel-users"}
+
+// ReadOnlyGate returns 403 read_only for a viewer's writes and for the areas
+// in viewerDeniedPrefixes. Admins and the automation token pass.
+func ReadOnlyGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, ok := PrincipalFrom(r.Context())
+		if !ok || p.Role != config.RoleViewer {
+			next.ServeHTTP(w, r)
+			return
+		}
+		path := r.URL.Path
+		for _, pre := range viewerDeniedPrefixes {
+			if strings.HasPrefix(path, pre) {
+				jsonErr(w, http.StatusForbidden, "read_only")
+				return
+			}
+		}
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || (r.Method == http.MethodPost && viewerAllowedPOST[path]) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		jsonErr(w, http.StatusForbidden, "read_only")
 	})
 }
 

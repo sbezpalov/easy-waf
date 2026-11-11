@@ -180,6 +180,11 @@
 
     .table-state { margin: 0.5rem 0; font-size: 0.9rem; }
     .copy-btn { padding: 0.2rem 0.45rem; font-size: 0.85rem; line-height: 1; min-width: auto; }
+    /* Viewers: hide what the API refuses them anyway (host management, panel users). */
+    .role-viewer .admin-only,
+    .role-viewer .nav-link[data-tab="system"],
+    .role-viewer .nav-link[data-tab="network"],
+    .role-viewer .nav-link[data-tab="users"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -772,6 +777,18 @@
 
       <div id="tab-users" class="tab-panel">
         <h2>☺ Users</h2>
+        <div class="panel admin-only" style="max-width:100%">
+          <h3>Panel users</h3>
+          <p class="dash-note" style="margin-top:0">Who can sign in to this panel. <b>Admin</b> can change everything; <b>viewer</b> sees the panel read-only (no host management, no diagnostics bundle). New users and password resets get a temporary password, shown once, that must be changed at first sign-in.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-bottom:0.5rem">
+            <label>Username <input id="pu-new-name" type="text" autocomplete="off" placeholder="alice" style="min-width:10rem" /></label>
+            <label>Role
+              <select id="pu-new-role"><option value="viewer">viewer (read-only)</option><option value="admin">admin</option></select>
+            </label>
+            <button type="button" id="btn-pu-create">Create panel user</button>
+          </div>
+          <div id="pu-table"></div>
+        </div>
         <p class="dash-note" style="margin-top:0">Local UNIX accounts (uid ≥ 1000) and SSH authorized keys. Protected accounts: <code>root</code>, <code>easy-waf</code>.</p>
         <div class="panel" style="max-width:100%">
           <h3>Accounts</h3>
@@ -1005,7 +1022,7 @@
   }
 
   const needsStepUp = (url) => typeof url === 'string'
-    && (url.startsWith('/api/v1/host/') || url === '/api/v1/settings/management-tls');
+    && (url.startsWith('/api/v1/host/') || url.startsWith('/api/v1/panel-users') || url === '/api/v1/settings/management-tls');
 
   // Privileged operations answer 403 step_up_required until the password is
   // confirmed; ask for it once here and repeat the request, so no caller has to know.
@@ -1075,6 +1092,7 @@
   function humanizeCrowdSecErr(msg) {
     const s = String(msg || '');
     if (s === 'step_up_required') return 'Cancelled: this operation needs your password.';
+    if (s === 'read_only') return 'Read-only account: ask an admin to make this change.';
     if (/http 403|access forbidden/i.test(s)) {
       return 'CrowdSec LAPI access denied (403). The API key in settings does not match LAPI. Re-run on the host: sudo bash scripts/crowdsec-bootstrap-lapi.sh && sudo systemctl restart easy-waf-api';
     }
@@ -1223,6 +1241,47 @@
     return out;
   }
 
+  async function loadPanelUsers() {
+    const box = document.getElementById('pu-table');
+    if (!box) return;
+    const r = await fetch('/api/v1/panel-users', { headers: hdr() });
+    if (!r.ok) { box.textContent = await apiMessage(r); return; }
+    const list = await r.json();
+    box.innerHTML = '<table><thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
+      list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select class="pu-role" data-user="' + esc(u.username) + '">' +
+        '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
+        '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>viewer</option></select></td><td>' +
+        (u.must_change_password ? 'must change password' : 'active') + '</td><td>' +
+        '<button type="button" class="secondary pu-reset" data-user="' + esc(u.username) + '">Reset password</button> ' +
+        '<button type="button" class="secondary pu-del" data-user="' + esc(u.username) + '">Delete</button></td></tr>').join('') +
+      '</tbody></table>';
+    box.querySelectorAll('.pu-role').forEach((sel) => {
+      sel.onchange = async () => {
+        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(sel.dataset.user), { method: 'PATCH', headers: hdr(), body: JSON.stringify({ role: sel.value }) });
+        if (!r.ok) toast(await apiMessage(r), 'err'); else toast('Role updated.', 'ok');
+        loadPanelUsers();
+      };
+    });
+    box.querySelectorAll('.pu-reset').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await confirmDialog('Reset the password of ' + btn.dataset.user + '? Their sessions end now.', { okLabel: 'Reset' }))) return;
+        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user) + '/reset-password', { method: 'POST', headers: hdr() });
+        if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+        const j = await r.json();
+        window.prompt('Temporary password for ' + j.username + ' (shown once):', j.temporary_password);
+        loadPanelUsers();
+      };
+    });
+    box.querySelectorAll('.pu-del').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await confirmDialog('Delete panel user ' + btn.dataset.user + '?', { danger: true, okLabel: 'Delete' }))) return;
+        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user), { method: 'DELETE', headers: hdr() });
+        if (!r.ok) toast(await apiMessage(r), 'err');
+        loadPanelUsers();
+      };
+    });
+  }
+
   function clearAppFormFields() {
     document.getElementById('app-edit-id').value = '';
     document.getElementById('apps-edit-hint').classList.add('hidden');
@@ -1320,6 +1379,7 @@
         loadNetworkTab();
         break;
       case 'users':
+        if (!document.body.classList.contains('role-viewer')) loadPanelUsers();
         loadUsersTab();
         break;
       case 'config':
@@ -1376,9 +1436,10 @@
     } else {
       show('view-login', false); show('view-pass', false); show('view-app', true);
       if (hu && me.username) {
-        hu.textContent = String(me.username);
+        hu.textContent = String(me.username) + (me.role === 'viewer' ? ' (read-only)' : '');
         hu.classList.remove('hidden');
       }
+      document.body.classList.toggle('role-viewer', me.role === 'viewer');
       await loadSettingsPanel();
       loadProfileSelect();
       initRestrictedPathRows();
@@ -1928,6 +1989,17 @@
       sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));
     });
   }
+
+  document.getElementById('btn-pu-create').onclick = async () => {
+    const username = document.getElementById('pu-new-name').value.trim();
+    const role = document.getElementById('pu-new-role').value;
+    const r = await fetch('/api/v1/panel-users', { method: 'POST', headers: hdr(), body: JSON.stringify({ username, role }) });
+    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    const j = await r.json();
+    document.getElementById('pu-new-name').value = '';
+    window.prompt('Temporary password for ' + j.username + ' (shown once):', j.temporary_password);
+    loadPanelUsers();
+  };
 
   document.getElementById('btn-apps-refresh').onclick = async () => {
     await loadApps();

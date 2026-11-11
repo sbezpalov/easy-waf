@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"github.com/easy-waf/easy-waf/internal/config"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ type loginResponse struct {
 type meResponse struct {
 	Username           string `json:"username"`
 	MustChangePassword bool   `json:"must_change_password"`
+	Role               string `json:"role"`
 }
 
 type changePasswordRequest struct {
@@ -261,7 +263,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.IsLegacyToken {
-		writeJSON(w, http.StatusOK, meResponse{Username: "automation", MustChangePassword: false})
+		writeJSON(w, http.StatusOK, meResponse{Username: "automation", MustChangePassword: false, Role: config.RoleAdmin})
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
@@ -269,7 +271,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword})
+	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword, Role: u.Role})
 }
 
 // handleLogout invalidates every session token issued to the caller.

@@ -242,6 +242,28 @@ Changes the caller's password, clears `must_change_password`, revokes all existi
   - `429` (JSON) with `Retry-After`: `{"error": "too many attempts, try again later"}`.
   - `500` (text/plain): hashing or database error, or `password changed but session could not be issued` when the password was changed but the user could not be re-read to sign the new token.
 
+## Panel users and roles
+
+Every panel user has a `role`: `admin` (everything) or `viewer`. A viewer may read the panel (`GET`), confirm its password, change its own password and sign out; any other write, and every `/api/v1/host/*`, `/api/v1/diagnostics/*` and `/api/v1/panel-users*` request, answers `403 {"error":"read_only"}`. Existing users and the enrollment account are admins; the automation token (`EASY_WAF_ADMIN_TOKEN`) acts as admin. `GET /api/v1/auth/me` returns `role`.
+
+### `GET /api/v1/panel-users`
+Lists `[{username, role, must_change_password, created_at}]` ordered by username. Admins only.
+
+### `POST /api/v1/panel-users`
+Body `{"username", "role"}` (username 1-64 of `A-Za-z0-9._@-`, starting with a letter or digit). Creates the user with a random temporary password and `must_change_password: true`. Needs step-up. Audit: `panel_user_created`.
+- **Response:** `201` `{"username", "role", "temporary_password"}`; the password is not stored in clear and is not shown again.
+- **Errors:** `400` invalid username or role, `409` the user exists.
+
+### `PATCH /api/v1/panel-users/{username}`
+Body `{"role"}`. Takes effect on the user's next request. Needs step-up. Audit: `panel_user_role_changed`.
+- **Errors:** `404` unknown user, `409` it would demote the last admin.
+
+### `POST /api/v1/panel-users/{username}/reset-password`
+Sets a new temporary password, requires a change at next sign-in and ends the user's sessions. Needs step-up. Audit: `panel_user_password_reset`. Response `200` `{"username", "temporary_password"}`.
+
+### `DELETE /api/v1/panel-users/{username}`
+Needs step-up. Audit: `panel_user_deleted`. `204`; `400` for your own account, `404` unknown user, `409` the last admin.
+
 ## Status and catalogue
 
 ### `GET /api/v1/status`
