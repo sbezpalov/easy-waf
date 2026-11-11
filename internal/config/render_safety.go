@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -102,6 +103,15 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 	if err := ValidateListenAddr("acme_internal_http", s.ACMEInternalHTTP); err != nil {
 		return err
 	}
+	if err := validateSourceList("trusted_proxy_cidrs", s.TrustedProxyCIDRs); err != nil {
+		return err
+	}
+	if err := validateSourceList("proxy_protocol_cidrs", s.ProxyProtocolCIDRs); err != nil {
+		return err
+	}
+	if h := s.RealIPHeader; h != "" && !slices.Contains(RealIPHeaders, h) {
+		return fmt.Errorf("real_ip_header must be one of %s", strings.Join(RealIPHeaders, ", "))
+	}
 	// Emptiness is a functional question the renderer already handles (an unset
 	// map path simply omits the directive), so this only asks that whatever *is*
 	// set is safe to interpolate. Requiring values here would turn a partially
@@ -120,6 +130,21 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 	for name, path := range paths {
 		if err := ValidateConfigFilePath(name, path, true); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateSourceList accepts IP addresses and CIDR prefixes, which are rendered
+// inline into `src` ACLs.
+func validateSourceList(field string, list []string) error {
+	for i, raw := range list {
+		raw = strings.TrimSpace(raw)
+		if _, err := netip.ParseAddr(raw); err == nil {
+			continue
+		}
+		if _, err := netip.ParsePrefix(raw); err != nil {
+			return fmt.Errorf("%s[%d] is not an IP or CIDR", field, i)
 		}
 	}
 	return nil

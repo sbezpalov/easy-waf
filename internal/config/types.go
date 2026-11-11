@@ -248,6 +248,27 @@ type GlobalSettings struct {
 	// ListenIPv6 adds IPv6-only binds on :80 and :443 next to the IPv4 ones.
 	// The host must have IPv6 enabled, or HAProxy cannot bind on reload.
 	ListenIPv6 bool `json:"listen_ipv6"`
+	// TrustedProxyCIDRs are the proxies (CDN, NGFW, tunnel) whose RealIPHeader
+	// replaces the connection source on the edge. Requests from anywhere else keep
+	// their own source, so a client cannot spoof the header.
+	TrustedProxyCIDRs []string `json:"trusted_proxy_cidrs,omitempty"`
+	// RealIPHeader names the header carrying the client address; see RealIPHeaders.
+	// Empty means X-Forwarded-For. The last occurrence is used.
+	RealIPHeader string `json:"real_ip_header,omitempty"`
+	// ProxyProtocolCIDRs must send a PROXY protocol v1/v2 header on :80 and :443.
+	// Connections from other sources are accepted without one.
+	ProxyProtocolCIDRs []string `json:"proxy_protocol_cidrs,omitempty"`
+}
+
+// RealIPHeaders are the accepted values of GlobalSettings.RealIPHeader.
+var RealIPHeaders = []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP"}
+
+// RealIPHeaderOrDefault resolves an empty RealIPHeader to X-Forwarded-For.
+func RealIPHeaderOrDefault(h string) string {
+	if strings.TrimSpace(h) == "" {
+		return "X-Forwarded-For"
+	}
+	return h
 }
 
 // DefaultManagementCIDRs is the bootstrap allowlist for the control plane (LAN + loopback).

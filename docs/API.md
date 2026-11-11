@@ -562,6 +562,8 @@ Both methods behave identically: they **merge** the body over the stored setting
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
   - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.
   - `listen_ipv6`: adds `bind :::80 v6only` and `bind :::443 v6only` next to the IPv4 binds on the next apply. Rejected with `400` when the host has IPv6 disabled (`/proc/net/if_inet6` missing), because HAProxy could not bind on reload.
+  - `trusted_proxy_cidrs`, `real_ip_header`: requests whose source is in `trusted_proxy_cidrs` (IPs or CIDRs) take the client address from the last value of `real_ip_header` (`X-Forwarded-For` when empty; also `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`) through `http-request set-src`, before any rule that reads the source. Other sources keep their own address, so the header cannot be spoofed by a client.
+  - `proxy_protocol_cidrs`: IPs or CIDRs that must send a PROXY protocol v1/v2 header on `:80` and `:443` (`tcp-request connection expect-proxy layer4`). Other sources connect without one.
   - GeoIP:
     - `geoip_default_policy` must be `allow`, `deny` or empty.
     - `geoip_provider` must be `ipinfo`, `maxmind` or empty.

@@ -473,6 +473,25 @@
           <h3>Edge network</h3>
           <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
           <label><input id="edge-listen-ipv6" type="checkbox" /> Listen on IPv6 too (<code>[::]:80</code>, <code>[::]:443</code>). The host must have IPv6 enabled; publish AAAA records only after this is on.</label>
+          <h4 style="margin:0.9rem 0 0.3rem">Real client IP behind a proxy</h4>
+          <p><small>Only requests whose source is in <strong>Trusted proxies</strong> may replace their address with the header below; others keep their own. Without this, behind Cloudflare or a tunnel every client looks like the proxy to IP lists, GeoIP, CrowdSec and rate limits.</small></p>
+          <label>Trusted proxies (IP or CIDR, one per line)
+            <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
+          </label>
+          <div class="row" style="margin-top:0.3rem">
+            <label>Client IP header
+              <select id="edge-real-ip-header">
+                <option value="">X-Forwarded-For (last value)</option>
+                <option value="X-Real-IP">X-Real-IP</option>
+                <option value="CF-Connecting-IP">CF-Connecting-IP (Cloudflare)</option>
+                <option value="True-Client-IP">True-Client-IP</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-edge-cloudflare">Fill Cloudflare ranges</button>
+          </div>
+          <label style="display:block;margin-top:0.5rem">PROXY protocol sources (IP or CIDR, one per line): must send a PROXY v1/v2 header on :80/:443, e.g. a load balancer or NGFW
+            <textarea id="edge-proxy-protocol" rows="2" style="width:100%;font-family:monospace" placeholder="192.168.88.1"></textarea>
+          </label>
           <div class="row" style="margin-top:0.5rem">
             <button type="button" class="secondary" id="btn-edge-network-save">Save edge network</button>
           </div>
@@ -1994,11 +2013,30 @@
   function loadEdgeNetworkFromSettings() {
     if (!cachedSettings) return;
     document.getElementById('edge-listen-ipv6').checked = !!cachedSettings.listen_ipv6;
+    document.getElementById('edge-trusted-proxies').value = (cachedSettings.trusted_proxy_cidrs || []).join('\n');
+    document.getElementById('edge-real-ip-header').value = cachedSettings.real_ip_header || '';
+    document.getElementById('edge-proxy-protocol').value = (cachedSettings.proxy_protocol_cidrs || []).join('\n');
   }
+
+  function edgeLines(id) {
+    return document.getElementById(id).value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+  }
+
+  // https://www.cloudflare.com/ips/ — re-check when Cloudflare announces changes.
+  const CLOUDFLARE_RANGES = [
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18',
+    '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17',
+    '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+    '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32',
+    '2a06:98c0::/29', '2c0f:f248::/32',
+  ];
 
   function edgeNetworkPatch() {
     return {
       listen_ipv6: document.getElementById('edge-listen-ipv6').checked,
+      trusted_proxy_cidrs: edgeLines('edge-trusted-proxies'),
+      real_ip_header: document.getElementById('edge-real-ip-header').value,
+      proxy_protocol_cidrs: edgeLines('edge-proxy-protocol'),
     };
   }
 
@@ -2706,6 +2744,12 @@
       msg.textContent = await r.text();
       msg.className = 'warn';
     }
+  };
+
+  document.getElementById('btn-edge-cloudflare').onclick = () => {
+    const merged = Array.from(new Set(edgeLines('edge-trusted-proxies').concat(CLOUDFLARE_RANGES)));
+    document.getElementById('edge-trusted-proxies').value = merged.join('\n');
+    document.getElementById('edge-real-ip-header').value = 'CF-Connecting-IP';
   };
 
   document.getElementById('btn-edge-network-save').onclick = async () => {

@@ -62,6 +62,11 @@ type RenderInput struct {
 	// ACMEBackendAddr is the ip:port the generated bk_acme backend points at.
 	// Render fills it from Settings.ACMEInternalHTTP; callers do not set it.
 	ACMEBackendAddr string `json:"-"`
+	// TrustedProxySrc, ProxyProtocolSrc and RealIPFetch are derived from
+	// Settings by Render; callers do not set them.
+	TrustedProxySrc  string `json:"-"`
+	ProxyProtocolSrc string `json:"-"`
+	RealIPFetch      string `json:"-"`
 }
 
 // Rendered holds outputs and checksum for apply pipeline.
@@ -94,6 +99,9 @@ func Render(in RenderInput) (Rendered, error) {
 	// reach this function, and a backend that disagreed with the listener would
 	// leave HAProxy health-checking a closed port with no error anywhere.
 	in.ACMEBackendAddr = config.ACMEInternalHTTPOrDefault(in.Settings.ACMEInternalHTTP)
+	in.TrustedProxySrc = joinCIDRs(in.Settings.TrustedProxyCIDRs)
+	in.ProxyProtocolSrc = joinCIDRs(in.Settings.ProxyProtocolCIDRs)
+	in.RealIPFetch = fmt.Sprintf("req.hdr_ip(%s,-1)", config.RealIPHeaderOrDefault(in.Settings.RealIPHeader))
 
 	in.UseCrowdSecFilter = strings.TrimSpace(in.Settings.SPOEConfigPath) != ""
 	if in.UseCrowdSecFilter {
@@ -390,6 +398,7 @@ frontend fe_http
 	bind :::80 v6only
 {{- end}}
 	mode http
+{{- template "realIP" .}}
 {{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPClientTimeout}}s
@@ -469,6 +478,7 @@ frontend fe_https
 	bind :::443 v6only ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
 {{- end}}
 	mode http
+{{- template "realIP" .}}
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPSClientTimeout}}s
@@ -554,7 +564,17 @@ backend {{backendName $a.Application.PublicHost}}
 	{{- end }}
 	{{- end }}
 {{end}}
-{{define "appSecurity"}}
+{{define "realIP"}}
+{{- if .ProxyProtocolSrc}}
+	# PROXY protocol is required from these sources only; others connect directly.
+	tcp-request connection expect-proxy layer4 if { src {{.ProxyProtocolSrc}} }
+{{- end}}
+{{- if .TrustedProxySrc}}
+	# Before any rule that reads src: IP lists, GeoIP, CrowdSec, rate limits and logs see the client.
+	http-request set-src {{.RealIPFetch}} if { src {{.TrustedProxySrc}} } { {{.RealIPFetch}} -m found }
+{{- end}}
+{{- end}}
+{{- define "appSecurity"}}
 {{- $root := .Root -}}
 {{- $a := .App -}}
 {{- $host := .HostACL -}}

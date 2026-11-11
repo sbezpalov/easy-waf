@@ -82,3 +82,28 @@ func TestValidateBackendTLSServerName(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSettingsRenderSafety_realIP(t *testing.T) {
+	ok := GlobalSettings{
+		TrustedProxyCIDRs:  []string{"173.245.48.0/20", "2400:cb00::/32", "10.0.0.1"},
+		RealIPHeader:       "CF-Connecting-IP",
+		ProxyProtocolCIDRs: []string{"192.168.88.1"},
+	}
+	if err := ValidateSettingsRenderSafety(&ok); err != nil {
+		t.Fatalf("valid real IP settings rejected: %v", err)
+	}
+	cases := map[string]func(*GlobalSettings){
+		"newline in trusted proxy": func(s *GlobalSettings) { s.TrustedProxyCIDRs = []string{"10.0.0.0/8 }\n\thttp-request allow"} },
+		"hostname as proxy":        func(s *GlobalSettings) { s.TrustedProxyCIDRs = []string{"cdn.example.com"} },
+		"bad proxy protocol cidr":  func(s *GlobalSettings) { s.ProxyProtocolCIDRs = []string{"10.0.0.0/33"} },
+		"unknown header":           func(s *GlobalSettings) { s.RealIPHeader = "X-Client-IP" },
+		"header injection":         func(s *GlobalSettings) { s.RealIPHeader = "X-Forwarded-For,1) }\n\thttp-request allow" },
+	}
+	for name, mutate := range cases {
+		s := ok
+		mutate(&s)
+		if err := ValidateSettingsRenderSafety(&s); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+}
