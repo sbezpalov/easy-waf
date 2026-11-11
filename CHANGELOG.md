@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Built with Go 1.27.4.** It fixes GO-2026-6859 in `net/http`, which `govulncheck` reports as reachable from the API, the ACME worker and the CrowdSec client. `go.mod` and the installer's Go bootstrap (`EASY_WAF_BOOTSTRAP_GO_VERSION`, with its checksums) move to 1.27.4.
+
 ### Added
 
 - **Production offline bundle.** Releases build signed Ubuntu 24.04 `amd64` and `arm64` ISO images containing a local APT repository, the Easy WAF package and the complete appliance dependency closure. The installer verifies the internal manifest, rejects the wrong OS/architecture, checks free space and prevents configured online APT sources from affecting resolution. See [docs/OFFLINE_BUNDLE.md](docs/OFFLINE_BUNDLE.md) and ADR 0007.

@@ -55,7 +55,7 @@ easy_waf_apt_get_update() {
 # Install upstream Go toolchain to /usr/local/go when distro packages are too old.
 easy_waf_bootstrap_go_toolchain() {
   # A different version needs its checksum too: EASY_WAF_BOOTSTRAP_GO_SHA256 (go.dev/dl).
-  local ver="${EASY_WAF_BOOTSTRAP_GO_VERSION:-1.27.3}"
+  local ver="${EASY_WAF_BOOTSTRAP_GO_VERSION:-1.27.4}"
   local arch raw_arch sha256 tarball
   raw_arch="$(uname -m)"
   case "$raw_arch" in
@@ -72,10 +72,10 @@ easy_waf_bootstrap_go_toolchain() {
     return 1
   }
   sha256="${EASY_WAF_BOOTSTRAP_GO_SHA256:-}"
-  if [[ -z "$sha256" && "$ver" == "1.27.3" ]]; then
+  if [[ -z "$sha256" && "$ver" == "1.27.4" ]]; then
     case "$arch" in
-      amd64) sha256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 ;;
-      arm64) sha256=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49 ;;
+      amd64) sha256=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840 ;;
+      arm64) sha256=3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92 ;;
     esac
   fi
   if [[ -z "$sha256" ]]; then
