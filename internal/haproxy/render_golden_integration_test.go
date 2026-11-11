@@ -6,6 +6,7 @@
 package haproxy
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,12 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			// Backend-TLS fixtures record an operator CA path that exists only on the
 			// appliance they were written for, and haproxy -c opens ca-file for real.
 			cfgBody = rewriteCAFilePathForHAProxyCheck(cfgBody, goldenCAFileForCheck(t, d))
+			// The packaged Lua file is not installed on a build machine.
+			luaPath := filepath.Join(d, "forward-auth.lua")
+			if err := os.WriteFile(luaPath, []byte(ForwardAuthLua), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfgBody = bytes.ReplaceAll(cfgBody, []byte(DefaultForwardAuthLuaPath), []byte(luaPath))
 			tmp := filepath.Join(d, "c.cfg")
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
 				t.Fatal(err)
