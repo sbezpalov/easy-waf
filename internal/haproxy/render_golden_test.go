@@ -43,6 +43,7 @@ var goldenScenarioNames = []string{
 	"backend-tls-verify-none",
 	"app-body-policy",
 	"ha-mcp",
+	"edge-network",
 }
 
 func goldenGlobalSettings(spoePath, engine string) config.GlobalSettings {
@@ -476,6 +477,11 @@ func goldenFixture(name string) RenderInput {
 			Certificates: map[string]config.Certificate{},
 			CRTListPath:  "testdata/golden/http-only-app.crt-list.txt",
 		}
+	case "edge-network":
+		in := goldenFixture("mixed-listen-modes")
+		in.Settings.ListenIPv6 = true
+		in.CRTListPath = "testdata/golden/edge-network.crt-list.txt"
+		return in
 	case "mixed-listen-modes":
 		return RenderInput{
 			Settings:       goldenGlobalSettings(spoeMin, "crowdsec"),

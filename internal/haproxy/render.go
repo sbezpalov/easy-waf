@@ -386,6 +386,9 @@ resolvers easy_waf_dns
 # Rule order: ACLs → all http-request → use_backend (avoids HAProxy 3.x "http-request after use_backend" warnings).
 frontend fe_http
 	bind *:80
+{{- if .Settings.ListenIPv6}}
+	bind :::80 v6only
+{{- end}}
 	mode http
 {{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
@@ -462,6 +465,9 @@ backend bk_http_default
 # HTTPS edge — one bind, many PEMs in crt-list → SNI picks cert; Host header routes to backends (single WAN IP).
 frontend fe_https
 	bind *:443 ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
+{{- if .Settings.ListenIPv6}}
+	bind :::443 v6only ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
+{{- end}}
 	mode http
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.

@@ -5,12 +5,21 @@ package api
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 )
+
+// hostHasIPv6 reports whether the kernel has IPv6 enabled. HAProxy cannot bind
+// an IPv6 socket otherwise, and `haproxy -c` does not bind, so only the reload
+// would fail.
+var hostHasIPv6 = func() bool {
+	_, err := os.Stat("/proc/net/if_inet6")
+	return err == nil
+}
 
 func validateRuntimeSettings(s config.GlobalSettings) error {
 	// The identifier and path rules live in config.ValidateSettingsRenderSafety
@@ -40,6 +49,9 @@ func validateRuntimeSettings(s config.GlobalSettings) error {
 	}
 	if raw := strings.TrimSpace(s.SPOEConfigPath); raw != "" && !filepath.IsAbs(raw) {
 		return fmt.Errorf("spoe_config_path must be an absolute path")
+	}
+	if s.ListenIPv6 && !hostHasIPv6() {
+		return fmt.Errorf("listen_ipv6: IPv6 is disabled on this host (/proc/net/if_inet6 is missing)")
 	}
 	if raw := strings.TrimSpace(s.CrowdSecLAPIURL); raw != "" {
 		if _, err := crowdsec.ValidateLAPIURL(raw, nil); err != nil {

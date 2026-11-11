@@ -51,6 +51,7 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	st := config.DefaultSettings(dir)
 	st.SPOEConfigPath = spoePath
 	st.CrowdSecEngineName = "crowdsec"
+	st.ListenIPv6 = true
 
 	crtListPath := filepath.Join(hdir, "crt-list.txt")
 	in := RenderInput{

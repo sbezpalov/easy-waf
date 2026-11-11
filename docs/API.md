@@ -561,6 +561,7 @@ Both methods behave identically: they **merge** the body over the stored setting
   - `management_allowed_cidrs`: `null` keeps the stored list. Otherwise the list must contain at least one entry, and every entry must be a valid CIDR prefix (`netip.ParsePrefix`, so a bare IP without `/n` is rejected). The new list is enforced from the next request on. A list that excludes your own address locks you out of the API and UI.
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
   - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.
+  - `listen_ipv6`: adds `bind :::80 v6only` and `bind :::443 v6only` next to the IPv4 binds on the next apply. Rejected with `400` when the host has IPv6 disabled (`/proc/net/if_inet6` missing), because HAProxy could not bind on reload.
   - GeoIP:
     - `geoip_default_policy` must be `allow`, `deny` or empty.
     - `geoip_provider` must be `ipinfo`, `maxmind` or empty.

@@ -36,3 +36,19 @@ func TestValidateRuntimeSettingsAcceptsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateRuntimeSettingsListenIPv6NeedsHostIPv6(t *testing.T) {
+	orig := hostHasIPv6
+	t.Cleanup(func() { hostHasIPv6 = orig })
+	s := config.DefaultSettings("/var/lib/easy-waf")
+	s.ListenIPv6 = true
+
+	hostHasIPv6 = func() bool { return false }
+	if err := validateRuntimeSettings(s); err == nil {
+		t.Fatal("listen_ipv6 accepted on a host without IPv6")
+	}
+	hostHasIPv6 = func() bool { return true }
+	if err := validateRuntimeSettings(s); err != nil {
+		t.Fatal(err)
+	}
+}

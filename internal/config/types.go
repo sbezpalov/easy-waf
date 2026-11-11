@@ -245,6 +245,9 @@ type GlobalSettings struct {
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.
 	PrometheusEnabled bool `json:"prometheus_enabled"`
+	// ListenIPv6 adds IPv6-only binds on :80 and :443 next to the IPv4 ones.
+	// The host must have IPv6 enabled, or HAProxy cannot bind on reload.
+	ListenIPv6 bool `json:"listen_ipv6"`
 }
 
 // DefaultManagementCIDRs is the bootstrap allowlist for the control plane (LAN + loopback).
