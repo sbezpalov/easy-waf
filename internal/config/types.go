@@ -150,6 +150,21 @@ type TCPService struct {
 // MaxTCPServices caps tcp_services.
 const MaxTCPServices = 32
 
+// TLSPassthrough sends TLS connections on :443 whose SNI is ServerName
+// (exact, or "*.domain" for any subdomain) to a backend without decrypting
+// them. SendProxy prefixes each connection with PROXY protocol v2.
+type TLSPassthrough struct {
+	ServerName  string   `json:"server_name"`
+	BackendHost string   `json:"backend_host"`
+	BackendPort int      `json:"backend_port"`
+	SendProxy   bool     `json:"send_proxy,omitempty"`
+	AllowCIDRs  []string `json:"allow_cidrs,omitempty"`
+	Enabled     bool     `json:"enabled"`
+}
+
+// MaxTLSPassthrough caps tls_passthrough.
+const MaxTLSPassthrough = 32
+
 // ReservedTCPPorts cannot be a tcp_services listen_port: SSH, the edge, the
 // management listeners, the ACME helper and the CrowdSec bouncer.
 var ReservedTCPPorts = map[int]bool{22: true, 80: true, 443: true, 8000: true, 8089: true, 8443: true, 9000: true}
@@ -296,6 +311,9 @@ type GlobalSettings struct {
 	// TCPServices publishes raw TCP ports (MQTT, RTSP, ...) through HAProxy
 	// mode tcp. The host firewall must allow each listen_port.
 	TCPServices []TCPService `json:"tcp_services,omitempty"`
+	// TLSPassthrough routes listed SNI names on :443 to their own TLS
+	// servers, still encrypted; every other connection reaches fe_https.
+	TLSPassthrough []TLSPassthrough `json:"tls_passthrough,omitempty"`
 	// PrometheusEnabled exposes GET /metrics (Prometheus text format) for scrapers on the management listener.
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.

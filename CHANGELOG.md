@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TLS passthrough on :443.** `tls_passthrough` sends TLS connections for listed SNI names (exact or `*.domain`) to their own TLS servers without decrypting them, optionally with PROXY protocol v2 and a source allowlist; all other HTTPS keeps going through the WAF with the real client address (Security → Edge network → TLS passthrough).
 - **Forward auth in front of applications.** Per-application `forward_auth_url` (e.g. Authelia `/api/authz/forward-auth`): every request is checked before it reaches the servers, fail closed, sign-in redirects passed through, `Remote-User`/`Remote-Groups`/`Remote-Email`/`Remote-Name` forwarded, optional bypass sources. ADR 0005 accepted (option C). Migration `025_forward_auth.sql`; ships `/usr/share/easy-waf/haproxy/forward-auth.lua`.
 - **Two-factor sign-in (TOTP).** Optional per panel user (Settings → Two-factor sign-in): authenticator-app codes at login, 10 one-time recovery codes stored as hashes, admin reset in Users → Panel users and `easy-waf-admin disable-totp` on the console. ADR 0004 accepted (option C). Migration `024_user_totp.sql`.
 - **TCP services.** `tcp_services` publishes raw TCP ports (MQTT, RTSP, ...) through HAProxy `mode tcp`, with an optional source allowlist, the IP blacklist and a health check (Security → Edge network → TCP services). Open each port in the host firewall.
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- UI: saving Security → Edge network with any TCP service line failed (lines were split on spaces).
 - **HSTS no longer breaks plain HTTP.** It was sent with `includeSubDomains` on every HTTPS response, so an `http_and_https` host lost its HTTP side, and so did any plain-HTTP host below a published one. HSTS now skips `http_and_https` hosts, and `includeSubDomains` is opt-in (`hsts_include_subdomains`).
 - **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.
 - **Offline bundle checksums.** `SHA256SUMS` is written outside the ISO tree and then moved in, so the list no longer names a `SHA256SUMS.tmp` that is gone after the rename and makes `install.sh --verify-only` fail.

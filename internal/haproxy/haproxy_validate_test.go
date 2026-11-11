@@ -58,6 +58,10 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		{Name: "mqtt", ListenPort: 8883, BackendHost: "127.0.0.1", BackendPort: 1883, AllowCIDRs: []string{"192.168.0.0/16"}, Enabled: true},
 		{Name: "rtsp", ListenPort: 8554, BackendHost: "frigate.lan", BackendPort: 8554, Enabled: true},
 	}
+	st.TLSPassthrough = []config.TLSPassthrough{
+		{ServerName: "vpn.example.com", BackendHost: "127.0.0.1", BackendPort: 4443, AllowCIDRs: []string{"192.168.0.0/16"}, Enabled: true},
+		{ServerName: "*.k8s.example.com", BackendHost: "ingress.lan", BackendPort: 443, SendProxy: true, Enabled: true},
+	}
 
 	luaPath := filepath.Join(hdir, "forward-auth.lua")
 	if err := os.WriteFile(luaPath, []byte(ForwardAuthLua), 0o600); err != nil {

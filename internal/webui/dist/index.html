@@ -510,6 +510,8 @@
             <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
             <p class="dash-note" style="margin:0.75rem 0 0.25rem"><b>TCP services</b> (MQTT, RTSP, ...): one per line, <code>name listen_port backend_host:backend_port [allow=CIDR,CIDR] [off]</code>. Raw TCP: no HTTP rules apply; the IP blacklist does. Allow each listen port in Network → Firewall.</p>
             <textarea id="edge-tcp-services" rows="3" style="width:100%;font-family:monospace" placeholder="mqtt 8883 192.168.1.20:1883 allow=192.168.0.0/16"></textarea>
+            <p class="dash-note" style="margin:0.75rem 0 0.25rem"><b>TLS passthrough on :443</b>: one per line, <code>server_name backend_host:backend_port [allow=CIDR,CIDR] [proxy] [off]</code>. Connections for that name (or <code>*.domain</code>) go to the backend still encrypted, with its own certificate; no HTTP rules apply. <code>proxy</code> sends PROXY protocol v2 (the backend must expect it). The name must not be an application's public host.</p>
+            <textarea id="edge-tls-passthrough" rows="3" style="width:100%;font-family:monospace" placeholder="vpn.example.com 192.168.1.30:443 allow=192.168.0.0/16"></textarea>
           </label>
           <div class="row" style="margin-top:0.3rem">
             <label>Client IP header
@@ -2286,12 +2288,19 @@
     document.getElementById('edge-trusted-proxies').value = (cachedSettings.trusted_proxy_cidrs || []).join('\n');
     document.getElementById('edge-tcp-services').value = (cachedSettings.tcp_services || []).map((t) =>
       [t.name, t.listen_port, t.backend_host + ':' + t.backend_port].concat((t.allow_cidrs || []).length ? ['allow=' + t.allow_cidrs.join(',')] : [], t.enabled ? [] : ['off']).join(' ')).join('\n');
+    document.getElementById('edge-tls-passthrough').value = (cachedSettings.tls_passthrough || []).map((p) =>
+      [p.server_name, p.backend_host + ':' + p.backend_port].concat((p.allow_cidrs || []).length ? ['allow=' + p.allow_cidrs.join(',')] : [],
+        p.send_proxy ? ['proxy'] : [], p.enabled ? [] : ['off']).join(' ')).join('\n');
     document.getElementById('edge-real-ip-header').value = cachedSettings.real_ip_header || '';
     document.getElementById('edge-proxy-protocol').value = (cachedSettings.proxy_protocol_cidrs || []).join('\n');
   }
 
   function edgeLines(id) {
     return document.getElementById(id).value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+  }
+
+  function edgeRows(id) {
+    return document.getElementById(id).value.split('\n').map((x) => x.trim()).filter(Boolean);
   }
 
   // https://www.cloudflare.com/ips/ — re-check when Cloudflare announces changes.
@@ -2309,12 +2318,20 @@
       security_headers_enabled: document.getElementById('edge-security-headers').checked,
       hsts_include_subdomains: document.getElementById('edge-hsts-subdomains').checked,
       trusted_proxy_cidrs: edgeLines('edge-trusted-proxies'),
-      tcp_services: edgeLines('edge-tcp-services').map((line) => {
+      tcp_services: edgeRows('edge-tcp-services').map((line) => {
         const f = line.split(/\s+/);
         const hp = /^(\S+):(\d{1,5})$/.exec(f[2] || '');
         if (f.length < 3 || !hp) throw new Error('TCP service "' + line + '": use name listen_port host:port [allow=...] [off]');
         const allow = f.find((x) => x.startsWith('allow='));
         return { name: f[0], listen_port: parseInt(f[1], 10), backend_host: hp[1], backend_port: parseInt(hp[2], 10),
+          allow_cidrs: allow ? allow.slice(6).split(',').filter(Boolean) : [], enabled: !f.includes('off') };
+      }),
+      tls_passthrough: edgeRows('edge-tls-passthrough').map((line) => {
+        const f = line.split(/\s+/);
+        const hp = /^(\S+):(\d{1,5})$/.exec(f[1] || '');
+        if (f.length < 2 || !hp) throw new Error('TLS passthrough "' + line + '": use server_name host:port [allow=...] [proxy] [off]');
+        const allow = f.find((x) => x.startsWith('allow='));
+        return { server_name: f[0], backend_host: hp[1], backend_port: parseInt(hp[2], 10), send_proxy: f.includes('proxy'),
           allow_cidrs: allow ? allow.slice(6).split(',').filter(Boolean) : [], enabled: !f.includes('off') };
       }),
       real_ip_header: document.getElementById('edge-real-ip-header').value,

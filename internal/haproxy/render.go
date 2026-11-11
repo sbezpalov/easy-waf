@@ -44,6 +44,15 @@ type TCPServiceRender struct {
 	UsesDNS  bool
 }
 
+// TLSPassthroughRender is one enabled tls_passthrough entry.
+type TLSPassthroughRender struct {
+	config.TLSPassthrough
+	Backend  string
+	Match    string // fe_tls_in condition on the ClientHello SNI
+	AllowSrc string
+	UsesDNS  bool
+}
+
 // ServerRender is one `server` line of an application backend.
 type ServerRender struct {
 	Name    string
@@ -95,6 +104,10 @@ type RenderInput struct {
 	UseCrowdSecHTTPS         bool               // SPOE on fe_https
 	NeedsDNSResolver         bool               // any backend uses DNS name (split-DNS / DHCP)
 	TCPServices              []TCPServiceRender `json:"-"`
+	// TLSPassthrough is non-empty when fe_tls_in owns :443; fe_https then
+	// listens on HTTPSChainSocket behind it (empty without fe_https).
+	TLSPassthrough   []TLSPassthroughRender `json:"-"`
+	HTTPSChainSocket string                 `json:"-"`
 	// ACMEBackendAddr is the ip:port the generated bk_acme backend points at.
 	// Render fills it from Settings.ACMEInternalHTTP; callers do not set it.
 	ACMEBackendAddr string `json:"-"`
@@ -240,6 +253,20 @@ func Render(in RenderInput) (Rendered, error) {
 		in.NeedsDNSResolver = in.NeedsDNSResolver || tr.UsesDNS
 		in.TCPServices = append(in.TCPServices, tr)
 	}
+	in.TLSPassthrough = nil
+	for _, p := range in.Settings.TLSPassthrough {
+		if !p.Enabled {
+			continue
+		}
+		pr := TLSPassthroughRender{TLSPassthrough: p, AllowSrc: joinCIDRs(p.AllowCIDRs), UsesDNS: !backendHostIsLiteralIP(p.BackendHost)}
+		if d, ok := strings.CutPrefix(p.ServerName, "*."); ok {
+			pr.Backend, pr.Match = "ptw_"+sanitizeHAProxyIdent(d), "req_ssl_sni -m end -i ."+d
+		} else {
+			pr.Backend, pr.Match = "pt_"+sanitizeHAProxyIdent(p.ServerName), "req_ssl_sni -i "+p.ServerName
+		}
+		in.NeedsDNSResolver = in.NeedsDNSResolver || pr.UsesDNS
+		in.TLSPassthrough = append(in.TLSPassthrough, pr)
+	}
 	for _, a := range apps {
 		if a.BackendUsesDNS {
 			in.NeedsDNSResolver = true
@@ -257,6 +284,13 @@ func Render(in RenderInput) (Rendered, error) {
 		default: // https_only, redirect_to_https
 			httpsApps = append(httpsApps, a)
 			redirectApps = append(redirectApps, a)
+		}
+	}
+	for _, p := range in.TLSPassthrough {
+		for _, a := range httpsApps {
+			if config.TLSPassthroughMatches(p.ServerName, a.Application.PublicHost) {
+				return Rendered{}, fmt.Errorf("tls_passthrough %q also covers application %q, which is published on :443", p.ServerName, a.Application.PublicHost)
+			}
 		}
 	}
 	in.BackendApps = apps
@@ -281,6 +315,14 @@ func Render(in RenderInput) (Rendered, error) {
 
 	crtLines := buildCRTList(in)
 	in.HasHTTPSFrontend = len(httpsApps) > 0 && len(crtLines) > 0
+	in.HTTPSChainSocket = ""
+	if len(in.TLSPassthrough) > 0 && in.HasHTTPSFrontend {
+		dir := filepath.Dir(in.Settings.HAProxyStatsSocketPath)
+		if in.Settings.HAProxyStatsSocketPath == "" || dir == "." {
+			dir = "/run/haproxy"
+		}
+		in.HTTPSChainSocket = filepath.Join(dir, "easy-waf-https.sock")
+	}
 	in.UseCrowdSecHTTP = false
 	in.UseCrowdSecHTTPS = false
 	if strings.TrimSpace(in.Settings.SPOEConfigPath) != "" {
@@ -562,12 +604,21 @@ backend bk_http_default
 {{if .HasHTTPSFrontend}}
 # HTTPS edge — one bind, many PEMs in crt-list → SNI picks cert; Host header routes to backends (single WAN IP).
 frontend fe_https
+{{- if .HTTPSChainSocket}}
+	# Reached through fe_tls_in (TLS passthrough); PROXY v2 on that hop keeps the client address.
+	bind unix@{{.HTTPSChainSocket}} mode 600 user haproxy accept-proxy ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
+{{- else}}
 	bind *:443 ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
 {{- if .Settings.ListenIPv6}}
 	bind :::443 v6only ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
 {{- end}}
+{{- end}}
 	mode http
+{{- if .HTTPSChainSocket}}
+{{- template "realIPHeader" .}}
+{{- else}}
 {{- template "realIP" .}}
+{{- end}}
 {{- template "securityHeaders" .}}
 {{- template "blockCapture"}}
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
@@ -610,6 +661,51 @@ backend bk_not_found
 	http-request deny deny_status 404
 {{end}}
 
+{{if .TLSPassthrough}}
+# :443 entry for TLS passthrough: listed server names reach their backends still encrypted{{if .HasHTTPSFrontend}}, the rest goes to fe_https{{end}}.
+frontend fe_tls_in
+	mode tcp
+	option tcplog
+	option dontlog-normal
+	no option http-server-close
+	bind *:443
+{{- if .Settings.ListenIPv6}}
+	bind :::443 v6only
+{{- end}}
+{{- template "proxyProtocol" .}}
+	timeout client 1h
+	tcp-request inspect-delay 5s
+	tcp-request content accept if { req_ssl_hello_type 1 }
+{{- range $p := .TLSPassthrough}}
+	use_backend {{$p.Backend}} if { {{$p.Match}} }
+{{- end}}
+	default_backend {{if .HasHTTPSFrontend}}bk_tls_https{{else}}bk_tls_none{{end}}
+{{if .HasHTTPSFrontend}}
+backend bk_tls_https
+	mode tcp
+	no option http-server-close
+	timeout server 1h
+	server fe_https unix@{{.HTTPSChainSocket}} send-proxy-v2
+{{else}}
+backend bk_tls_none
+	mode tcp
+	tcp-request content reject
+{{end}}
+{{- range $p := .TLSPassthrough}}
+# TLS passthrough {{$p.ServerName}}: not decrypted, no HTTP rules apply.
+backend {{$p.Backend}}
+	mode tcp
+	no option http-server-close
+	timeout server 1h
+{{- if $p.AllowSrc}}
+	tcp-request content reject if !{ src {{$p.AllowSrc}} }
+{{- end}}
+{{- if $.UseIPBlacklist}}
+	tcp-request content reject if { src -f {{$.IPBlacklistMapPath}} }
+{{- end}}
+	server s1 {{$p.BackendHost}}:{{$p.BackendPort}}{{if $p.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}}{{if $p.SendProxy}} send-proxy-v2 check-send-proxy{{end}} check inter 5s fall 3 rise 2
+{{end}}
+{{end -}}
 {{range $t := .TCPServices}}
 # TCP service {{$t.Name}}: raw TCP, no HTTP rules apply.
 frontend tcp_{{$t.Name}}
@@ -699,10 +795,16 @@ backend {{backendName $a.Application.PublicHost}}
 	{{- end }}
 {{end}}
 {{define "realIP"}}
+{{- template "proxyProtocol" .}}
+{{- template "realIPHeader" .}}
+{{- end}}
+{{- define "proxyProtocol"}}
 {{- if .ProxyProtocolSrc}}
 	# PROXY protocol is required from these sources only; others connect directly.
 	tcp-request connection expect-proxy layer4 if { src {{.ProxyProtocolSrc}} }
 {{- end}}
+{{- end}}
+{{- define "realIPHeader"}}
 {{- if .TrustedProxySrc}}
 	# Before any rule that reads src: IP lists, GeoIP, CrowdSec, rate limits and logs see the client.
 	http-request set-src {{.RealIPFetch}} if { src {{.TrustedProxySrc}} } { {{.RealIPFetch}} -m found }

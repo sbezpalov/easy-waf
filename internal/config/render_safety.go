@@ -107,6 +107,9 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 	if err := validateTCPServices(s.TCPServices); err != nil {
 		return err
 	}
+	if err := validateTLSPassthrough(s.TLSPassthrough); err != nil {
+		return err
+	}
 	if err := validateSourceList("trusted_proxy_cidrs", s.TrustedProxyCIDRs); err != nil {
 		return err
 	}
@@ -407,6 +410,41 @@ func validateTCPServices(list []TCPService) error {
 		}
 	}
 	return nil
+}
+
+func validateTLSPassthrough(list []TLSPassthrough) error {
+	if len(list) > MaxTLSPassthrough {
+		return fmt.Errorf("tls_passthrough: at most %d entries", MaxTLSPassthrough)
+	}
+	seen := map[string]bool{}
+	for i, p := range list {
+		name := strings.TrimPrefix(p.ServerName, "*.")
+		if !validHostnameRe.MatchString(name) || !strings.Contains(name, ".") {
+			return fmt.Errorf("tls_passthrough[%d].server_name: a lowercase host name, or *.domain", i)
+		}
+		if seen[p.ServerName] {
+			return fmt.Errorf("tls_passthrough[%d]: server_name %q is listed twice", i, p.ServerName)
+		}
+		seen[p.ServerName] = true
+		if !validBackendHostRe.MatchString(p.BackendHost) {
+			return fmt.Errorf("tls_passthrough[%d].backend_host contains invalid characters", i)
+		}
+		if p.BackendPort < 1 || p.BackendPort > 65535 {
+			return fmt.Errorf("tls_passthrough[%d].backend_port must be 1-65535", i)
+		}
+		if err := validateSourceList(fmt.Sprintf("tls_passthrough[%d].allow_cidrs", i), p.AllowCIDRs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TLSPassthroughMatches reports whether a passthrough server_name covers host.
+func TLSPassthroughMatches(serverName, host string) bool {
+	if d, ok := strings.CutPrefix(serverName, "*."); ok {
+		return strings.HasSuffix(host, "."+d)
+	}
+	return serverName == host
 }
 
 func validateForwardAuth(app *Application) error {

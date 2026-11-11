@@ -47,6 +47,7 @@ var goldenScenarioNames = []string{
 	"backend-failover",
 	"app-maintenance",
 	"app-forward-auth",
+	"tls-passthrough",
 	"tcp-services",
 }
 
@@ -587,6 +588,24 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/tcp-services.crt-list.txt",
+		}
+	case "tls-passthrough":
+		st := goldenGlobalSettings(spoeMin, "crowdsec")
+		st.ListenIPv6 = true
+		st.ProxyProtocolCIDRs = []string{"192.168.88.1"}
+		st.TrustedProxyCIDRs = []string{"192.168.88.1"}
+		st.TLSPassthrough = []config.TLSPassthrough{
+			{ServerName: "vpn.example.com", BackendHost: "10.0.0.50", BackendPort: 443, AllowCIDRs: []string{"192.168.0.0/16"}, Enabled: true},
+			{ServerName: "*.k8s.example.com", BackendHost: "ingress.lan", BackendPort: 443, SendProxy: true, Enabled: true},
+			{ServerName: "off.example.com", BackendHost: "10.0.0.51", BackendPort: 443},
+		}
+		return RenderInput{
+			Settings: st,
+			Applications: []config.Application{
+				{ID: "t1", Name: "Web", PublicHost: "web.example.com", BackendHost: "10.0.0.40", BackendPort: 80, Profile: "balanced", CertificateID: "c1", Enabled: true},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/tls-passthrough.crt-list.txt",
 		}
 	case "app-forward-auth":
 		return RenderInput{

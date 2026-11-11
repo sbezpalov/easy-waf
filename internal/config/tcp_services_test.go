@@ -24,3 +24,32 @@ func TestValidateTCPServices(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateTLSPassthrough(t *testing.T) {
+	ok := []TLSPassthrough{
+		{ServerName: "vpn.example.com", BackendHost: "10.0.0.5", BackendPort: 443, AllowCIDRs: []string{"192.168.0.0/16"}},
+		{ServerName: "*.k8s.example.com", BackendHost: "ingress.lan", BackendPort: 443, SendProxy: true},
+	}
+	if err := validateTLSPassthrough(ok); err != nil {
+		t.Fatal(err)
+	}
+	bad := map[string][]TLSPassthrough{
+		"upper":    {{ServerName: "VPN.example.com", BackendHost: "h", BackendPort: 1}},
+		"no dot":   {{ServerName: "vpn", BackendHost: "h", BackendPort: 1}},
+		"inject":   {{ServerName: "a.com } || {", BackendHost: "h", BackendPort: 1}},
+		"mid star": {{ServerName: "a.*.com", BackendHost: "h", BackendPort: 1}},
+		"dup":      {{ServerName: "a.com", BackendHost: "h", BackendPort: 1}, {ServerName: "a.com", BackendHost: "h", BackendPort: 2}},
+		"port":     {{ServerName: "a.com", BackendHost: "h", BackendPort: 0}},
+		"host":     {{ServerName: "a.com", BackendHost: "h\n\tserver x", BackendPort: 1}},
+		"allow":    {{ServerName: "a.com", BackendHost: "h", BackendPort: 1, AllowCIDRs: []string{"x"}}},
+	}
+	for name, list := range bad {
+		if err := validateTLSPassthrough(list); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if !TLSPassthroughMatches("*.k8s.example.com", "a.k8s.example.com") || TLSPassthroughMatches("*.k8s.example.com", "k8s.example.com") ||
+		!TLSPassthroughMatches("a.com", "a.com") || TLSPassthroughMatches("a.com", "b.a.com") {
+		t.Fatal("TLSPassthroughMatches")
+	}
+}

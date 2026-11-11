@@ -162,6 +162,13 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		}
 		out.TCPServices = v
 		return nil
+	case "tls_passthrough":
+		var v []TLSPassthrough
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		out.TLSPassthrough = v
+		return nil
 	case "notify_blocked_spike_threshold":
 		var v int
 		if err := json.Unmarshal(raw, &v); err != nil {
