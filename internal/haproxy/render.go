@@ -30,6 +30,8 @@ type AppRender struct {
 	Servers           []ServerRender
 	// MaintenanceBypassSrc is maintenance_bypass_cidrs joined for `src`.
 	MaintenanceBypassSrc string
+	// ForwardAuthBypassSrc is forward_auth_bypass_cidrs joined for `src`.
+	ForwardAuthBypassSrc string
 	MaxBodyBytes         int64
 	BlockMultipart       bool
 	Exposure             pathExposure
@@ -96,6 +98,10 @@ type RenderInput struct {
 	// ACMEBackendAddr is the ip:port the generated bk_acme backend points at.
 	// Render fills it from Settings.ACMEInternalHTTP; callers do not set it.
 	ACMEBackendAddr string `json:"-"`
+	// ForwardAuthLuaPath is the forward-auth.lua to load; empty uses
+	// DefaultForwardAuthLuaPath. UseForwardAuth is derived by Render.
+	ForwardAuthLuaPath string `json:"-"`
+	UseForwardAuth     bool   `json:"-"`
 	// TrustedProxySrc, ProxyProtocolSrc and RealIPFetch are derived from
 	// Settings by Render; callers do not set them.
 	TrustedProxySrc  string `json:"-"`
@@ -136,6 +142,9 @@ func Render(in RenderInput) (Rendered, error) {
 	// reach this function, and a backend that disagreed with the listener would
 	// leave HAProxy health-checking a closed port with no error anywhere.
 	in.ACMEBackendAddr = config.ACMEInternalHTTPOrDefault(in.Settings.ACMEInternalHTTP)
+	if in.ForwardAuthLuaPath == "" {
+		in.ForwardAuthLuaPath = DefaultForwardAuthLuaPath
+	}
 	in.TrustedProxySrc = joinCIDRs(in.Settings.TrustedProxyCIDRs)
 	in.ProxyProtocolSrc = joinCIDRs(in.Settings.ProxyProtocolCIDRs)
 	in.RealIPFetch = fmt.Sprintf("req.hdr_ip(%s,-1)", config.RealIPHeaderOrDefault(in.Settings.RealIPHeader))
@@ -215,6 +224,7 @@ func Render(in RenderInput) (Rendered, error) {
 			BackendUsesDNS:       usesDNS,
 			Servers:              servers,
 			MaintenanceBypassSrc: joinCIDRs(app.MaintenanceBypassCIDRs),
+			ForwardAuthBypassSrc: joinCIDRs(app.ForwardAuthBypassCIDRs),
 			MaxBodyBytes:         maxBody,
 			BlockMultipart:       blockMultipart,
 			Exposure:             exposure,
@@ -250,6 +260,12 @@ func Render(in RenderInput) (Rendered, error) {
 		}
 	}
 	in.BackendApps = apps
+	in.UseForwardAuth = false
+	for _, a := range apps {
+		if a.Application.ForwardAuthURL != "" {
+			in.UseForwardAuth = true
+		}
+	}
 	in.HTTPSApps = httpsApps
 	in.HTTPApps = httpApps
 	in.RedirectApps = redirectApps
@@ -419,6 +435,9 @@ const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand *
 global
 	log stdout format raw local0
 	maxconn 50000
+{{- if .UseForwardAuth}}
+	lua-load {{.ForwardAuthLuaPath}}
+{{- end}}
 	# The stock haproxy.service starts as root; drop it after binding.
 	user haproxy
 	group haproxy
@@ -643,6 +662,20 @@ backend {{backendName $a.Application.PublicHost}}
 {{- else}}
 	http-request deny deny_status 429 if rl_abuse_{{$i}}
 {{- end}}
+{{- end}}
+{{- if $a.Application.ForwardAuthURL}}
+	# Forward auth, fail closed: only a 2xx answer from the auth service reaches the servers{{if $a.ForwardAuthBypassSrc}}; the bypass sources skip it{{end}}.
+	http-request del-header Remote-User
+	http-request del-header Remote-Groups
+	http-request del-header Remote-Email
+	http-request del-header Remote-Name
+	http-request lua.easywaf_auth "{{$a.Application.ForwardAuthURL}}"{{if $a.ForwardAuthBypassSrc}} if !{ src {{$a.ForwardAuthBypassSrc}} }{{end}}
+	http-request redirect location %[var(txn.auth_location)] code 302 if !{ var(txn.auth_ok) -m bool } { var(txn.auth_location) -m found }{{if $a.ForwardAuthBypassSrc}} !{ src {{$a.ForwardAuthBypassSrc}} }{{end}}
+	http-request deny deny_status 401 if !{ var(txn.auth_ok) -m bool }{{if $a.ForwardAuthBypassSrc}} !{ src {{$a.ForwardAuthBypassSrc}} }{{end}}
+	http-request set-header Remote-User %[var(txn.auth_remote_user)] if { var(txn.auth_remote_user) -m found }
+	http-request set-header Remote-Groups %[var(txn.auth_remote_groups)] if { var(txn.auth_remote_groups) -m found }
+	http-request set-header Remote-Email %[var(txn.auth_remote_email)] if { var(txn.auth_remote_email) -m found }
+	http-request set-header Remote-Name %[var(txn.auth_remote_name)] if { var(txn.auth_remote_name) -m found }
 {{- end}}{{if $a.Exposure.AppServer}}
 	http-request set-timeout server {{$a.Exposure.AppServer}}s{{end}}{{range $p := $a.Exposure.BackPaths}}
 	acl {{$p.Name}} path -m str {{$p.Exact}}

@@ -73,10 +73,10 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 	var a config.Application
 	var certID sql.NullString
 	var hp, pp sql.NullString
-	var rpJSON, secJSON, ppJSON, bsJSON, mbJSON []byte
+	var rpJSON, secJSON, ppJSON, bsJSON, mbJSON, faJSON []byte
 	var tlsCA, tlsSNI sql.NullString
 	if err := scan(&a.ID, &a.Name, &a.PublicHost, &a.BackendHost, &a.BackendPort,
-		&a.BackendHTTPS, &a.BackendTLSVerify, &tlsCA, &tlsSNI, &bsJSON, &a.BackendBalance, &a.Maintenance, &mbJSON, &a.WebSocket, &hp, &pp, &rpJSON, &ppJSON, &a.Profile, &certID, &a.ListenMode, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.BackendHTTPS, &a.BackendTLSVerify, &tlsCA, &tlsSNI, &bsJSON, &a.BackendBalance, &a.Maintenance, &mbJSON, &a.ForwardAuthURL, &faJSON, &a.WebSocket, &hp, &pp, &rpJSON, &ppJSON, &a.Profile, &certID, &a.ListenMode, &a.Enabled, &secJSON, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return a, err
 	}
 	if tlsCA.Valid {
@@ -94,6 +94,11 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 	if len(mbJSON) > 0 && string(mbJSON) != "null" && string(mbJSON) != "[]" {
 		if err := json.Unmarshal(mbJSON, &a.MaintenanceBypassCIDRs); err != nil {
 			return a, fmt.Errorf("decode application %q maintenance_bypass_cidrs: %w", a.ID, err)
+		}
+	}
+	if len(faJSON) > 0 && string(faJSON) != "null" && string(faJSON) != "[]" {
+		if err := json.Unmarshal(faJSON, &a.ForwardAuthBypassCIDRs); err != nil {
+			return a, fmt.Errorf("decode application %q forward_auth_bypass_cidrs: %w", a.ID, err)
 		}
 	}
 	if certID.Valid {
@@ -137,7 +142,7 @@ func scanApplicationFromRow(scan func(dest ...any) error) (config.Application, e
 func (s *Store) ListApplications(ctx context.Context) ([]config.Application, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, public_host, backend_host, backend_port, backend_https,
-		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs, websocket,
+		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs, forward_auth_url, forward_auth_bypass_cidrs, websocket,
 		       health_path, path_prefix, restricted_paths, path_policy, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications ORDER BY public_host`)
 	if err != nil {
@@ -159,7 +164,7 @@ func (s *Store) ListApplications(ctx context.Context) ([]config.Application, err
 func (s *Store) GetApplication(ctx context.Context, id string) (config.Application, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, public_host, backend_host, backend_port, backend_https,
-		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs, websocket,
+		       backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs, forward_auth_url, forward_auth_bypass_cidrs, websocket,
 		       health_path, path_prefix, restricted_paths, path_policy, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at
 		FROM applications WHERE id = $1`, id)
 	a, err := scanApplicationFromRow(row.Scan)
@@ -222,13 +227,21 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	if err != nil {
 		return err
 	}
+	faBypass := a.ForwardAuthBypassCIDRs
+	if faBypass == nil {
+		faBypass = []string{}
+	}
+	faJSON, err := json.Marshal(faBypass)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO applications (
 			id, name, public_host, backend_host, backend_port, backend_https,
 			backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, websocket,
 			health_path, path_prefix, restricted_paths, path_policy, profile, certificate_id, listen_mode, enabled, security, created_at, updated_at,
-			backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+			backend_servers, backend_balance, maintenance, maintenance_bypass_cidrs, forward_auth_url, forward_auth_bypass_cidrs
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			public_host = EXCLUDED.public_host,
@@ -242,6 +255,8 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 			backend_balance = EXCLUDED.backend_balance,
 			maintenance = EXCLUDED.maintenance,
 			maintenance_bypass_cidrs = EXCLUDED.maintenance_bypass_cidrs,
+			forward_auth_url = EXCLUDED.forward_auth_url,
+			forward_auth_bypass_cidrs = EXCLUDED.forward_auth_bypass_cidrs,
 			websocket = EXCLUDED.websocket,
 			health_path = EXCLUDED.health_path,
 			path_prefix = EXCLUDED.path_prefix,
@@ -256,7 +271,7 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS,
 		a.BackendTLSVerify, nullStrPtr(a.BackendTLSCAFile), nullStrPtr(a.BackendTLSServerName), a.WebSocket,
 		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, ppJSON, a.Profile, nullStrPtr(a.CertificateID), a.ListenMode, a.Enabled, secJSON, a.CreatedAt, a.UpdatedAt,
-		bsJSON, a.BackendBalance, a.Maintenance, mbJSON)
+		bsJSON, a.BackendBalance, a.Maintenance, mbJSON, a.ForwardAuthURL, faJSON)
 	return err
 }
 

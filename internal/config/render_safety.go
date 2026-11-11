@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -311,6 +312,9 @@ func ValidateApplicationRenderSafety(app *Application) error {
 	if err := validateSourceList("maintenance_bypass_cidrs", app.MaintenanceBypassCIDRs); err != nil {
 		return err
 	}
+	if err := validateForwardAuth(app); err != nil {
+		return err
+	}
 	if err := ValidateHAProxyPath("health_path", app.HealthPath); err != nil {
 		return err
 	}
@@ -403,4 +407,20 @@ func validateTCPServices(list []TCPService) error {
 		}
 	}
 	return nil
+}
+
+func validateForwardAuth(app *Application) error {
+	if u := app.ForwardAuthURL; u != "" {
+		if len(u) > 512 || strings.ContainsAny(u, " \t\r\n\"'\\%#{}$") {
+			return fmt.Errorf("forward_auth_url: invalid characters")
+		}
+		p, err := url.Parse(u)
+		if err != nil || (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" || p.User != nil {
+			return fmt.Errorf("forward_auth_url: must be an http:// or https:// URL")
+		}
+	}
+	if len(app.ForwardAuthBypassCIDRs) > 64 {
+		return fmt.Errorf("forward_auth_bypass_cidrs: at most 64 entries")
+	}
+	return validateSourceList("forward_auth_bypass_cidrs", app.ForwardAuthBypassCIDRs)
 }

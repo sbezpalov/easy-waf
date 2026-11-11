@@ -59,9 +59,14 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		{Name: "rtsp", ListenPort: 8554, BackendHost: "frigate.lan", BackendPort: 8554, Enabled: true},
 	}
 
+	luaPath := filepath.Join(hdir, "forward-auth.lua")
+	if err := os.WriteFile(luaPath, []byte(ForwardAuthLua), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	crtListPath := filepath.Join(hdir, "crt-list.txt")
 	in := RenderInput{
-		Settings: st,
+		Settings:           st,
+		ForwardAuthLuaPath: luaPath,
 		Applications: []config.Application{
 			{
 				ID:            "a1",
@@ -72,6 +77,11 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 				Profile:       "balanced",
 				CertificateID: "c1",
 				Enabled:       true,
+			},
+			{
+				ID: "fa", Name: "Behind Authelia", PublicHost: "nvr.example.com", BackendHost: "127.0.0.1", BackendPort: 8082,
+				ForwardAuthURL: "http://127.0.0.1:9091/api/authz/forward-auth", ForwardAuthBypassCIDRs: []string{"192.168.1.0/24"},
+				Profile: "balanced", CertificateID: "c1", Enabled: true,
 			},
 			{
 				ID: "a2", Name: "Failover in maintenance", PublicHost: "down.example.com", BackendHost: "127.0.0.1", BackendPort: 8081,

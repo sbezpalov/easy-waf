@@ -273,11 +273,18 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
-	var a config.Application
-	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	var a config.Application
+	if err := json.Unmarshal(raw, &a); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var present map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &present)
 	if _, err := profiles.Resolve(a.Profile); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -313,6 +320,13 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if haveOld && a.MaintenanceBypassCIDRs == nil {
 		a.MaintenanceBypassCIDRs = old.MaintenanceBypassCIDRs
+	}
+	// An older client that does not know forward auth must not switch it off.
+	if _, ok := present["forward_auth_url"]; haveOld && !ok {
+		a.ForwardAuthURL = old.ForwardAuthURL
+	}
+	if haveOld && a.ForwardAuthBypassCIDRs == nil {
+		a.ForwardAuthBypassCIDRs = old.ForwardAuthBypassCIDRs
 	}
 	if haveOld && a.BackendServers == nil {
 		a.BackendServers = old.BackendServers

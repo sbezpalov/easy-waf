@@ -1,11 +1,13 @@
 # ADR 0005 — Forward authentication in front of a published application
 
-- **Status:** proposed
+- **Status:** accepted (option C)
 - **Date:** 2026-11-10
 - **Deciders:** repository maintainer
 - **Context version:** 1.6.0
-- **Implementation:** none. Published applications are not sent to Authelia,
-  Authentik, or any other login service.
+- **Implementation:** option C — per-application `forward_auth_url`, fail
+  closed. HAProxy 2.8 has no native auth subrequest, so a small Lua action on
+  the built-in httpclient (`internal/haproxy/forward-auth.lua`) does the call;
+  no third-party Lua library.
 
 ## Context
 

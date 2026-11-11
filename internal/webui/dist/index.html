@@ -357,6 +357,12 @@
           <label>Maintenance bypass <span class="dash-note">(IPs/CIDRs that still reach the app)</span>
             <input id="app-maint-bypass" placeholder="192.168.1.0/24, 10.0.0.5" style="min-width:16rem" />
           </label>
+          <label>Forward auth URL <span class="dash-note">(Authelia: http://authelia-host:9091/api/authz/forward-auth; empty = off. While the auth service is down, this app is closed.)</span>
+            <input id="app-fwd-auth" placeholder="http://192.168.1.10:9091/api/authz/forward-auth" style="min-width:24rem" />
+          </label>
+          <label>Forward auth bypass <span class="dash-note">(IPs/CIDRs that skip the login)</span>
+            <input id="app-fwd-auth-bypass" placeholder="192.168.1.0/24" style="min-width:16rem" />
+          </label>
         </div>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>Listen mode
@@ -1325,6 +1331,8 @@
     document.getElementById('backend-balance').value = '';
     document.getElementById('app-maint').checked = false;
     document.getElementById('app-maint-bypass').value = '';
+    document.getElementById('app-fwd-auth').value = '';
+    document.getElementById('app-fwd-auth-bypass').value = '';
     document.getElementById('behttps').checked = false;
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
@@ -1944,6 +1952,8 @@
     document.getElementById('backend-balance').value = a.backend_balance || '';
     document.getElementById('app-maint').checked = !!a.maintenance;
     document.getElementById('app-maint-bypass').value = (a.maintenance_bypass_cidrs || []).join(', ');
+    document.getElementById('app-fwd-auth').value = a.forward_auth_url || '';
+    document.getElementById('app-fwd-auth-bypass').value = (a.forward_auth_bypass_cidrs || []).join(', ');
     document.getElementById('behttps').checked = !!a.backend_https;
     document.getElementById('ws').checked = !!a.websocket;
     document.getElementById('profile').value = a.profile || 'balanced';
@@ -3782,6 +3792,8 @@
         backend_balance: document.getElementById('backend-balance').value,
         maintenance: document.getElementById('app-maint').checked,
         maintenance_bypass_cidrs: document.getElementById('app-maint-bypass').value.split(/[\s,]+/).filter(Boolean),
+        forward_auth_url: document.getElementById('app-fwd-auth').value.trim(),
+        forward_auth_bypass_cidrs: document.getElementById('app-fwd-auth-bypass').value.split(/[\s,]+/).filter(Boolean),
         backend_https: document.getElementById('behttps').checked,
         websocket: document.getElementById('ws').checked,
         profile: document.getElementById('profile').value,

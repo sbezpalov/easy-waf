@@ -39,6 +39,10 @@ Panel users are `admin` or `viewer`. `auth.ReadOnlyGate` refuses a viewer every 
 
 Each panel user can turn on TOTP (RFC 6238, ADR 0004 option C). The secret is created only after a step-up, becomes active only after a correct code, and is stored in PostgreSQL next to the password hash; each 30-second step is accepted once (`totp_last_step`). Ten recovery codes (80 bits each) are shown once and stored as SHA-256 hashes; each works once. Wrong codes count against the login rate limit. Step-up for host operations stays a password confirmation. An admin can reset another user's TOTP; with no admin left, `easy-waf-admin disable-totp -user NAME` on the console turns it off.
 
+## Forward authentication
+
+An application with `forward_auth_url` is asked about on every request by a small Lua action (`forward-auth.lua`, HAProxy's built-in httpclient, 3 s timeout). It fails closed: no answer, a timeout or any non-2xx status is a 401 or the auth service's sign-in redirect, never a pass. Client-sent `Remote-User`, `Remote-Groups`, `Remote-Email` and `Remote-Name` are always removed, so a backend can trust them only when they come from the auth service. Sources in `forward_auth_bypass_cidrs` skip the check entirely. The management panel is never behind forward auth.
+
 ## CSRF Protection
 
 The management API uses **JWT Bearer tokens** in the `Authorization` header, stored in `sessionStorage` (not cookies). Browsers do not attach custom headers automatically on cross-origin form submissions or link navigations, which makes traditional CSRF attacks ineffective against this API.

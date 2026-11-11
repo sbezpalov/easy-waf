@@ -114,8 +114,12 @@ type Application struct {
 	BackendBalance string `json:"backend_balance,omitempty"`
 	// Maintenance answers every request with a 503 maintenance page, without
 	// reaching the backend, except from MaintenanceBypassCIDRs.
-	Maintenance            bool             `json:"maintenance"`
-	MaintenanceBypassCIDRs []string         `json:"maintenance_bypass_cidrs,omitempty"`
+	Maintenance            bool     `json:"maintenance"`
+	MaintenanceBypassCIDRs []string `json:"maintenance_bypass_cidrs,omitempty"`
+	// ForwardAuthURL, when set, asks that auth service (Authelia, ...) about
+	// every request; only a 2xx answer reaches the servers (fail closed).
+	ForwardAuthURL         string           `json:"forward_auth_url,omitempty"`
+	ForwardAuthBypassCIDRs []string         `json:"forward_auth_bypass_cidrs,omitempty"`
 	WebSocket              bool             `json:"websocket"`
 	HealthPath             string           `json:"health_path,omitempty"`
 	PathPrefix             string           `json:"path_prefix,omitempty"`

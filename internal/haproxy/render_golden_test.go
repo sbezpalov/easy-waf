@@ -46,6 +46,7 @@ var goldenScenarioNames = []string{
 	"edge-network",
 	"backend-failover",
 	"app-maintenance",
+	"app-forward-auth",
 	"tcp-services",
 }
 
@@ -586,6 +587,20 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/tcp-services.crt-list.txt",
+		}
+	case "app-forward-auth":
+		return RenderInput{
+			Settings: goldenGlobalSettings(spoeMin, "crowdsec"),
+			Applications: []config.Application{
+				{
+					ID: "f1", Name: "Frigate", PublicHost: "nvr.example.com", BackendHost: "10.0.0.30", BackendPort: 5000,
+					ForwardAuthURL:         "http://192.168.1.10:9091/api/authz/forward-auth",
+					ForwardAuthBypassCIDRs: []string{"192.168.1.0/24"},
+					Profile:                "balanced", CertificateID: "c1", Enabled: true,
+				},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/app-forward-auth.crt-list.txt",
 		}
 	case "app-maintenance":
 		return RenderInput{

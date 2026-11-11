@@ -73,6 +73,9 @@ contents:
   - src: scripts/lib/backup-rotate.sh
     dst: /usr/share/easy-waf/scripts/lib/backup-rotate.sh
     file_info: { mode: 0644 }
+  - src: internal/haproxy/forward-auth.lua
+    dst: /usr/share/easy-waf/haproxy/forward-auth.lua
+    file_info: { mode: 0644 }
   - src: /usr/share/easy-waf/scripts/backup.sh
     dst: /usr/sbin/easy-waf-backup
     type: symlink
