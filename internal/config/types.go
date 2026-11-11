@@ -321,6 +321,9 @@ type GlobalSettings struct {
 	// ListenIPv6 adds IPv6-only binds on :80 and :443 next to the IPv4 ones.
 	// The host must have IPv6 enabled, or HAProxy cannot bind on reload.
 	ListenIPv6 bool `json:"listen_ipv6"`
+	// HTTP3 adds QUIC binds on UDP :443 to fe_https and advertises them with
+	// Alt-Svc. Needs HAProxy built with QUIC and UDP 443 open in the firewall.
+	HTTP3 bool `json:"http3"`
 	// TrustedProxyCIDRs are the proxies (CDN, NGFW, tunnel) whose RealIPHeader
 	// replaces the connection source on the edge. Requests from anywhere else keep
 	// their own source, so a client cannot spoof the header.

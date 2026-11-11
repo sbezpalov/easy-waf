@@ -109,6 +109,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.PrometheusEnabled)
 	case "listen_ipv6":
 		return json.Unmarshal(raw, &out.ListenIPv6)
+	case "http3":
+		return json.Unmarshal(raw, &out.HTTP3)
 	case "trusted_proxy_cidrs":
 		return json.Unmarshal(raw, &out.TrustedProxyCIDRs)
 	case "real_ip_header":

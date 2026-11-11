@@ -501,6 +501,7 @@
           <h3>Edge network</h3>
           <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
           <label><input id="edge-listen-ipv6" type="checkbox" /> Listen on IPv6 too (<code>[::]:80</code>, <code>[::]:443</code>). The host must have IPv6 enabled; publish AAAA records only after this is on.</label>
+          <label><input id="edge-http3" type="checkbox" /> HTTP/3 (QUIC on <code>UDP 443</code>, advertised with <code>Alt-Svc</code>). Open <code>udp dport 443</code> in <a href="#network">Network → Firewall</a> first; browsers fall back to HTTP/2 when UDP is blocked.</label>
           <h4 style="margin:0.9rem 0 0.3rem">Response headers</h4>
           <label><input id="edge-security-headers" type="checkbox" checked /> Add <code>X-Content-Type-Options: nosniff</code> and <code>Referrer-Policy: strict-origin-when-cross-origin</code> when the backend did not, and remove <code>Server</code> / <code>X-Powered-By</code></label>
           <label><input id="edge-hsts-subdomains" type="checkbox" /> HSTS <code>includeSubDomains</code>. Browsers will then refuse plain HTTP on every subdomain of a published host, for six months.</label>
@@ -2283,6 +2284,7 @@
   function loadEdgeNetworkFromSettings() {
     if (!cachedSettings) return;
     document.getElementById('edge-listen-ipv6').checked = !!cachedSettings.listen_ipv6;
+    document.getElementById('edge-http3').checked = !!cachedSettings.http3;
     document.getElementById('edge-security-headers').checked = cachedSettings.security_headers_enabled !== false;
     document.getElementById('edge-hsts-subdomains').checked = !!cachedSettings.hsts_include_subdomains;
     document.getElementById('edge-trusted-proxies').value = (cachedSettings.trusted_proxy_cidrs || []).join('\n');
@@ -2315,6 +2317,7 @@
   function edgeNetworkPatch() {
     return {
       listen_ipv6: document.getElementById('edge-listen-ipv6').checked,
+      http3: document.getElementById('edge-http3').checked,
       security_headers_enabled: document.getElementById('edge-security-headers').checked,
       hsts_include_subdomains: document.getElementById('edge-hsts-subdomains').checked,
       trusted_proxy_cidrs: edgeLines('edge-trusted-proxies'),

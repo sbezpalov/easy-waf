@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP/3.** `http3` adds QUIC listeners on UDP 443 and an `Alt-Svc` header (Security → Edge network). The default nftables ruleset now also allows UDP 443; an existing managed ruleset needs that rule added by hand.
 - **TLS passthrough on :443.** `tls_passthrough` sends TLS connections for listed SNI names (exact or `*.domain`) to their own TLS servers without decrypting them, optionally with PROXY protocol v2 and a source allowlist; all other HTTPS keeps going through the WAF with the real client address (Security → Edge network → TLS passthrough).
 - **Forward auth in front of applications.** Per-application `forward_auth_url` (e.g. Authelia `/api/authz/forward-auth`): every request is checked before it reaches the servers, fail closed, sign-in redirects passed through, `Remote-User`/`Remote-Groups`/`Remote-Email`/`Remote-Name` forwarded, optional bypass sources. ADR 0005 accepted (option C). Migration `025_forward_auth.sql`; ships `/usr/share/easy-waf/haproxy/forward-auth.lua`.
 - **Two-factor sign-in (TOTP).** Optional per panel user (Settings → Two-factor sign-in): authenticator-app codes at login, 10 one-time recovery codes stored as hashes, admin reset in Users → Panel users and `easy-waf-admin disable-totp` on the console. ADR 0004 accepted (option C). Migration `024_user_totp.sql`.

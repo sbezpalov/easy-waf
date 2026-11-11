@@ -52,6 +52,7 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 	st.SPOEConfigPath = spoePath
 	st.CrowdSecEngineName = "crowdsec"
 	st.ListenIPv6 = true
+	st.HTTP3 = true
 	st.TrustedProxyCIDRs = []string{"173.245.48.0/20", "2400:cb00::/32"}
 	st.ProxyProtocolCIDRs = []string{"192.168.88.1"}
 	st.TCPServices = []config.TCPService{

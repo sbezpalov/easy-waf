@@ -477,6 +477,10 @@ const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand *
 global
 	log stdout format raw local0
 	maxconn 50000
+{{- if and .Settings.HTTP3 .HasHTTPSFrontend}}
+	# Ubuntu builds HAProxy QUIC on the OpenSSL compatibility layer, which needs this (no 0-RTT).
+	limited-quic
+{{- end}}
 {{- if .UseForwardAuth}}
 	lua-load {{.ForwardAuthLuaPath}}
 {{- end}}
@@ -613,6 +617,12 @@ frontend fe_https
 	bind :::443 v6only ssl crt-list {{.CRTListPath}} alpn h2,http/1.1
 {{- end}}
 {{- end}}
+{{- if .Settings.HTTP3}}
+	bind quic4@:443 ssl crt-list {{.CRTListPath}} alpn h3
+{{- if .Settings.ListenIPv6}}
+	bind quic6@:::443 v6only ssl crt-list {{.CRTListPath}} alpn h3
+{{- end}}
+{{- end}}
 	mode http
 {{- if .HTTPSChainSocket}}
 {{- template "realIPHeader" .}}
@@ -638,6 +648,9 @@ frontend fe_https
 	http-response set-header Strict-Transport-Security "max-age=15552000{{if .Settings.HSTSIncludeSubdomains}}; includeSubDomains{{end}}" if { ssl_fc } !hsts_exempt
 {{- else}}
 	http-response set-header Strict-Transport-Security "max-age=15552000{{if .Settings.HSTSIncludeSubdomains}}; includeSubDomains{{end}}" if { ssl_fc }
+{{- end}}
+{{- if .Settings.HTTP3}}
+	http-response set-header Alt-Svc "h3=\":443\"; ma=86400"
 {{- end}}
 	# Universal blocks (all vhosts)
 	acl p_git     path_beg /.git

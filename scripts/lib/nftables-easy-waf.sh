@@ -37,7 +37,8 @@ easy_waf_nft_write_ruleset() {
 
   local edge_block=""
   if [[ "$edge" == "1" ]]; then
-    edge_block="    tcp dport { 80, 443 } accept"
+    edge_block="    tcp dport { 80, 443 } accept
+    udp dport 443 accept"
   fi
 
   mkdir -p "$(dirname "$EASY_WAF_NFT_RULES")"

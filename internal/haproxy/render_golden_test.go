@@ -48,6 +48,7 @@ var goldenScenarioNames = []string{
 	"app-maintenance",
 	"app-forward-auth",
 	"tls-passthrough",
+	"http3",
 	"tcp-services",
 }
 
@@ -606,6 +607,18 @@ func goldenFixture(name string) RenderInput {
 			},
 			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
 			CRTListPath:  "testdata/golden/tls-passthrough.crt-list.txt",
+		}
+	case "http3":
+		st := goldenGlobalSettings(spoeMin, "crowdsec")
+		st.ListenIPv6 = true
+		st.HTTP3 = true
+		return RenderInput{
+			Settings: st,
+			Applications: []config.Application{
+				{ID: "h1", Name: "Web", PublicHost: "web.example.com", BackendHost: "10.0.0.40", BackendPort: 80, Profile: "balanced", CertificateID: "c1", Enabled: true},
+			},
+			Certificates: map[string]config.Certificate{"c1": {ID: "c1", BundlePath: certA}},
+			CRTListPath:  "testdata/golden/http3.crt-list.txt",
 		}
 	case "app-forward-auth":
 		return RenderInput{
