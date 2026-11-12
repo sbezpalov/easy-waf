@@ -117,12 +117,24 @@ sudo apt install ./easy-waf_X.Y.Z_amd64.deb
 sudo bash scripts/smoke-appliance.sh
 ```
 
-`postinst` restarts **only the units that were already running**, so a
-deliberately stopped service stays stopped. Database migrations still run when
-the API starts: only those not yet in `schema_migrations`, each in one
-transaction, so a failed migration leaves the schema as it was. Your `/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as
-a conffile, and if a release changes the shipped default you get a prompt with
-the usual `Y/I/N/O/D/Z` options rather than a silent overwrite.
+`postinst` installs the polkit rule into `/etc/polkit-1/rules.d/` (so Apply can
+reload HAProxy) and the HAProxy systemd drop-in under
+`/etc/systemd/system/haproxy.service.d/easy-waf.conf` (unprivileged master on
+the generated config). It restarts **only the units that were already running**,
+so a deliberately stopped service stays stopped. Database migrations still run
+when the API starts: only those not yet in `schema_migrations`, each in one
+transaction, so a failed migration leaves the schema as it was. Your
+`/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as a conffile, and if a
+release changes the shipped default you get a prompt with the usual
+`Y/I/N/O/D/Z` options rather than a silent overwrite.
+
+After a package-only upgrade, confirm:
+
+```bash
+test -f /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules
+systemctl cat haproxy.service | grep -F /var/lib/easy-waf/haproxy/haproxy.cfg
+sudo bash scripts/smoke-appliance.sh
+```
 
 **Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`;
 without the flag `apt` refuses. Below 1.5.0 the edge keeps serving its current
@@ -142,4 +154,6 @@ PostgreSQL database, or the nftables policy — `postrm` prints how to remove th
 state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
 
 **Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
-directory or `.tar.gz` of new binaries; it reuses `install.sh` and restarts units.
+directory or `.tar.gz` of new binaries; it flattens a nested `dist/` from the
+release tarball (and fails if `easy-waf-api` is still missing), reuses
+`install.sh`, and restarts **hostd**, **api**, and **acmed**.

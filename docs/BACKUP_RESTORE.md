@@ -70,8 +70,16 @@ Steps:
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
 7. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
-8. **`POST /api/v1/apply`** with **`Authorization: Bearer $EASY_WAF_ADMIN_TOKEN`** (from the shell environment **or** from the restored `easy-waf.env` after it is sourced) to regenerate HAProxy config and reload HAProxy (unless skipped).
+8. **`POST /api/v1/apply`** with **`Authorization: Bearer $EASY_WAF_ADMIN_TOKEN`** (from the shell environment **or** from the restored `easy-waf.env` after it is sourced) to regenerate HAProxy config and reload HAProxy (unless skipped). Needs a stepped-up session or the automation token.
 9. Restarts **`easy-waf-api`** and **`easy-waf-acmed`**.
+
+After restore on a new image, confirm polkit + HAProxy drop-in (package `postinst` installs both):
+
+```bash
+test -f /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules
+systemctl cat haproxy.service | grep -F /var/lib/easy-waf/haproxy/haproxy.cfg
+sudo bash scripts/smoke-appliance.sh
+```
 
 Environment:
 

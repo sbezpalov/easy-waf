@@ -14,6 +14,10 @@ Environment=EASY_WAF_STATE_DIR=/var/lib/easy-waf
 ExecStart=/usr/sbin/easy-waf-acmed
 Restart=on-failure
 RestartSec=5
+# Bound one issuance at 45m; wait for an in-flight Obtain to finish (or its
+# context deadline) instead of SIGKILL at the default ~90s stop timeout, which
+# left rows 'issuing' until the 1h stale reclaim and invited dual issuance.
+TimeoutStopSec=50min
 # acmed runs as the same account as the API and parses responses from the
 # internet (ACME CA, DNS provider APIs), so it gets at least the API's
 # sandbox. It writes only certificates and ACME state under the state dir;

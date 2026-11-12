@@ -50,6 +50,65 @@ create_layout() {
 	fi
 }
 
+# Package-only installs used to leave the polkit rule in /usr/share/easy-waf/,
+# so Apply could not reload haproxy.service. Copy it into rules.d on every
+# configure (idempotent).
+install_polkit_rule() {
+	src="/usr/share/easy-waf/99-easy-waf-haproxy.rules"
+	dst="/etc/polkit-1/rules.d/99-easy-waf-haproxy.rules"
+	if [ ! -f "$src" ]; then
+		return 0
+	fi
+	if [ ! -d /etc/polkit-1/rules.d ]; then
+		info "WARNING: /etc/polkit-1/rules.d missing — install polkitd so Apply can reload HAProxy"
+		return 0
+	fi
+	install -m 0644 "$src" "$dst"
+	info "Installed ${dst}"
+}
+
+# Preferred apt upgrade path must also put HAProxy on the easy-waf config
+# (unprivileged master). Without this, package-only installs keep stock root
+# HAProxy and ignore generated state.
+install_haproxy_dropin() {
+	src="/usr/share/easy-waf/haproxy-easy-waf-dropin.conf"
+	boot="/usr/share/easy-waf/haproxy-bootstrap.cfg"
+	dropin_dir="/etc/systemd/system/haproxy.service.d"
+	dropin="${dropin_dir}/easy-waf.conf"
+	cfg="${STATE_DIR}/haproxy/haproxy.cfg"
+
+	if [ ! -f "$src" ]; then
+		return 0
+	fi
+	if ! command -v systemctl >/dev/null 2>&1; then
+		return 0
+	fi
+	if ! systemctl cat haproxy.service >/dev/null 2>&1; then
+		return 0
+	fi
+
+	mkdir -p "${STATE_DIR}/haproxy"
+	if [ ! -s "$cfg" ] && [ -f "$boot" ]; then
+		sed "s|__EASY_WAF_STATE__|${STATE_DIR}|g" "$boot" >"${cfg}.tmp"
+		install -m 0640 -o easy-waf -g easy-waf "${cfg}.tmp" "$cfg" 2>/dev/null || install -m 0640 "${cfg}.tmp" "$cfg"
+		rm -f "${cfg}.tmp"
+		info "Installed bootstrap ${cfg}"
+	fi
+
+	mkdir -p "$dropin_dir"
+	rm -f "${dropin_dir}/50-easy-waf.conf" 2>/dev/null || true
+	if [ -f "$dropin" ] && ! grep -q 'easy-waf\|__EASY_WAF_STATE__\|Easy Home WAF' "$dropin" 2>/dev/null; then
+		info "WARNING: ${dropin} exists and does not look like easy-waf — leaving it alone"
+		info "         Run: sudo bash /usr/share/easy-waf/../scripts/fix-haproxy-easy-waf-dropin.sh"
+		info "         (or from a checkout: scripts/fix-haproxy-easy-waf-dropin.sh)"
+		return 0
+	fi
+	sed "s|__EASY_WAF_STATE__|${STATE_DIR}|g" "$src" >"${dropin}.tmp"
+	install -m 0644 "${dropin}.tmp" "$dropin"
+	rm -f "${dropin}.tmp"
+	info "Installed ${dropin} (HAProxy uses ${STATE_DIR}/haproxy/haproxy.cfg)"
+}
+
 # HAProxy reads the generated configuration and the certificates; easy-waf reads
 # the HAProxy stats socket under /run/haproxy. Neither is a privilege grant
 # beyond those two directories.
@@ -116,6 +175,8 @@ case "$1" in
 configure)
 	create_layout
 	link_haproxy_groups
+	install_polkit_rule
+	install_haproxy_dropin
 	warn_shadowing_units
 
 	if systemd_available; then
