@@ -35,6 +35,14 @@ const settingsKeyGlobal = "global_settings_json"
 // easy-waf-api and easy-waf-acmed sessions.
 const haproxyApplyAdvisoryLockKey int64 = 0x455741464150504c // "EWAFAPPL"
 
+// settingsAdvisoryLockKey serializes global settings RMW across processes
+// (api vs admin CLI), complementing the in-process settingsMu.
+const settingsAdvisoryLockKey int64 = 0x4557414653455453 // "EWAFSETS"
+
+// ApplyOrUndoAdvisoryLockKey serializes edge apply compensation across handlers
+// so concurrent undos cannot restore a stale preimage over a newer row.
+const ApplyOrUndoAdvisoryLockKey int64 = 0x45574146414F5501 // "EWAFAO1"
+
 // Engine coordinates render + apply + revision bookkeeping. It is shared by
 // every API request goroutine, so its settings and GeoIP runtime sit behind a
 // mutex: read them with Settings / GeoIP, change them with SetSettings or
@@ -115,6 +123,11 @@ func (e *Engine) GeoIP() *geoip.Runtime {
 // in-memory copy means a change made meanwhile by another process (the admin
 // CLI, say) is kept instead of being overwritten.
 func (e *Engine) UpdateSettings(ctx context.Context, fn func(config.GlobalSettings) (config.GlobalSettings, error)) (config.GlobalSettings, error) {
+	release, err := e.Store.AcquireAdvisoryLock(ctx, settingsAdvisoryLockKey)
+	if err != nil {
+		return config.GlobalSettings{}, err
+	}
+	defer func() { _ = release() }()
 	e.settingsMu.Lock()
 	defer e.settingsMu.Unlock()
 	cur, err := e.readSettings(ctx)

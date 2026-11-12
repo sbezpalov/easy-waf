@@ -873,10 +873,33 @@ func (s *Store) DeleteBlockedUserAgent(ctx context.Context, id string) error {
 }
 
 // FactoryReset removes all configuration rows (destructive). Schema is kept.
+// Truncates every public base table except schema_migrations so new tables are
+// covered without editing this list for each migration.
 func (s *Store) FactoryReset(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
-		TRUNCATE applications, certificates, settings, audit_log, config_revisions, ipwl_local, ipbl_local, ipbl_external_sources, blocked_user_agents, users, operator_enrollment
-		RESTART IDENTITY CASCADE`)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT quote_ident(tablename)
+		FROM pg_tables
+		WHERE schemaname = 'public' AND tablename <> 'schema_migrations'
+		ORDER BY tablename`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(tables) == 0 {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, "TRUNCATE "+strings.Join(tables, ", ")+" RESTART IDENTITY CASCADE")
 	return err
 }
 

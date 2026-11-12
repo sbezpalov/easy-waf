@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -125,10 +126,14 @@ func (s *Store) migrate(ctx context.Context) (retErr error) {
 	}
 	for v := range applied {
 		if v > latest {
-			// An older binary on a newer schema, e.g. after a package downgrade.
-			// Newer migrations only add, so keep running, but say so.
-			log.Printf("[easy-waf] store: database schema has migration %d, newer than this binary knows (%d); was the package downgraded?", v, latest)
-			break
+			// Older binary on a newer schema (package downgrade). Fail closed
+			// unless the operator opts in — undefined column/behavior foot-guns.
+			msg := fmt.Sprintf("database schema has migration %d, newer than this binary knows (%d); refuse to continue after a package downgrade", v, latest)
+			if os.Getenv("EASY_WAF_ALLOW_SCHEMA_DOWNGRADE") == "1" {
+				log.Printf("[easy-waf] store: WARNING: %s (EASY_WAF_ALLOW_SCHEMA_DOWNGRADE=1)", msg)
+				break
+			}
+			return fmt.Errorf("migrate: %s; set EASY_WAF_ALLOW_SCHEMA_DOWNGRADE=1 to override", msg)
 		}
 	}
 	return nil

@@ -227,7 +227,7 @@ func wipeApplianceData(ctx context.Context, st *store.Store, stateDir string) {
 	}
 	log.Print("truncated configuration tables")
 
-	sub := []string{"haproxy", "revisions", "certs", "acme", "secrets"}
+	sub := []string{"haproxy", "revisions", "certs", "acme", "secrets", "rollback", "staging", "geoip", "apt"}
 	for _, name := range sub {
 		p := filepath.Join(stateDir, name)
 		if err := os.RemoveAll(p); err != nil {

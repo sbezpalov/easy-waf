@@ -139,6 +139,36 @@ func (s *Store) EnsureOperatorEnrollment(ctx context.Context, stateDir string) (
 	return true, path, nil
 }
 
+// VerifyEnrollmentSecret checks the one-time secret without consuming it or
+// creating a user. Call this before expensive password hashing so invalid
+// secrets fail fast.
+func (s *Store) VerifyEnrollmentSecret(ctx context.Context, secret string) error {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrEnrollmentAlreadyCompleted
+	}
+	var hash string
+	var consumed sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT secret_hash, consumed_at FROM operator_enrollment WHERE id = TRUE`).Scan(&hash, &consumed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrEnrollmentNotPending
+	}
+	if err != nil {
+		return err
+	}
+	if consumed.Valid {
+		return ErrEnrollmentAlreadyCompleted
+	}
+	if !enroll.SecretEqual(secret, hash) {
+		return ErrEnrollmentSecretMismatch
+	}
+	return nil
+}
+
 // ConsumeEnrollmentAndCreateUser atomically consumes the one-time secret and creates the first operator.
 func (s *Store) ConsumeEnrollmentAndCreateUser(ctx context.Context, secret, username, passwordHash string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
