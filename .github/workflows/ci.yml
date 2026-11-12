@@ -111,6 +111,9 @@ jobs:
       - name: Linux artifact + shell LF checks
         run: bash scripts/check-linux-artifacts.sh
 
+      - name: Current version references
+        run: bash scripts/check-version-docs.sh
+
       - name: Assert scripts/**/*.sh use LF only
         run: |
           set -euo pipefail
