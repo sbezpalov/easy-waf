@@ -34,7 +34,6 @@ var (
 	// Matches journal.BlockedLines; interactive API queries still clamp to 2000.
 	journalMaxLines = 5000
 
-
 	jailNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
 	journalPriority = map[string]struct{}{
