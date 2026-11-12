@@ -387,7 +387,9 @@ func buildCRTList(in RenderInput) []string {
 			continue
 		}
 		seen[bundle] = struct{}{}
-		lines = append(lines, fmt.Sprintf("%s alpn h2,http/1.1", bundle))
+		// ALPN belongs on the bind line only. crt-list alpn overrides bind
+		// ALPN (including quic* `alpn h3`), which broke HTTP/3 negotiation.
+		lines = append(lines, bundle)
 	}
 	return lines
 }
