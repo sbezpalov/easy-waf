@@ -343,6 +343,52 @@ func restoreArtifactManifest(
 	for _, file := range manifest.ManagedFiles {
 		targetSet[artifactPathKey(file.Path)] = struct{}{}
 	}
+
+	// Restore + verify replacements first. Deleting obsolete files before
+	// restore left a crash window with a partial managed set (especially on
+	// manual Rollback).
+	files := append([]artifactManifestFile(nil), manifest.ManagedFiles...)
+	sort.SliceStable(files, func(i, j int) bool {
+		iConfig := sameArtifactPath(files[i].Path, manifest.ConfigPath)
+		jConfig := sameArtifactPath(files[j].Path, manifest.ConfigPath)
+		if iConfig != jConfig {
+			return !iConfig
+		}
+		return files[i].Path < files[j].Path
+	})
+	snapshotDir := filepath.Dir(manifestPath)
+	for _, file := range files {
+		backupAbs, err := cleanBackupPath(snapshotDir, file.BackupPath)
+		if err != nil {
+			return artifactManifest{}, err
+		}
+		if err := copyFileAtomic(backupAbs, file.Path, os.FileMode(file.Mode)); err != nil {
+			return artifactManifest{}, fmt.Errorf("restore managed artifact %s: %w", file.Path, err)
+		}
+		got, err := sha256HexFile(file.Path)
+		if err != nil {
+			return artifactManifest{}, fmt.Errorf("verify restored artifact %s: %w", file.Path, err)
+		}
+		if !strings.EqualFold(got, file.SHA256) {
+			return artifactManifest{}, fmt.Errorf("restored artifact checksum mismatch: %s", file.Path)
+		}
+	}
+
+	currentConfigPath = normalizeArtifactPath(currentConfigPath)
+	if currentConfigPath != "" && !sameArtifactPath(currentConfigPath, manifest.ConfigPath) {
+		configFile, ok := manifestFileForPath(manifest, manifest.ConfigPath)
+		if !ok {
+			return artifactManifest{}, fmt.Errorf("artifact manifest does not contain its config path %s", manifest.ConfigPath)
+		}
+		backupAbs, err := cleanBackupPath(snapshotDir, configFile.BackupPath)
+		if err != nil {
+			return artifactManifest{}, err
+		}
+		if err := copyFileAtomic(backupAbs, currentConfigPath, os.FileMode(configFile.Mode)); err != nil {
+			return artifactManifest{}, fmt.Errorf("restore config at current path %s: %w", currentConfigPath, err)
+		}
+	}
+
 	for _, path := range currentManaged {
 		path = normalizeArtifactPath(path)
 		if path == "" {
@@ -363,41 +409,6 @@ func restoreArtifactManifest(
 		}
 		if err := os.Remove(path); err != nil {
 			return artifactManifest{}, fmt.Errorf("remove obsolete managed artifact %s: %w", path, err)
-		}
-	}
-
-	files := append([]artifactManifestFile(nil), manifest.ManagedFiles...)
-	sort.SliceStable(files, func(i, j int) bool {
-		iConfig := sameArtifactPath(files[i].Path, manifest.ConfigPath)
-		jConfig := sameArtifactPath(files[j].Path, manifest.ConfigPath)
-		if iConfig != jConfig {
-			return !iConfig
-		}
-		return files[i].Path < files[j].Path
-	})
-	snapshotDir := filepath.Dir(manifestPath)
-	for _, file := range files {
-		backupAbs, err := cleanBackupPath(snapshotDir, file.BackupPath)
-		if err != nil {
-			return artifactManifest{}, err
-		}
-		if err := copyFileAtomic(backupAbs, file.Path, os.FileMode(file.Mode)); err != nil {
-			return artifactManifest{}, fmt.Errorf("restore managed artifact %s: %w", file.Path, err)
-		}
-	}
-
-	currentConfigPath = normalizeArtifactPath(currentConfigPath)
-	if currentConfigPath != "" && !sameArtifactPath(currentConfigPath, manifest.ConfigPath) {
-		configFile, ok := manifestFileForPath(manifest, manifest.ConfigPath)
-		if !ok {
-			return artifactManifest{}, fmt.Errorf("artifact manifest does not contain its config path %s", manifest.ConfigPath)
-		}
-		backupAbs, err := cleanBackupPath(snapshotDir, configFile.BackupPath)
-		if err != nil {
-			return artifactManifest{}, err
-		}
-		if err := copyFileAtomic(backupAbs, currentConfigPath, os.FileMode(configFile.Mode)); err != nil {
-			return artifactManifest{}, fmt.Errorf("restore config at current path %s: %w", currentConfigPath, err)
 		}
 	}
 	return manifest, nil

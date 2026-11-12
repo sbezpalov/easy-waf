@@ -54,6 +54,25 @@ type feedOutcome struct {
 	lastError string
 }
 
+// feedFromCacheOnly merges the last-good copy without touching the network.
+func feedFromCacheOnly(src config.IPBLExternalSource, cacheDir string, now time.Time) feedOutcome {
+	if cacheDir == "" {
+		return feedOutcome{lastError: "feed fetch skipped and no cache dir"}
+	}
+	lines, fetched, cerr := readFeedCache(cacheDir, src)
+	switch {
+	case errors.Is(cerr, fs.ErrNotExist):
+		return feedOutcome{lastError: "no cached feed copy yet"}
+	case cerr != nil:
+		return feedOutcome{lastError: "no usable cached feed copy: " + cerr.Error()}
+	case now.Sub(fetched) > FeedMaxStale:
+		return feedOutcome{lastError: fmt.Sprintf("cached feed from %s is older than %s and was dropped",
+			fetched.UTC().Format(time.RFC3339), FeedMaxStale)}
+	default:
+		return feedOutcome{lines: lines}
+	}
+}
+
 // refreshFeed downloads src with fetch. On success the valid entries are
 // stored as the source's last-known-good copy. On failure the last-known-good
 // copy is used when it was downloaded from the same URL less than FeedMaxStale

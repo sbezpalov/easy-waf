@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
@@ -41,6 +42,10 @@ func (u *LegoUser) GetPrivateKey() crypto.PrivateKey {
 
 // registerLegoClient builds user + lego.Client (challenge not yet configured).
 func registerLegoClient(email, accountKeyPath string, staging bool) (*LegoUser, *lego.Client, error) {
+	return registerLegoClientTimeout(email, accountKeyPath, staging, 0)
+}
+
+func registerLegoClientTimeout(email, accountKeyPath string, staging bool, timeout time.Duration) (*LegoUser, *lego.Client, error) {
 	privateKey, err := loadOrCreatePrivateKey(accountKeyPath)
 	if err != nil {
 		return nil, nil, err
@@ -53,12 +58,40 @@ func registerLegoClient(email, accountKeyPath string, staging bool) (*LegoUser, 
 	} else {
 		cfg.CADirURL = lego.LEDirectoryProduction
 	}
+	if timeout > 0 {
+		cfg.Certificate.Timeout = timeout
+	}
 
 	client, err := lego.NewClient(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 	return user, client, nil
+}
+
+// obtainWithContext runs Lego Obtain and returns when ctx is done. Lego's
+// ObtainRequest has no Context field; we bound Certificate.Timeout from the
+// deadline and abandon waiting on cancel (the in-flight goroutine may still
+// finish and burn CA quota — callers heartbeat the claim and persist orphans).
+func obtainWithContext(ctx context.Context, client *lego.Client, request certificate.ObtainRequest) (*certificate.Resource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	type outcome struct {
+		res *certificate.Resource
+		err error
+	}
+	ch := make(chan outcome, 1)
+	go func() {
+		res, err := client.Certificate.Obtain(request)
+		ch <- outcome{res, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case out := <-ch:
+		return out.res, out.err
+	}
 }
 
 func registerAccount(client *lego.Client, user *LegoUser) error {
@@ -85,7 +118,14 @@ func IssueHTTP01Webroot(ctx context.Context, email string, domains []string, web
 		return nil, err
 	}
 
-	user, client, err := registerLegoClient(email, accountKeyPath, staging)
+	timeout := time.Duration(0)
+	if dl, ok := ctx.Deadline(); ok {
+		timeout = time.Until(dl)
+		if timeout < time.Minute {
+			timeout = time.Minute
+		}
+	}
+	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -106,12 +146,7 @@ func IssueHTTP01Webroot(ctx context.Context, email string, domains []string, web
 		Domains: domains,
 		Bundle:  true,
 	}
-	res, err := client.Certificate.Obtain(request)
-	if err != nil {
-		return nil, err
-	}
-	_ = ctx
-	return res, nil
+	return obtainWithContext(ctx, client, request)
 }
 
 // acmeAccountKeyType is the single policy for ACME account keys. The two

@@ -57,6 +57,25 @@ func (s *Store) ClaimCertificatesACME(ctx context.Context, w ACMEClaimWindow) ([
 	return scanCertificates(rows)
 }
 
+// TouchCertificateACMEClaim refreshes the claim stamp on an in-flight issuance
+// so a long Obtain cannot be reclaimed as "stale" by another worker.
+// Updates c.UpdatedAt to the new stamp when successful.
+func (s *Store) TouchCertificateACMEClaim(ctx context.Context, c *config.Certificate) error {
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE certificates SET updated_at = $3
+		WHERE id = $1 AND acme_status = 'issuing' AND updated_at = $2`,
+		c.ID, c.UpdatedAt, now)
+	if err != nil {
+		return err
+	}
+	if err := claimHeld(res); err != nil {
+		return err
+	}
+	c.UpdatedAt = now
+	return nil
+}
+
 // FailCertificateACME records a failed attempt on a claimed row and schedules
 // the retry at next. Returns ErrACMEClaimLost when the claim no longer holds.
 func (s *Store) FailCertificateACME(ctx context.Context, c *config.Certificate, lastErr string, next time.Time) error {
@@ -79,15 +98,27 @@ type ACMEResult struct {
 	Mode                   string
 }
 
-// CompleteCertificateACME locks the claimed row, runs write (which puts the new
-// PEM files in place) and records the result, touching only the columns the
-// worker owns. write runs only while the claim still holds, so an operator edit
-// made during issuance is never overwritten, nor are its files replaced.
+// CompleteCertificateACME locks the claimed row, runs write (which stages new
+// PEM sidecars), commits the ready row, then promotes sidecars into the live
+// paths. write runs only while the claim still holds. promote may be nil when
+// tests stub the write without files.
 func (s *Store) CompleteCertificateACME(ctx context.Context, c *config.Certificate, write func() (ACMEResult, error)) (retErr error) {
+	return s.CompleteCertificateACMEPromote(ctx, c, write, nil)
+}
+
+// CompleteCertificateACMEPromote is CompleteCertificateACME with an optional
+// post-commit promote hook (rename *.pem.new → live PEMs).
+func (s *Store) CompleteCertificateACMEPromote(
+	ctx context.Context,
+	c *config.Certificate,
+	write func() (ACMEResult, error),
+	promote func(ACMEResult) error,
+) (retErr error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
+	var staged ACMEResult
 	defer func() {
 		if retErr != nil {
 			_ = tx.Rollback()
@@ -108,6 +139,7 @@ func (s *Store) CompleteCertificateACME(ctx context.Context, c *config.Certifica
 	if err != nil {
 		return fmt.Errorf("write certificate files: %w", err)
 	}
+	staged = r
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE certificates
 		SET acme_status = 'ready', last_error = NULL, acme_attempts = 0, acme_next_attempt_at = NULL,
@@ -116,7 +148,15 @@ func (s *Store) CompleteCertificateACME(ctx context.Context, c *config.Certifica
 		c.ID, r.FullchainPath, r.KeyPath, r.NotBefore.UTC(), r.NotAfter.UTC(), r.Mode, time.Now().UTC()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if promote != nil {
+		if err := promote(staged); err != nil {
+			return fmt.Errorf("promote certificate files: %w", err)
+		}
+	}
+	return nil
 }
 
 func claimHeld(res sql.Result) error {

@@ -37,8 +37,45 @@ type SyncResult struct {
 
 // SyncAndWrite merges local DB entries and optional external HTTP lists into a HAProxy-compatible text file
 // (one IPv4/IPv6 or CIDR per line). Comments with # are stripped from downloads.
+// PrefetchFeeds downloads enabled external feeds into the on-disk cache.
+// Call it outside the HAProxy apply lock so Apply/SyncIPBL only hold the lock
+// for merge + atomic map promote.
+func PrefetchFeeds(ctx context.Context, st *store.Store, g config.GlobalSettings, stateDir string) error {
+	if !g.IPBLExternalEnabled {
+		return nil
+	}
+	srcs, err := st.ListIPBLExternalSources(ctx)
+	if err != nil {
+		return err
+	}
+	fetch := guardedFetch(ParseFeedAllowedPrefixes(g))
+	cacheDir := FeedCacheDir(stateDir)
+	pruneFeedCache(cacheDir, srcs)
+	for _, src := range srcs {
+		if !src.Enabled {
+			continue
+		}
+		now := time.Now().UTC()
+		out := refreshFeed(ctx, src, fetch, cacheDir, now)
+		_ = st.TouchIPBLSourceFetch(ctx, src.ID, now, out.lastError)
+	}
+	return nil
+}
+
+// SyncOptions controls whether SyncAndWrite performs network fetches.
+type SyncOptions struct {
+	// SkipFetch uses only local rows and already-cached feed copies (after
+	// PrefetchFeeds). Network work must not run under the apply lock.
+	SkipFetch bool
+}
+
 // A feed that fails to download contributes its last good copy (see FeedMaxStale).
 func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings, stateDir string) (SyncResult, error) {
+	return SyncAndWriteOpts(ctx, st, g, stateDir, SyncOptions{})
+}
+
+// SyncAndWriteOpts merges local + external IPBL entries and writes the map.
+func SyncAndWriteOpts(ctx context.Context, st *store.Store, g config.GlobalSettings, stateDir string, opts SyncOptions) (SyncResult, error) {
 	outPath := g.IPBlacklistMapPath
 	if outPath == "" {
 		outPath = filepath.Join(stateDir, "haproxy", "ip_blacklist.map")
@@ -74,20 +111,28 @@ func SyncAndWrite(ctx context.Context, st *store.Store, g config.GlobalSettings,
 		if err != nil {
 			return SyncResult{}, err
 		}
-		fetch := guardedFetch(ParseFeedAllowedPrefixes(g))
 		cacheDir := FeedCacheDir(stateDir)
 		pruneFeedCache(cacheDir, srcs)
+		var fetch func(context.Context, string) ([]string, error)
+		if !opts.SkipFetch {
+			fetch = guardedFetch(ParseFeedAllowedPrefixes(g))
+		}
 		for _, src := range srcs {
 			if !src.Enabled {
 				continue
 			}
 			now := time.Now().UTC()
-			out := refreshFeed(ctx, src, fetch, cacheDir, now)
+			var out feedOutcome
+			if opts.SkipFetch {
+				out = feedFromCacheOnly(src, cacheDir, now)
+			} else {
+				out = refreshFeed(ctx, src, fetch, cacheDir, now)
+				_ = st.TouchIPBLSourceFetch(ctx, src.ID, now, out.lastError)
+			}
 			for _, line := range out.lines {
 				set[line] = struct{}{}
 				extN++
 			}
-			_ = st.TouchIPBLSourceFetch(ctx, src.ID, now, out.lastError)
 		}
 	}
 

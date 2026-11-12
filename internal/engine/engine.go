@@ -247,9 +247,16 @@ func (e *Engine) saveSettings(ctx context.Context, s config.GlobalSettings) erro
 }
 
 // SyncIPBL refreshes the IP blacklist, allowlist and GeoIP enforce maps
-// outside a full apply. It holds the apply lock: those are live files an
-// Apply in another process may be snapshotting or promoting at the same time.
+// outside a full apply. Network feed downloads run outside the apply lock;
+// the lock covers only merge + atomic map promote (and allowlist/GeoIP maps).
 func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) {
+	cfg, err := e.reloadSettings(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := ipbl.PrefetchFeeds(ctx, e.Store, cfg, e.StateDir); err != nil {
+		return res, err
+	}
 	err = e.WithApplyLock(ctx, func() error {
 		// What is stored now, not this process's copy: feeds switched off
 		// from the admin CLI or another instance must be honored here too.
@@ -257,7 +264,7 @@ func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) 
 		if err != nil {
 			return err
 		}
-		r, err := ipbl.SyncAndWrite(ctx, e.Store, cfg, e.StateDir)
+		r, err := ipbl.SyncAndWriteOpts(ctx, e.Store, cfg, e.StateDir, ipbl.SyncOptions{SkipFetch: true})
 		if err != nil {
 			return err
 		}
@@ -323,13 +330,38 @@ func (g *renderGeo) close() {
 
 // RenderFromStore builds HAProxy config from current DB state.
 func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) {
-	return e.renderFromStore(ctx, e.Settings())
+	cfg := e.Settings()
+	_ = ipbl.PrefetchFeeds(ctx, e.Store, cfg, e.StateDir)
+	return e.renderFromStore(ctx, cfg)
+}
+
+func (e *Engine) reloadPendingPath() string {
+	return filepath.Join(e.StateDir, "haproxy", ".reload-pending")
+}
+
+func (e *Engine) markReloadPending() error {
+	path := e.reloadPendingPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
+}
+
+func (e *Engine) clearReloadPending() {
+	_ = os.Remove(e.reloadPendingPath())
+}
+
+func (e *Engine) hasReloadPending() bool {
+	_, err := os.Stat(e.reloadPendingPath())
+	return err == nil
 }
 
 // renderFromStore renders with one settings snapshot, so a concurrent settings
 // change cannot mix two configurations into one artifact set.
+// Callers that hold the apply lock must PrefetchFeeds first so this only
+// merges cached feeds (SkipFetch).
 func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings) (haproxy.Rendered, error) {
-	syncRes, err := ipbl.SyncAndWrite(ctx, e.Store, cfg, e.StateDir)
+	syncRes, err := ipbl.SyncAndWriteOpts(ctx, e.Store, cfg, e.StateDir, ipbl.SyncOptions{SkipFetch: true})
 	if err != nil {
 		return haproxy.Rendered{}, err
 	}
@@ -556,6 +588,12 @@ func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error)
 }
 
 func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (applied bool, retErr error) {
+	// Prefetch IPBL feeds before the apply lock so HTTP downloads do not
+	// serialize every Apply behind network RTT.
+	if peek, err := e.reloadSettings(ctx); err == nil {
+		_ = ipbl.PrefetchFeeds(ctx, e.Store, peek, e.StateDir)
+	}
+
 	releaseLock, err := e.lockApply(ctx)
 	if err != nil {
 		return false, err
@@ -581,6 +619,12 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	var revisionSnapshot *artifactSnapshot
 	defer func() {
 		if retErr == nil {
+			return
+		}
+		// After a successful reload the live edge is the new config. Rolling
+		// it back because revision/audit bookkeeping failed flaps traffic for
+		// a durable bookkeeping problem — leave the runtime as-is.
+		if runtimeChanged {
 			return
 		}
 		e.finishFailedArtifactTransaction(
@@ -612,7 +656,8 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	if err := apply.WriteAtomic(crtListPath, []byte(r.CRTList), 0o640); err != nil {
 		return false, err
 	}
-	if onlyIfChanged {
+	forceReload := e.hasReloadPending()
+	if onlyIfChanged && !forceReload {
 		same, err := e.artifactsUnchanged(cfg, tx.snapshot, cfgPath, []byte(r.HAProxyConfig))
 		if err != nil {
 			return false, err
@@ -634,6 +679,11 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 			return false, fmt.Errorf("validation failed: %w", err)
 		}
 	}
+	// Durable "reload required" before promote: a crash after writing live
+	// artifacts must not let ApplyIfChanged skip reload on the next start.
+	if err := e.markReloadPending(); err != nil {
+		return false, fmt.Errorf("mark reload pending: %w", err)
+	}
 	if err := apply.WriteAtomic(cfgPath, []byte(r.HAProxyConfig), 0o640); err != nil {
 		return false, err
 	}
@@ -651,6 +701,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		runtimeChanged = true
 	}
 	e.saveLoadedCerts(certs)
+	e.clearReloadPending()
 	detail := map[string]any{
 		"sha256":            r.SHA256,
 		"path":              cfgPath,
@@ -667,7 +718,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		"apply",
 		detail,
 	); err != nil {
-		return false, err
+		return true, fmt.Errorf("edge applied but bookkeeping failed: %w", err)
 	}
 	return true, nil
 }
@@ -708,6 +759,9 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	var revisionSnapshot *artifactSnapshot
 	defer func() {
 		if retErr == nil {
+			return
+		}
+		if runtimeChanged {
 			return
 		}
 		e.finishFailedArtifactTransaction(
@@ -787,6 +841,9 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	if err != nil {
 		return fmt.Errorf("snapshot rollback revision: %w", err)
 	}
+	if err := e.markReloadPending(); err != nil {
+		return fmt.Errorf("mark reload pending: %w", err)
+	}
 	certs := e.certsBeforeLoad()
 	if !skipReload {
 		if err := apply.ReloadHAProxy(); err != nil {
@@ -795,6 +852,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		runtimeChanged = true
 	}
 	e.saveLoadedCerts(certs)
+	e.clearReloadPending()
 	label := fmt.Sprintf("rollback from %s", rev.HAProxySHA256[:12])
 	detail := map[string]any{
 		"sha256":            got,
@@ -814,7 +872,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		"rollback",
 		detail,
 	); err != nil {
-		return err
+		return fmt.Errorf("edge rolled back but bookkeeping failed: %w", err)
 	}
 	return nil
 }

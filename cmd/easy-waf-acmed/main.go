@@ -196,6 +196,31 @@ func (w *worker) notifyCertificateAttention(ctx context.Context, certs []config.
 	}
 }
 
+// startACMEClaimHeartbeat refreshes the claim stamp during a long Obtain so
+// another worker does not reclaim an overlapping in-flight issuance.
+func startACMEClaimHeartbeat(ctx context.Context, st *store.Store, c *config.Certificate) func() {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
+				if err := st.TouchCertificateACMEClaim(hctx, c); err != nil {
+					log.Printf("acme id=%s: claim heartbeat: %v", c.ID, err)
+				}
+				cancel()
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 // applyPendingPath marks a certificate acmed stored whose HAProxy apply has
 // not succeeded yet. It is a file so it survives a stop or crash between the
 // two; only acmed's own issuances set it, so acmed does not reconcile the edge
@@ -338,6 +363,7 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 	var res *certificate.Resource
 	var err error
 
+	stopHB := startACMEClaimHeartbeat(ctx, st, c)
 	switch mode {
 	case "dns-01":
 		provider := strings.TrimSpace(c.DNSProvider)
@@ -355,17 +381,37 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 	default:
 		err = fmt.Errorf("unsupported certificate mode %q (use http-01 or dns-01)", c.Mode)
 	}
+	stopHB()
 
 	if err == nil {
+		// Heartbeat once more before Complete so a slow apply-lock wait cannot
+		// look like a dead worker to reclaim.
+		_ = st.TouchCertificateACMEClaim(ctx, c)
 		err = eng.WithApplyLock(ctx, func() error {
-			return st.CompleteCertificateACME(ctx, c, func() (store.ACMEResult, error) {
+			return st.CompleteCertificateACMEPromote(ctx, c, func() (store.ACMEResult, error) {
 				full, key, nb, na, werr := acme.WriteCertificateResource(eng.StateDir, c.ID, res)
 				return store.ACMEResult{FullchainPath: full, KeyPath: key, NotBefore: nb, NotAfter: na, Mode: mode}, werr
+			}, func(r store.ACMEResult) error {
+				return acme.PromoteCertificateFiles(r.FullchainPath, r.KeyPath)
 			})
 		})
+		if err != nil {
+			acme.DiscardCertificateStaging(
+				filepath.Join(eng.StateDir, "certs", c.ID, "fullchain.pem"),
+				filepath.Join(eng.StateDir, "certs", c.ID, "privkey.pem"),
+			)
+		}
 	}
 	if errors.Is(err, store.ErrACMEClaimLost) {
-		log.Printf("acme id=%s: row changed during issuance; result discarded", c.ID)
+		if res != nil {
+			if dir, oerr := acme.SaveOrphanCertificateResource(eng.StateDir, c.ID, res); oerr != nil {
+				log.Printf("acme id=%s: claim lost; orphan PEM save failed: %v", c.ID, oerr)
+			} else {
+				log.Printf("acme id=%s: claim lost after Obtain; PEMs kept under %s", c.ID, dir)
+			}
+		} else {
+			log.Printf("acme id=%s: row changed during issuance; result discarded", c.ID)
+		}
 		return
 	}
 	if err != nil {
@@ -382,14 +428,14 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 		log.Printf("acme issue failed id=%s mode=%s attempt=%d next=%s: %v", c.ID, mode, c.ACMEAttempts+1, next.UTC().Format(time.RFC3339), err)
 		return
 	}
+	// Mark before anything else that can fail: PEMs are ready and the edge
+	// must reconcile even if audit/apply die next.
+	markApplyPending(eng.StateDir, c.ID)
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})
 
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
-		return false
+		return true
 	}
-	// Mark first: if the process dies during the apply, the next start
-	// still knows this certificate is not live.
-	markApplyPending(eng.StateDir, c.ID)
 	actx, acancel := context.WithTimeout(stop, applyTimeout)
 	defer acancel()
 	if err := eng.Apply(actx, "acme"); err != nil {

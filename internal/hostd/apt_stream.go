@@ -11,14 +11,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
 const (
 	defaultAptActionLogPath  = "/var/lib/easy-waf/apt-action.log"
 	defaultAptUpgradeLogPath = "/var/lib/easy-waf/apt-upgrade.log" // legacy path (read fallback)
+	defaultAptActionPIDPath  = "/var/lib/easy-waf/apt-action.pid"
 )
 
 // aptActionLogPathOverride is set in tests to use a temp directory.
@@ -69,12 +72,51 @@ func validAptStreamAction(action string) bool {
 	return action == "upgrade" || action == "autoremove"
 }
 
+func aptActionPIDPath() string {
+	if aptActionLogPathOverride != "" {
+		return aptActionLogPathOverride + ".pid"
+	}
+	return defaultAptActionPIDPath
+}
+
+func aptActionPIDAlive() bool {
+	b, err := os.ReadFile(aptActionPIDPath())
+	if err != nil {
+		return false
+	}
+	var pid int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(b)), "%d", &pid); err != nil || pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal 0: existence check on Unix.
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func writeAptActionPID(pid int) {
+	_ = os.WriteFile(aptActionPIDPath(), []byte(fmt.Sprintf("%d\n", pid)), 0o600)
+}
+
+func clearAptActionPID() {
+	_ = os.Remove(aptActionPIDPath())
+}
+
 func aptActionTryStart() bool {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
 	if aptActionActive {
 		return false
 	}
+	// Persist across hostd restarts: an apt-get left running still owns the
+	// dpkg lock; treat it as in-flight so callers attach instead of starting a second.
+	if aptActionPIDAlive() {
+		aptActionActive = true
+		return false
+	}
+	clearAptActionPID()
 	aptActionActive = true
 	aptActionLastCode = 0
 	aptActionLastErr = ""
@@ -87,12 +129,25 @@ func aptActionFinish(code int, errMsg string) {
 	aptActionLastCode = code
 	aptActionLastErr = errMsg
 	aptActionMu.Unlock()
+	clearAptActionPID()
 }
 
 func aptActionSnapshot() (active bool, code int, errMsg string) {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
-	return aptActionActive, aptActionLastCode, aptActionLastErr
+	alive := aptActionPIDAlive()
+	if aptActionActive {
+		if !alive {
+			// Primary Finish clears the PID; if the PID vanished without Finish
+			// (hostd restart while apt exited), drop the stale in-memory flag.
+			aptActionActive = false
+		}
+		return aptActionActive, aptActionLastCode, aptActionLastErr
+	}
+	if alive {
+		return true, 0, ""
+	}
+	return false, aptActionLastCode, aptActionLastErr
 }
 
 // ResetAptUpgradeStateForTest clears single-flight state (tests only).
@@ -108,6 +163,7 @@ func ResetAptActionStateForTest() {
 	aptActionLastErr = ""
 	aptActionMu.Unlock()
 	aptActionStreamHook = nil
+	clearAptActionPID()
 }
 
 // SetAptUpgradeStreamHookForTest overrides apt execution for upgrade (tests only).
@@ -362,6 +418,9 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 	}
 	if err := cmd.Start(); err != nil {
 		return 1, err
+	}
+	if cmd.Process != nil {
+		writeAptActionPID(cmd.Process.Pid)
 	}
 
 	lineCh := make(chan string, 64)

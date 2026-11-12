@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge"
@@ -42,7 +43,14 @@ func IssueDNS01(ctx context.Context, email string, domains []string, staging boo
 		return nil, err
 	}
 
-	user, client, err := registerLegoClient(email, accountKeyPath, staging)
+	timeout := time.Duration(0)
+	if dl, ok := ctx.Deadline(); ok {
+		timeout = time.Until(dl)
+		if timeout < time.Minute {
+			timeout = time.Minute
+		}
+	}
+	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -60,12 +68,7 @@ func IssueDNS01(ctx context.Context, email string, domains []string, staging boo
 	}
 
 	req := certificate.ObtainRequest{Domains: domains, Bundle: true}
-	res, err := client.Certificate.Obtain(req)
-	if err != nil {
-		return nil, err
-	}
-	_ = ctx
-	return res, nil
+	return obtainWithContext(ctx, client, req)
 }
 
 func newDNSProvider(name string) (challenge.Provider, error) {
