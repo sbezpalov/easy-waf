@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
-	"strings"
 	"syscall"
 )
+
+var trustedAPIPeerExecutables = []string{
+	"/usr/sbin/easy-waf-api",
+	"/usr/sbin/easy-wafd",
+}
 
 func allowPeer(conn *net.UnixConn) error {
 	if peerCheckBypassed() {
@@ -45,23 +48,39 @@ func allowPeer(conn *net.UnixConn) error {
 	return nil
 }
 
-// requireAPIPeerExe allows only easy-waf-api (and the legacy easy-wafd alias)
-// for the easy-waf uid. Fail closed when /proc/<pid>/exe cannot be resolved.
+// requireAPIPeerExe allows only the root-owned installed API binary (or the
+// legacy installed alias) for the easy-waf uid. Comparing the executable inode
+// with the trusted host path prevents a same-uid process from impersonating the
+// API with an attacker-writable file that merely has the same basename.
 func requireAPIPeerExe(pid int) error {
 	if pid <= 0 {
 		return fmt.Errorf("peer pid")
 	}
-	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	procExe := fmt.Sprintf("/proc/%d/exe", pid)
+	exe, err := os.Readlink(procExe)
 	if err != nil {
 		return fmt.Errorf("peer exe: %w", err)
 	}
-	// Kernel may append " (deleted)" when the binary was replaced underfoot.
-	exe = strings.TrimSuffix(exe, " (deleted)")
-	base := filepath.Base(exe)
-	switch base {
-	case "easy-waf-api", "easy-wafd":
+	for _, trustedPath := range trustedAPIPeerExecutables {
+		if exe != trustedPath {
+			continue
+		}
+		peerInfo, err := os.Stat(procExe)
+		if err != nil {
+			return fmt.Errorf("peer exe stat: %w", err)
+		}
+		trustedInfo, err := os.Stat(trustedPath)
+		if err != nil {
+			return fmt.Errorf("trusted peer exe stat: %w", err)
+		}
+		stat, ok := trustedInfo.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != 0 || !trustedInfo.Mode().IsRegular() || trustedInfo.Mode().Perm()&0o022 != 0 {
+			return fmt.Errorf("trusted peer exe %q has unsafe ownership or mode", trustedPath)
+		}
+		if !os.SameFile(peerInfo, trustedInfo) {
+			return fmt.Errorf("peer exe %q does not match installed binary", exe)
+		}
 		return nil
-	default:
-		return fmt.Errorf("peer exe %q not allowed", base)
 	}
+	return fmt.Errorf("peer exe %q not allowed", exe)
 }

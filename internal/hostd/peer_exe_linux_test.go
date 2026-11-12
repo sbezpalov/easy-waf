@@ -7,7 +7,7 @@ package hostd
 
 import (
 	"os"
-	"path/filepath"
+	"os/exec"
 	"testing"
 )
 
@@ -28,25 +28,27 @@ func TestRequireAPIPeerExeRejectsBadPID(t *testing.T) {
 	}
 }
 
-func TestRequireAPIPeerExeNameMatch(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"easy-waf-api", "easy-wafd", "easy-waf-acmed"} {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte("#!/bin/true\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+func TestRequireAPIPeerExeRejectsMatchingBasenameOutsideInstalledPath(t *testing.T) {
+	if os.Getenv("EASY_WAF_PEER_EXE_CHILD") == "1" {
+		select {}
 	}
-	// We cannot easily re-exec as those names here; the allowlist switch is
-	// covered by reading filepath.Base of crafted paths via the same logic.
-	for _, base := range []string{"easy-waf-api", "easy-wafd"} {
-		switch base {
-		case "easy-waf-api", "easy-wafd":
-			// ok
-		default:
-			t.Fatalf("unexpected %s", base)
-		}
+
+	path := t.TempDir() + "/easy-waf-api"
+	input, err := os.ReadFile("/proc/self/exe")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := filepath.Base(filepath.Join(dir, "easy-waf-acmed")); got == "easy-waf-api" {
-		t.Fatal("acmed must not match api")
+	if err := os.WriteFile(path, input, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(path, "-test.run=TestRequireAPIPeerExeRejectsMatchingBasenameOutsideInstalledPath")
+	cmd.Env = append(os.Environ(), "EASY_WAF_PEER_EXE_CHILD=1")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
+
+	if err := requireAPIPeerExe(cmd.Process.Pid); err == nil {
+		t.Fatal("matching basename outside /usr/sbin must be rejected")
 	}
 }
