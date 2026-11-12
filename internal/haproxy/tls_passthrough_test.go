@@ -11,7 +11,7 @@ import (
 )
 
 func TestTLSPassthroughWithoutHTTPSApps(t *testing.T) {
-	st := config.DefaultSettings(t.TempDir())
+	st := config.DefaultSettings("/var/lib/easy-waf")
 	st.TLSPassthrough = []config.TLSPassthrough{{ServerName: "vpn.example.com", BackendHost: "10.0.0.5", BackendPort: 443, Enabled: true}}
 	r, err := Render(RenderInput{Settings: st, CRTListPath: "/tmp/crt-list.txt"})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestTLSPassthroughWithoutHTTPSApps(t *testing.T) {
 }
 
 func TestTLSPassthroughCollidesWithApp(t *testing.T) {
-	st := config.DefaultSettings(t.TempDir())
+	st := config.DefaultSettings("/var/lib/easy-waf")
 	st.TLSPassthrough = []config.TLSPassthrough{{ServerName: "*.example.com", BackendHost: "10.0.0.5", BackendPort: 443, Enabled: true}}
 	_, err := Render(RenderInput{Settings: st, Applications: []config.Application{
 		{ID: "a", Name: "A", PublicHost: "web.example.com", BackendHost: "10.0.0.6", BackendPort: 80, Profile: "balanced", Enabled: true},
@@ -43,5 +43,11 @@ func TestTLSPassthroughCollidesWithApp(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestHTTPSChainSocketPathUsesTargetSeparators(t *testing.T) {
+	if got, want := httpsChainSocketPath("/run/haproxy/easy-waf-admin.sock"), "/run/haproxy/easy-waf-https.sock"; got != want {
+		t.Fatalf("httpsChainSocketPath() = %q, want %q", got, want)
 	}
 }

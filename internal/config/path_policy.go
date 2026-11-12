@@ -332,7 +332,10 @@ func EdgeTokenFile(stateDir, appID, pathPrefix, header string) (string, error) {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(pathPrefix) + "\n" + strings.ToLower(strings.TrimSpace(header))))
 	name := hex.EncodeToString(sum[:8]) + ".token"
 	dir := filepath.Join(stateDir, "secrets", "edge-tokens", appID)
-	return filepath.Join(dir, name), nil
+	// This path is both used for local file I/O and rendered into haproxy.cfg.
+	// Forward slashes work on Windows too and keep the generated Linux config
+	// independent of the development host.
+	return filepath.ToSlash(filepath.Join(dir, name)), nil
 }
 
 // SyncEdgeTokens writes or removes token files for policy and clears write-only

@@ -90,6 +90,9 @@ func TestSyncEdgeTokensRoundTripAndRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(file, `\`) {
+		t.Fatalf("edge token path is not HAProxy-safe: %q", file)
+	}
 	body, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)

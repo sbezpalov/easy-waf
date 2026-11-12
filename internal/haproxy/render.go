@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -317,11 +318,7 @@ func Render(in RenderInput) (Rendered, error) {
 	in.HasHTTPSFrontend = len(httpsApps) > 0 && len(crtLines) > 0
 	in.HTTPSChainSocket = ""
 	if len(in.TLSPassthrough) > 0 && in.HasHTTPSFrontend {
-		dir := filepath.Dir(in.Settings.HAProxyStatsSocketPath)
-		if in.Settings.HAProxyStatsSocketPath == "" || dir == "." {
-			dir = "/run/haproxy"
-		}
-		in.HTTPSChainSocket = filepath.Join(dir, "easy-waf-https.sock")
+		in.HTTPSChainSocket = httpsChainSocketPath(in.Settings.HAProxyStatsSocketPath)
 	}
 	in.UseCrowdSecHTTP = false
 	in.UseCrowdSecHTTPS = false
@@ -361,6 +358,17 @@ func Render(in RenderInput) (Rendered, error) {
 		SHA256:        hex.EncodeToString(sum[:]),
 		RequiresTLS:   in.HasHTTPSFrontend,
 	}, nil
+}
+
+// httpsChainSocketPath is rendered into an Ubuntu HAProxy configuration even
+// when the generator itself runs on Windows. filepath.Join would otherwise
+// emit backslashes and make the checked-in golden output host-dependent.
+func httpsChainSocketPath(statsSocketPath string) string {
+	dir := path.Dir(statsSocketPath)
+	if statsSocketPath == "" || dir == "." {
+		dir = "/run/haproxy"
+	}
+	return path.Join(dir, "easy-waf-https.sock")
 }
 
 func buildCRTList(in RenderInput) []string {

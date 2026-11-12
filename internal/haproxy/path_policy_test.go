@@ -5,11 +5,27 @@ package haproxy
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 )
+
+func renderStateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(".", ".render-state-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(abs) })
+	return abs
+}
 
 func TestRenderHAMCPPreset(t *testing.T) {
 	in := goldenFixture("ha-mcp")
@@ -56,7 +72,7 @@ func TestRenderHAMCPPreset(t *testing.T) {
 }
 
 func TestRenderEdgeTokenIsFileNotValue(t *testing.T) {
-	dir := t.TempDir()
+	dir := renderStateDir(t)
 	const secret = "edge-secret-value-not-for-config"
 	app := config.Application{
 		ID:          "edge1",
@@ -85,7 +101,7 @@ func TestRenderEdgeTokenIsFileNotValue(t *testing.T) {
 	if err := os.WriteFile(file, []byte(secret+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := config.DefaultSettings(dir)
+	settings := config.DefaultSettings("/var/lib/easy-waf")
 	settings.SPOEConfigPath = ""
 	in := RenderInput{
 		Settings:     settings,
@@ -112,8 +128,8 @@ func TestRenderEdgeTokenIsFileNotValue(t *testing.T) {
 }
 
 func TestRenderRejectsMissingEdgeToken(t *testing.T) {
-	dir := t.TempDir()
-	settings := config.DefaultSettings(dir)
+	dir := renderStateDir(t)
+	settings := config.DefaultSettings("/var/lib/easy-waf")
 	settings.SPOEConfigPath = ""
 	in := RenderInput{
 		Settings: settings,
