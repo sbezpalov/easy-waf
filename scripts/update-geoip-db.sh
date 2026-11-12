@@ -1,37 +1,58 @@
 #!/usr/bin/env bash
 # Download GeoLite2-Country.mmdb from MaxMind (requires MAXMIND_LICENSE_KEY).
-# Install to EASY_WAF_GEOIP_DIR (default: /var/lib/easy-waf/geoip) and optionally
-# call easy-waf-api POST /api/v1/geoip/reload when EASY_WAF_ADMIN_TOKEN is set.
+# Install atomically to EASY_WAF_GEOIP_DIR (default: /var/lib/easy-waf/geoip).
+# Running processes notice the replacement on their next settings refresh/render/apply;
+# EASY_WAF_RESTART_API=1 restarts it immediately without storing panel credentials.
 #
 # Cron example (Wednesday 03:00):
-#   0 3 * * 3 /opt/easy-waf/scripts/update-geoip-db.sh >>/var/log/easy-waf-geoip-update.log 2>&1
+#   0 3 * * 3 /opt/easy-waf/scripts/update-geoip-db.sh 2>&1 | /usr/bin/logger -t easy-waf-geoip-update
 #
 # Environment:
 #   MAXMIND_LICENSE_KEY   (required) from https://www.maxmind.com/en/accounts/current/license-key
 #   EASY_WAF_GEOIP_DIR    destination directory (default /var/lib/easy-waf/geoip)
-#   EASY_WAF_API_URL      default https://127.0.0.1:8443
-#   EASY_WAF_API_CA_CERT  CA/certificate for management HTTPS (default: state management.crt)
-#   EASY_WAF_CURL_INSECURE=1 explicitly disable API TLS verification (recovery only)
-#   EASY_WAF_ADMIN_TOKEN  optional; if set, triggers MMDB hot-reload in the API process
+#   EASY_WAF_RESTART_API  set to 1/true/yes/on to restart an active local API service
 
 set -euo pipefail
 
 KEY="${MAXMIND_LICENSE_KEY:?MAXMIND_LICENSE_KEY is required}"
 DEST="${EASY_WAF_GEOIP_DIR:-/var/lib/easy-waf/geoip}"
-STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
-API="${EASY_WAF_API_URL:-https://127.0.0.1:8443}"
-API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
-CURL_TLS_ARGS=()
-if [[ "$API" == https://* ]]; then
-  if [[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]]; then
-    CURL_TLS_ARGS=(--insecure)
-  elif [[ -f "$API_CA_CERT" ]]; then
-    CURL_TLS_ARGS=(--cacert "$API_CA_CERT")
-  fi
+RESTART_API="${EASY_WAF_RESTART_API:-0}"
+if [[ ! "$KEY" =~ ^[A-Za-z0-9_-]{8,128}$ ]]; then
+  echo "[update-geoip-db] ERROR: MAXMIND_LICENSE_KEY has an unexpected format" >&2
+  exit 2
+fi
+case "${RESTART_API,,}" in
+  1|true|yes|on) RESTART_ENABLED=1 ;;
+  0|false|no|off|'') RESTART_ENABLED=0 ;;
+  *)
+    echo "[update-geoip-db] ERROR: EASY_WAF_RESTART_API must be a boolean" >&2
+    exit 2
+    ;;
+esac
+if [[ "$RESTART_ENABLED" == "1" ]]; then
+  [[ "$(id -u)" == "0" ]] || {
+    echo "[update-geoip-db] ERROR: EASY_WAF_RESTART_API requires root" >&2
+    exit 1
+  }
+  command -v systemctl &>/dev/null || {
+    echo "[update-geoip-db] ERROR: systemctl not found" >&2
+    exit 1
+  }
+fi
+if [[ -L "$DEST" ]]; then
+  echo "[update-geoip-db] ERROR: destination directory may not be a symlink: $DEST" >&2
+  exit 1
 fi
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+INSTALL_TMP=""
+cleanup() {
+  if [[ -n "$INSTALL_TMP" ]]; then
+    rm -f -- "$INSTALL_TMP" 2>/dev/null || true
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${KEY}&suffix=tar.gz"
 echo "[update-geoip-db] downloading…"
@@ -48,39 +69,73 @@ proto = "=https"
 proto-redir = "=https"
 CURLRC
 
-mkdir -p "$TMP/ex"
-tar -xzf "$TMP/GeoLite2-Country.tar.gz" -C "$TMP/ex"
-MMDB="$(find "$TMP/ex" -name 'GeoLite2-Country.mmdb' -type f | head -1)"
-if [[ -z "$MMDB" ]]; then
+ARCHIVE="$TMP/GeoLite2-Country.tar.gz"
+MMDB_MEMBER=""
+while IFS= read -r member; do
+  case "$member" in
+    GeoLite2-Country.mmdb|*/GeoLite2-Country.mmdb)
+      if [[ -z "$MMDB_MEMBER" ]]; then
+        MMDB_MEMBER="$member"
+      fi
+      ;;
+  esac
+done < <(tar -tzf "$ARCHIVE")
+if [[ -z "$MMDB_MEMBER" ]]; then
   echo "[update-geoip-db] ERROR: GeoLite2-Country.mmdb not found in archive" >&2
   exit 1
 fi
-
-mkdir -p "$DEST"
-# Keep the directory owned by easy-waf so the API can still install uploads there
-# (POST /api/v1/geoip/database renames a file into this directory).
-if id easy-waf &>/dev/null && [[ "$(id -u)" == "0" ]]; then
-  chown easy-waf:easy-waf "$DEST" 2>/dev/null || true
+MMDB="$TMP/GeoLite2-Country.mmdb"
+tar -xOzf "$ARCHIVE" -- "$MMDB_MEMBER" >"$MMDB"
+if [[ ! -s "$MMDB" ]] || ! LC_ALL=C grep -aFq 'MaxMind.com' "$MMDB"; then
+  echo "[update-geoip-db] ERROR: extracted file is not a recognizable MaxMind database" >&2
+  exit 1
 fi
-install -m 0644 "$MMDB" "$DEST/GeoLite2-Country.mmdb"
+
+# Keep every destination write at easy-waf privilege even when cron invokes the
+# script as root. A compromised service account can then redirect only writes it
+# could already perform; it cannot turn this updater into a root symlink writer.
+if [[ "$(id -u)" == "0" ]]; then
+  command -v runuser &>/dev/null || {
+    echo "[update-geoip-db] ERROR: runuser is required when running as root" >&2
+    exit 1
+  }
+  id easy-waf &>/dev/null || {
+    echo "[update-geoip-db] ERROR: easy-waf service account not found" >&2
+    exit 1
+  }
+  if [[ ! -d "$DEST" ]]; then
+    runuser -u easy-waf -- mkdir -p -m 0750 -- "$DEST"
+  fi
+  [[ -d "$DEST" ]] || {
+    echo "[update-geoip-db] ERROR: destination is not a directory: $DEST" >&2
+    exit 1
+  }
+  chown -h easy-waf:easy-waf "$DEST"
+  INSTALL_TMP="$(runuser -u easy-waf -- mktemp "${DEST%/}/.GeoLite2-Country.mmdb.XXXXXX")"
+  runuser -u easy-waf -- tee "$INSTALL_TMP" <"$MMDB" >/dev/null
+  runuser -u easy-waf -- chmod 0644 "$INSTALL_TMP"
+  runuser -u easy-waf -- mv -f -- "$INSTALL_TMP" "$DEST/GeoLite2-Country.mmdb"
+else
+  mkdir -p -m 0750 -- "$DEST"
+  [[ -d "$DEST" && -w "$DEST" ]] || {
+    echo "[update-geoip-db] ERROR: destination is not writable: $DEST" >&2
+    exit 1
+  }
+  INSTALL_TMP="$(mktemp "${DEST%/}/.GeoLite2-Country.mmdb.XXXXXX")"
+  install -m 0644 "$MMDB" "$INSTALL_TMP"
+  mv -f -- "$INSTALL_TMP" "$DEST/GeoLite2-Country.mmdb"
+fi
+INSTALL_TMP=""
 echo "[update-geoip-db] installed → $DEST/GeoLite2-Country.mmdb"
 
-if [[ -n "${EASY_WAF_ADMIN_TOKEN:-}" ]]; then
-  echo "[update-geoip-db] POST $API/api/v1/geoip/reload"
-  # Same reason as above: the bearer token must not appear in the command line.
-  curl "${CURL_TLS_ARGS[@]}" --config - <<CURLRC || {
-url = "${API%/}/api/v1/geoip/reload"
-request = "POST"
-header = "Authorization: Bearer ${EASY_WAF_ADMIN_TOKEN}"
-header = "Content-Type: application/json"
-header = "X-Requested-With: XMLHttpRequest"
-data = "{\"mmdb_path\":\"${DEST}/GeoLite2-Country.mmdb\"}"
-silent
-show-error
-fail
-CURLRC
-    echo "[update-geoip-db] WARNING: reload request failed (API down or token invalid?)" >&2
-  }
+if [[ "$RESTART_ENABLED" == "1" ]]; then
+  if systemctl is-active --quiet easy-waf-api.service; then
+    systemctl restart easy-waf-api.service
+    echo "[update-geoip-db] restarted easy-waf-api.service"
+  else
+    echo "[update-geoip-db] API service is not active; the new database will be used on its next start"
+  fi
 else
-  echo "[update-geoip-db] skip API reload (set EASY_WAF_ADMIN_TOKEN to enable)"
+  echo "[update-geoip-db] running processes detect the replacement on their next settings refresh/apply"
+  echo "[update-geoip-db] set EASY_WAF_RESTART_API=1 for an immediate local API restart"
 fi

@@ -18,7 +18,7 @@ Two backends are supported via global setting **`geoip_provider`**: **`ipinfo`**
 
 - Fully **offline** after the file is on disk.
 - Set **`geoip_provider`** to **`maxmind`** and **`geoip_mmdb_path`** to the absolute path of **`GeoLite2-Country.mmdb`** (e.g. `/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb`).
-- The API process opens the database with [`maxminddb-golang`](https://github.com/oschwald/maxminddb-golang); **`POST /api/v1/geoip/reload`** hot-swaps the reader after you replace the file (see script below). Without the call, a file replaced at the same path is picked up at the next apply or settings refresh, in every process (`easy-waf-acmed` renders too). Changing `geoip_provider`, `geoip_mmdb_path` or `geoip_cache_ttl` takes effect at once and drops countries cached from the previous database; other settings leave the open reader alone.
+- The API process opens the database with [`maxminddb-golang`](https://github.com/oschwald/maxminddb-golang). An atomic replacement at the same path is detected on the next settings refresh, render or apply; **`POST /api/v1/geoip/reload`** hot-swaps it immediately but requires a freshly confirmed operator session. The scheduled updater can instead restart the local API without storing panel credentials. Changing `geoip_provider`, `geoip_mmdb_path` or `geoip_cache_ttl` takes effect at once and drops countries cached from the previous database.
 
 ### Installing GeoLite2 from the UI (no shell access needed)
 
@@ -54,11 +54,11 @@ If **GeoIP is enabled** and provider is **maxmind**, the API rejects settings sa
 MaxMind updates GeoLite2 weekly. Use cron with the bundled script:
 
 ```bash
-# Wednesday 03:00 — adjust path to your clone or install location
-0 3 * * 3 /opt/easy-waf/scripts/update-geoip-db.sh >>/var/log/easy-waf-geoip-update.log 2>&1
+# In the easy-waf user's crontab; Wednesday 03:00
+0 3 * * 3 /opt/easy-waf/scripts/update-geoip-db.sh 2>&1 | /usr/bin/logger -t easy-waf-geoip-update
 ```
 
-Export **`MAXMIND_LICENSE_KEY`**. Optionally set **`EASY_WAF_ADMIN_TOKEN`** so the script calls **`POST /api/v1/geoip/reload`** after copying the new file (clears lookup cache and reloads the MMDB in memory).
+Export **`MAXMIND_LICENSE_KEY`** in the cron environment. The script extracts only the Country MMDB to stdout, checks its MaxMind metadata marker, writes a random temporary file inside the destination as `easy-waf`, and atomically renames it into place. It never needs a panel token. By default the running processes notice the new inode on their next settings refresh/render/apply. For immediate real-time API lookups, run the cron job as root with **`EASY_WAF_RESTART_API=1`**; it restarts `easy-waf-api.service` only when the service is already active. This causes a brief management-plane interruption while HAProxy keeps serving edge traffic.
 
 Environment variables for **`scripts/update-geoip-db.sh`**:
 
@@ -66,10 +66,7 @@ Environment variables for **`scripts/update-geoip-db.sh`**:
 |----------|----------|---------|
 | `MAXMIND_LICENSE_KEY` | yes | MaxMind license key for the download URL |
 | `EASY_WAF_GEOIP_DIR` | no | Destination directory (default `/var/lib/easy-waf/geoip`) |
-| `EASY_WAF_API_URL` | no | API base (default `https://127.0.0.1:8443`) |
-| `EASY_WAF_API_CA_CERT` | no | CA/certificate used to verify management HTTPS (default `$EASY_WAF_STATE_DIR/secrets/management.crt`) |
-| `EASY_WAF_CURL_INSECURE` | no | Set to `1` only for explicit recovery with TLS verification disabled |
-| `EASY_WAF_ADMIN_TOKEN` | no | If set, triggers **`/api/v1/geoip/reload`** |
+| `EASY_WAF_RESTART_API` | no | Boolean; when true and run as root, restart an active local API service after the atomic install |
 
 ## Real-time lookup vs batch map
 
@@ -84,12 +81,13 @@ Batch mode avoids per-request HTTP to ipinfo during traffic; MaxMind batch reads
 
 - `GET /api/v1/geoip/providers` — `{ name, available, mmdb_path? }[]` for **ipinfo** / **maxmind** (maxmind `available` if path exists and is a regular file).
 - `GET /api/v1/geoip/lookup?ip=…` — `nocache=1`, **`probe_mmdb_path=…`** (temporary MaxMind path for validation).
-- `POST /api/v1/geoip/reload` — body optional `{ "mmdb_path": "…" }`; requires **`geoip_provider=maxmind`**; reloads MMDB and clears the lookup cache.
-- `POST /api/v1/geoip/database` — **raw** request body (`application/octet-stream`): a `.mmdb` file or a MaxMind `.tar.gz`. Installs it into `<state>/geoip/` after validation and hot-swaps the reader when the provider is maxmind. Returns `{ path, database_type, build_epoch, node_count, ip_version, size_bytes, probe_ip, probe_country, reloaded }`. Rejects with **400** and keeps the previous database if the payload is not a usable country database. This is the only route exempt from the global 4 MiB body limit; it applies its own 128 MiB cap.
+- `POST /api/v1/geoip/reload` — body optional `{ "mmdb_path": "…" }`; requires **`geoip_provider=maxmind`** and an admin session with fresh password confirmation; reloads MMDB and clears the lookup cache.
+- `POST /api/v1/geoip/database` — **raw** request body (`application/octet-stream`): a `.mmdb` file or a MaxMind `.tar.gz`. Requires an admin session with fresh password confirmation. Installs it into `<state>/geoip/` after validation and hot-swaps the reader when the provider is maxmind. Returns `{ path, database_type, build_epoch, node_count, ip_version, size_bytes, probe_ip, probe_country, reloaded }`. Rejects with **400** and keeps the previous database if the payload is not a usable country database. This is the only route exempt from the global 4 MiB body limit; it applies its own 128 MiB cap.
 
   ```bash
+  # SESSION_JWT is the token returned by POST /api/v1/auth/confirm in the last 5 minutes.
   curl -f --cacert /var/lib/easy-waf/secrets/management.crt \
-    -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
+    -H "Authorization: Bearer $SESSION_JWT" \
     -H "X-Requested-With: XMLHttpRequest" \
     -H "Content-Type: application/octet-stream" \
     --data-binary @GeoLite2-Country.tar.gz \

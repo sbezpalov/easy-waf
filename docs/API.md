@@ -1002,6 +1002,7 @@ Lists the supported providers and whether each can be used.
 
 ### `POST /api/v1/geoip/reload`
 Re-opens the MaxMind database in the API process and clears the lookup cache. Use it after replacing the `.mmdb` file in place.
+- **Auth:** admin session with fresh password confirmation; the legacy automation token cannot call this route.
 - **Request body:** optional JSON `{"mmdb_path": "/path/to/file.mmdb"}`. When the body is empty or `mmdb_path` is absent or empty, the configured `geoip_mmdb_path` is used. The handler reads at most 4096 bytes; a longer body is cut off and then fails to parse.
 - **Response:** `200` `{"status": "ok"}`.
 - **Errors (JSON `{"error": "..."}`):**
@@ -1014,6 +1015,7 @@ An `mmdb_path` that differs from the configured `geoip_mmdb_path` is loaded, but
 
 ### `POST /api/v1/geoip/database`
 Uploads and installs a MaxMind GeoLite2 (or compatible) database. This route is **exempt from the global 4 MiB body limit** and applies its own cap.
+- **Auth:** admin session with fresh password confirmation; the legacy automation token cannot call this route.
 - **Request body:** the **raw file bytes** (send `Content-Type: application/octet-stream`; the header is not checked). This is not multipart/form-data. Two formats are accepted, detected from the content (gzip magic `1f 8b`) and never from a file name:
   - a plain `.mmdb` file
   - a MaxMind `.tar.gz` archive. The first regular-file member whose name ends in `.mmdb` (case-insensitive) is extracted. Other members are skipped.
