@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Restore from backup produced by scripts/backup.sh (format v1).
-# Run as root. Stops API, restores DB + files, optional Apply + service restart.
+# Run as root. Stops the control plane, restores DB + files, optionally applies
+# the edge from the console, then starts services.
 #
 # Usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
 # Env: EASY_WAF_STATE_DIR, EASY_WAF_ENV_FILE (defaults as in backup.sh)
-#      EASY_WAF_API_BASE — default https://127.0.0.1:8443 (for POST /api/v1/apply after restore)
-#      EASY_WAF_API_CA_CERT — CA/certificate for management HTTPS (default: state management.crt)
-#      EASY_WAF_CURL_INSECURE=1 — explicitly disable TLS verification (recovery only)
-#      EASY_WAF_SKIP_APPLY=1 — do not call API apply (regenerate HAProxy yourself)
-#      EASY_WAF_ADMIN_TOKEN — if unset, read from restored / merged env after file copy (see below)
+#      EASY_WAF_ADMIN_BIN — default /usr/sbin/easy-waf-admin
+#      EASY_WAF_SKIP_APPLY=1 — do not run easy-waf-admin apply-edge
 
 set -euo pipefail
 umask 077
@@ -24,16 +22,7 @@ fi
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 CFG="/etc/easy-waf"
 ENV_FILE="${EASY_WAF_ENV_FILE:-${CFG}/easy-waf.env}"
-API_BASE="${EASY_WAF_API_BASE:-https://127.0.0.1:8443}"
-API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
-CURL_TLS_ARGS=()
-if [[ "$API_BASE" == https://* ]]; then
-  if [[ "${EASY_WAF_CURL_INSECURE:-0}" == "1" ]]; then
-    CURL_TLS_ARGS=(--insecure)
-  elif [[ -f "$API_CA_CERT" ]]; then
-    CURL_TLS_ARGS=(--cacert "$API_CA_CERT")
-  fi
-fi
+ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash $0 $ARCHIVE" >&2
@@ -121,7 +110,7 @@ tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 # The backup's record of which certificates HAProxy had loaded describes the
 # backed-up appliance, not the HAProxy running now. Without it the API's
 # startup reconcile re-applies, so the restored certificates are loaded even
-# when the POST /apply below is skipped.
+# when the console apply below is skipped.
 rm -f "$STATE/haproxy/.loaded-certs.json"
 
 echo "[easy-waf-restore] wiping $CFG before restore (replace, not merge)…"
@@ -151,6 +140,19 @@ if command -v semanage &>/dev/null && [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-
   EASY_WAF_STATE_DIR="$STATE" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
 fi
 
+if [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then
+  echo "[easy-waf-restore] EASY_WAF_SKIP_APPLY=1 — skipping console apply"
+elif [[ ! -x "$ADMIN_BIN" ]]; then
+  echo "WARNING: $ADMIN_BIN not found — run easy-waf-admin apply-edge after installing the package" >&2
+else
+  echo "[easy-waf-restore] easy-waf-admin apply-edge (regenerate HAProxy)…"
+  if "$ADMIN_BIN" apply-edge -env-file "$ENV_FILE" -state-dir "$STATE" -label restore; then
+    echo "[easy-waf-restore] apply OK"
+  else
+    echo "WARNING: apply-edge failed — run it manually after fixing the reported problem" >&2
+  fi
+fi
+
 echo "[easy-waf-restore] starting services…"
 systemctl daemon-reload 2>/dev/null || true
 systemctl start easy-waf-hostd.service 2>/dev/null || true
@@ -159,29 +161,4 @@ systemctl start easy-waf-api.service 2>/dev/null || {
 }
 systemctl start easy-waf-acmed.service 2>/dev/null || true
 
-sleep 2
-
-TOK="${EASY_WAF_ADMIN_TOKEN:-}"
-if [[ -z "$TOK" && -f "$ENV_FILE" ]]; then
-  TOK="$(easy_waf_read_env_value "$ENV_FILE" EASY_WAF_ADMIN_TOKEN)"
-fi
-if [[ -z "$TOK" ]]; then
-  echo "[easy-waf-restore] EASY_WAF_ADMIN_TOKEN unset — cannot POST apply (set env or add token to $ENV_FILE)" >&2
-elif [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then
-  echo "[easy-waf-restore] EASY_WAF_SKIP_APPLY=1 — skipping API apply"
-else
-  echo "[easy-waf-restore] POST $API_BASE/api/v1/apply (regenerate HAProxy)…"
-  if curl "${CURL_TLS_ARGS[@]}" -fsS -o /dev/null -X POST "${API_BASE%/}/api/v1/apply" \
-    -H "Authorization: Bearer ${TOK}" \
-    -H "Content-Type: application/json" \
-    -H "X-Requested-With: XMLHttpRequest" \
-    -d '{"label":"restore"}' 2>/dev/null; then
-    echo "[easy-waf-restore] apply OK"
-  else
-    echo "WARNING: apply request failed — run manually: curl -X POST .../api/v1/apply with Bearer token" >&2
-  fi
-fi
-
-systemctl restart easy-waf-api.service 2>/dev/null || true
-systemctl restart easy-waf-acmed.service 2>/dev/null || true
 echo "[easy-waf-restore] done. Validate: haproxy -c -f $STATE/haproxy/haproxy.cfg (path may differ via settings)"

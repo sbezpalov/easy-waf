@@ -69,9 +69,8 @@ Steps:
 4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
-7. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
-8. **`POST /api/v1/apply`** with **`Authorization: Bearer $EASY_WAF_ADMIN_TOKEN`** (from the shell environment **or** from the restored `easy-waf.env` after it is sourced) to regenerate HAProxy config and reload HAProxy (unless skipped). Needs a stepped-up session or the automation token.
-9. Restarts **`easy-waf-api`** and **`easy-waf-acmed`**.
+7. Runs **`easy-waf-admin apply-edge`** locally to regenerate HAProxy config and reload HAProxy (unless skipped). Restore does not depend on management HTTPS or a bearer token; the legacy automation token cannot satisfy API step-up.
+8. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
 
 After restore on a new image, confirm polkit + HAProxy drop-in (package `postinst` installs both):
 
@@ -86,23 +85,17 @@ Environment:
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `EASY_WAF_STATE_DIR` | `/var/lib/easy-waf` | Restore target for state |
-| `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Used after restore to source tokens |
-| `EASY_WAF_API_BASE` | `https://127.0.0.1:8443` | Base URL for apply; override for an explicitly enabled legacy HTTP listener |
-| `EASY_WAF_API_CA_CERT` | `$EASY_WAF_STATE_DIR/secrets/management.crt` | CA/certificate used to verify management HTTPS |
-| `EASY_WAF_ADMIN_TOKEN` | *(from env file)* | Bearer for apply; export before restore if not in env file |
-| `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip the apply API call when the management listener is unavailable |
-| `EASY_WAF_CURL_INSECURE` | `0` | Explicit recovery-only override for `curl --insecure`; prefer a matching API URL and `EASY_WAF_API_CA_CERT` |
+| `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Restored env file used by `easy-waf-admin apply-edge` |
+| `EASY_WAF_ADMIN_BIN` | `/usr/sbin/easy-waf-admin` | Console CLI used for apply |
+| `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip `easy-waf-admin apply-edge` |
 
-If apply fails, run manually after fixing connectivity:
+If apply fails, run it manually after fixing the reported database, render, validation or reload problem:
 
 ```bash
-sudo systemctl restart easy-waf-api easy-waf-acmed
-curl --cacert /var/lib/easy-waf/secrets/management.crt -fsS \
-  -X POST https://127.0.0.1:8443/api/v1/apply \
-  -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "X-Requested-With: XMLHttpRequest" \
-  -d '{"label":"restore-manual"}'
+sudo /usr/sbin/easy-waf-admin apply-edge \
+  -env-file /etc/easy-waf/easy-waf.env \
+  -state-dir /var/lib/easy-waf \
+  -label restore-manual
 ```
 
 Validate HAProxy:
@@ -123,8 +116,6 @@ sudo RUN_BACKUP_RESTORE_E2E=1 bash scripts/test-backup-restore.sh
 ```
 
 Without **`RUN_BACKUP_RESTORE_E2E=1`**, the script exits **0** immediately (safe for accidental invocations).
-
-Both restore scripts still accept an explicit `http://127.0.0.1:8000` API base for appliances where legacy loopback HTTP is intentionally enabled. Their default follows the secure HTTPS-only management policy.
 
 ## Legacy archives
 
