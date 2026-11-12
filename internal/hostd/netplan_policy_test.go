@@ -3,29 +3,126 @@
 
 package hostd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestValidateNetplanYAMLAllowlist(t *testing.T) {
-	ok := []byte(`network:
+func TestValidateNetplanYAMLAllowsNarrowConfiguration(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"ethernet": `network:
   version: 2
+  renderer: networkd
   ethernets:
     eth0:
       dhcp4: true
-`)
-	if err := validateNetplanYAML(ok); err != nil {
-		t.Fatal(err)
+`,
+		"flow bridge": `{network: {version: 2, bridges: {br0: {interfaces: [eth0]}}}}`,
+		"quoted keys": `"network":
+  "version": 2
+  "wifis": {}
+`,
 	}
-	bad := []byte(`network:
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := validateNetplanYAML([]byte(input)); err != nil {
+				t.Fatalf("validateNetplanYAML() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateNetplanYAMLRejectsUnsafeConfiguration(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"empty": "   \n",
+		"multiple documents": `network:
   version: 2
-  tunnels:
+  ethernets: {}
+---
+network:
+  version: 2
+  ethernets: {}
+`,
+		"duplicate key": `network:
+  version: 2
+  version: 2
+  ethernets: {}
+`,
+		"alias": `network: &network
+  version: 2
+  ethernets: {}
+copy: *network
+`,
+		"merge": `defaults: &defaults
+  dhcp4: true
+network:
+  version: 2
+  ethernets:
+    eth0:
+      <<: *defaults
+`,
+		"explicit tag": `network:
+  version: !!int 2
+  ethernets: {}
+`,
+		"unknown root": `network:
+  version: 2
+  ethernets: {}
+extra: true
+`,
+		"unknown network key": `network:
+  version: 2
+  routes: []
+  ethernets: {}
+`,
+		"quoted version": `network:
+  version: "2"
+  ethernets: {}
+`,
+		"no interfaces": `network:
+  version: 2
+`,
+		"forbidden type": `network:
+  version: 2
+  ethernets:
     tun0:
-      mode: gre
-`)
-	if err := validateNetplanYAML(bad); err == nil {
-		t.Fatal("expected tunnels rejected")
+      type: vxlan
+`,
+		"forbidden bare key": `network:
+  version: 2
+  tunnels: {}
+`,
+		"forbidden double quoted key": `network:
+  version: 2
+  "tunnels": {}
+`,
+		"forbidden single quoted key": `network:
+  version: 2
+  'openvswitch': {}
+`,
+		"forbidden flow key": `{network: {version: 2, ethernets: {eth0: {wireguard: {}}}}}`,
 	}
-	empty := []byte("   \n")
-	if err := validateNetplanYAML(empty); err == nil {
-		t.Fatal("expected empty rejected")
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := validateNetplanYAML([]byte(input)); err == nil {
+				t.Fatal("validateNetplanYAML() accepted unsafe configuration")
+			}
+		})
+	}
+}
+
+func TestValidateNetplanYAMLParserErrorDoesNotEchoInput(t *testing.T) {
+	t.Parallel()
+	const secret = "do-not-return-this-secret"
+	err := validateNetplanYAML([]byte("network: [" + secret))
+	if err == nil {
+		t.Fatal("validateNetplanYAML() accepted invalid yaml")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("parser error leaked staged content: %v", err)
 	}
 }
