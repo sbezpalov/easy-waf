@@ -85,9 +85,9 @@ mask_env_to() {
     echo "(missing $src)" >"$dst"
     return
   fi
-  # Mask DB password in postgres(ql)://user:pass@host URLs; full-line mask for known secrets.
+  # Mask the whole DSN: URI query parameters and keyword DSNs may carry passwords too.
   sed -E \
-    -e 's#^(DATABASE_URL=postgres(ql)?://[^:]+:)[^@]+(@.*)$#\1***MASKED***\2#' \
+    -e 's/^[[:space:]]*(DATABASE_URL)[[:space:]]*=.*/\1=***MASKED***/' \
     -e 's/^(CROWDSEC_LAPI_KEY=).*/\1***MASKED***/' \
     -e 's/^(EASY_WAF_JWT_SECRET=).*/\1***MASKED***/' \
     -e 's/^(EASY_WAF_ADMIN_TOKEN=).*/\1***MASKED***/' \
@@ -95,11 +95,24 @@ mask_env_to() {
     "$src" >"$dst"
 }
 
+mask_haproxy_stream() {
+  # Mask the full forward-auth target; query parameters commonly carry tokens.
+  # The second expression fails closed if a generated directive is malformed.
+  sed -E \
+    -e 's#(lua\.easywaf_auth[[:space:]]+")[^"]*"#\1***MASKED***"#g' \
+    -e 's#(lua\.easywaf_auth[[:space:]]+")[^"]*$#\1***MASKED***#'
+}
+
+mask_haproxy_to() {
+  local src="$1" dst="$2"
+  mask_haproxy_stream <"$src" >"$dst"
+}
+
 mask_env_to "$ENV_FILE" "$ROOT/config/easy-waf.env.masked"
 
 HAPROXY_CFG="${STATE}/haproxy/haproxy.cfg"
 if [[ -f "$HAPROXY_CFG" ]]; then
-  cp -a "$HAPROXY_CFG" "$ROOT/config/haproxy.cfg"
+  mask_haproxy_to "$HAPROXY_CFG" "$ROOT/config/haproxy.cfg"
 else
   echo "(missing $HAPROXY_CFG)" >"$ROOT/config/haproxy.cfg"
 fi
@@ -119,7 +132,7 @@ fi
 # --- (e) HAProxy validation ---
 if command -v haproxy &>/dev/null; then
   haproxy -vv >"$ROOT/validation/haproxy-vv.txt" 2>&1 || true
-  haproxy -c -f "$HAPROXY_CFG" >"$ROOT/validation/haproxy-check.txt" 2>&1 || true
+  haproxy -c -f "$HAPROXY_CFG" 2>&1 | mask_haproxy_stream >"$ROOT/validation/haproxy-check.txt" || true
 else
   echo "haproxy binary not in PATH" >"$ROOT/validation/haproxy-vv.txt"
   echo "haproxy binary not in PATH" >"$ROOT/validation/haproxy-check.txt"

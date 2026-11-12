@@ -4,7 +4,6 @@
 package diagnostics
 
 import (
-	"net/url"
 	"strings"
 )
 
@@ -14,18 +13,19 @@ func MaskEasyWAFEnvLine(line string) string {
 	if trim == "" || strings.HasPrefix(trim, "#") {
 		return line
 	}
-	key, val, ok := strings.Cut(trim, "=")
+	key, _, ok := strings.Cut(trim, "=")
 	if !ok {
 		return line
 	}
 	key = strings.TrimSpace(key)
-	val = strings.TrimSpace(val)
 	if secretEnvKey(key) {
 		return key + "=***MASKED***"
 	}
 	switch key {
 	case "DATABASE_URL":
-		return key + "=" + maskDatabaseURL(val)
+		// Query parameters and non-URL DSNs may carry passwords too. A support
+		// bundle does not need database topology, so mask the entire value.
+		return key + "=***MASKED***"
 	default:
 		return line
 	}
@@ -41,40 +41,38 @@ func secretEnvKey(key string) bool {
 	return false
 }
 
-func maskDatabaseURL(s string) string {
-	u, err := url.Parse(s)
-	if err != nil || u.User == nil {
-		return "***MASKED***"
-	}
-	user := u.User.Username()
-	pass, hasPass := u.User.Password()
-	if !hasPass || pass == "" {
-		return s
-	}
-	// Avoid url.URL.String() escaping of '*' in the password placeholder.
-	var b strings.Builder
-	b.WriteString(u.Scheme)
-	b.WriteString("://")
-	b.WriteString(user)
-	b.WriteString(":***MASKED***@")
-	b.WriteString(u.Host)
-	b.WriteString(u.EscapedPath())
-	if u.RawQuery != "" {
-		b.WriteByte('?')
-		b.WriteString(u.RawQuery)
-	}
-	if u.Fragment != "" {
-		b.WriteByte('#')
-		b.WriteString(u.Fragment)
-	}
-	return b.String()
-}
-
 // MaskEasyWAFEnvContent applies MaskEasyWAFEnvLine to every line.
 func MaskEasyWAFEnvContent(raw []byte) []byte {
 	lines := strings.Split(string(raw), "\n")
 	for i := range lines {
 		lines[i] = MaskEasyWAFEnvLine(lines[i])
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+// MaskHAProxyConfigContent removes forward-auth targets from a diagnostic copy
+// of haproxy.cfg. Query strings commonly contain API keys, and the endpoint is
+// not needed to understand the surrounding rendered policy.
+func MaskHAProxyConfigContent(raw []byte) []byte {
+	lines := strings.Split(string(raw), "\n")
+	const directive = "lua.easywaf_auth"
+	for i, line := range lines {
+		pos := strings.Index(line, directive)
+		if pos < 0 {
+			continue
+		}
+		quote := strings.IndexByte(line[pos+len(directive):], '"')
+		if quote < 0 {
+			continue
+		}
+		start := pos + len(directive) + quote + 1
+		end := strings.IndexByte(line[start:], '"')
+		if end < 0 {
+			// Fail closed for a malformed generated line.
+			lines[i] = line[:start] + "***MASKED***"
+			continue
+		}
+		lines[i] = line[:start] + "***MASKED***" + line[start+end:]
 	}
 	return []byte(strings.Join(lines, "\n"))
 }

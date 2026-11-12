@@ -160,7 +160,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 			return err
 		}
 	} else if raw, err := os.ReadFile(cfgPath); err == nil {
-		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", raw, 0o640); err != nil {
+		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", MaskHAProxyConfigContent(raw), 0o640); err != nil {
 			return err
 		}
 	} else {
@@ -199,7 +199,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		haproxyCheckOut, _ = exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
 		cancel()
 	}
-	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", haproxyCheckOut, 0o644); err != nil {
+	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", MaskHAProxyConfigContent(haproxyCheckOut), 0o644); err != nil {
 		return err
 	}
 
