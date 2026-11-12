@@ -108,11 +108,18 @@ sudo haproxy -c -f /var/lib/easy-waf/haproxy/haproxy.cfg
 
 ## End-to-end test (optional)
 
-**Destructive** (runs **factory-reset**, wipes DB and state, then restores). Requires a working appliance with **`EASY_WAF_ADMIN_TOKEN`** in `easy-waf.env` and **`curl`**. If `internal/haproxy/testdata/golden/certs/bundle-a.pem` is absent, the script writes a throwaway self-signed certificate there with `openssl` (or use **`EASY_WAF_E2E_CERT_PEM`**).
+**Destructive** (runs **factory-reset**, wipes DB and state, then restores). Requires a working appliance, **`curl`**, **`psql`**, and an admin panel account. On a TTY the script prompts for the username and password without echoing the password. For unattended runs, set **`EASY_WAF_E2E_USERNAME`**, **`EASY_WAF_E2E_PASSWORD`**, and, when applicable, **`EASY_WAF_E2E_TOTP_CODE`**. The legacy automation token cannot perform the step-up-protected writes exercised here. If `internal/haproxy/testdata/golden/certs/bundle-a.pem` is absent, the script generates a throwaway self-signed certificate directly under the appliance state directory (or use **`EASY_WAF_E2E_CERT_PEM`**); it does not modify the source tree. A successful run removes its test application, certificate, temporary backup and PEM, then re-applies the original edge state.
 
 ```bash
 cd /path/to/easy-waf
 sudo RUN_BACKUP_RESTORE_E2E=1 bash scripts/test-backup-restore.sh
+```
+
+For an unattended run, inject the credentials through the execution environment rather than storing them in `easy-waf.env`:
+
+```bash
+sudo --preserve-env=EASY_WAF_E2E_USERNAME,EASY_WAF_E2E_PASSWORD,EASY_WAF_E2E_TOTP_CODE \
+  RUN_BACKUP_RESTORE_E2E=1 bash scripts/test-backup-restore.sh
 ```
 
 Without **`RUN_BACKUP_RESTORE_E2E=1`**, the script exits **0** immediately (safe for accidental invocations).

@@ -48,7 +48,7 @@ CI proves the code builds, lints, passes unit tests and that golden configs surv
 sudo bash scripts/smoke-appliance.sh
 ```
 
-Run it on the pilot host first ([DEV_HOST.md](DEV_HOST.md)), then on production after each upgrade. It is read-mostly: the only state-changing step is `POST /api/v1/apply` — what an operator does anyway — and, when you pass a database file, a GeoIP upload. Backup/restore stays out; that is the destructive [`scripts/test-backup-restore.sh`](../scripts/test-backup-restore.sh).
+Run it on the pilot host first ([DEV_HOST.md](DEV_HOST.md)), then on production after each upgrade. It is read-mostly: the only default state-changing step is local `easy-waf-admin apply-edge` — the same render/validate/reload pipeline as the panel without storing a panel password for automation. Passing a database file adds a GeoIP upload and therefore requires an operator session with fresh password confirmation. Backup/restore stays out; that is the destructive [`scripts/test-backup-restore.sh`](../scripts/test-backup-restore.sh).
 
 What it checks, and why each one is here:
 
@@ -58,15 +58,15 @@ What it checks, and why each one is here:
 | `ProtectHome` on the broker unit | units not reloaded — with `ProtectHome=true`, `/home` is invisible to the broker and SSH key management silently cannot write |
 | `EASY_WAF_ADMIN_TOKEN` length | 1.2.1 ignores a token under 24 characters; automation using a short one starts getting **401** |
 | `GET /api/v1/status`, `/applications` | database reachable and migrations applied |
-| `POST /api/v1/apply` | 1.2.1 re-validates application fields at render time and **fails closed**, naming the application — a row stored before those validators existed shows up here |
+| `easy-waf-admin apply-edge` | re-validates application fields at render time and **fails closed**, naming the application — a row stored before those validators existed shows up here |
 | `haproxy -c` on the live config, `haproxy` still active | a reload that failed after apply |
 | `<state>/geoip` ownership | a root-owned directory (left by an older `update-geoip-db.sh` cron run) that makes UI uploads fail |
-| optional `EASY_WAF_SMOKE_MMDB` | the GeoLite2 upload path end to end |
-| optional `EASY_WAF_SMOKE_USER`/`_PASSWORD` | that sign-out really revokes the session (`/auth/me` 200 → logout → 401) |
+| optional `EASY_WAF_SMOKE_MMDB` + confirmed operator session | the GeoLite2 upload path end to end |
+| optional `EASY_WAF_SMOKE_USER`/`_PASSWORD`/`_TOTP_CODE` | password confirmation and that sign-out really revokes the session (`/auth/me` 200 → logout → 401) |
 
 It also prints a note when generated backend names contain `-`: 1.3.0 stopped collapsing that character, so dashboards keyed on the old HAProxy names need updating.
 
-Exit code is non-zero if any check fails; `EASY_WAF_SMOKE_SKIP_APPLY=1` leaves the edge untouched.
+The legacy `EASY_WAF_ADMIN_TOKEN` remains sufficient for authenticated read checks, but it cannot pass step-up. Supply the optional operator credentials to exercise GeoIP upload; avoid placing the password literally in shell history. Exit code is non-zero if any check fails; `EASY_WAF_SMOKE_SKIP_APPLY=1` leaves the edge untouched.
 
 ## Package lifecycle: what `remove` and `purge` actually do
 
