@@ -98,7 +98,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl \
             bash bzip2 coreutils diffutils findutils \
-            git grep gzip openssl procps sed tar tzdata unzip \
+            git grep gzip make openssl procps sed shellcheck tar tzdata unzip \
             nodejs npm debianutils
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -108,23 +108,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Linux artifact + shell LF checks
-        run: bash scripts/check-linux-artifacts.sh
-
-      - name: Current version references
-        run: bash scripts/check-version-docs.sh
-
-      - name: Assert scripts/**/*.sh use LF only
-        run: |
-          set -euo pipefail
-          bad=0
-          while IFS= read -r -d '' f; do
-            if grep -q $'\r' "$f" 2>/dev/null; then
-              echo "ERROR: CRLF in $f" >&2
-              bad=1
-            fi
-          done < <(find scripts -name '*.sh' -type f -print0)
-          exit "$bad"
+      # Keep this aligned with the local verification contract in Makefile.
+      - name: Repository verification gates
+        run: make verify
 
       - name: Installer scripts syntax (bash -n)
         run: |
