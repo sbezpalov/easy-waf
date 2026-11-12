@@ -6,6 +6,9 @@
 scripts/**/*.sh text eol=lf
 scripts/lib/*.sh text eol=lf
 
+# Debian maintainer scripts are extensionless POSIX shell files.
+packaging/deb/* text eol=lf
+
 # Go sources — LF for gofmt / CI verify on Linux.
 *.go text eol=lf
 .cursor/rules/*.mdc text eol=lf

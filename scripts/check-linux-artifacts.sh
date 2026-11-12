@@ -20,18 +20,21 @@ if git ls-files 2>/dev/null | grep -E '\.(exe|EXE|dll|DLL)$'; then
 fi
 echo "OK (no .exe/.dll in git index)"
 
-echo "== Checking shell scripts for CRLF (Windows line endings) =="
+echo "== Checking shell files for CRLF (Windows line endings) =="
 _sh_crlf=0
 while IFS= read -r -d '' f; do
   if grep -q $'\r' "$f" 2>/dev/null; then
     echo "ERROR: CRLF in $f — use LF only (.gitattributes). Re-save as Unix or: sed -i 's/\\r$//' \"$f\"" >&2
     _sh_crlf=1
   fi
-done < <(find scripts -name '*.sh' -type f -print0 2>/dev/null || true)
+done < <(
+  find scripts -name '*.sh' -type f -print0 2>/dev/null || true
+  find packaging/deb -maxdepth 1 -type f -print0 2>/dev/null || true
+)
 if [[ "$_sh_crlf" -ne 0 ]]; then
   exit 1
 fi
-echo "OK (shell scripts are LF-only)"
+echo "OK (shell files are LF-only)"
 
 echo "== gofmt (if go is installed) =="
 if command -v gofmt &>/dev/null; then
