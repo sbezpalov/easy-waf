@@ -28,7 +28,7 @@ Setting up a Linux host for development and pre-release testing: see **[DEV_HOST
 6. Optionally **`EASY_WAF_ENABLE_SYSTEMD_UNITS=0`** skips `systemctl enable --now` at the end (default is to **start** services).
 7. **CrowdSec + SPOA bouncer (default on apt):** installs packages from packagecloud so units exist; **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`** (or **`scripts/crowdsec-bootstrap-lapi.sh`**) starts LAPI, registers bouncers, writes **`CROWDSEC_LAPI_*`** (see [CROWDSEC.md](CROWDSEC.md)). Set **`EASY_WAF_INSTALL_CROWDSEC=0`** to skip packages entirely.
 8. **AppArmor:** no special profiles needed for HAProxy on Ubuntu (stock policy sufficient). Access to generated configs uses **Unix group membership** (`haproxy` in group `easy-waf`) and file permissions.
-9. **nftables:** with OS packages, writes **`/etc/nftables/easy-waf.nft`**, opens **management** ports (**8000/8443**) from RFC1918 + loopback only (when **`EASY_WAF_NFT_MGMT_LAN=1`**) and **HAProxy edge** (**80/tcp** + **443/tcp**) when **`EASY_WAF_NFT_EDGE=1`** (default). Already-deployed hosts: **`sudo bash scripts/fix-nftables-edge.sh`**.
+9. **nftables:** with OS packages, writes **`/etc/nftables/easy-waf.nft`**, opens **management** ports (**8000/8443**) from RFC1918 + loopback only (when **`EASY_WAF_NFT_MGMT_LAN=1`**) and **HAProxy edge** (**80/tcp** + **443/tcp** + **443/udp** for HTTP/3/QUIC) when **`EASY_WAF_NFT_EDGE=1`** (default). Already-deployed hosts: **`sudo bash scripts/fix-nftables-edge.sh`** (re-run after enabling HTTP/3 so UDP 443 is open).
 
 CrowdSec is part of the default appliance install; see [CROWDSEC.md](CROWDSEC.md) for **`EASY_WAF_INSTALL_CROWDSEC`**, **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL`**, and **`scripts/crowdsec-bootstrap-lapi.sh`**.
 

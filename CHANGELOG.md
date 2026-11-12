@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **VERSION** is `1.6.1` on `main` so clone/install scripts no longer advertise a stale `1.6.0` package while Unreleased changes accumulate.
+
 ### Security
 
 - **TLS hardening on :443.** The generated config sets TLS 1.2 as the minimum, ECDHE AEAD ciphers only (Mozilla "intermediate" without DHE) and disables session tickets. Clients from before roughly 2014 can no longer connect.

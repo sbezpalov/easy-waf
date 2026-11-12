@@ -60,8 +60,12 @@ easy_waf_verify_sha256() {
 easy_waf_verify_sums_signature() {
   local sums="${1:?}" sums_url="${2:?}" bundle repo rc=0
   if ! command -v cosign &>/dev/null; then
-    log_relv "cosign not installed — SHA256SUMS signature not checked"
-    return 0
+    if [[ "${EASY_WAF_ALLOW_UNSIGNED_SUMS:-}" == "1" ]]; then
+      log_relv "cosign not installed — SHA256SUMS signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
+      return 0
+    fi
+    log_relv "cosign not installed — refusing unsigned SHA256SUMS (install cosign or set EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
+    return 1
   fi
   if [[ ! "$sums_url" =~ ^https://github\.com/([^/]+/[^/]+)/releases/ ]]; then
     log_relv "not a GitHub release URL — SHA256SUMS signature not checked"

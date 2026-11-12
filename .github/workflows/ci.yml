@@ -126,16 +126,9 @@ jobs:
       - name: Installer scripts syntax (bash -n)
         run: |
           set -euo pipefail
-          bash -n scripts/install.sh
-          bash -n scripts/install-interactive.sh
-          bash -n scripts/crowdsec-bootstrap-lapi.sh
-          bash -n scripts/lib/os-pkg.sh
-          bash -n scripts/lib/nftables-easy-waf.sh
-          bash -n scripts/host/privileged.sh
-          bash -n scripts/diagnostics.sh
-          bash -n scripts/acceptance-checklist.sh
-          bash -n scripts/lib/release-arch.sh
-          bash -n scripts/test-release-arch.sh
+          while IFS= read -r -d '' f; do
+            bash -n "$f"
+          done < <(find scripts -name '*.sh' -type f -print0)
           bash -n packaging/ovf/check-image-contents.sh
 
   haproxy-config-test:

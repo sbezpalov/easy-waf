@@ -1269,7 +1269,8 @@
     if (!box) return;
     const r = await fetch('/api/v1/panel-users', { headers: hdr() });
     if (!r.ok) { box.textContent = await apiMessage(r); return; }
-    const list = await r.json();
+    const raw = await r.json();
+    const list = Array.isArray(raw) ? raw : [];
     box.innerHTML = '<table><thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
       list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select class="pu-role" data-user="' + esc(u.username) + '">' +
         '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
@@ -2156,8 +2157,7 @@
           msg.textContent = 'Rollback succeeded.';
           msg.className = '';
         } else {
-          toast(await apiMessage(rr), 'err');
-          msg.textContent = await rr.text().catch(() => rr.statusText);
+          { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; }
           msg.className = 'warn';
         }
         loadRevisions();
@@ -2444,7 +2444,7 @@
           msg.textContent = '';
           const cid = btn.getAttribute('data-cert-issue');
           const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-          if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); return; }
+          if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; return; } 
           toast('Issue queued (pending).', 'ok');
           msg.textContent = 'Issue queued (pending). Ensure acmed is running and ACME email is set.';
           msg.className = 'ok';
@@ -2458,7 +2458,7 @@
           msg.textContent = '';
           const cid = btn.getAttribute('data-cert-renew');
           const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-          if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); return; }
+          if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; return; } 
           toast('Renew queued (pending).', 'ok');
           msg.textContent = 'Renew queued (pending).';
           msg.className = 'ok';
@@ -2474,7 +2474,7 @@
         if (!okDel) return;
         msg.textContent = '';
         const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid), { method: 'DELETE', headers: hdr() });
-        if (!rr.ok) { toast(await apiMessage(rr), 'err'); msg.textContent = await rr.text(); msg.className = 'warn'; return; }
+        if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; msg.className = 'warn'; return; } 
         toast('Certificate deleted.', 'ok');
         msg.textContent = 'Deleted.';
         msg.className = 'ok';
@@ -3484,8 +3484,7 @@
           headers: hdr()
         });
         if (!r.ok) {
-          toast(await apiMessage(r), 'err');
-          if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+          { const __m = await apiMessage(r); toast(__m, 'err'); if (msg) msg.textContent = __m; }
           return;
         }
         toast('Decision removed.', 'ok');
@@ -3552,8 +3551,7 @@
         body: JSON.stringify(body)
       });
       if (!r.ok) {
-        toast(await apiMessage(r), 'err');
-        if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+        { const __m = await apiMessage(r); toast(__m, 'err'); if (msg) msg.textContent = __m; }
         return;
       }
       toast('Ban submitted.', 'ok');
@@ -3629,7 +3627,7 @@
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ipbl-del');
         const d = await fetch('/api/v1/ipbl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ipbl-msg').textContent = await d.text(); return; }
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipbl-msg').textContent = __m; return; } 
         markPendingApply(true);
         document.getElementById('btn-ipbl-load').click();
       };
@@ -3653,7 +3651,7 @@
       enabled: true
     };
     const r = await fetch('/api/v1/ipbl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ipbl-msg').textContent = await r.text(); return; }
+    if (!r.ok) { const __m = await apiMessage(r); toast(__m, 'err'); document.getElementById('ipbl-msg').textContent = __m; return; } 
     markPendingApply(true);
     document.getElementById('ipbl-cidr').value = '';
     document.getElementById('ipbl-note').value = '';
@@ -3684,7 +3682,7 @@
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ipwl-del');
         const d = await fetch('/api/v1/ipwl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ipwl-msg').textContent = await d.text(); return; }
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipwl-msg').textContent = __m; return; } 
         markPendingApply(true);
         document.getElementById('btn-ipwl-load').click();
       };
@@ -3697,7 +3695,7 @@
       comment: document.getElementById('ipwl-comment').value.trim()
     };
     const r = await fetch('/api/v1/ipwl/local', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ipwl-msg').textContent = await r.text(); return; }
+    if (!r.ok) { const __m = await apiMessage(r); toast(__m, 'err'); document.getElementById('ipwl-msg').textContent = __m; return; } 
     markPendingApply(true);
     document.getElementById('ipwl-cidr').value = '';
     document.getElementById('ipwl-comment').value = '';
@@ -3762,7 +3760,7 @@
       btn.onclick = async () => {
         const id = btn.getAttribute('data-ua-del');
         const d = await fetch('/api/v1/security/blocked-ua/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { toast(await apiMessage(d), 'err'); document.getElementById('ua-msg').textContent = await d.text(); return; }
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ua-msg').textContent = __m; return; } 
         markPendingApply(true);
         loadBlockedUATable();
       };
@@ -3776,7 +3774,7 @@
       comment: document.getElementById('ua-comment').value.trim()
     };
     const r = await fetch('/api/v1/security/blocked-ua', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
-    if (!r.ok) { toast(await apiMessage(r), 'err'); document.getElementById('ua-msg').textContent = await r.text(); return; }
+    if (!r.ok) { const __m = await apiMessage(r); toast(__m, 'err'); document.getElementById('ua-msg').textContent = __m; return; } 
     markPendingApply(true);
     document.getElementById('ua-pattern').value = '';
     document.getElementById('ua-comment').value = '';
@@ -4137,8 +4135,7 @@
       body: JSON.stringify(opts.body)
     });
     if (!r.ok) {
-      toast(await apiMessage(r), 'err');
-      if (opts.msgEl) opts.msgEl.textContent = await r.text();
+      { const __m = await apiMessage(r); toast(__m, 'err'); if (opts.msgEl) opts.msgEl.textContent = __m; }
       return;
     }
     const j = await r.json();
@@ -4295,8 +4292,7 @@
     await withBusy(document.getElementById('btn-sys-apt-check'), async () => {
       const u = await fetch('/api/v1/host/updates/update', { method: 'POST', headers: hdr(), body: '{}' });
       if (!u.ok) {
-        toast(await apiMessage(u), 'err');
-        if (msg) msg.textContent = await u.text();
+        { const __m = await apiMessage(u); toast(__m, 'err'); if (msg) msg.textContent = __m; }
         return;
       }
       const r = await fetch('/api/v1/host/updates', { headers: hdr() });
@@ -4488,8 +4484,7 @@
       if (!resp.ok || !resp.body) {
         setAptButtonsDisabled(false);
         if (!o.reconnect) {
-          toast(await apiMessage(resp), 'err');
-          if (msg) msg.textContent = await resp.text().catch(() => 'Request failed');
+          { const __m = await apiMessage(resp); toast(__m, 'err'); if (msg) msg.textContent = __m; }
         }
         return { exitCode: -1, exitErr: '' };
       }
@@ -4523,8 +4518,7 @@
         body: '{}'
       });
       if (!r.ok) {
-        toast(await apiMessage(r), 'err');
-        if (msg) msg.textContent = await r.text().catch(() => 'Clean failed');
+        { const __m = await apiMessage(r); toast(__m, 'err'); if (msg) msg.textContent = __m; }
         return;
       }
       const j = await r.json().catch(() => ({}));

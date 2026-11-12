@@ -36,5 +36,6 @@ easy_waf_github_repo() {
   if [[ ! "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
     repo=""
   fi
-  printf '%s' "${repo:-easy-waf/easy-waf}"
+  # Canonical public repo; forks should set EASY_WAF_GITHUB_REPO or clone origin.
+  printf '%s' "${repo:-sbezpalov/easy-waf}"
 }
