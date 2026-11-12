@@ -107,15 +107,21 @@ When unpacking into `repo/dist/`, **`scripts/install.sh`** and **`scripts/downlo
 
 ## Upgrades
 
-**Package path (preferred).** Back up first ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)), then:
+**Package path (preferred).** Back up first ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)). From a release-tag checkout, with `cosign` on `PATH`, download and authenticate the package through the shared verifier before giving it to `apt`:
 
 ```bash
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/vX.Y.Z/easy-waf_X.Y.Z_amd64.deb
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/vX.Y.Z/SHA256SUMS
-sha256sum --ignore-missing -c SHA256SUMS
-sudo apt install ./easy-waf_X.Y.Z_amd64.deb
+VERSION=X.Y.Z
+ARCH="$(dpkg --print-architecture)"
+NAME="easy-waf_${VERSION}_${ARCH}.deb"
+BASE="https://github.com/sbezpalov/easy-waf/releases/download/v${VERSION}"
+source scripts/lib/release-verify.sh
+easy_waf_curl_https -o "$NAME" "$BASE/$NAME"
+easy_waf_verify_release_artifact "$NAME" "$NAME" "$BASE/SHA256SUMS"
+sudo apt install "./$NAME"
 sudo bash scripts/smoke-appliance.sh
 ```
+
+The verifier checks the artifact digest only after authenticating `SHA256SUMS.sigstore.json` against this repository's `release.yml` identity. A checksum file downloaded beside the package is not provenance by itself. The explicit `EASY_WAF_ALLOW_UNSIGNED_SUMS=1` downgrade is for controlled mirrors and is not the preferred production path.
 
 `postinst` installs the polkit rule into `/etc/polkit-1/rules.d/` (so Apply can
 reload HAProxy) and the HAProxy systemd drop-in under

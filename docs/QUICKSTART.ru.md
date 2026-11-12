@@ -25,14 +25,20 @@ sudo bash scripts/install.sh
 Если PostgreSQL, nftables и CrowdSec уже приведены в тот вид, который вам нужен, поставьте
 пакет отдельно и дальше действуйте сами:
 
-Пример для опубликованной версии `1.6.0`:
+Пример для подписанного релиза (запускайте из checkout соответствующего тега; `cosign` должен быть в `PATH`):
 
 ```bash
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.6.0/easy-waf_1.6.0_amd64.deb
-curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.6.0/SHA256SUMS
-sha256sum --ignore-missing -c SHA256SUMS        # do not skip this
-sudo apt install ./easy-waf_1.6.0_amd64.deb
+VERSION=X.Y.Z
+ARCH="$(dpkg --print-architecture)"
+NAME="easy-waf_${VERSION}_${ARCH}.deb"
+BASE="https://github.com/sbezpalov/easy-waf/releases/download/v${VERSION}"
+source scripts/lib/release-verify.sh
+easy_waf_curl_https -o "$NAME" "$BASE/$NAME"
+easy_waf_verify_release_artifact "$NAME" "$NAME" "$BASE/SHA256SUMS"
+sudo apt install "./$NAME"
 ```
+
+Общий verifier проверяет Sigstore-bundle release workflow до того, как доверять `SHA256SUMS`: контрольная сумма, скачанная рядом с пакетом, сама по себе не подтверждает происхождение.
 
 Пакет ставится с включёнными юнитами, но **не запускает** их: задайте `DATABASE_URL` в
 `/etc/easy-waf/easy-waf.env`, затем выполните `sudo systemctl start easy-waf-hostd

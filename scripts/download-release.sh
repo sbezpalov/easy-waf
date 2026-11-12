@@ -7,7 +7,8 @@
 #
 # If EASY_WAF_RELEASE_URL is set, it is used directly (must point to a .tar.gz with dist/ or linux-amd64 binaries).
 #
-# Integrity: the GitHub path verifies the tarball against SHA256SUMS from the same release.
+# Integrity: the GitHub path authenticates the release workflow's Sigstore bundle,
+# then verifies the tarball against SHA256SUMS from the same release.
 # For EASY_WAF_RELEASE_URL set EASY_WAF_RELEASE_SHA256=<hex> (or EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1).
 
 set -euo pipefail

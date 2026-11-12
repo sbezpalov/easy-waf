@@ -91,11 +91,10 @@ Open `https://<appliance-ip>:8443`, enroll, add your first application. Full
 walkthrough: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 If PostgreSQL, nftables and CrowdSec are already set up the way you want, the
-package installs on its own — verify the checksum first:
-
-```bash
-sudo apt install ./easy-waf_<version>_amd64.deb
-```
+package installs on its own. Authenticate `SHA256SUMS.sigstore.json` and the
+package digest before calling `apt`; use the shared-verifier recipe in
+[Deployment → Upgrades](docs/DEPLOYMENT.md#upgrades). A checksum downloaded
+beside the package is not release provenance by itself.
 
 Upgrades are `apt install` of a newer package; your `/etc/easy-waf/easy-waf.env`
 is a dpkg conffile, so it is preserved rather than overwritten. Why it is packaged
