@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -37,8 +38,12 @@ func TestCheckStateDir(t *testing.T) {
 	if len(checks) == 0 {
 		t.Fatal("expected checks for valid stateDir")
 	}
-	if checks[0].Status != StatusOK {
-		t.Errorf("expected StatusOK for temp stateDir, got %v", checks[0].Status)
+	want := StatusOK
+	if runtime.GOOS == "windows" {
+		want = StatusWarn
+	}
+	if checks[0].Status != want {
+		t.Errorf("expected %s for temp stateDir, got %v", want, checks[0].Status)
 	}
 
 	// Nonexistent dir
@@ -98,6 +103,9 @@ func TestCheckEnvFilePermissions(t *testing.T) {
 		t.Fatalf("missing file: %+v", got[0])
 	}
 	for mode, want := range map[os.FileMode]CheckStatus{0o600: StatusOK, 0o640: StatusWarn, 0o644: StatusWarn} {
+		if runtime.GOOS == "windows" {
+			want = StatusWarn
+		}
 		if err := os.WriteFile(path, []byte("X=1\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}

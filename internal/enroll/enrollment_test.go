@@ -6,6 +6,7 @@ package enroll
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,7 +27,7 @@ func TestEnrollmentFile_roundTripAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", st.Mode().Perm())
 	}
 	got, err := ReadFile(dir)

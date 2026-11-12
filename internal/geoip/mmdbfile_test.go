@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -88,7 +89,7 @@ func TestExtractAndInstallMMDB_rawFile(t *testing.T) {
 	if info.ProbeCountry != "US" || info.DatabaseType != "GeoLite2-Country" {
 		t.Fatalf("unexpected metadata: %+v", info)
 	}
-	if fi, err := os.Stat(info.Path); err != nil || fi.Mode().Perm() != 0o644 {
+	if fi, err := os.Stat(info.Path); err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o644) {
 		t.Fatalf("installed file mode: %v %v", fi, err)
 	}
 	// The temporary upload file must not survive installation.

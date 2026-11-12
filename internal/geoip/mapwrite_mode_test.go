@@ -5,6 +5,7 @@ package geoip
 
 import (
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -22,7 +23,7 @@ func TestEnforceMapIsGroupReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := st.Mode().Perm(); got != 0o640 {
+	if got := st.Mode().Perm(); runtime.GOOS != "windows" && got != 0o640 {
 		t.Fatalf("mode %o, want 640", got)
 	}
 }

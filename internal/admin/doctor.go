@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -143,6 +144,14 @@ func checkStateDir(stateDir string) []CheckResult {
 		})
 		return checks
 	}
+	if runtime.GOOS == "windows" {
+		return append(checks, CheckResult{
+			Category: "Storage",
+			Name:     "State Directory Permissions",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("Directory %s exists; POSIX permissions cannot be verified on Windows", stateDir),
+		})
+	}
 
 	perm := st.Mode().Perm()
 	if perm&0o007 != 0 {
@@ -195,6 +204,14 @@ func checkEnvFile(envFile string) []CheckResult {
 			Name:     "Env File",
 			Status:   StatusWarn,
 			Message:  fmt.Sprintf("Cannot check %s: %v", envFile, err),
+		}}
+	}
+	if runtime.GOOS == "windows" {
+		return []CheckResult{{
+			Category: "Storage",
+			Name:     "Env File Permissions",
+			Status:   StatusWarn,
+			Message:  fmt.Sprintf("%s exists; POSIX permissions cannot be verified on Windows", envFile),
 		}}
 	}
 	if perm := st.Mode().Perm(); perm&0o077 != 0 {
