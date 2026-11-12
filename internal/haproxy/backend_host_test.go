@@ -17,11 +17,23 @@ func TestBackendHostIsLiteralIP(t *testing.T) {
 	if !backendHostIsLiteralIP("192.168.1.5") {
 		t.Fatal("IP expected")
 	}
+	if !backendHostIsLiteralIP("2001:db8::1") {
+		t.Fatal("IPv6 expected")
+	}
 	if backendHostIsLiteralIP("nas.lan") {
 		t.Fatal("FQDN must not be literal IP")
 	}
 	if backendHostIsLiteralIP("app.example.com") {
 		t.Fatal("FQDN must not be literal IP")
+	}
+}
+
+func TestFormatBackendAddrIPv6(t *testing.T) {
+	if got := formatBackendAddr("2001:db8::1", 443); got != "[2001:db8::1]:443" {
+		t.Fatalf("got %q", got)
+	}
+	if got := formatBackendAddr("10.0.0.1", 80); got != "10.0.0.1:80" {
+		t.Fatalf("got %q", got)
 	}
 }
 

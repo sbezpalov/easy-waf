@@ -4,6 +4,7 @@
 package haproxy
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -25,4 +26,14 @@ func backendHostIsLiteralIP(host string) bool {
 		return true
 	}
 	return false
+}
+
+// formatBackendAddr returns host:port for HAProxy server lines, bracketing IPv6.
+func formatBackendAddr(host string, port int) string {
+	host = strings.TrimSpace(host)
+	bare := strings.Trim(host, "[]")
+	if ip := net.ParseIP(bare); ip != nil && ip.To4() == nil {
+		return fmt.Sprintf("[%s]:%d", bare, port)
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }

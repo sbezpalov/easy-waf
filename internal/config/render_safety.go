@@ -143,15 +143,20 @@ func ValidateSettingsRenderSafety(s *GlobalSettings) error {
 }
 
 // validateSourceList accepts IP addresses and CIDR prefixes, which are rendered
-// inline into `src` ACLs.
+// inline into `src` ACLs. Prefixes wider than /8 are refused: a /0–/7 trusted
+// proxy or PROXY peer list would let forged client IPs bypass allowlists/WAF.
 func validateSourceList(field string, list []string) error {
 	for i, raw := range list {
 		raw = strings.TrimSpace(raw)
 		if _, err := netip.ParseAddr(raw); err == nil {
 			continue
 		}
-		if _, err := netip.ParsePrefix(raw); err != nil {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
 			return fmt.Errorf("%s[%d] is not an IP or CIDR", field, i)
+		}
+		if p.Bits() < 8 {
+			return fmt.Errorf("%s[%d] prefix must be /8 or narrower (got /%d)", field, i, p.Bits())
 		}
 	}
 	return nil

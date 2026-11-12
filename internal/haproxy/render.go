@@ -533,6 +533,9 @@ frontend fe_http
 {{- template "realIP" .}}
 {{- template "securityHeaders" .}}
 {{- template "blockCapture"}}
+	# Client-supplied X-Forwarded-Proto must not influence backends (Secure cookies/CSRF).
+	http-request del-header X-Forwarded-Proto
+	http-request set-header X-Forwarded-Proto http
 {{if .HTTPClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPClientTimeout}}s
@@ -644,6 +647,7 @@ frontend fe_https
 	unique-id-format %[uuid()]
 	filter spoe engine {{.Settings.CrowdSecEngineName}} config {{.Settings.SPOEConfigPath}}
 {{end}}
+	http-request del-header X-Forwarded-Proto
 	http-request set-header X-Forwarded-Proto https
 {{- if .HSTSExemptHosts}}
 	acl hsts_exempt hdr(host) -i {{.HSTSExemptHosts}}
@@ -718,7 +722,7 @@ backend {{$p.Backend}}
 {{- if $.UseIPBlacklist}}
 	tcp-request content reject if { src -f {{$.IPBlacklistMapPath}} }
 {{- end}}
-	server s1 {{$p.BackendHost}}:{{$p.BackendPort}}{{if $p.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}}{{if $p.SendProxy}} send-proxy-v2 check-send-proxy{{end}} check inter 5s fall 3 rise 2
+	server s1 {{backendAddr $p.BackendHost $p.BackendPort}}{{if $p.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}}{{if $p.SendProxy}} send-proxy-v2 check-send-proxy{{end}} check inter 5s fall 3 rise 2
 {{end}}
 {{end -}}
 {{range $t := .TCPServices}}
@@ -744,7 +748,7 @@ backend tcpbk_{{$t.Name}}
 	mode tcp
 	no option http-server-close
 	timeout server 1h
-	server s1 {{$t.BackendHost}}:{{$t.BackendPort}}{{if $t.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 5s fall 3 rise 2
+	server s1 {{backendAddr $t.BackendHost $t.BackendPort}}{{if $t.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 5s fall 3 rise 2
 {{end -}}
 {{range $i, $a := .BackendApps}}
 {{range $r := $a.Exposure.Rates}}backend {{$r.Stick}}
@@ -806,7 +810,7 @@ backend {{backendName $a.Application.PublicHost}}
 	balance {{$a.Application.BackendBalance}}
 	{{- end }}
 	{{- range $s := $a.Servers }}
-	server {{$s.Name}} {{$s.Host}}:{{$s.Port}}{{$s.TLS}}{{if $s.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 3s fall 3 rise 2{{if $s.Backup}} backup{{end}}
+	server {{$s.Name}} {{backendAddr $s.Host $s.Port}}{{$s.TLS}}{{if $s.UsesDNS}} resolvers easy_waf_dns init-addr last,libc,none{{end}} check inter 3s fall 3 rise 2{{if $s.Backup}} backup{{end}}
 	{{- end }}
 {{end}}
 {{define "realIP"}}
@@ -974,6 +978,7 @@ var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.Func
 	"errorPages":      errorPages,
 	"maintenancePage": maintenancePage,
 	"backendName":     sanitizeBackendName,
+	"backendAddr":     formatBackendAddr,
 	"join":            strings.Join,
 	"exactPaths":      exactPaths,
 	"dirPrefixes":     dirPrefixes,
