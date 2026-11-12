@@ -37,6 +37,10 @@ func TestManagedHAProxyConfigPath(t *testing.T) {
 	if err != nil || got != want {
 		t.Fatalf("got %q err %v", got, err)
 	}
+	missing := filepath.Join(managedDir, "missing.cfg")
+	if got, err := managedHAProxyConfigPath(stateDir, missing); err != nil || got != missing {
+		t.Fatalf("missing managed path: got %q err %v", got, err)
+	}
 	if _, err := managedHAProxyConfigPath(stateDir, "/etc/passwd"); err == nil {
 		t.Fatal("expected path outside state directory to fail")
 	}
@@ -48,12 +52,31 @@ func TestManagedHAProxyConfigPathRejectsEscapingSymlink(t *testing.T) {
 	if err := os.MkdirAll(managedDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(managedDir, "haproxy.cfg")
-	if err := os.Symlink("/etc/passwd", link); err != nil {
+	outside := filepath.Join(t.TempDir(), "outside.cfg")
+	if err := os.WriteFile(outside, []byte("global\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	link := filepath.Join(managedDir, "haproxy.cfg")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
 	}
 	if _, err := managedHAProxyConfigPath(stateDir, link); err == nil {
 		t.Fatal("expected escaping symlink to fail")
+	}
+}
+
+func TestManagedHAProxyConfigPathRejectsDanglingSymlink(t *testing.T) {
+	stateDir := t.TempDir()
+	managedDir := filepath.Join(stateDir, "haproxy")
+	if err := os.MkdirAll(managedDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(managedDir, "haproxy.cfg")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing.cfg"), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := managedHAProxyConfigPath(stateDir, link); err == nil {
+		t.Fatal("expected dangling symlink to fail closed")
 	}
 }
 

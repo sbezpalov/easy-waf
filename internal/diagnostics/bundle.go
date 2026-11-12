@@ -243,17 +243,31 @@ func managedHAProxyConfigPath(stateDir, configured string) (string, error) {
 	if err := requirePathWithin(managedDir, candidate); err != nil {
 		return "", err
 	}
-	if resolved, resolveErr := filepath.EvalSymlinks(candidate); resolveErr == nil {
-		resolvedDir := managedDir
-		if dir, dirErr := filepath.EvalSymlinks(managedDir); dirErr == nil {
-			resolvedDir = dir
+	resolvedDir, err := filepath.EvalSymlinks(managedDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve managed HAProxy directory: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		// A genuinely missing config is safe to report as missing, but an
+		// existing dangling symlink must fail closed. Resolving the parent also
+		// catches a dangling or escaping symlink in an intermediate component.
+		if _, lstatErr := os.Lstat(candidate); lstatErr == nil || !os.IsNotExist(lstatErr) {
+			return "", fmt.Errorf("resolve managed HAProxy config path: %w", err)
 		}
-		if err := requirePathWithin(resolvedDir, resolved); err != nil {
+		resolvedParent, parentErr := filepath.EvalSymlinks(filepath.Dir(candidate))
+		if parentErr != nil {
+			return "", fmt.Errorf("resolve managed HAProxy config directory: %w", parentErr)
+		}
+		if err := requirePathWithin(resolvedDir, resolvedParent); err != nil {
 			return "", err
 		}
-		candidate = resolved
+		return candidate, nil
 	}
-	return candidate, nil
+	if err := requirePathWithin(resolvedDir, resolved); err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
 func requirePathWithin(base, candidate string) error {
