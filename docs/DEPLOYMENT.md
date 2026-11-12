@@ -1,6 +1,6 @@
 # Deployment: Ubuntu 24.04 LTS — Deployment, OVF/OVA, Distribution
 
-**Version:** root [`VERSION`](../VERSION) (**1.6.0** for the current release); the installer uses it when fetching release artifacts. Artifacts are checked against `SHA256SUMS` from the same release before anything is unpacked — see [SECURITY.md](SECURITY.md#supply-chain).
+**Tree version:** root [`VERSION`](../VERSION) (**1.6.1**); the installer uses it when fetching release artifacts. `main` can be ahead of the latest published GitHub Release, so use a release tag or set `EASY_WAF_RELEASE_VERSION` when installing a published version. Artifacts are checked against `SHA256SUMS` from the same release before anything is unpacked — see [SECURITY.md](SECURITY.md#supply-chain).
 
 ## Development (Windows) vs deployment (Linux)
 

@@ -2,7 +2,7 @@
 
 [English](SECURITY.md) | [Русский](SECURITY.ru.md)
 
-Applies to the release from root [`VERSION`](../VERSION) (**1.6.0**). Acceptance criteria for ACL / host firewall: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) (AC-01, AC-08).
+Applies to the tree version from root [`VERSION`](../VERSION) (**1.6.1**). Acceptance criteria for ACL / host firewall: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) (AC-01, AC-08).
 
 ## Principles
 

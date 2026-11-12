@@ -1,4 +1,4 @@
-.PHONY: build deb offline-bundle test lint check-linux verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
+.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
@@ -51,6 +51,9 @@ offline-bundle: deb
 check-linux:
 	bash scripts/check-linux-artifacts.sh
 
+check-version-docs:
+	bash scripts/check-version-docs.sh
+
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
@@ -88,7 +91,7 @@ test-backup-rotate:
 smoke-appliance:
 	bash scripts/smoke-appliance.sh
 
-verify: check-linux shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate
+verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate
 
 # Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
 verify.:

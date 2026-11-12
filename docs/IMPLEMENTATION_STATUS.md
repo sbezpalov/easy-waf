@@ -1,7 +1,8 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-10  
-**Current VERSION:** 1.6.0 (see root `VERSION` file)
+**Last updated:** 2026-11-13
+
+**Current VERSION:** 1.6.1 (see root `VERSION` file)
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **8**, Partial — **2** (AC-03, AC-04). AC-05 is Done in containers; a real host remains a manual check.
 
 This document records **what the appliance is required to do and where each

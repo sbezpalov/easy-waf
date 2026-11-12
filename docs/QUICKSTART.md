@@ -4,7 +4,7 @@
 
 **Target:** Ubuntu 24.04 LTS (server), **root** on the appliance.
 
-**Ship version:** see root [`VERSION`](../VERSION) in the repo (**1.6.0**); `scripts/install.sh` uses it to fetch the matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).
+**Tree version:** see root [`VERSION`](../VERSION) in the repo (**1.6.1**); `scripts/install.sh` uses it to fetch matching artifacts from GitHub Releases (see [`.github/workflows/release.yml`](../.github/workflows/release.yml)). `main` may be ahead of the latest published release: use a release tag or set `EASY_WAF_RELEASE_VERSION` explicitly when installing a published version. The installer never silently falls back to an older release. Every artifact is verified against **`SHA256SUMS`** from the same release before anything is installed — see [SECURITY.md](SECURITY.md#supply-chain) and [ADR 0001](adr/0001-packaging-and-installer.md).
 
 ## One-command install
 
@@ -25,6 +25,8 @@ This **by default** (full appliance — no extra flags):
 
 If PostgreSQL, nftables and CrowdSec are already how you want them, install the
 package on its own and take over from there:
+
+Published `1.6.0` example:
 
 ```bash
 curl -fLO https://github.com/sbezpalov/easy-waf/releases/download/v1.6.0/easy-waf_1.6.0_amd64.deb
