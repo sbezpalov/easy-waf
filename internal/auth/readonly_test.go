@@ -34,6 +34,7 @@ func TestReadOnlyGate(t *testing.T) {
 		{config.RoleViewer, http.MethodDelete, "/api/v1/ipbl/local/1", http.StatusForbidden},
 		{config.RoleViewer, http.MethodGet, "/api/v1/host/journal", http.StatusForbidden},
 		{config.RoleViewer, http.MethodGet, "/api/v1/panel-users", http.StatusForbidden},
+		{config.RoleViewer, http.MethodGet, "/api/v1/audit", http.StatusForbidden},
 		{config.RoleAdmin, http.MethodPost, "/api/v1/apply", http.StatusNoContent},
 		{"", http.MethodDelete, "/api/v1/ipbl/local/1", http.StatusNoContent},
 	}

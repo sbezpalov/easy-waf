@@ -89,19 +89,19 @@ password, every authenticated route except `GET /api/v1/auth/me`,
 **Password confirmation.** These writes return **403** `{"error":"step_up_required"}`
 unless the session confirmed its password in the last **5 minutes** (call
 [`POST /auth/confirm`](#post-apiv1authconfirm) and repeat with the new token):
-`/api/v1/host/*` routes that change the host; `PUT`/`PATCH /settings` and
-`PUT /settings/management-tls`; `POST /apply` and revision rollback; application
-security writes; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP mutations;
-panel-user and TOTP setup/disable; `POST /diagnostics/bundle`. Reads,
-`POST .../commit` and `POST /host/diagnostics/*` do not need it. A commit only
-keeps a change that was already confirmed, and a lapse must not let the
-auto-rollback undo it. The automation token does not need it either.
+`/api/v1/host/*` routes that change the host (including netplan/firewall
+**commit**); `PATCH /settings` and `PUT /settings/management-tls`; `POST /apply`
+and revision rollback; application security writes; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP
+mutations; panel-user and TOTP setup/disable; `POST /diagnostics/bundle`. Reads
+and `POST /host/diagnostics/*` do not need it. The legacy automation token
+cannot confirm a password, so it cannot call these routes either.
 
 **Automation token.** If `EASY_WAF_ADMIN_TOKEN` is set (at least 24
 characters), that value is also accepted as a bearer token. It acts as the
 principal `automation`, skips the password-change gate and is not revoked by
-logout — rotate it by changing the environment and restarting the API. Prefer
-a session token for anything interactive.
+logout, but it is still subject to step-up on trust-boundary writes — prefer
+a session JWT for those. Rotate it by changing the environment and restarting
+the API.
 
 **Login rate limit.** `POST /auth/login`, `POST /auth/enroll`,
 `POST /auth/change-password` and `POST /auth/confirm` share a per-IP limit: the 10th attempt within
@@ -166,13 +166,13 @@ switch to `--cacert` once you install your own (`PUT /api/v1/settings/management
 Reports whether the appliance is still waiting for first-operator enrollment. Unauthenticated, read-only.
 - **Response:** `200`
   ```json
-  {"enrollment_required": true, "enrollment_file": "/var/lib/easy-waf/secrets/enrollment"}
+  {"enrollment_required": true}
   ```
-  `enrollment_required` is true when no operator exists and the enrollment secret has not been consumed. `enrollment_file` is the resolved path of the enrollment secret, `<state_dir>/secrets/enrollment`.
-- **Errors:** `500` (text/plain) on a database error.
+  `enrollment_required` is true when no operator exists and the enrollment secret has not been consumed. The enrollment secret file path is not returned (use the admin CLI / appliance filesystem).
+- **Errors:** `500` (JSON) on a database error.
 
 ### `POST /api/v1/auth/login`
-Checks a local operator's username and password and issues a session JWT valid for 24 hours (`sessionTTL`). Failures write a `login_failed` audit row, and rate-limited requests write `login_rate_limited`.
+Checks a local operator's username and password and issues a session JWT valid for 8 hours (`sessionTTL`). Failures write a `login_failed` audit row, and rate-limited requests write `login_rate_limited`.
 - **Request body:**
   - `username` (string, required; surrounding whitespace is trimmed; max 128 bytes)
   - `password` (string, required; max 256 bytes)
@@ -181,7 +181,7 @@ Checks a local operator's username and password and issues a session JWT valid f
   ```
 - **Response:** `200`
   ```json
-  {"token": "<jwt>", "must_change_password": false, "expires_in_seconds": 86400}
+  {"token": "<jwt>", "must_change_password": false, "expires_in_seconds": 28800}
   ```
   If `must_change_password` is true, the session can only reach `/auth/me`, `/auth/logout` and `/auth/change-password` until the password is changed.
 - **Errors:**
@@ -412,8 +412,8 @@ Returns the application's `security` object.
 - **Errors:** `404`, `500` (text/plain).
 
 ### `PUT /api/v1/applications/{id}/security`
-Replaces the whole security object, then applies (audit label `api-application-security`). Fields that are omitted are reset to their zero values; `mode` is recomputed from the toggles. Only a body with nothing set (see the `security` rule under `POST /applications`) is replaced with the `balanced` defaults.
-- **Request body:** `config.ApplicationSecurity`.
+Replaces the whole security object, then applies (audit label `api-application-security`). All nine toggle keys must be present; a sparse body returns **400** (use `PATCH` for partial updates). `mode` is recomputed from the toggles.
+- **Request body:** `config.ApplicationSecurity` with every toggle set.
   ```json
   {"rate_limit_enabled": true, "path_acl_enabled": true, "method_filter_enabled": true,
    "basic_waf_enabled": true, "bot_protection_enabled": false, "ip_blacklist_enabled": true,
@@ -421,7 +421,7 @@ Replaces the whole security object, then applies (audit label `api-application-s
    "geoip_policy": "deny", "geoip_country_list": ["CN", "RU"], "rate_limit_rps_override": 30}
   ```
 - **Response:** `200`, the saved `config.ApplicationSecurity`. In the example, `mode` comes back as `custom`.
-- **Errors:** `400` (text/plain) for invalid JSON, or when the application's stored `profile` is unknown. `404` if the application does not exist. `422` / `503` if the apply failed and the change was undone. `500` on a database error.
+- **Errors:** `400` JSON for invalid JSON, an incomplete toggle set, or when the application's stored `profile` is unknown. `404` if the application does not exist. `422` / `503` if the apply failed and the change was undone. `500` on a database error.
 
 ### `PATCH /api/v1/applications/{id}/security`
 Merges a partial JSON object over the stored security object (top-level keys only; `config.MergeApplicationSecurityJSON`), then applies (audit label `api-application-security`). Keys that are omitted keep their stored values.
@@ -532,7 +532,7 @@ Lists every certificate row, ordered by `primary_domain`.
 
 ### `POST /api/v1/certificates`
 Creates or updates (upserts) one certificate row, keyed by `id`.
-- **Request body:** a `config.Certificate` object. No field is required by the handler.
+- **Request body:** a `config.Certificate` object. **`primary_domain` and `mode` are required** (`mode` must be `http-01`, `dns-01`, `self-signed` or `manual`).
   - `id`: omit or send `""` to create a new row with a generated UUID. If present, it must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` and be at most 128 bytes.
   - `pem_crt_path`, `pem_key_path`, `bundle_path`, `fullchain_path`: optional. When set, each must contain only `[A-Za-z0-9._~+@:/-]`, contain no `..` segment, and be at most 4096 characters. Absoluteness is not checked. `bundle_path` is validated but not stored.
   - `dns_provider`: trimmed and stored lower-case. For a `dns-01` certificate it must be empty (meaning the default, `cloudns`), `cloudflare`, `cloudns`, `route53` or `webhook`.
@@ -590,8 +590,8 @@ Returns the current global settings.
    "prometheus_enabled":false,"crowdsec_lapi_key_set":true, "...": "..."}
   ```
 
-### `PUT /api/v1/settings` and `PATCH /api/v1/settings`
-Both methods behave identically: they **merge** the body over the stored settings. `PUT` does not replace the whole document. Needs step-up (management ACL and other trust-boundary fields take effect immediately).
+### `PATCH /api/v1/settings`
+**Merges** the body over the stored settings. Omitted keys keep their stored values. Needs step-up (management ACL and other trust-boundary fields take effect immediately). `PUT /api/v1/settings` returns **405** `{"error":"use PATCH /api/v1/settings"}` (compat: older clients that treated PUT as merge must switch to PATCH).
 - **Merge semantics:**
   - The body must be a single JSON object of at most 1 MiB; trailing data is rejected.
   - Only keys present in the body are applied. Omitted keys keep their stored values, and unknown keys are ignored.
@@ -1178,28 +1178,28 @@ Readiness probe. It pings PostgreSQL with a 2-second timeout. Like `/health`, it
 Prometheus text exposition for the `easy_waf_*` series. The series cover HAProxy frontend request totals and rates, backend sessions and up/down, certificate days remaining, CrowdSec decision count, IP blacklist entry counts, applications by security mode, and apply/apply-error counters. The control plane refreshes the HAProxy-derived values in the background (about every 15 s), not on each scrape. See `metrics.PrometheusExporter` in `internal/metrics/prometheus.go`.
 
 Unlike `/health`, this route **is** subject to the management ACL. It does not accept a session JWT.
-- **Auth:** none by default. When the `EASY_WAF_METRICS_TOKEN` environment variable is set (at least 16 characters, read at process start), the request must send `Authorization: Bearer <token>`. A shorter token is ignored with a log line, which leaves the endpoint open.
+- **Auth:** required when Prometheus is enabled. Set `EASY_WAF_METRICS_TOKEN` (at least 16 characters, read at process start) and send `Authorization: Bearer <token>`. A shorter token is ignored with a log line; scrapes then fail with **401** until a valid token is configured.
 - **Response:** `200`, Prometheus text format.
-- **Errors (text/plain):**
+- **Errors:**
   - `404` (`404 page not found`) when `prometheus_enabled` is `false` in settings, which is the default, or when no exporter is configured.
-  - `401` (`unauthorized`) when a metrics token is configured and the bearer value is missing or wrong.
-  - `405` (`method not allowed`) for non-`GET` methods. In practice a `POST`/`PUT`/`PATCH`/`DELETE` without `X-Requested-With` is rejected earlier by the CSRF middleware with `403` JSON.
+  - `401` JSON `{"error":"metrics token required"}` when Prometheus is on but no usable metrics token is configured; `{"error":"unauthorized"}` when the bearer value is missing or wrong.
+  - `405` JSON for non-`GET` methods. In practice a `POST`/`PUT`/`PATCH`/`DELETE` without `X-Requested-With` is rejected earlier by the CSRF middleware with `403` JSON.
 
 ## Host management
 
 The `/api/v1/host/*` routes manage the appliance host itself (network, firewall, services, packages, power, local users, network diagnostics). They do not run commands directly: each call goes through the privileged host broker (`easy-waf-hostd`). Network and firewall changes have a rollback flow: an `apply` returns a `token` and `expires_at`, and the change is reverted automatically unless it is confirmed with `commit` before it expires. See [HOST-API.md](HOST-API.md) for request and response details.
 
-Routes that change the host need a password confirmation from the last 5 minutes, except the network and firewall commits and the diagnostics; see **Password confirmation** above.
+Routes that change the host (including netplan/firewall **commit**) need a password confirmation from the last 5 minutes; diagnostics do not; see **Password confirmation** above. Legacy immediate `PUT` netplan/firewall and `POST /firewall/apply` return **410 Gone**.
 
 | Method and path | Purpose |
 |---|---|
 | `GET /api/v1/host/network` | Current interfaces and addresses (`ip -j` snapshot) |
-| `PUT /api/v1/host/network/netplan` | Write and apply netplan YAML immediately, without rollback |
+| `PUT /api/v1/host/network/netplan` | **410 Gone** — use apply + commit |
 | `POST /api/v1/host/network/netplan/apply` | Apply netplan YAML with automatic rollback; returns a token |
 | `POST /api/v1/host/network/netplan/commit` | Confirm a pending netplan apply by token |
 | `GET /api/v1/host/firewall` | nftables status and ruleset |
-| `PUT /api/v1/host/firewall/ruleset` | Validate, install and apply the managed nftables ruleset immediately, without rollback |
-| `POST /api/v1/host/firewall/apply` | Load the installed managed ruleset, without rollback |
+| `PUT /api/v1/host/firewall/ruleset` | **410 Gone** — use apply-rollback + commit |
+| `POST /api/v1/host/firewall/apply` | **410 Gone** — use apply-rollback + commit |
 | `POST /api/v1/host/firewall/apply-rollback` | Apply a ruleset with automatic rollback; returns a token |
 | `POST /api/v1/host/firewall/commit` | Confirm a pending firewall apply by token |
 | `GET /api/v1/host/services` | List the allowlisted systemd units and their state |

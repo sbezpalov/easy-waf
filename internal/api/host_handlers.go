@@ -5,6 +5,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -29,8 +31,17 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/users"
 )
 
+// auditRollbackTokenDigest stores a SHA-256 hex digest of a rollback token in
+// audit detail so viewers (and stolen audit exports) cannot finish a commit.
+func auditRollbackTokenDigest(tok string) string {
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *Server) mountHostRoutes(r chi.Router) {
 	r.Route("/host", func(r chi.Router) {
+		r.Use(auth.RequireAdmin)
+
 		r.Get("/network", s.hostGetNetwork)
 		r.Get("/firewall", s.hostGetFirewall)
 		r.Get("/services", s.hostListServices)
@@ -42,24 +53,21 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Get("/disk", s.hostDisk)
 		r.Get("/users", s.hostListUsers)
 
-		// Outside the step-up group on purpose: a commit only keeps a change
-		// that was confirmed, and a lapsed confirmation must not let the
-		// auto-rollback undo it.
-		r.Post("/network/netplan/commit", s.hostNetplanCommit)
-		r.Post("/firewall/commit", s.hostFirewallCommit)
-
 		r.Post("/diagnostics/ping", s.hostPing)
 		r.Post("/diagnostics/trace", s.hostTrace)
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireStepUp(stepUpWindow))
 
+			// Soft-deprecated immediate apply — use apply + commit instead.
 			r.Put("/network/netplan", s.hostPutNetplan)
 			r.Post("/network/netplan/apply", s.hostNetplanApply)
+			r.Post("/network/netplan/commit", s.hostNetplanCommit)
 
 			r.Put("/firewall/ruleset", s.hostPutFirewall)
 			r.Post("/firewall/apply", s.hostApplyFirewall)
 			r.Post("/firewall/apply-rollback", s.hostFirewallApplyRB)
+			r.Post("/firewall/commit", s.hostFirewallCommit)
 
 			r.Post("/services/{unit}/{action}", s.hostServiceAction)
 
@@ -101,19 +109,10 @@ func (s *Server) hostAppendAudit(ctx context.Context, action string, detail map[
 	_ = s.Eng.Store.AppendAudit(ctx, action, detail)
 }
 
-func (s *Server) hostPutNetplan(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		YAML string `json:"yaml"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-	if err := network.ApplyNetplan(r.Context(), body.YAML); err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+func (s *Server) hostPutNetplan(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error": "gone: use POST /api/v1/host/network/netplan/apply then /commit",
+	})
 }
 
 func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +121,7 @@ func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
 		RollbackSeconds int    `json:"rollback_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	sec := rollback.ClampRollbackSeconds(body.RollbackSeconds)
@@ -136,7 +135,7 @@ func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_netplan_apply", map[string]any{
-		"token":            tok,
+		"token_sha256":     auditRollbackTokenDigest(tok),
 		"rollback_seconds": sec,
 		"expires_at":       expires.UTC().Format(time.RFC3339),
 	}, true)
@@ -151,7 +150,7 @@ func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	if !rollback.ValidToken(body.Token) {
@@ -162,7 +161,9 @@ func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	s.hostAppendAudit(r.Context(), "host_netplan_commit", map[string]any{"token": body.Token}, false)
+	s.hostAppendAudit(r.Context(), "host_netplan_commit", map[string]any{
+		"token_sha256": auditRollbackTokenDigest(body.Token),
+	}, false)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "committed"})
 }
 
@@ -175,27 +176,16 @@ func (s *Server) hostGetFirewall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
-func (s *Server) hostPutFirewall(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Ruleset string `json:"ruleset"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-	if err := nft.PutRuleset(r.Context(), body.Ruleset); err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+func (s *Server) hostPutFirewall(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error": "gone: use POST /api/v1/host/firewall/apply-rollback then /commit",
+	})
 }
 
-func (s *Server) hostApplyFirewall(w http.ResponseWriter, r *http.Request) {
-	if err := nft.Apply(r.Context()); err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+func (s *Server) hostApplyFirewall(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error": "gone: use POST /api/v1/host/firewall/apply-rollback then /commit",
+	})
 }
 
 func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +194,7 @@ func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
 		RollbackSeconds int    `json:"rollback_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	sec := rollback.ClampRollbackSeconds(body.RollbackSeconds)
@@ -218,7 +208,7 @@ func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_firewall_apply", map[string]any{
-		"token":            tok,
+		"token_sha256":     auditRollbackTokenDigest(tok),
 		"rollback_seconds": sec,
 		"expires_at":       expires.UTC().Format(time.RFC3339),
 	}, true)
@@ -233,7 +223,7 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	if !rollback.ValidToken(body.Token) {
@@ -244,7 +234,9 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	s.hostAppendAudit(r.Context(), "host_firewall_commit", map[string]any{"token": body.Token}, false)
+	s.hostAppendAudit(r.Context(), "host_firewall_commit", map[string]any{
+		"token_sha256": auditRollbackTokenDigest(body.Token),
+	}, false)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "committed"})
 }
 
@@ -506,7 +498,7 @@ func (s *Server) hostCreateUser(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	if !hostspec.ValidUsername(body.Username) {
@@ -545,7 +537,7 @@ func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
 		Keys []string `json:"keys"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	if err := users.SetSSHKeys(r.Context(), name, body.Keys); err != nil {
@@ -565,7 +557,7 @@ func (s *Server) hostPing(w http.ResponseWriter, r *http.Request) {
 		Count int    `json:"count"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	out, err := diag.Ping(r.Context(), body.Host, body.Count)
@@ -581,7 +573,7 @@ func (s *Server) hostTrace(w http.ResponseWriter, r *http.Request) {
 		Host string `json:"host"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	out, err := diag.Trace(r.Context(), body.Host)

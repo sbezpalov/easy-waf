@@ -17,7 +17,7 @@ type Principal struct {
 	Username           string
 	MustChangePassword bool
 	Role               string // config.RoleAdmin or config.RoleViewer
-	IsLegacyToken      bool   // EASY_WAF_ADMIN_TOKEN — full API access without password gate
+	IsLegacyToken      bool   // EASY_WAF_ADMIN_TOKEN — admin role without password-change gate; still needs step-up for trust writes
 	ExpiresAt          time.Time
 	StepUpAt           time.Time // last password confirmation in this session; zero if none
 }

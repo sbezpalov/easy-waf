@@ -118,7 +118,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/stats/summary", s.handleStatsSummary)
 				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 				r.Get("/audit", s.listAudit)
-				r.Get("/panel-users", s.listPanelUsers)
+				r.With(auth.RequireAdmin).Get("/panel-users", s.listPanelUsers)
 
 				// Trust-boundary / outage-capable writes: stolen admin JWT must
 				// not widen management ACL, rebuild the edge, or dump diagnostics
@@ -159,16 +159,18 @@ func (s *Server) Router() chi.Router {
 					r.Post("/geoip/reload", s.geoipReload)
 					r.Post("/geoip/database", s.geoipUploadDatabase)
 
-					r.Post("/panel-users", s.createPanelUser)
-					r.Patch("/panel-users/{username}", s.patchPanelUser)
-					r.Post("/panel-users/{username}/reset-password", s.resetPanelUserPassword)
-					r.Delete("/panel-users/{username}", s.deletePanelUser)
-					r.Delete("/panel-users/{username}/totp", s.resetPanelUserTOTP)
+					r.Group(func(r chi.Router) {
+						r.Use(auth.RequireAdmin)
+						r.Post("/panel-users", s.createPanelUser)
+						r.Patch("/panel-users/{username}", s.patchPanelUser)
+						r.Post("/panel-users/{username}/reset-password", s.resetPanelUserPassword)
+						r.Delete("/panel-users/{username}", s.deletePanelUser)
+						r.Delete("/panel-users/{username}/totp", s.resetPanelUserTOTP)
+						r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
+					})
 
 					r.Post("/auth/totp/setup", s.totpSetup)
 					r.Post("/auth/totp/disable", s.totpDisable)
-
-					r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 				})
 
 				r.Post("/auth/totp/enable", s.totpEnable)
@@ -180,30 +182,30 @@ func (s *Server) Router() chi.Router {
 	return r
 }
 
-// metricsToken optionally locks /metrics behind a dedicated bearer token.
-//
-// The endpoint is otherwise protected only by the management source-CIDR
-// allowlist, which defaults to all of RFC1918 — every host on the LAN can read
-// appliance metrics. Prometheus cannot present a session JWT, hence a separate
-// static token rather than the normal auth middleware.
+// metricsToken locks /metrics behind a dedicated bearer token when Prometheus
+// is enabled. Prometheus cannot present a session JWT, hence a separate static
+// token rather than the normal auth middleware. Without a configured token,
+// scrapes fail closed (management CIDR alone is not enough).
 var metricsToken = auth.LoadStaticToken("EASY_WAF_METRICS_TOKEN", 16)
 
 func (s *Server) metricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
 		if !s.Eng.Settings().PrometheusEnabled || s.Prom == nil {
 			http.NotFound(w, r)
 			return
 		}
-		if metricsToken.Enabled() {
-			raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-			if !metricsToken.Matches(raw) {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
+		if !metricsToken.Enabled() {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "metrics token required"})
+			return
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if !metricsToken.Matches(raw) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
 		}
 		s.Prom.Handler().ServeHTTP(w, r)
 	})
@@ -483,18 +485,30 @@ func (s *Server) deleteCert(w http.ResponseWriter, r *http.Request) {
 func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 	var c config.Certificate
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(c.PrimaryDomain) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "primary_domain required"})
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	switch mode {
+	case "http-01", "dns-01", "self-signed", "manual":
+		c.Mode = mode
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be http-01, dns-01, self-signed or manual"})
 		return
 	}
 	// Paths as well as the ID: they are written into the crt-list, where a
 	// newline is a second entry and an SNI filter on it can capture every vhost.
 	if err := config.ValidateCertificateRenderSafety(&c); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	normalizeDNSProvider(&c)
 	if err := validateCertificateDNS(s.Eng.StateDir, c); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
@@ -513,7 +527,10 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Label string `json:"label"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeClientError(w, http.StatusBadRequest, "invalid json", err)
+		return
+	}
 	ctx, cancel := applyContext(r.Context())
 	defer cancel()
 	if err := s.Eng.Apply(ctx, body.Label); err != nil {
@@ -633,13 +650,15 @@ func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
 	s.mergeAndPersistSettings(w, r)
 }
 
-func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
-	s.mergeAndPersistSettings(w, r)
+func (s *Server) putSettings(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Allow", "GET, PATCH")
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{
+		"error": "use PATCH /api/v1/settings",
+	})
 }
 
 // mergeAndPersistSettings reads the body as a JSON object and merges it over current settings.
-// Omitted keys keep existing values (PATCH semantics). PUT uses the same merge so partial bodies
-// do not zero paths or durations; send only the fields you want to change, or use GET → edit → PUT.
+// Omitted keys keep existing values (PATCH semantics).
 func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request) {
 	body, ok := readJSONBody(w, r)
 	if !ok {
@@ -829,11 +848,11 @@ func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
 func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 	ip := strings.TrimSpace(r.URL.Query().Get("ip"))
 	if ip == "" {
-		http.Error(w, "ip query parameter required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ip query parameter required"})
 		return
 	}
 	if net.ParseIP(ip) == nil {
-		http.Error(w, "invalid ip", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ip"})
 		return
 	}
 	if r.URL.Query().Get("nocache") == "1" && s.Eng.GeoIP().Cache != nil {
@@ -841,6 +860,10 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	g := s.Eng.Settings()
 	if probe := strings.TrimSpace(r.URL.Query().Get("probe_mmdb_path")); probe != "" {
+		if err := s.allowlistedGeoIPMMDBPath(probe); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		g.GeoIPMMDBPath = probe
 		g.GeoIPProvider = "maxmind"
 	}

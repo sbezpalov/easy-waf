@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/engine"
 )
 
 // applyOrUndo applies the edge after a database change and, when the apply
@@ -24,6 +25,11 @@ import (
 // artifact set back on disk, so undoing the row leaves the database and the
 // edge matching again.
 func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(context.Context) error) error {
+	release, lerr := s.Eng.Store.AcquireAdvisoryLock(ctx, engine.ApplyOrUndoAdvisoryLockKey)
+	if lerr != nil {
+		return lerr
+	}
+	defer func() { _ = release() }()
 	err := s.maybeAutoApply(ctx, label)
 	if err == nil {
 		return nil

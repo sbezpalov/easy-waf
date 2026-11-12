@@ -4,13 +4,17 @@
 package auth
 
 import (
+	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
+
+var legacyTokenWarn sync.Once
 
 // Session validates Authorization: Bearer — JWT (HS256) or legacy EASY_WAF_ADMIN_TOKEN.
 // On success, attaches Principal to the request context.
@@ -25,6 +29,9 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 				return
 			}
 			if legacy.Matches(raw) {
+				legacyTokenWarn.Do(func() {
+					log.Printf("auth: EASY_WAF_ADMIN_TOKEN accepted; prefer a session JWT — trust-boundary writes require step-up, which this static token cannot provide")
+				})
 				p := &Principal{Username: "automation", IsLegacyToken: true, Role: config.RoleAdmin}
 				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 				return
@@ -56,8 +63,8 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 }
 
 // RequireStepUp returns 403 step_up_required unless the session confirmed its
-// password within window. The automation token passes: it is a root-only secret
-// from easy-waf.env, and no person is there to confirm anything.
+// password within window. The legacy EASY_WAF_ADMIN_TOKEN does not bypass this:
+// it has no password to confirm, so it cannot perform trust-boundary writes.
 func RequireStepUp(window time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,13 +73,31 @@ func RequireStepUp(window time.Duration) func(http.Handler) http.Handler {
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			if !p.IsLegacyToken && time.Since(p.StepUpAt) > window {
+			if time.Since(p.StepUpAt) > window {
 				jsonErr(w, http.StatusForbidden, "step_up_required")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireAdmin allows only RoleAdmin and the legacy automation principal.
+// Unknown or empty roles fail closed (unlike ReadOnlyGate, which only blocks
+// an exact viewer role).
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, ok := PrincipalFrom(r.Context())
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if p.IsLegacyToken || p.Role == config.RoleAdmin {
+			next.ServeHTTP(w, r)
+			return
+		}
+		jsonErr(w, http.StatusForbidden, "forbidden")
+	})
 }
 
 // PasswordChangeGate returns 403 until the user changes the initial password (not applied to legacy tokens).
@@ -109,8 +134,9 @@ var viewerAllowedPOST = map[string]bool{
 }
 
 // viewerDeniedPrefixes stay closed to viewers even for reads: host
-// management, support bundles and the panel user list.
-var viewerDeniedPrefixes = []string{"/api/v1/host/", "/api/v1/diagnostics/", "/api/v1/panel-users"}
+// management, support bundles, the panel user list and audit (host rollback
+// tokens used to appear in audit detail).
+var viewerDeniedPrefixes = []string{"/api/v1/host/", "/api/v1/diagnostics/", "/api/v1/panel-users", "/api/v1/audit"}
 
 // ReadOnlyGate returns 403 read_only for a viewer's writes and for the areas
 // in viewerDeniedPrefixes. Admins and the automation token pass.

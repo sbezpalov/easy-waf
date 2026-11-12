@@ -15,15 +15,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
+	"github.com/easy-waf/easy-waf/internal/config"
 )
 
-// A commit only keeps a change that was confirmed, and a lapse must not let the
-// auto-rollback undo it. The diagnostics only send probes.
+// Diagnostics only send probes and stay outside RequireStepUp.
 var hostRoutesWithoutStepUp = map[string]bool{
-	"POST /host/network/netplan/commit": true,
-	"POST /host/firewall/commit":        true,
-	"POST /host/diagnostics/ping":       true,
-	"POST /host/diagnostics/trace":      true,
+	"POST /host/diagnostics/ping":  true,
+	"POST /host/diagnostics/trace": true,
 }
 
 func TestEveryMutatingHostRouteRequiresStepUp(t *testing.T) {
@@ -39,7 +37,10 @@ func TestEveryMutatingHostRouteRequiresStepUp(t *testing.T) {
 		}
 		checked++
 		req := httptest.NewRequest(method, param.ReplaceAllString(route, "x"), nil)
-		req = req.WithContext(auth.WithPrincipal(req.Context(), &auth.Principal{Username: "op"}))
+		req = req.WithContext(auth.WithPrincipal(req.Context(), &auth.Principal{
+			Username: "op",
+			Role:     config.RoleAdmin,
+		}))
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "step_up_required") {

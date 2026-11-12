@@ -32,7 +32,7 @@ func TestRequireStepUp(t *testing.T) {
 		"never confirmed":     {&Principal{Username: "op"}, http.StatusForbidden},
 		"confirmed just now":  {&Principal{Username: "op", StepUpAt: time.Now()}, http.StatusNoContent},
 		"confirmation lapsed": {&Principal{Username: "op", StepUpAt: time.Now().Add(-6 * time.Minute)}, http.StatusForbidden},
-		"automation token":    {&Principal{Username: "automation", IsLegacyToken: true}, http.StatusNoContent},
+		"automation token":    {&Principal{Username: "automation", IsLegacyToken: true}, http.StatusForbidden},
 		"no principal":        {nil, http.StatusUnauthorized},
 	} {
 		t.Run(name, func(t *testing.T) {

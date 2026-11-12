@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/metrics"
@@ -39,6 +40,57 @@ func TestMetricsEndpointDisabled(t *testing.T) {
 }
 
 func TestMetricsEndpointEnabled(t *testing.T) {
+	const tok = "metrics-token-abcdefgh"
+	t.Setenv("EASY_WAF_METRICS_TOKEN", tok)
+	prev := metricsToken
+	metricsToken = auth.LoadStaticToken("EASY_WAF_METRICS_TOKEN", 16)
+	t.Cleanup(func() { metricsToken = prev })
+
+	eng := engine.New("", nil, config.GlobalSettings{
+		PrometheusEnabled:      true,
+		ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
+	})
+	s := &Server{
+		Eng:       eng,
+		JWTSecret: []byte("test-secret"),
+		Prom:      metrics.NewPrometheusExporter(),
+	}
+	ts := httptest.NewServer(s.Router())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without bearer, got %d", resp.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "# HELP easy_waf") {
+		t.Fatalf("expected prometheus exposition, got:\n%s", body)
+	}
+}
+
+func TestMetricsEndpointRequiresTokenWhenEnabled(t *testing.T) {
+	prev := metricsToken
+	metricsToken = auth.StaticToken{}
+	t.Cleanup(func() { metricsToken = prev })
+
 	eng := engine.New("", nil, config.GlobalSettings{
 		PrometheusEnabled:      true,
 		ManagementAllowedCIDRs: []string{"127.0.0.0/8"},
@@ -56,11 +108,7 @@ func TestMetricsEndpointEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "# HELP easy_waf") {
-		t.Fatalf("expected prometheus exposition, got:\n%s", body)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when metrics token unset, got %d", resp.StatusCode)
 	}
 }

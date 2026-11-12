@@ -57,7 +57,7 @@ const maxPasswordBytes = 72
 const errPasswordTooLong = "password must be at most 72 bytes"
 
 // sessionTTL is how long an issued management JWT stays valid.
-const sessionTTL = 24 * time.Hour
+const sessionTTL = 8 * time.Hour
 
 // bcryptCost is the work factor for operator password hashes.
 const bcryptCost = 12
@@ -80,9 +80,10 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	// Public: enrollment pending flag only. The secret file path is for
+	// operators via easy-waf-admin / the appliance FS, not unauthenticated clients.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enrollment_required": pending,
-		"enrollment_file":     enroll.FilePath(s.Eng.StateDir),
 	})
 }
 
@@ -108,7 +109,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 	var body enrollRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	secret := strings.TrimSpace(body.Secret)
@@ -117,19 +118,39 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		user = "admin"
 	}
 	if secret == "" || body.Password == "" {
-		http.Error(w, "secret and password required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "secret and password required"})
 		return
 	}
-	if len(user) > 128 || len(body.Password) > 256 || len(secret) > 256 {
-		http.Error(w, "credentials are too long", http.StatusBadRequest)
+	if !panelUsernameRe.MatchString(user) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username: 1-64 characters, letters, digits and . _ @ -"})
+		return
+	}
+	if len(body.Password) > 256 || len(secret) > 256 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "credentials are too long"})
 		return
 	}
 	if len(strings.TrimSpace(body.Password)) < 8 {
-		http.Error(w, "password must be at least 8 characters", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 8 characters"})
 		return
 	}
 	if len(body.Password) > maxPasswordBytes {
-		http.Error(w, errPasswordTooLong, http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errPasswordTooLong})
+		return
+	}
+
+	if err := s.Eng.Store.VerifyEnrollmentSecret(r.Context(), secret); err != nil {
+		_ = s.Eng.Store.AppendAudit(r.Context(), "enrollment_failed", map[string]any{
+			"source_ip": ipStr,
+			"username":  user,
+		})
+		switch {
+		case errors.Is(err, store.ErrEnrollmentSecretMismatch), errors.Is(err, store.ErrEnrollmentNotPending):
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid enrollment secret"})
+		case errors.Is(err, store.ErrEnrollmentAlreadyCompleted):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "enrollment already completed"})
+		default:
+			writeInternalError(w, err)
+		}
 		return
 	}
 
@@ -165,7 +186,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
 	if err != nil || u == nil {
-		http.Error(w, "enrollment succeeded but session could not be issued", http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
@@ -202,16 +223,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var body loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	user := strings.TrimSpace(body.Username)
 	if user == "" || body.Password == "" {
-		http.Error(w, "username and password required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password required"})
 		return
 	}
 	if len(user) > 128 || len(body.Password) > 256 || len(body.TOTPCode) > 64 {
-		http.Error(w, "credentials are too long", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "credentials are too long"})
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
@@ -276,7 +297,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	p, ok := auth.PrincipalFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 	if p.IsLegacyToken {
@@ -285,7 +306,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u == nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, meResponse{Username: u.Username, MustChangePassword: u.MustChangePassword, Role: u.Role, TOTPEnabled: u.TOTPEnabled})
@@ -299,16 +320,16 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	p, ok := auth.PrincipalFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 	if p.IsLegacyToken {
-		http.Error(w, "legacy automation token has no session to revoke", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "legacy automation token has no session to revoke"})
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u == nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 	if err := s.Eng.Store.RevokeUserSessions(r.Context(), u.ID); err != nil {
@@ -325,7 +346,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
 	p, ok := auth.PrincipalFrom(r.Context())
 	if !ok || p.IsLegacyToken {
-		http.Error(w, "use local user session to change password", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use local user session to change password"})
 		return
 	}
 	// current_password is checked here too, so this endpoint gets the same
@@ -339,24 +360,24 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	var body changePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	if len(strings.TrimSpace(body.NewPassword)) < 8 {
-		http.Error(w, "new password must be at least 8 characters", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new password must be at least 8 characters"})
 		return
 	}
 	if len(body.NewPassword) > maxPasswordBytes {
-		http.Error(w, errPasswordTooLong, http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errPasswordTooLong})
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u == nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.CurrentPassword)) != nil {
-		http.Error(w, "current password incorrect", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password incorrect"})
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcryptCost)
@@ -370,7 +391,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	u2, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u2 == nil {
-		http.Error(w, "password changed but session could not be issued", http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {

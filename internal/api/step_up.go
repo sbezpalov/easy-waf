@@ -35,7 +35,7 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
 	p, ok := auth.PrincipalFrom(r.Context())
 	if !ok || p.IsLegacyToken {
-		http.Error(w, "use local user session to confirm a password", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use local user session to confirm a password"})
 		return
 	}
 	ip, ipOK := clientIP(r)
@@ -49,12 +49,12 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	var body confirmRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
 	if err != nil || u == nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)) != nil {

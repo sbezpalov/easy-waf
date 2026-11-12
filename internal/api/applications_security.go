@@ -26,11 +26,36 @@ func (s *Server) getAppSecurity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.Security)
 }
 
+// appSecurityPUTRequiredKeys must all be present on PUT so omitted toggles
+// cannot silently flip to false / defaults. Prefer PATCH for partial updates.
+var appSecurityPUTRequiredKeys = []string{
+	"rate_limit_enabled", "path_acl_enabled", "method_filter_enabled",
+	"basic_waf_enabled", "bot_protection_enabled", "ip_blacklist_enabled",
+	"ip_allowlist_enabled", "geoip_enabled", "crowdsec_enabled",
+}
+
 func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	raw, ok := readJSONBody(w, r)
+	if !ok {
+		return
+	}
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &present); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	for _, key := range appSecurityPUTRequiredKeys {
+		if _, has := present[key]; !has {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "incomplete security body; send all toggles on PUT or use PATCH",
+			})
+			return
+		}
+	}
 	var sec config.ApplicationSecurity
-	if err := json.NewDecoder(r.Body).Decode(&sec); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := json.Unmarshal(raw, &sec); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	a, ok := s.loadApplication(w, r, id)
@@ -45,7 +70,7 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 	normalizeRequestSecurity(&sec)
 	a.Security = sec
 	if _, err := profiles.Resolve(a.Profile); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
@@ -76,13 +101,13 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	merged, err := config.MergeApplicationSecurityJSON(a.Security, body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	merged.Mode = string(profiles.DetectMode(merged))
 	a.Security = merged
 	if _, err := profiles.Resolve(a.Profile); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
@@ -104,12 +129,12 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var body securityModeBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	mode, ok := profiles.ParseSecurityMode(body.Mode)
 	if !ok {
-		http.Error(w, "unknown mode", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown mode"})
 		return
 	}
 	a, ok := s.loadApplication(w, r, id)
@@ -124,7 +149,7 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 	prev := a.Security.Mode
 	profiles.ApplyModePreset(&a, mode)
 	if _, err := profiles.Resolve(a.Profile); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {

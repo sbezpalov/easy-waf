@@ -6,10 +6,14 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/easy-waf/easy-waf/internal/config"
 )
 
 type geoipProviderRow struct {
@@ -62,10 +66,35 @@ func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "geoip_mmdb_path is empty"})
 		return
 	}
+	if err := s.allowlistedGeoIPMMDBPath(path); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := s.Eng.GeoIP().ReloadMaxMindDB(path); err != nil {
 		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	s.Eng.GeoIP().Cache.Clear()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// allowlistedGeoIPMMDBPath restricts probe/reload opens to the appliance GeoIP
+// data directory and /etc/easy-waf (same render-safe rules as other config paths).
+func (s *Server) allowlistedGeoIPMMDBPath(path string) error {
+	path = strings.TrimSpace(path)
+	if err := config.ValidateConfigFilePath("mmdb_path", path, false); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("mmdb_path must be an absolute path")
+	}
+	clean := filepath.Clean(path)
+	for _, dir := range []string{s.geoipDir(), "/etc/easy-waf"} {
+		root := filepath.Clean(dir)
+		prefix := root + string(filepath.Separator)
+		if strings.HasPrefix(clean, prefix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("mmdb_path must be under %s/ or /etc/easy-waf/", s.geoipDir())
 }
