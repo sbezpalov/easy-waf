@@ -462,18 +462,29 @@ install_release_package() {
   arch="$(easy_waf_release_arch)"
   local deb="${REPO_ROOT}/dist/easy-waf_${ver}_${arch}.deb"
   local tmpd=""
+  # shellcheck source=lib/github-repo.sh
+  source "${SCRIPT_DIR}/lib/github-repo.sh"
+  # shellcheck source=lib/release-verify.sh
+  source "${SCRIPT_DIR}/lib/release-verify.sh"
+  local gh base name
+  gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
+  base="https://github.com/${gh}/releases/download/v${ver}"
+  name="easy-waf_${ver}_${arch}.deb"
   if [[ -f "$deb" ]]; then
     log "Using local package: $deb"
+    # Local dist/*.deb used to skip verification. A substituted package is root
+    # RCE via dpkg maintainer scripts — same fail-closed rule as downloads.
+    # Prefer dist/SHA256SUMS when present (offline/dev builds); else the release sums.
+    local sums="${REPO_ROOT}/dist/SHA256SUMS"
+    if [[ ! -f "$sums" ]]; then
+      sums="${base}/SHA256SUMS"
+    fi
+    if ! easy_waf_verify_release_artifact "$deb" "$name" "$sums"; then
+      log "Local package failed verification (set EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 to override)"
+      return 1
+    fi
   else
-    # shellcheck source=lib/github-repo.sh
-    source "${SCRIPT_DIR}/lib/github-repo.sh"
-    local gh base name url
-    gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
-    base="https://github.com/${gh}/releases/download/v${ver}"
-    name="easy-waf_${ver}_${arch}.deb"
-    url="${base}/${name}"
-    # shellcheck source=lib/release-verify.sh
-    source "${SCRIPT_DIR}/lib/release-verify.sh"
+    local url="${base}/${name}"
     tmpd="$(mktemp -d)" || return 1
     deb="${tmpd}/${name}"
     log "Trying release package: $url"

@@ -50,7 +50,11 @@ SUMS="${TMPD}/SHA256SUMS"
 parsed="$(awk -v n="$NAME" '{ f=$NF; sub(/^\*/,"",f); if (tolower(f)==tolower(n)) { print tolower($1); exit } }' "$SUMS")"
 [[ "$parsed" == "$DIGEST" ]] || fail "SHA256SUMS parsing picked '$parsed' instead of '$DIGEST'"
 
-# 5. fail-closed when SHA256SUMS cannot be fetched (file:// URL that does not exist)
+# 5a. local absolute SHA256SUMS path (dist/ offline / local .deb installs)
+if ! easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" >/dev/null 2>&1; then
+  fail "local SHA256SUMS path rejected a matching artifact"
+fi
+# 5b. fail-closed when SHA256SUMS cannot be fetched
 if easy_waf_verify_release_artifact "$ART" "$NAME" "https://127.0.0.1:1/SHA256SUMS" >/dev/null 2>&1; then
   fail "missing SHA256SUMS accepted (must fail closed)"
 fi

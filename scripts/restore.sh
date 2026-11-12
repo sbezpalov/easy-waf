@@ -85,9 +85,10 @@ if [[ ! -d "$ROOT/state" ]] || [[ ! -d "$ROOT/etc" ]]; then
   exit 1
 fi
 
-echo "[easy-waf-restore] stopping control plane (if running)…"
+echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
 systemctl stop easy-waf-api.service 2>/dev/null || true
 systemctl stop easy-waf-acmed.service 2>/dev/null || true
+systemctl stop easy-waf-hostd.service 2>/dev/null || true
 
 REST_ENV="$ROOT/etc/easy-waf.env"
 if [[ ! -f "$REST_ENV" ]]; then
@@ -102,10 +103,19 @@ if [[ -z "$DATABASE_URL" ]]; then
   exit 1
 fi
 
-echo "[easy-waf-restore] pg_restore into configured database (drops conflicting objects)…"
-pg_restore --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/easywaf.dump"
+echo "[easy-waf-restore] pg_restore into configured database (single transaction; drops conflicting objects)…"
+# --single-transaction keeps --clean + restore atomic: a mid-restore failure
+# rolls back instead of leaving a half-destroyed schema with the control plane down.
+if ! pg_restore --single-transaction --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/easywaf.dump"; then
+  echo "ERROR: pg_restore failed — database left unchanged; refusing to replace on-disk state" >&2
+  exit 1
+fi
 
 mkdir -p "$STATE" "$CFG"
+# Wipe then replace: extract-over-existing left orphan PEMs, edge tokens, DNS
+# env, rollback/staging and mixed old secrets with the restored DB.
+echo "[easy-waf-restore] wiping $STATE before restore (replace, not merge)…"
+find "$STATE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 echo "[easy-waf-restore] restoring $STATE from backup…"
 tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 # The backup's record of which certificates HAProxy had loaded describes the
@@ -114,6 +124,8 @@ tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 # when the POST /apply below is skipped.
 rm -f "$STATE/haproxy/.loaded-certs.json"
 
+echo "[easy-waf-restore] wiping $CFG before restore (replace, not merge)…"
+find "$CFG" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 echo "[easy-waf-restore] restoring $CFG from backup…"
 tar -C "$ROOT/etc" -cf - . | tar --no-same-owner -C "$CFG" -xf -
 
@@ -141,6 +153,7 @@ fi
 
 echo "[easy-waf-restore] starting services…"
 systemctl daemon-reload 2>/dev/null || true
+systemctl start easy-waf-hostd.service 2>/dev/null || true
 systemctl start easy-waf-api.service 2>/dev/null || {
   echo "WARNING: easy-waf-api failed to start — check journalctl -u easy-waf-api" >&2
 }

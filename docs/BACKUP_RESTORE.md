@@ -19,6 +19,8 @@ sudo bash scripts/backup.sh
 
 Writes **`./easy-waf-backup-<timestamp>.tar.gz`** in the current directory and prints **absolute path** and **size** (`du -h`).
 
+The script **stops `easy-waf-api` and `easy-waf-acmed`** for the dump/archive window so PostgreSQL and on-disk secrets/certs stay consistent, then starts them again (including on failure). HAProxy keeps serving the last applied edge config during the pause.
+
 Custom output path:
 
 ```bash
@@ -61,13 +63,13 @@ sudo bash scripts/restore.sh /var/backups/easy-waf-20260415-180000.tar.gz
 
 Steps:
 
-1. Stops **`easy-waf-api`** and **`easy-waf-acmed`**.
+1. Stops **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
 2. Extracts the archive to a temp directory.
-3. **`pg_restore --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host).
-4. Restores **`state/`** → `EASY_WAF_STATE_DIR` and **`etc/`** → `/etc/easy-waf` (merged via tar extract).
+3. **`pg_restore --single-transaction --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host). A failed restore leaves the database unchanged and **does not** replace on-disk state.
+4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
-7. Starts **`easy-waf-api`** / **`easy-waf-acmed`**.
+7. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
 8. **`POST /api/v1/apply`** with **`Authorization: Bearer $EASY_WAF_ADMIN_TOKEN`** (from the shell environment **or** from the restored `easy-waf.env` after it is sourced) to regenerate HAProxy config and reload HAProxy (unless skipped).
 9. Restarts **`easy-waf-api`** and **`easy-waf-acmed`**.
 

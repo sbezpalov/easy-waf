@@ -85,20 +85,28 @@ easy_waf_verify_sums_signature() {
   return "$rc"
 }
 
-# easy_waf_verify_release_artifact <file> <name-in-SHA256SUMS> <SHA256SUMS-url>
+# easy_waf_verify_release_artifact <file> <name-in-SHA256SUMS> <SHA256SUMS-url-or-path>
 # Fail-closed: missing SHA256SUMS, missing entry or mismatch → non-zero.
+# Third argument may be an https:// URL or an absolute local path (dist/SHA256SUMS).
 easy_waf_verify_release_artifact() {
   local file="${1:?}" name="${2:?}" sums_url="${3:?}"
-  local sums expected rc=0
+  local sums expected rc=0 sums_tmp=0
 
-  sums="$(mktemp)" || return 1
-
-  if ! easy_waf_curl_https -o "$sums" "$sums_url" 2>/dev/null; then
-    log_relv "SHA256SUMS not published at $sums_url"
-    rc=1
-  elif ! easy_waf_verify_sums_signature "$sums" "$sums_url"; then
-    rc=1
+  if [[ "$sums_url" == /* && -f "$sums_url" ]]; then
+    sums="$sums_url"
   else
+    sums="$(mktemp)" || return 1
+    sums_tmp=1
+    if ! easy_waf_curl_https -o "$sums" "$sums_url" 2>/dev/null; then
+      log_relv "SHA256SUMS not published at $sums_url"
+      rc=1
+    fi
+  fi
+
+  if [[ "$rc" -eq 0 ]] && ! easy_waf_verify_sums_signature "$sums" "$sums_url"; then
+    rc=1
+  fi
+  if [[ "$rc" -eq 0 ]]; then
     # Accept both "<hash>  name" and "<hash> *name" (sha256sum binary mode).
     expected="$(awk -v n="$name" '{ f=$NF; sub(/^\*/,"",f); if (tolower(f)==tolower(n)) { print tolower($1); exit } }' "$sums")"
     if [[ -z "$expected" ]]; then
@@ -108,7 +116,9 @@ easy_waf_verify_release_artifact() {
       easy_waf_verify_sha256 "$file" "$expected" || rc=1
     fi
   fi
-  rm -f "$sums"
+  if [[ "$sums_tmp" -eq 1 ]]; then
+    rm -f "$sums"
+  fi
 
   if [[ "$rc" -ne 0 ]]; then
     if [[ "${EASY_WAF_ALLOW_UNVERIFIED_RELEASE:-0}" == "1" ]]; then

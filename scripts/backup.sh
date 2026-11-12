@@ -99,8 +99,17 @@ if [[ -n "$DIR" && ! -d "$DIR" ]]; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
+# Track which writers we stopped so cleanup can restart them even on failure.
+BACKUP_STOPPED_UNITS=()
 # A failed run leaves no truncated archive for rotation to count.
-cleanup() { rm -rf "$WORKDIR"; rm -f "${OUT}.partial"; }
+cleanup() {
+  local u
+  for u in "${BACKUP_STOPPED_UNITS[@]}"; do
+    systemctl start "$u" 2>/dev/null || true
+  done
+  rm -rf "$WORKDIR"
+  rm -f "${OUT}.partial"
+}
 trap cleanup EXIT
 
 TOP="easy-waf-backup-${STAMP}"
@@ -112,12 +121,25 @@ mkdir -p "$ROOT/state" "$ROOT/etc"
   echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "state_dir=$STATE"
   echo "config_dir=$CFG"
+  echo "quiesced=easy-waf-api,easy-waf-acmed"
 } >"$ROOT/MANIFEST.txt"
 
 if ! command -v pg_dump &>/dev/null; then
   echo "ERROR: pg_dump not found (install postgresql client packages)" >&2
   exit 1
 fi
+
+# Quiesce control-plane writers so pg_dump and on-disk secrets/certs stay
+# consistent. Without this, ACME/apply/rotation between steps can pair a dump
+# with PEMs/env that do not match. Edge (HAProxy) keeps serving.
+echo "[easy-waf-backup] quiescing writers (easy-waf-api, easy-waf-acmed)…"
+for u in easy-waf-api.service easy-waf-acmed.service; do
+  if systemctl is-active --quiet "$u" 2>/dev/null; then
+    # Record before stop so cleanup restarts even if stop/dump fails mid-way.
+    BACKUP_STOPPED_UNITS+=("$u")
+    systemctl stop "$u"
+  fi
+done
 
 echo "[easy-waf-backup] pg_dump (custom format) → $ROOT/easywaf.dump"
 pg_dump "$DATABASE_URL" --format=custom --file="$ROOT/easywaf.dump"
