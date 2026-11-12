@@ -33,9 +33,18 @@ func openStagedFile(path string) (*os.File, error) {
 		return nil, err
 	}
 	defer unix.Close(anchorFD)
-	fd, err := openatBeneath(anchorFD, rel, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	fd, err := openatBeneath(anchorFD, rel, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open staged file: %w", err)
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("stat staged file: %w", err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("staged path is not a regular file")
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }

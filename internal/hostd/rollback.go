@@ -60,8 +60,8 @@ func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, ti
 
 func stopRollbackUnit(ctx context.Context, r CommandRunner, kind, token string) {
 	unit := fmt.Sprintf("easy-waf-rb-%s-%s", kind, token)
-	_, _, _, _ = runCmd(ctx, r, "systemctl", "stop", unit+".service")
-	_, _, _, _ = runCmd(ctx, r, "systemctl", "reset-failed", unit+".service")
+	_, _, _, _ = runCmd(ctx, r, binSystemctl, "stop", unit+".service")
+	_, _, _, _ = runCmd(ctx, r, binSystemctl, "reset-failed", unit+".service")
 }
 
 // RunRevert restores backup for kind (nft|netplan); used by CLI and transient timer.
@@ -168,6 +168,9 @@ func revertNft(token string) error {
 		// removing the rule that locked the operator out matters more.
 		current, _ := os.ReadFile(nftRulesPath)
 		script := nftDestroyScript(current)
+		if script == "" {
+			return fmt.Errorf("nft revert: managed ruleset declares no table to destroy (refusing global flush)")
+		}
 		if err := runNftScript(ctx, script); err != nil {
 			return err
 		}
@@ -207,8 +210,9 @@ const nftEmptyRuleset = "#!/usr/sbin/nft -f\n# Managed by Easy Home WAF — no m
 
 var nftTableRE = regexp.MustCompile(`(?m)^\s*(?:add\s+|create\s+)?table\s+(?:(ip|ip6|inet|arp|bridge|netdev)\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*\{?`)
 
-// nftDestroyScript returns statements removing every table ruleset declares,
-// or `flush ruleset` when it declares none.
+// nftDestroyScript returns statements removing every table ruleset declares.
+// Empty string means the ruleset named no tables — callers must hard-fail
+// instead of falling back to a global flush.
 func nftDestroyScript(ruleset []byte) string {
 	var b strings.Builder
 	seen := map[string]struct{}{}
@@ -226,7 +230,9 @@ func nftDestroyScript(ruleset []byte) string {
 		b.WriteString("destroy table " + key + "\n")
 	}
 	if b.Len() == 0 {
-		return "flush ruleset\n"
+		// Never global-flush: that would wipe fail2ban/CrowdSec/Docker and the
+		// management guard. Callers must treat empty as a hard error.
+		return ""
 	}
 	return b.String()
 }
@@ -271,7 +277,7 @@ func revertNetplan(token string) error {
 		_ = os.Remove(netplanPath)
 	}
 	ctx := context.Background()
-	_, stderr, code, err := runCmd(ctx, DefaultRunner, "netplan", "apply")
+	_, stderr, code, err := runCmd(ctx, DefaultRunner, binNetplan, "apply")
 	if err != nil || code != 0 {
 		return fmt.Errorf("netplan apply: %s", string(stderr))
 	}
@@ -327,7 +333,7 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	}
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	// Validation changes nothing, so it runs before anything is armed.
-	stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", staged)
+	stdout, stderr, code, err := runCmd(ctx, r, binNft, "-c", "-f", staged)
 	if err != nil || code != 0 {
 		return failExec(stdout, stderr, code, err)
 	}
@@ -343,7 +349,7 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	if err := copyFile(staged, nftRulesPath, nftRulesMode); err != nil {
 		return fail(failResp(err.Error(), 1))
 	}
-	stdout, stderr, code, err = runCmd(ctx, r, "/usr/sbin/nft", "-f", nftRulesPath)
+	stdout, stderr, code, err = runCmd(ctx, r, binNft, "-f", nftRulesPath)
 	if err != nil || code != 0 {
 		return fail(failExec(stdout, stderr, code, err))
 	}
@@ -374,6 +380,9 @@ func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutSt
 	}
 	defer cleanup()
 	staged = stagedCopy
+	if err := validateNetplanFile(staged); err != nil {
+		return failResp("netplan-apply-confirm: "+err.Error(), 1)
+	}
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	if err := beginConfirmedChange(ctx, r, "netplan", token, netplanPath, netplanMode, timeoutSec); err != nil {
 		return failResp(err.Error(), 1)
@@ -387,11 +396,11 @@ func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutSt
 	if err := copyFile(staged, netplanPath, netplanMode); err != nil {
 		return fail(failResp(err.Error(), 1))
 	}
-	stdout, stderr, code, err := runCmd(ctx, r, "netplan", "generate")
+	stdout, stderr, code, err := runCmd(ctx, r, binNetplan, "generate")
 	if err != nil || code != 0 {
 		return fail(failExec(stdout, stderr, code, err))
 	}
-	stdout, stderr, code, err = runCmd(ctx, r, "netplan", "apply")
+	stdout, stderr, code, err = runCmd(ctx, r, binNetplan, "apply")
 	if err != nil || code != 0 {
 		return fail(failExec(stdout, stderr, code, err))
 	}

@@ -10,6 +10,9 @@ Group=easy-waf
 RuntimeDirectory=easy-waf
 RuntimeDirectoryMode=0750
 ExecStart=/usr/sbin/easy-waf-hostd
+# Fixed PATH so opcode binaries cannot be hijacked via an earlier writable dir.
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+PrivateTmp=true
 # SSH key management (and userdel) is refused for root-equivalent accounts:
 # members of root/sudo/admin/wheel/docker/lxd/incus-admin/libvirt/disk/
 # easy-waf/haproxy, or accounts a sudoers rule names. Writing into such an

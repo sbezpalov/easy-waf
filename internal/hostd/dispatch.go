@@ -37,14 +37,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if !systemdallow.AllowedUnitAction(unit, action) {
 			return failResp("systemctl: not allowed", 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "systemctl", action, unit)
+		stdout, stderr, code, err := runCmd(ctx, r, binSystemctl, action, unit)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "nft-list":
-		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "list", "ruleset")
+		stdout, stderr, code, err := runCmd(ctx, r, binNft, "list", "ruleset")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -57,11 +57,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if err := validateNftFile(nftRulesPath); err != nil {
 			return failResp("nft-apply: "+err.Error(), 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", nftRulesPath)
+		stdout, stderr, code, err := runCmd(ctx, r, binNft, "-c", "-f", nftRulesPath)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
-		stdout, stderr, code, err = runCmd(ctx, r, "/usr/sbin/nft", "-f", nftRulesPath)
+		stdout, stderr, code, err = runCmd(ctx, r, binNft, "-f", nftRulesPath)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -82,14 +82,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if err := validateNftFile(src); err != nil {
 			return failResp("nft-install: "+err.Error(), 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "/usr/sbin/nft", "-c", "-f", src)
+		stdout, stderr, code, err := runCmd(ctx, r, binNft, "-c", "-f", src)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		if err := copyFile(src, nftRulesPath, 0o644); err != nil {
 			return failResp(err.Error(), 1)
 		}
-		stdout, stderr, code, err = runCmd(ctx, r, "/usr/sbin/nft", "-f", nftRulesPath)
+		stdout, stderr, code, err = runCmd(ctx, r, binNft, "-f", nftRulesPath)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -123,7 +123,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(nil, nil, 0)
 
 	case "netplan-apply":
-		stdout, stderr, code, err := runCmd(ctx, r, "netplan", "apply")
+		stdout, stderr, code, err := runCmd(ctx, r, binNetplan, "apply")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -138,10 +138,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 			return failResp("netplan-install: "+err.Error(), 1)
 		}
 		defer cleanup()
+		if err := validateNetplanFile(src); err != nil {
+			return failResp("netplan-install: "+err.Error(), 1)
+		}
 		if err := copyFile(src, netplanPath, 0o600); err != nil {
 			return failResp(err.Error(), 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "netplan", "apply")
+		stdout, stderr, code, err := runCmd(ctx, r, binNetplan, "apply")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -172,35 +175,35 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(nil, nil, 0)
 
 	case "apt-update":
-		stdout, stderr, code, err := runCmd(ctx, r, "apt-get", "update", "-qq")
+		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "update", "-qq")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "apt-upgrade":
-		stdout, stderr, code, err := runCmd(ctx, r, "apt-get", "upgrade", "-y", "-qq")
+		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "upgrade", "-y", "-qq")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "apt-simulate":
-		stdout, stderr, code, err := runCmd(ctx, r, "apt-get", "-s", "upgrade")
+		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "-s", "upgrade")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "apt-autoremove-simulate":
-		stdout, stderr, code, err := runCmd(ctx, r, "apt-get", "-s", "autoremove")
+		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "-s", "autoremove")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "apt-cache-size":
-		stdout, stderr, code, err := runCmd(ctx, r, "du", "-sb", "/var/cache/apt/archives")
+		stdout, stderr, code, err := runCmd(ctx, r, binDu, "-sb", "/var/cache/apt/archives")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -208,7 +211,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 
 	case "apt-clean":
 		stdout, stderr, code, err := runCmd(ctx, r,
-			"apt-get", "-o", "DPkg::Lock::Timeout=120", "clean")
+			binAptGet, "-o", "DPkg::Lock::Timeout=120", "clean")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -219,21 +222,21 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if err := hostspec.ValidateJournalArgs(jargs); err != nil {
 			return failResp(err.Error(), 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "journalctl", jargs...)
+		stdout, stderr, code, err := runCmd(ctx, r, binJournalctl, jargs...)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "reboot":
-		stdout, stderr, code, err := runCmd(ctx, r, "systemctl", "reboot")
+		stdout, stderr, code, err := runCmd(ctx, r, binSystemctl, "reboot")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
 		return okResp(stdout, stderr, code)
 
 	case "poweroff":
-		stdout, stderr, code, err := runCmd(ctx, r, "systemctl", "poweroff")
+		stdout, stderr, code, err := runCmd(ctx, r, binSystemctl, "poweroff")
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -243,7 +246,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if len(argv) != 2 || !hostspec.ManageableUsername(argv[1]) {
 			return failResp("useradd: invalid username", 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "useradd", "-m", "-s", "/bin/bash", argv[1])
+		stdout, stderr, code, err := runCmd(ctx, r, binUseradd, "-m", "-s", "/bin/bash", argv[1])
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -268,7 +271,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 				return failResp("userdel: refusing privileged account ("+why+")", 1)
 			}
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, "userdel", "-r", argv[1])
+		stdout, stderr, code, err := runCmd(ctx, r, binUserdel, "-r", argv[1])
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}

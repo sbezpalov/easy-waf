@@ -17,10 +17,10 @@ type mockRunner struct {
 func (m *mockRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	m.lastName = name
 	m.lastArgs = args
-	if name == "systemctl" && len(args) >= 2 && args[0] == "reboot" {
+	if name == binSystemctl && len(args) >= 2 && args[0] == "reboot" {
 		return nil, nil, 0, nil
 	}
-	if name == "/usr/sbin/nft" {
+	if name == binNft {
 		return []byte("table inet x\n"), nil, 0, nil
 	}
 	return []byte("ok"), nil, 0, nil

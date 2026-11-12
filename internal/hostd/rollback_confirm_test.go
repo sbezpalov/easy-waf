@@ -22,7 +22,7 @@ type recordingRunner struct {
 func (m *recordingRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	call := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	m.calls = append(m.calls, call)
-	if name == "/usr/sbin/nft" && len(args) == 2 && args[0] == "-f" {
+	if name == binNft && len(args) == 2 && args[0] == "-f" {
 		b, _ := os.ReadFile(args[1])
 		m.nftSeen = append(m.nftSeen, string(b))
 	}
@@ -121,7 +121,7 @@ func TestAbortConfirmedChangeRestoresNetplan(t *testing.T) {
 	if string(got) != string(prev) {
 		t.Fatalf("netplan after abort = %q", got)
 	}
-	if indexOf(m.calls, "systemctl stop easy-waf-rb-netplan-"+testToken) < 0 {
+	if indexOf(m.calls, binSystemctl+" stop easy-waf-rb-netplan-"+testToken) < 0 {
 		t.Fatalf("revert timer not cancelled: %v", m.calls)
 	}
 	if _, exists, _ := stateFileSize(rollbackBackupPath("netplan", testToken)); exists {
@@ -157,9 +157,9 @@ func TestRevertNftEmptyBackupDestroysOnlyManagedTables(t *testing.T) {
 	}
 }
 
-func TestNftDestroyScriptFallsBackToFlush(t *testing.T) {
-	if got := nftDestroyScript([]byte("add rule ip filter input drop\n")); got != "flush ruleset\n" {
-		t.Fatalf("got %q", got)
+func TestNftDestroyScriptRefusesFlushFallback(t *testing.T) {
+	if got := nftDestroyScript([]byte("add rule ip filter input drop\n")); got != "" {
+		t.Fatalf("expected empty (hard fail), got %q", got)
 	}
 	if got := nftDestroyScript([]byte("table filter {\n}\n")); got != "destroy table ip filter\n" {
 		t.Fatalf("family defaults to ip: %q", got)
@@ -203,7 +203,7 @@ func TestRevertPendingChangesAtStartup(t *testing.T) {
 	if got, _ := os.ReadFile(netplanPath); string(got) != string(prev) {
 		t.Fatalf("netplan after startup revert = %q", got)
 	}
-	if indexOf(m.calls, "netplan apply") < 0 {
+	if indexOf(m.calls, binNetplan+" apply") < 0 {
 		t.Fatalf("netplan not re-applied: %v", m.calls)
 	}
 }

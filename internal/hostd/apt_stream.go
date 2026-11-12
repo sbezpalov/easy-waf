@@ -405,7 +405,7 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 		"-o", "DPkg::Lock::Timeout=120",
 		action,
 	}
-	cmd := exec.CommandContext(ctx, "apt-get", args...)
+	cmd := exec.CommandContext(ctx, binAptGet, args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	stdout, err := cmd.StdoutPipe()
