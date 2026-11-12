@@ -9,6 +9,8 @@
 # .github/workflows/release.yml in the same release (fail-closed).
 #
 # Environment:
+#   EASY_WAF_ALLOW_UNSIGNED_SUMS=1 — allow checksum-only verification for a
+#       remote SHA256SUMS that cannot be authenticated with cosign.
 #   EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — downgrade verification failure to a
 #       warning and keep the artifact (discouraged; for air-gapped mirrors that
 #       do not publish SHA256SUMS).
@@ -54,11 +56,25 @@ easy_waf_verify_sha256() {
 #
 # SHA256SUMS sits next to what it describes, so it catches corruption but not a
 # replaced release. .github/workflows/release.yml signs it with cosign, keyless:
-# the signature names the workflow that made it. cosign is not in Ubuntu's
-# archive, so without it this only says so. With it, a missing or wrong signature
-# is a failure: a release carrying no signature must not pass as an old one.
+# the signature names the workflow that made it. A local path is operator-owned
+# input and is checksum-only. Remote sums fail closed unless they are a signed
+# GitHub release or EASY_WAF_ALLOW_UNSIGNED_SUMS=1 explicitly permits the
+# downgrade.
 easy_waf_verify_sums_signature() {
   local sums="${1:?}" sums_url="${2:?}" bundle repo rc=0
+  if [[ "$sums_url" == /* ]]; then
+    log_relv "local SHA256SUMS — signature not checked"
+    return 0
+  fi
+  if [[ ! "$sums_url" =~ ^https://github\.com/([^/]+/[^/]+)/releases/ ]]; then
+    if [[ "${EASY_WAF_ALLOW_UNSIGNED_SUMS:-}" == "1" ]]; then
+      log_relv "non-GitHub SHA256SUMS — signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
+      return 0
+    fi
+    log_relv "refusing unsigned SHA256SUMS from a non-GitHub URL (set EASY_WAF_ALLOW_UNSIGNED_SUMS=1 to override)"
+    return 1
+  fi
+  repo="${BASH_REMATCH[1]}"
   if ! command -v cosign &>/dev/null; then
     if [[ "${EASY_WAF_ALLOW_UNSIGNED_SUMS:-}" == "1" ]]; then
       log_relv "cosign not installed — SHA256SUMS signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
@@ -67,11 +83,6 @@ easy_waf_verify_sums_signature() {
     log_relv "cosign not installed — refusing unsigned SHA256SUMS (install cosign or set EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
     return 1
   fi
-  if [[ ! "$sums_url" =~ ^https://github\.com/([^/]+/[^/]+)/releases/ ]]; then
-    log_relv "not a GitHub release URL — SHA256SUMS signature not checked"
-    return 0
-  fi
-  repo="${BASH_REMATCH[1]}"
   bundle="$(mktemp)" || return 1
   if ! easy_waf_curl_https -o "$bundle" "${sums_url}.sigstore.json" 2>/dev/null; then
     log_relv "no signature published at ${sums_url}.sigstore.json"

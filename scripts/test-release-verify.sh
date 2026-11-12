@@ -59,6 +59,14 @@ if easy_waf_verify_release_artifact "$ART" "$NAME" "https://127.0.0.1:1/SHA256SU
   fail "missing SHA256SUMS accepted (must fail closed)"
 fi
 
+# 5c. a fetched non-GitHub SHA256SUMS is not trusted without an explicit override
+if easy_waf_verify_sums_signature "$SUMS" "https://mirror.example/SHA256SUMS" >/dev/null 2>&1; then
+  fail "unsigned non-GitHub SHA256SUMS accepted"
+fi
+EASY_WAF_ALLOW_UNSIGNED_SUMS=1 \
+  easy_waf_verify_sums_signature "$SUMS" "https://mirror.example/SHA256SUMS" >/dev/null ||
+  fail "EASY_WAF_ALLOW_UNSIGNED_SUMS=1 did not allow a checksum-only mirror"
+
 # 6. explicit override still allows it
 if ! EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 easy_waf_verify_release_artifact \
   "$ART" "$NAME" "https://127.0.0.1:1/SHA256SUMS" >/dev/null 2>&1; then
@@ -72,19 +80,24 @@ easy_waf_curl_https() { # -o <file> <url>
 }
 mkdir -p "${TMPD}/bin"
 cat >"${TMPD}/bin/cosign" <<'FAKE'
-#!/usr/bin/env bash
+#!/bin/sh
 printf '%s\n' "$@" >"$FAKE_ARGS"
 exit "$FAKE_RC"
 FAKE
 chmod +x "${TMPD}/bin/cosign"
 export FAKE_ARGS="${TMPD}/args"
+export FAKE_RC=0
 SUMS="${TMPD}/sums"
 : >"$SUMS"
 
 EMPTY_PATH="${TMPD}/nothing"
 mkdir -p "$EMPTY_PATH"
-PATH="$EMPTY_PATH" easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null \
-  || fail "absent cosign must not block an install"
+if PATH="$EMPTY_PATH" easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null; then
+  fail "GitHub release accepted without cosign"
+fi
+PATH="$EMPTY_PATH" EASY_WAF_ALLOW_UNSIGNED_SUMS=1 \
+  easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null ||
+  fail "EASY_WAF_ALLOW_UNSIGNED_SUMS=1 did not allow checksum-only verification"
 PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null \
   || fail "valid signature rejected"
 grep -qF '^https://github\.com/acme/easy-waf/\.github/workflows/release\.yml@refs/tags/v' "$FAKE_ARGS" \
