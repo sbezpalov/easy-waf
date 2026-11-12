@@ -102,24 +102,104 @@ func TestUpsertKeepsSecurityTogglesSentWithoutMode(t *testing.T) {
 	}
 }
 
-func TestUpsertCertificateRespondsWithStoredRow(t *testing.T) {
+func TestUpsertCertificateIgnoresClientManagedFields(t *testing.T) {
 	s := applyFailingServer(t)
-	body := fmt.Sprintf(`{"primary_domain":"c%d.example.com","mode":"http-01","acme_attempts":7}`, time.Now().UnixNano())
+	body := fmt.Sprintf(`{
+		"primary_domain":"c%d.example.com",
+		"mode":"http-01",
+		"acme_status":"pending",
+		"acme_attempts":7,
+		"acme_next_attempt_at":"2030-01-01T00:00:00Z",
+		"pem_crt_path":"/tmp/client.crt",
+		"pem_key_path":"/tmp/client.key",
+		"fullchain_path":"/tmp/client-fullchain.pem",
+		"not_after":"2030-01-01T00:00:00Z",
+		"last_error":"client-controlled"
+	}`, time.Now().UnixNano())
 	rec := httptest.NewRecorder()
 	s.upsertCert(rec, httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(body)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	var got struct {
-		ID           string `json:"id"`
-		ACMEAttempts int    `json:"acme_attempts"`
-	}
+	var got config.Certificate
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), got.ID) })
-	if got.ACMEAttempts != 0 {
-		t.Fatalf("response echoed client acme_attempts=%d; the store never writes it", got.ACMEAttempts)
+	if got.ACMEStatus != "ready" || got.ACMEAttempts != 0 || got.ACMENextAttemptAt != nil ||
+		got.PEMCrtPath != "" || got.PEMKeyPath != "" || got.FullchainPath != "" ||
+		got.NotAfter != nil || got.LastError != "" {
+		t.Fatalf("client changed worker-managed fields: %+v", got)
+	}
+}
+
+func TestUpsertCertificatePreservesStoredWorkerFields(t *testing.T) {
+	s := applyFailingServer(t)
+	notAfter := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	original := config.Certificate{
+		PrimaryDomain: "old.example.com",
+		Mode:          "http-01",
+		ACMEStatus:    "failed",
+		PEMCrtPath:    "/var/lib/easy-waf/certs/original.crt",
+		PEMKeyPath:    "/var/lib/easy-waf/certs/original.key",
+		FullchainPath: "/var/lib/easy-waf/certs/original-fullchain.pem",
+		NotAfter:      &notAfter,
+		LastError:     "dns timeout",
+	}
+	if err := s.Eng.Store.UpsertCertificate(context.Background(), &original); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), original.ID) })
+
+	body := fmt.Sprintf(`{
+		"id":%q,
+		"primary_domain":"new.example.com",
+		"mode":"dns-01",
+		"acme_status":"pending",
+		"pem_crt_path":"/tmp/client.crt",
+		"pem_key_path":"/tmp/client.key",
+		"fullchain_path":"/tmp/client-fullchain.pem",
+		"not_after":"2040-01-01T00:00:00Z",
+		"last_error":"replaced"
+	}`, original.ID)
+	rec := httptest.NewRecorder()
+	s.upsertCert(rec, httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var got config.Certificate
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.PrimaryDomain != "new.example.com" || got.Mode != "dns-01" {
+		t.Fatalf("operator fields were not updated: %+v", got)
+	}
+	if got.ACMEStatus != original.ACMEStatus || got.PEMCrtPath != original.PEMCrtPath ||
+		got.PEMKeyPath != original.PEMKeyPath || got.FullchainPath != original.FullchainPath ||
+		got.NotAfter == nil || !got.NotAfter.Equal(notAfter) || got.LastError != original.LastError {
+		t.Fatalf("worker-managed fields were not preserved: %+v", got)
+	}
+}
+
+func TestUpsertManualCertificateAcceptsOperatorPEMPaths(t *testing.T) {
+	s := applyFailingServer(t)
+	body := fmt.Sprintf(`{
+		"primary_domain":"manual-%d.example.com",
+		"mode":"manual",
+		"pem_crt_path":"/var/lib/easy-waf/certs/manual.pem"
+	}`, time.Now().UnixNano())
+	rec := httptest.NewRecorder()
+	s.upsertCert(rec, httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var got config.Certificate
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), got.ID) })
+	if got.PEMCrtPath != "/var/lib/easy-waf/certs/manual.pem" {
+		t.Fatalf("manual PEM path = %q", got.PEMCrtPath)
 	}
 }
 

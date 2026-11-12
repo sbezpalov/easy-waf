@@ -482,36 +482,65 @@ func (s *Server) deleteCert(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type certificateUpsertRequest struct {
+	ID                    string   `json:"id"`
+	PrimaryDomain         string   `json:"primary_domain"`
+	SAN                   []string `json:"san,omitempty"`
+	Mode                  string   `json:"mode"`
+	DNSProvider           string   `json:"dns_provider,omitempty"`
+	DNSCredentialsEnvFile string   `json:"dns_credentials_env_file,omitempty"`
+	Staging               bool     `json:"staging"`
+	// Manual certificates may point at operator-provided PEMs. For ACME
+	// certificates these fields are ignored on create and preserved on update;
+	// only the worker may replace generated paths.
+	PEMCrtPath    string `json:"pem_crt_path,omitempty"`
+	PEMKeyPath    string `json:"pem_key_path,omitempty"`
+	FullchainPath string `json:"fullchain_path,omitempty"`
+}
+
 func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
-	var c config.Certificate
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+	var body certificateUpsertRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	if strings.TrimSpace(c.PrimaryDomain) == "" {
+	if strings.TrimSpace(body.PrimaryDomain) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "primary_domain required"})
 		return
 	}
-	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	mode := strings.ToLower(strings.TrimSpace(body.Mode))
 	switch mode {
 	case "http-01", "dns-01", "self-signed", "manual":
-		c.Mode = mode
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be http-01, dns-01, self-signed or manual"})
 		return
 	}
+	requested := config.Certificate{
+		ID:                    body.ID,
+		PrimaryDomain:         body.PrimaryDomain,
+		SAN:                   body.SAN,
+		Mode:                  mode,
+		DNSProvider:           body.DNSProvider,
+		DNSCredentialsEnvFile: body.DNSCredentialsEnvFile,
+		Staging:               body.Staging,
+		PEMCrtPath:            body.PEMCrtPath,
+		PEMKeyPath:            body.PEMKeyPath,
+		FullchainPath:         body.FullchainPath,
+	}
 	// Paths as well as the ID: they are written into the crt-list, where a
 	// newline is a second entry and an SNI filter on it can capture every vhost.
-	if err := config.ValidateCertificateRenderSafety(&c); err != nil {
+	if err := config.ValidateCertificateRenderSafety(&requested); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+
+	c := requested
 	normalizeDNSProvider(&c)
 	if err := validateCertificateDNS(s.Eng.StateDir, c); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
+	if err := s.Eng.Store.UpsertCertificateMetadata(r.Context(), &c); err != nil {
 		writeInternalError(w, err)
 		return
 	}

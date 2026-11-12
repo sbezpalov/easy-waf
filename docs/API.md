@@ -323,7 +323,7 @@ An application (`config.Application`, `internal/config/types.go`) maps a public 
 
 Omitting `path_policy` on update keeps the stored policy. Profile `ha-mcp` with no policy yet receives the preset from `GET /profiles`. Timeouts are 1–86400 seconds. At most 32 allow entries and 8 rules.
 
-Mutating endpoints in this section and the next write to the database first and then apply the change to HAProxy. If the apply fails, the database change is undone and the endpoint returns an error (text/plain) with a message such as `change not saved, edge apply failed: …`. If the undo itself fails, the message instead reads `edge apply failed: …; undoing the database change also failed, so it is saved but not live: …`. The status code is:
+Mutating endpoints in this section and the next require a password step-up no older than 5 minutes. They write to the database first and then apply the change to HAProxy. If the apply fails, the database change is undone and the endpoint returns an error (text/plain) with a message such as `change not saved, edge apply failed: …`. If the undo itself fails, the message instead reads `edge apply failed: …; undoing the database change also failed, so it is saved but not live: …`. The status code is:
 - `503` when the apply ran out of time. An apply waits at most 2 minutes, including the time spent waiting for the apply lock, so this typically means another apply was still running; a retry can succeed.
 - `422` for any other apply failure (validation, reload, …).
 
@@ -531,14 +531,13 @@ Lists every certificate row, ordered by `primary_domain`.
 - **Errors:** `500` (text/plain) on a database error.
 
 ### `POST /api/v1/certificates`
-Creates or updates (upserts) one certificate row, keyed by `id`.
-- **Request body:** a `config.Certificate` object. **`primary_domain` and `mode` are required** (`mode` must be `http-01`, `dns-01`, `self-signed` or `manual`).
+Creates or updates (upserts) one certificate row, keyed by `id`. Requires a password step-up no older than 5 minutes.
+- **Request body:** a certificate metadata object. **`primary_domain` and `mode` are required** (`mode` must be `http-01`, `dns-01`, `self-signed` or `manual`). Accepted operator-owned fields are `id`, `primary_domain`, `san`, `mode`, `staging`, `dns_provider`, `dns_credentials_env_file`, `pem_crt_path`, `pem_key_path` and `fullchain_path`.
   - `id`: omit or send `""` to create a new row with a generated UUID. If present, it must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` and be at most 128 bytes.
-  - `pem_crt_path`, `pem_key_path`, `bundle_path`, `fullchain_path`: optional. When set, each must contain only `[A-Za-z0-9._~+@:/-]`, contain no `..` segment, and be at most 4096 characters. Absoluteness is not checked. `bundle_path` is validated but not stored.
+  - `pem_crt_path`, `pem_key_path` and `fullchain_path`: optional for `manual` and `self-signed` rows. When set, each must contain only `[A-Za-z0-9._~+@:/-]`, contain no `..` segment, and be at most 4096 characters. Absoluteness is not checked. For ACME modes, client paths are ignored on create and the stored worker-generated paths are preserved on update.
   - `dns_provider`: trimmed and stored lower-case. For a `dns-01` certificate it must be empty (meaning the default, `cloudns`), `cloudflare`, `cloudns`, `route53` or `webhook`.
   - `dns_credentials_env_file`: for a `dns-01` certificate, empty or a clean absolute path (no `.`/`..` segments, no duplicate or trailing slashes, no control characters) strictly below `/etc/easy-waf/` or `<state_dir>/secrets/`. `easy-waf-acmed` loads this file's `KEY=value` lines into its environment for the DNS-01 provider. Other modes do not use either field, and they are not checked there.
-  - `acme_status`: defaults to `ready` when empty. Sending `pending` resets `acme_attempts` and `acme_next_attempt_at` in the database.
-  - On update, every stored column is overwritten by the request value, so a partial body clears the fields it omits. `created_at` is kept. `acme_attempts`, `acme_next_attempt_at` and `bundle_path` are never taken from the body.
+  - ACME lifecycle fields (`acme_status`, attempts, retry time, validity, errors and generated PEM paths) and timestamps are server-managed. Values supplied for those JSON keys are ignored. On update they are preserved atomically, including when `easy-waf-acmed` completes issuance concurrently.
   ```json
   {"primary_domain":"app.example.com","san":["www.app.example.com"],"mode":"self-signed",
    "pem_crt_path":"/var/lib/easy-waf/certs/app.crt","pem_key_path":"/var/lib/easy-waf/certs/app.key"}
@@ -549,7 +548,7 @@ Creates or updates (upserts) one certificate row, keyed by `id`.
   - `500` on a database error.
 
 ### `DELETE /api/v1/certificates/{id}`
-Deletes a certificate row. It refuses while an application still references the certificate.
+Deletes a certificate row. Requires step-up and refuses while an application still references the certificate.
 - **Path params:** `id`, the certificate ID.
 - **Response:** `204`, empty body.
 - **Errors:**
@@ -558,7 +557,7 @@ Deletes a certificate row. It refuses while an application still references the 
   - `500` (text/plain) on a database error.
 
 ### `POST /api/v1/certificates/{id}/request-issue`
-Queues an ACME issuance or renewal. The handler sets `acme_status` to `pending` and saves the row, which also resets `acme_attempts` and `acme_next_attempt_at`. `easy-waf-acmed` claims pending rows on its next pass. The request itself performs no ACME work.
+Queues an ACME issuance or renewal. Requires step-up. The handler sets `acme_status` to `pending` and saves the row, which also resets `acme_attempts` and `acme_next_attempt_at`. `easy-waf-acmed` claims pending rows on its next pass. The request itself performs no ACME work.
 - **Path params:** `id`, the certificate ID.
 - **Request body (optional):** an empty body keeps the stored settings, as described per field.
   - `mode` (string): `http-01` or `dns-01`, case-insensitive. When omitted, the stored mode is kept if it is already `http-01` or `dns-01`. Otherwise it defaults to `http-01`, so the call means "start issuing this with ACME".

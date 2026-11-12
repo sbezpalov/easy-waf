@@ -644,6 +644,56 @@ func (s *Store) UpsertCertificate(ctx context.Context, c *config.Certificate) er
 	return err
 }
 
+// UpsertCertificateMetadata inserts operator-provided certificate metadata or
+// updates only operator-owned columns. On conflict it deliberately leaves ACME
+// status, retry state, validity, errors and generated PEM paths untouched so a
+// concurrent worker completion cannot be overwritten by an API edit.
+func (s *Store) UpsertCertificateMetadata(ctx context.Context, c *config.Certificate) error {
+	now := time.Now().UTC()
+	if c.ID == "" {
+		c.ID = uuid.NewString()
+	}
+	c.CreatedAt = now
+	c.UpdatedAt = now
+
+	var sanJSON any
+	if len(c.SAN) > 0 {
+		b, err := json.Marshal(c.SAN)
+		if err != nil {
+			return err
+		}
+		sanJSON = b
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	if mode != "manual" && mode != "self-signed" {
+		// Generated ACME paths are written only by CompleteCertificateACME.
+		c.PEMCrtPath = ""
+		c.PEMKeyPath = ""
+		c.FullchainPath = ""
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO certificates (
+			id, primary_domain, san_json, mode, staging, dns_provider, dns_credentials_env_file,
+			pem_crt_path, pem_key_path, fullchain_path, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT (id) DO UPDATE SET
+			primary_domain = EXCLUDED.primary_domain,
+			san_json = EXCLUDED.san_json,
+			mode = EXCLUDED.mode,
+			staging = EXCLUDED.staging,
+			dns_provider = EXCLUDED.dns_provider,
+			dns_credentials_env_file = EXCLUDED.dns_credentials_env_file,
+			pem_crt_path = CASE WHEN EXCLUDED.mode IN ('manual', 'self-signed') THEN EXCLUDED.pem_crt_path ELSE certificates.pem_crt_path END,
+			pem_key_path = CASE WHEN EXCLUDED.mode IN ('manual', 'self-signed') THEN EXCLUDED.pem_key_path ELSE certificates.pem_key_path END,
+			fullchain_path = CASE WHEN EXCLUDED.mode IN ('manual', 'self-signed') THEN EXCLUDED.fullchain_path ELSE certificates.fullchain_path END,
+			updated_at = EXCLUDED.updated_at
+	`, c.ID, c.PrimaryDomain, sanJSON, mode, c.Staging,
+		nullStrPtr(c.DNSProvider), nullStrPtr(c.DNSCredentialsEnvFile),
+		nullStrPtr(c.PEMCrtPath), nullStrPtr(c.PEMKeyPath), nullStrPtr(c.FullchainPath),
+		c.CreatedAt, c.UpdatedAt)
+	return err
+}
+
 // --- IP allowlist (local) ---
 
 // ListIPWLLocal returns all allowlist rows ordered by CIDR.
