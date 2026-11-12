@@ -153,8 +153,13 @@ TOKEN=$(curl -sk "$BASE/api/v1/auth/login" \
 
 curl -sk "$BASE/api/v1/applications" -H "Authorization: Bearer $TOKEN"
 
+STEP_UP_TOKEN=$(curl -sk "$BASE/api/v1/auth/confirm" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
+  -d '{"password":"…"}' | jq -r .token)
+
 curl -sk -X POST "$BASE/api/v1/apply" \
-  -H "Authorization: Bearer $TOKEN" -H 'X-Requested-With: XMLHttpRequest'
+  -H "Authorization: Bearer $STEP_UP_TOKEN" -H 'X-Requested-With: XMLHttpRequest'
 ```
 
 `-k` нужен только для самоподписанного управляющего сертификата свежего appliance;

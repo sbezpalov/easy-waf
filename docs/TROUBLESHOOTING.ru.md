@@ -165,12 +165,12 @@ sudo systemctl restart haproxy
 
 ## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
 
-Путь stats socket по умолчанию — **`/run/haproxy/easy-waf-admin.sock`**. Если в **`global_settings_json`** остался устаревший **`…/haproxy/admin.sock`** внутри каталога состояния, **Apply** / **`apply-edge`** теперь автоматически переписывает его в **сгенерированном** `haproxy.cfg` на **`/run/haproxy/easy-waf-admin.sock`** (правка БД для этого конкретного устаревшего пути не требуется). Для любого другого нестандартного пути обновите настройки и выполните Apply:
+Путь stats socket по умолчанию — **`/run/haproxy/easy-waf-admin.sock`**. Если в **`global_settings_json`** остался устаревший **`…/haproxy/admin.sock`** внутри каталога состояния, **Apply** / **`apply-edge`** теперь автоматически переписывает его в **сгенерированном** `haproxy.cfg` на **`/run/haproxy/easy-waf-admin.sock`** (правка БД для этого конкретного устаревшего пути не требуется). Для любого другого нестандартного пути обновите настройки и выполните Apply. Используйте UI либо сначала получите `STEP_UP_TOKEN` через `POST /api/v1/auth/confirm` в сессии администратора:
 
 ```bash
 curl --cacert /var/lib/easy-waf/secrets/management.crt -fsS -X PATCH \
   "https://127.0.0.1:8443/api/v1/settings" \
-  -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $STEP_UP_TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Requested-With: XMLHttpRequest" \
   -d '{"haproxy_stats_socket_path":"/run/haproxy/easy-waf-admin.sock"}'

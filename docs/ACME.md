@@ -21,9 +21,11 @@ naming a host would need a `resolvers` section the renderer only emits for
 application backends.
 
 ```bash
+# STEP_UP_TOKEN is returned by POST /api/v1/auth/confirm and is valid for
+# password-confirmed operations for 5 minutes.
 curl -X PATCH https://127.0.0.1:8443/api/v1/settings \
   -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $STEP_UP_TOKEN" \
   -d '{"acme_internal_http":"127.0.0.1:9090"}'
 ```
 

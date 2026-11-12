@@ -166,12 +166,12 @@ sudo systemctl restart haproxy
 
 ## HAProxy: `cannot bind UNIX socket (Permission denied)` (stats socket)
 
-The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`**. If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply:
+The default stats socket path is **`/run/haproxy/easy-waf-admin.sock`**. If **`global_settings_json`** still has the legacy **`…/haproxy/admin.sock`** under the state dir, **Apply** / **`apply-edge`** now rewrites it in the **rendered** `haproxy.cfg` to **`/run/haproxy/easy-waf-admin.sock`** automatically (no DB patch required for that exact legacy path). For any other custom path, update settings and Apply. Use the UI, or obtain `STEP_UP_TOKEN` from `POST /api/v1/auth/confirm` with an admin session first:
 
 ```bash
 curl --cacert /var/lib/easy-waf/secrets/management.crt -fsS -X PATCH \
   "https://127.0.0.1:8443/api/v1/settings" \
-  -H "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $STEP_UP_TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Requested-With: XMLHttpRequest" \
   -d '{"haproxy_stats_socket_path":"/run/haproxy/easy-waf-admin.sock"}'
