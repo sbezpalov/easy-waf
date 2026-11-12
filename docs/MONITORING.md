@@ -5,7 +5,7 @@ The management API (`easy-waf-api`) can expose a **Prometheus text exposition** 
 ## Security
 
 - **Disabled by default** (`prometheus_enabled: false` in global settings).
-- When enabled, **`/metrics` is not protected by JWT** (Prometheus scrapes rarely support Bearer tokens). It **is** protected by the same **`management_allowed_cidrs`** ACL as the UI and `/api/v1` (see `docs/SECURITY.md`).
+- When enabled, **`/metrics` is not protected by a session JWT**. It requires a dedicated **`EASY_WAF_METRICS_TOKEN`** (at least 16 characters) as `Authorization: Bearer …` and is also protected by the same **`management_allowed_cidrs`** ACL as the UI and `/api/v1` (see `docs/SECURITY.md`). With no usable metrics token configured, it fails closed with **401**.
 - **`/health`** remains reachable for probes regardless of CIDR list; **`/metrics`** does not bypass the ACL.
 - **`/health`** only says the API process answers. **`/health/ready`** (same exemptions) also pings PostgreSQL and returns **503** `{"status":"unavailable","database":"unreachable"}` when it cannot — point load balancers and uptime checks at it. The edge keeps serving on its last applied config while the database is down; only changes and renewals stop.
 - `easy-waf-api` and `easy-waf-acmed` restart every 5s without a start limit, so they come back on their own once a late or remote PostgreSQL is reachable.
@@ -24,6 +24,8 @@ scrape_configs:
     scrape_interval: 30s
     scheme: https
     metrics_path: /metrics
+    authorization:
+      credentials_file: /etc/prometheus/easy-waf.metrics-token
     static_configs:
       - targets:
           - "192.168.1.10:8443"
@@ -31,7 +33,7 @@ scrape_configs:
       insecure_skip_verify: true # bootstrap self-signed cert only
 ```
 
-Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after installing a management certificate that covers the scrape hostname. When Prometheus runs on the appliance, `127.0.0.1:8443` is also available in both installer defaults; copy the required CA/certificate to a Prometheus-readable path instead of granting access to the Easy Home WAF secrets directory.
+Write only the value of `EASY_WAF_METRICS_TOKEN` to `credentials_file` and make it readable only by the Prometheus service account. Replace `insecure_skip_verify` with a trusted `ca_file` and `server_name` after installing a management certificate that covers the scrape hostname. When Prometheus runs on the appliance, `127.0.0.1:8443` is also available in both installer defaults; copy the required CA/certificate to a Prometheus-readable path instead of granting access to the Easy Home WAF secrets directory.
 
 ## Grafana
 

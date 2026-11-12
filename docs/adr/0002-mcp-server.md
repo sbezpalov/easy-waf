@@ -56,8 +56,8 @@ operational gain for a young project whose main cost is the operator's attention
 Cheapest to build: one more route group behind the existing session middleware,
 management ACL and TLS. No new port, no new binary, no new authentication path.
 
-But it inherits the session model, which is built for a browser: JWTs with a
-24-hour TTL and `session_version` revocation. An agent is not a browser — it
+But it inherits the session model, which is built for a browser: JWTs with an
+8-hour TTL and `session_version` revocation. An agent is not a browser — it
 wants a credential that is not somebody's login, that can be scoped, and that can
 be revoked without signing the operator out everywhere. It also makes "turn MCP
 off entirely" a build-time or route-level decision rather than "do not start that

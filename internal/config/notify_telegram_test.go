@@ -6,7 +6,7 @@ package config
 import "testing"
 
 func TestTelegramSettingsPatch(t *testing.T) {
-	const token = "123456789:AAEhBP0av28vH1Ra1sm-xZ8qN3KnyBqV5Wc"
+	const token = "123456789:THIS_IS_A_TEST_TOKEN_NOT_A_SECRET_1234"
 	gs, err := ApplySettingsJSONPatch(GlobalSettings{}, []byte(`{"notify_telegram_chat_id":"-100123","notify_telegram_bot_token":"`+token+`","notify_blocked_spike_threshold":200}`))
 	if err != nil || gs.NotifyTelegramBotToken != token || gs.NotifyTelegramChatID != "-100123" || gs.NotifyBlockedSpikeThreshold != 200 {
 		t.Fatalf("%+v %v", gs, err)

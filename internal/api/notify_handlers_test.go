@@ -15,7 +15,7 @@ import (
 )
 
 func TestSettingsResponseHidesTelegramToken(t *testing.T) {
-	const token = "123456789:AAEhBP0av28vH1Ra1sm-xZ8qN3KnyBqV5Wc"
+	const token = "123456789:THIS_IS_A_TEST_TOKEN_NOT_A_SECRET_1234"
 	s := &Server{Eng: engine.New("", nil, config.GlobalSettings{NotifyTelegramChatID: "42", NotifyTelegramBotToken: token})}
 	rec := httptest.NewRecorder()
 	s.getSettings(rec, httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))

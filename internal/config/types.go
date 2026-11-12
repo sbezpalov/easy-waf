@@ -190,7 +190,7 @@ type Certificate struct {
 	Mode          string   `json:"mode"` // http-01, dns-01, self-signed
 	// DNSProvider: cloudflare | cloudns (default for dns-01) | route53 | webhook (Lego httpreq).
 	DNSProvider           string `json:"dns_provider,omitempty"`
-	DNSCredentialsEnvFile string `json:"dns_credentials_env_file,omitempty"` // root-readable env file; never store secrets in DB
+	DNSCredentialsEnvFile string `json:"dns_credentials_env_file,omitempty"` // easy-waf-readable 0600 env file; never store secrets in DB
 	// ACMEStatus: ready | pending | issuing | failed (manual / self-signed use ready).
 	ACMEStatus string `json:"acme_status,omitempty"`
 	// ACMEAttempts counts consecutive failed issuances; ACMENextAttemptAt is when

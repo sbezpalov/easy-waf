@@ -72,9 +72,9 @@ not need it. See [SECURITY.md](SECURITY.md#csrf-protection).
    `sudo easy-waf-admin print-enrollment` and create the account with
    `POST /api/v1/auth/enroll`. There is no default `admin/admin`.
 2. **Sign in:** `POST /api/v1/auth/login` returns
-   `{"token": "...", "must_change_password": false, "expires_in_seconds": 86400}`.
+   `{"token": "...", "must_change_password": false, "expires_in_seconds": 28800}`.
 3. **Call the API** with `Authorization: Bearer <token>`. Tokens are HS256 JWTs
-   valid for **24 hours**; they are never set as cookies.
+   valid for **8 hours**; they are never set as cookies.
 4. **Sign out** with `POST /api/v1/auth/logout`: it bumps the account's session
    version, which revokes *every* token issued to that account, not only the
    one used.
@@ -90,8 +90,8 @@ password, every authenticated route except `GET /api/v1/auth/me`,
 unless the session confirmed its password in the last **5 minutes** (call
 [`POST /auth/confirm`](#post-apiv1authconfirm) and repeat with the new token):
 `/api/v1/host/*` routes that change the host (including netplan/firewall
-**commit**); `PATCH /settings` and `PUT /settings/management-tls`; `POST /apply`
-and revision rollback; application security writes; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP
+**commit**); `PATCH`/`PUT /settings` and `PUT /settings/management-tls`; `POST /apply`
+and revision rollback; every application and certificate lifecycle mutation; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP
 mutations; panel-user and TOTP setup/disable; `POST /diagnostics/bundle`. Reads
 and `POST /host/diagnostics/*` do not need it. The legacy automation token
 cannot confirm a password, so it cannot call these routes either.

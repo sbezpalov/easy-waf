@@ -15,7 +15,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
-const testToken = "123456789:AAEhBP0av28vH1Ra1sm-xZ8qN3KnyBqV5Wc"
+const testToken = "123456789:THIS_IS_A_TEST_TOKEN_NOT_A_SECRET_1234"
 
 func TestSendWebhookAndTelegram(t *testing.T) {
 	var hook map[string]any
