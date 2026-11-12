@@ -32,11 +32,11 @@ if easy_waf_rotate_backups "$TMP" abc 2>/dev/null; then
 fi
 
 # Argument errors are reported before the root check.
-if bash "${SCRIPT_DIR}/backup.sh" --keep 3 2>/dev/null; then
+if "${BASH}" "${SCRIPT_DIR}/backup.sh" --keep 3 2>/dev/null; then
   echo "--keep without --dir accepted" >&2
   exit 1
 fi
-if bash "${SCRIPT_DIR}/backup.sh" --dir "$TMP" out.tar.gz 2>/dev/null; then
+if "${BASH}" "${SCRIPT_DIR}/backup.sh" --dir "$TMP" out.tar.gz 2>/dev/null; then
   echo "--dir with an output path accepted" >&2
   exit 1
 fi

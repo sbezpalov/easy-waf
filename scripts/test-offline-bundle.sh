@@ -14,9 +14,9 @@ printf 'test payload\n' >"${TEMP_DIR}/payload.txt"
   sha256sum install.sh payload.txt >SHA256SUMS
 )
 
-bash "${TEMP_DIR}/install.sh" --verify-only >/dev/null
+"${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null
 printf 'tampered\n' >>"${TEMP_DIR}/payload.txt"
-if bash "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
+if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
   echo "test-offline-bundle: tampered bundle was accepted" >&2
   exit 1
 fi
@@ -40,6 +40,6 @@ if grep -q 'SHA256SUMS\.tmp' "${STAGE}/SHA256SUMS"; then
   exit 1
 fi
 cp "${SCRIPT_DIR}/install-offline-bundle.sh" "${STAGE}/install.sh"
-bash "${STAGE}/install.sh" --verify-only >/dev/null
+"${BASH}" "${STAGE}/install.sh" --verify-only >/dev/null
 
 echo "test-offline-bundle: PASS"
