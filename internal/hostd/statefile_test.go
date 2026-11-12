@@ -178,9 +178,7 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
-	}
+	assertFileMode(t, fi, 0o600)
 	f, err := stateOpenFile(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)

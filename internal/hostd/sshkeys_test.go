@@ -121,16 +121,12 @@ func TestWriteAuthorizedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("authorized_keys mode = %o, want 0600", fi.Mode().Perm())
-	}
+	assertFileMode(t, fi, 0o600)
 	di, err := os.Stat(filepath.Join(home, ".ssh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if di.Mode().Perm() != 0o700 {
-		t.Fatalf(".ssh mode = %o, want 0700", di.Mode().Perm())
-	}
+	assertFileMode(t, di, 0o700)
 
 	// Rewriting replaces the previous content instead of appending.
 	if err := writeAuthorizedKeys(home, os.Getuid(), os.Getgid(), []byte(validKey+"\n")); err != nil {

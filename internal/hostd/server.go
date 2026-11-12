@@ -42,7 +42,7 @@ func Serve(ctx context.Context, sockPath string) error {
 		return err
 	}
 	defer ln.Close()
-	if err := os.Chmod(sockPath, 0o660); err != nil {
+	if err := setSocketPermissions(sockPath); err != nil {
 		return err
 	}
 	logOp("listening on %s", sockPath)

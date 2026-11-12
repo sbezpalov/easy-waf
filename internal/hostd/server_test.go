@@ -8,18 +8,17 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestSocketRoundTrip_nftList(t *testing.T) {
-	dir := t.TempDir()
-	sock := filepath.Join(dir, "hostd.sock")
+	sock := shortTempSock(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	serveErr := make(chan error, 1)
 	go func() {
-		_ = Serve(ctx, sock)
+		serveErr <- Serve(ctx, sock)
 	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -30,6 +29,10 @@ func TestSocketRoundTrip_nftList(t *testing.T) {
 	}
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
+		select {
+		case err = <-serveErr:
+		default:
+		}
 		t.Fatal(err)
 	}
 	defer conn.Close()

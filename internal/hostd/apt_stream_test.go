@@ -18,9 +18,15 @@ import (
 
 func shortTempSock(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "h-")
+	// Some Windows temp roots contain characters AF_UNIX rejects. Keep the
+	// already length-sensitive socket below the package's short workspace path.
+	dir, err := os.MkdirTemp(".", ".sock-")
 	if err != nil {
-		return filepath.Join(t.TempDir(), "h.sock")
+		t.Fatal(err)
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return filepath.Join(dir, "s.sock")
@@ -276,7 +282,8 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	sock := shortTempSock(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() { _ = Serve(ctx, sock) }()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- Serve(ctx, sock) }()
 
 	deadline := time.Now().Add(3 * time.Second)
 	var conn net.Conn
@@ -289,6 +296,10 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 	if conn == nil {
+		select {
+		case err = <-serveErr:
+		default:
+		}
 		t.Fatal(err)
 	}
 	defer conn.Close()
@@ -318,7 +329,8 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	sock := shortTempSock(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() { _ = Serve(ctx, sock) }()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- Serve(ctx, sock) }()
 
 	deadline := time.Now().Add(3 * time.Second)
 	var conn net.Conn
@@ -331,6 +343,10 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 	if conn == nil {
+		select {
+		case err = <-serveErr:
+		default:
+		}
 		t.Fatal(err)
 	}
 	defer conn.Close()

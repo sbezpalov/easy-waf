@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // Non-Linux fallback. openat2 with RESOLVE_NO_SYMLINKS has no portable
@@ -73,8 +72,7 @@ func stateOpenFile(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.OpenFile(filepath.Join(dir, filepath.Base(rel)),
-		os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	return openFileNoFollow(filepath.Join(dir, filepath.Base(rel)), os.O_RDONLY, 0)
 }
 
 func stateCreateFile(path string, mode os.FileMode) (*os.File, error) {
@@ -86,8 +84,8 @@ func stateCreateFile(path string, mode os.FileMode) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, filepath.Base(rel)),
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, mode.Perm())
+	f, err := openFileNoFollow(filepath.Join(dir, filepath.Base(rel)),
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +107,7 @@ func stateWriteFile(path string, data []byte, mode os.FileMode) error {
 	}
 	base := filepath.Base(rel)
 	tmpPath := filepath.Join(dir, "."+base+".easy-waf.tmp")
-	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, mode.Perm())
+	tmp, err := openFileNoFollow(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return err
 	}

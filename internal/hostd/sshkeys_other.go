@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // writeAuthorizedKeys is the non-Linux fallback used for development builds.
@@ -38,12 +37,12 @@ func writeAuthorizedKeys(home string, uid, gid int, content []byte) error {
 		return fmt.Errorf("stat .ssh: %w", err)
 	}
 	// Lchown never dereferences, so a swapped .ssh cannot redirect ownership.
-	if err := os.Lchown(sshDir, uid, gid); err != nil {
+	if err := setPathOwner(sshDir, uid, gid); err != nil {
 		return fmt.Errorf("chown .ssh: %w", err)
 	}
 
 	tmpPath := filepath.Join(sshDir, ".authorized_keys.easy-waf")
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	f, err := openFileNoFollow(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("open authorized_keys tmp: %w", err)
 	}
@@ -55,7 +54,7 @@ func writeAuthorizedKeys(home string, uid, gid int, content []byte) error {
 		cleanup()
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
-	if err := f.Chown(uid, gid); err != nil {
+	if err := setFileOwner(f, uid, gid); err != nil {
 		cleanup()
 		return fmt.Errorf("chown authorized_keys: %w", err)
 	}

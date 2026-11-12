@@ -35,9 +35,7 @@ func TestCopyFile_atomicReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o644 {
-		t.Fatalf("destination mode = %o, want 0644", fi.Mode().Perm())
-	}
+	assertFileMode(t, fi, 0o644)
 
 	// The temporary file must not survive a successful copy.
 	entries, err := os.ReadDir(dir)
