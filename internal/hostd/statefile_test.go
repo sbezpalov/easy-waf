@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// The state directory is owned by the unprivileged easy-waf account, so every
-// one of these cases is something a compromised easy-waf-api can actually set
-// up. Each was a working primitive against the broker before these tests.
+// Broker state is root-owned in production. These tests keep the descriptor-
+// anchored helpers fail-closed if ownership drifts or an unsafe entry is ever
+// introduced by privileged maintenance.
 
 func newTestStateDir(t *testing.T) string {
 	t.Helper()
@@ -96,6 +96,40 @@ func TestStateCreateFileRefusesSymlinkAndDoesNotTruncate(t *testing.T) {
 	}
 	if len(b) == 0 {
 		t.Fatal("symlink target was truncated")
+	}
+}
+
+func TestAptActionPIDRefusesSymlinkAndDoesNotTruncate(t *testing.T) {
+	state := newTestStateDir(t)
+	_, secret := secretOutside(t)
+
+	oldOverride := aptActionLogPathOverride
+	aptActionLogPathOverride = ""
+	t.Cleanup(func() { aptActionLogPathOverride = oldOverride })
+
+	link := filepath.Join(state, "apt-action.pid")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := writeAptActionPID(12345); err != nil {
+		t.Fatalf("safe PID replacement failed: %v", err)
+	}
+	b, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "root:") {
+		t.Fatalf("symlink target changed: %q", b)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		t.Fatalf("PID path was not replaced with a regular file: %v", info.Mode())
+	}
+	if got, err := os.ReadFile(link); err != nil || string(got) != "12345\n" {
+		t.Fatalf("PID file = %q, %v", got, err)
 	}
 }
 

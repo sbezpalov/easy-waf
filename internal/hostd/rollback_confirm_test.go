@@ -103,7 +103,7 @@ func TestBeginConfirmedChangeTimerFailureLeavesNothingPending(t *testing.T) {
 // and take effect at the next boot.
 func TestAbortConfirmedChangeRestoresNetplan(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
-	prev := []byte("network: {version: 2}\n")
+	prev := []byte("network:\n  version: 2\n  ethernets: {}\n")
 	if err := os.WriteFile(netplanPath, prev, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,11 +181,25 @@ func TestRevertNftRejectsTamperedBackup(t *testing.T) {
 	}
 }
 
+func TestRevertNetplanRejectsTamperedBackup(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	bad := []byte("network:\n  version: 2\n  tunnels:\n    tun0:\n      mode: gre\n")
+	if err := stateWriteFile(rollbackBackupPath("netplan", testToken), bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunRevert("netplan", testToken); err == nil {
+		t.Fatal("tampered netplan backup accepted")
+	}
+	if indexOf(m.calls, binNetplan+" apply") >= 0 {
+		t.Fatalf("netplan ran on a rejected backup: %v", m.calls)
+	}
+}
+
 // A reboot inside the window cancels the transient revert timer; the broker
 // reverts whatever is still uncommitted when it starts.
 func TestRevertPendingChangesAtStartup(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
-	prev := []byte("network: {version: 2}\n")
+	prev := []byte("network:\n  version: 2\n  ethernets: {}\n")
 	if err := os.WriteFile(netplanPath, prev, 0o600); err != nil {
 		t.Fatal(err)
 	}

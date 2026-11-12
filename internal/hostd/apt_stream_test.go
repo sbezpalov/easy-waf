@@ -36,6 +36,13 @@ func resetAptUpgradeState() {
 	ResetAptUpgradeStateForTest()
 }
 
+func overrideAptActionLogForTest(t *testing.T) {
+	t.Helper()
+	previous := aptActionLogPathOverride
+	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	t.Cleanup(func() { SetAptActionLogPathOverrideForTest(previous) })
+}
+
 func readStreamEvents(t *testing.T, r io.Reader) []streamEvent {
 	t.Helper()
 	var out []streamEvent
@@ -122,9 +129,8 @@ func TestDispatchAptStream_unknownAction(t *testing.T) {
 
 func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	overrideAptActionLogForTest(t)
 	defer func() {
-		SetAptActionLogPathOverrideForTest("")
 		resetAptUpgradeState()
 	}()
 
@@ -169,9 +175,8 @@ func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 
 func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	overrideAptActionLogForTest(t)
 	defer func() {
-		SetAptActionLogPathOverrideForTest("")
 		resetAptUpgradeState()
 	}()
 
@@ -271,8 +276,7 @@ func TestDispatchAptUpgradeStream_clientDisconnectDoesNotCancelApt(t *testing.T)
 
 func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
-	defer func() { SetAptActionLogPathOverrideForTest("") }()
+	overrideAptActionLogForTest(t)
 	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
 		_ = emit("mock upgrade line")
 		return 0, nil
@@ -317,8 +321,7 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 
 func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	resetAptUpgradeState()
-	SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
-	defer func() { SetAptActionLogPathOverrideForTest("") }()
+	overrideAptActionLogForTest(t)
 	SetAptActionStreamHookForTest(func(_ context.Context, action string, emit func(string) error) (int, error) {
 		_ = action
 		_ = emit("mock autoremove line")

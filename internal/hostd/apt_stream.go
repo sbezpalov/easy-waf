@@ -11,17 +11,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-)
-
-const (
-	defaultAptActionLogPath  = "/var/lib/easy-waf/apt-action.log"
-	defaultAptUpgradeLogPath = "/var/lib/easy-waf/apt-upgrade.log" // legacy path (read fallback)
-	defaultAptActionPIDPath  = "/var/lib/easy-waf/apt-action.pid"
 )
 
 // aptActionLogPathOverride is set in tests to use a temp directory.
@@ -31,7 +26,7 @@ func aptActionLogPath() string {
 	if aptActionLogPathOverride != "" {
 		return aptActionLogPathOverride
 	}
-	return defaultAptActionLogPath
+	return filepath.Join(stateDir, "apt-action.log")
 }
 
 // aptActionHeartbeatIntervalNanos is the heartbeat period, overridable in tests.
@@ -76,11 +71,11 @@ func aptActionPIDPath() string {
 	if aptActionLogPathOverride != "" {
 		return aptActionLogPathOverride + ".pid"
 	}
-	return defaultAptActionPIDPath
+	return filepath.Join(stateDir, "apt-action.pid")
 }
 
 func aptActionPIDAlive() bool {
-	b, err := os.ReadFile(aptActionPIDPath())
+	b, err := readAptActionPID()
 	if err != nil {
 		return false
 	}
@@ -96,31 +91,58 @@ func aptActionPIDAlive() bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
-func writeAptActionPID(pid int) {
-	_ = os.WriteFile(aptActionPIDPath(), []byte(fmt.Sprintf("%d\n", pid)), 0o600)
+func readAptActionPID() ([]byte, error) {
+	path := aptActionPIDPath()
+	if underStateDir(path) {
+		f, err := stateOpenFile(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		return io.ReadAll(io.LimitReader(f, 128))
+	}
+	return os.ReadFile(path)
 }
 
-func clearAptActionPID() {
-	_ = os.Remove(aptActionPIDPath())
+func writeAptActionPID(pid int) error {
+	path := aptActionPIDPath()
+	data := []byte(fmt.Sprintf("%d\n", pid))
+	if underStateDir(path) {
+		return stateWriteFile(path, data, 0o600)
+	}
+	return os.WriteFile(path, data, 0o600)
 }
 
-func aptActionTryStart() bool {
+func clearAptActionPID() error {
+	path := aptActionPIDPath()
+	if underStateDir(path) {
+		return stateRemoveFile(path)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func aptActionTryStart() (bool, error) {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
 	if aptActionActive {
-		return false
+		return false, nil
 	}
 	// Persist across hostd restarts: an apt-get left running still owns the
 	// dpkg lock; treat it as in-flight so callers attach instead of starting a second.
 	if aptActionPIDAlive() {
 		aptActionActive = true
-		return false
+		return false, nil
 	}
-	clearAptActionPID()
+	if err := clearAptActionPID(); err != nil {
+		return false, fmt.Errorf("clear apt action pid: %w", err)
+	}
 	aptActionActive = true
 	aptActionLastCode = 0
 	aptActionLastErr = ""
-	return true
+	return true, nil
 }
 
 func aptActionFinish(code int, errMsg string) {
@@ -129,7 +151,9 @@ func aptActionFinish(code int, errMsg string) {
 	aptActionLastCode = code
 	aptActionLastErr = errMsg
 	aptActionMu.Unlock()
-	clearAptActionPID()
+	if err := clearAptActionPID(); err != nil {
+		logOp("clear apt action pid: %v", err)
+	}
 }
 
 func aptActionSnapshot() (active bool, code int, errMsg string) {
@@ -163,7 +187,7 @@ func ResetAptActionStateForTest() {
 	aptActionLastErr = ""
 	aptActionMu.Unlock()
 	aptActionStreamHook = nil
-	clearAptActionPID()
+	_ = clearAptActionPID()
 }
 
 // SetAptUpgradeStreamHookForTest overrides apt execution for upgrade (tests only).
@@ -223,7 +247,12 @@ func dispatchAptStream(conn io.Writer, action string) {
 		emitExit(-1, "unknown apt action: "+action)
 		return
 	}
-	if !aptActionTryStart() {
+	started, err := aptActionTryStart()
+	if err != nil {
+		emitExit(1, err.Error())
+		return
+	}
+	if !started {
 		dispatchAptActionAttach(sc)
 		return
 	}
@@ -360,9 +389,6 @@ func dispatchAptUpgradeStatus() Response {
 // dispatchAptActionLog returns the current apt action log (read-only).
 func dispatchAptActionLog() Response {
 	b, err := readAptActionLog(aptActionLogPath())
-	if err != nil && os.IsNotExist(err) {
-		b, err = readAptActionLog(defaultAptUpgradeLogPath)
-	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return okResp(nil, nil, 0)
@@ -420,7 +446,11 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 		return 1, err
 	}
 	if cmd.Process != nil {
-		writeAptActionPID(cmd.Process.Pid)
+		if err := writeAptActionPID(cmd.Process.Pid); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return 1, fmt.Errorf("write apt action pid: %w", err)
+		}
 	}
 
 	lineCh := make(chan string, 64)

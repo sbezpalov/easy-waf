@@ -9,13 +9,9 @@ import (
 	"path/filepath"
 )
 
-// The apt action log lives at /var/lib/easy-waf/apt-action.log, inside the state
-// directory the unprivileged easy-waf account owns. os.Create there — what this
-// used to do — follows a symlink and opens with O_TRUNC, so a compromised
-// easy-waf-api could point the log at any root-owned file and have the broker
-// empty it. These wrappers route the log through the symlink-safe helpers when
-// it is at its real location, and fall back to plain file access only for the
-// temp-directory override tests use. See statefile.go.
+// The apt action log lives in the root-only hostd state directory. These
+// wrappers keep access descriptor-anchored there and fall back to plain file
+// access only for the temp-directory override tests use. See statefile.go.
 
 const maxAptActionLogBytes = 64 << 20
 

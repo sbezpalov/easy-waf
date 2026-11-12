@@ -116,7 +116,7 @@ Live upgrades use **`POST /api/v1/host/updates/upgrade/stream`** (NDJSON) via **
 1. **Broker running:** `systemctl status easy-waf-hostd` — socket `/run/easy-waf/hostd.sock`.
 2. **API rebuilt/restarted** after code changes: `systemctl restart easy-waf-api` (UI is embedded in the binary).
 3. **dpkg lock:** `sudo fuser -v /var/lib/dpkg/lock-frontend` — should be empty before a manual upgrade. If `apt-daily` / `unattended-upgrades` holds the lock, wait or stop them; the stream shows a line about waiting up to 120s (`DPkg::Lock::Timeout=120`).
-4. **Stale “in progress”** (rare): if the UI says upgrade is running but apt is gone, check `GET /api/v1/host/updates/upgrade/status` and `sudo tail -f /var/lib/easy-waf/apt-action.log`, then restart **`easy-waf-hostd`** only if no apt/dpkg process is active.
+4. **Stale “in progress”** (rare): if the UI says upgrade is running but apt is gone, check `GET /api/v1/host/updates/upgrade/status` and `sudo tail -f /var/lib/easy-waf-hostd/apt-action.log`, then restart **`easy-waf-hostd`** only if no apt/dpkg process is active.
 5. **Hard refresh** the browser (Ctrl+Shift+R) after deploying new `easy-waf-api`.
 
 See [HOST-API.md](HOST-API.md) (upgrade stream section).

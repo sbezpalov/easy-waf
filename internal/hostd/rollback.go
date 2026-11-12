@@ -79,14 +79,11 @@ func RunRevert(kind, token string) error {
 	}
 }
 
-// saveRollbackBackup copies the current root-owned file into the rollback
-// directory. An absent source is recorded as an empty backup, which is what
+// saveRollbackBackup copies the current root-owned file into the root-only
+// hostd state directory. An absent source is recorded as an empty backup, which is what
 // tells the revert to flush back to nothing.
 //
-// The write also goes through the state-directory helpers: os.CreateTemp in the
-// destination directory — what this used to do — resolves that directory
-// normally, so replacing it with a symlink made root create files wherever the
-// easy-waf account chose.
+// The write also goes through descriptor-anchored state-directory helpers.
 func saveRollbackBackup(src, bak string, mode os.FileMode) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -101,12 +98,9 @@ func saveRollbackBackup(src, bak string, mode os.FileMode) error {
 // readRollbackBackup returns the saved contents, or ok=false when there is no
 // backup to restore.
 //
-// The read goes through stateOpenFile rather than os.ReadFile because the
-// rollback directory belongs to the unprivileged easy-waf account. A plain read
-// here was a root file-disclosure primitive: a compromised easy-waf-api could
-// replace the backup with a symlink to /etc/shadow and have root copy it into
-// /etc/nftables/easy-waf.nft, which is mode 0644 and readable by that same
-// account. See statefile.go.
+// The read goes through stateOpenFile rather than os.ReadFile so rollback state
+// remains descriptor-anchored even if deployment ownership drifts. See
+// statefile.go.
 func readRollbackBackup(bak string) (data []byte, ok bool, err error) {
 	sz, exists, err := stateFileSize(bak)
 	if err != nil {
@@ -268,6 +262,11 @@ func revertNetplan(token string) error {
 	}
 	if !ok {
 		return nil
+	}
+	if len(data) > 0 {
+		if err := validateNetplanYAML(data); err != nil {
+			return fmt.Errorf("backup rejected: %w", err)
+		}
 	}
 	if len(data) > 0 {
 		if err := writeFileAtomic(netplanPath, data, netplanMode); err != nil {

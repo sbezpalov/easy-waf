@@ -16,14 +16,18 @@ import (
 
 // stateAnchorFD opens the state directory itself, refusing a symlink at that
 // final component. Every other resolution happens relative to this descriptor.
-func stateAnchorFD() (int, error) {
-	fd, err := unix.Open(stateDir,
+func stateRootFD(root string) (int, error) {
+	fd, err := unix.Open(root,
 		unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
-		return -1, &os.PathError{Op: "open", Path: stateDir, Err: err}
+		return -1, &os.PathError{Op: "open", Path: root, Err: err}
 	}
 	return fd, nil
 }
+
+func stateAnchorFD() (int, error) { return stateRootFD(stateDir) }
+
+func stagingAnchorFD() (int, error) { return stateRootFD(untrustedStateDir) }
 
 // stateSubdirFD resolves relDir beneath the anchor without traversing a
 // symlink, optionally creating the components. relDir may be "." for the state

@@ -28,7 +28,7 @@ func openStagedFile(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	anchorFD, err := stateAnchorFD()
+	anchorFD, err := stagingAnchorFD()
 	if err != nil {
 		return nil, err
 	}

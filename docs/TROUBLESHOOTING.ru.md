@@ -115,7 +115,7 @@ sudo systemctl restart easy-waf-hostd easy-waf-api
 1. **Брокер запущен:** `systemctl status easy-waf-hostd` — сокет `/run/easy-waf/hostd.sock`.
 2. **API пересобран и перезапущен** после изменений кода: `systemctl restart easy-waf-api` (UI встроен в бинарник).
 3. **Блокировка dpkg:** `sudo fuser -v /var/lib/dpkg/lock-frontend` — перед ручным обновлением вывод должен быть пустым. Если блокировку держит `apt-daily` / `unattended-upgrades`, подождите или остановите их; в потоке появится строка об ожидании до 120 с (`DPkg::Lock::Timeout=120`).
-4. **Зависшее «in progress»** (редко): если UI показывает выполняющееся обновление, а процесса apt уже нет, проверьте `GET /api/v1/host/updates/upgrade/status` и `sudo tail -f /var/lib/easy-waf/apt-action.log`, и только если ни один процесс apt/dpkg не активен — перезапустите **`easy-waf-hostd`**.
+4. **Зависшее «in progress»** (редко): если UI показывает выполняющееся обновление, а процесса apt уже нет, проверьте `GET /api/v1/host/updates/upgrade/status` и `sudo tail -f /var/lib/easy-waf-hostd/apt-action.log`, и только если ни один процесс apt/dpkg не активен — перезапустите **`easy-waf-hostd`**.
 5. **Жёстко обновите** страницу в браузере (Ctrl+Shift+R) после развёртывания нового `easy-waf-api`.
 
 См. [HOST-API.md](HOST-API.md) (раздел про поток обновления).

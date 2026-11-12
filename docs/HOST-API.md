@@ -23,7 +23,7 @@ WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` rout
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).
 - **Events:** `{"type":"line","data":"…"}` and `{"type":"exit","code":N,"error":"…"}`.
 - **Broker:** `apt-upgrade-stream` runs `apt-get -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=120 upgrade` (`DEBIAN_FRONTEND=noninteractive`). Emits a start line immediately, then heartbeat lines if apt is silent for ~15s, then apt stdout/stderr.
-- **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails `/var/lib/easy-waf/apt-action.log`), does not start another apt. The fallback to the legacy `apt-upgrade.log` applies only to the saved-log read behind `GET /host/updates/upgrade/log`, not to the live follower. First line: `==> attaching to apt action already in progress ...`.
+- **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails root-only `/var/lib/easy-waf-hostd/apt-action.log` through the broker), and does not start another apt. First line: `==> attaching to apt action already in progress ...`.
 - **`code: -1`** is reserved for attach/log read failures (with explicit `error`), not for “already running”.
 - **Client disconnect** does not stop apt; the broker finishes the transaction.
 - **`GET /host/updates/upgrade/status`** — `{"active":true|false,"exit_code":…,"error":…}` for UI re-attach on the System tab.

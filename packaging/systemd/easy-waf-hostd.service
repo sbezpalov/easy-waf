@@ -31,7 +31,8 @@ RestartSec=2
 ProtectHome=false
 ProtectControlGroups=true
 NoNewPrivileges=false
-StateDirectory=easy-waf
+StateDirectory=easy-waf-hostd
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target
