@@ -90,14 +90,9 @@ func (s *Server) Router() chi.Router {
 				r.Get("/security/modes", s.listSecurityModes)
 				r.Get("/applications", s.listApps)
 				r.Get("/applications/{id}", s.getApp)
-				r.Post("/applications", s.upsertApp)
-				r.Delete("/applications/{id}", s.deleteApp)
 				r.Get("/applications/{id}/security", s.getAppSecurity)
-				r.Post("/applications/{id}/maintenance", s.postAppMaintenance)
 				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)
-				r.Post("/certificates", s.upsertCert)
-				r.Delete("/certificates/{id}", s.deleteCert)
 				r.Get("/revisions", s.listRevisions)
 				r.Get("/integrations/crowdsec", s.crowdsecStatus)
 				r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
@@ -116,7 +111,6 @@ func (s *Server) Router() chi.Router {
 				r.Get("/geoip/providers", s.geoipListProviders)
 				r.Get("/stats/haproxy", s.handleStatsHAProxy)
 				r.Get("/stats/summary", s.handleStatsSummary)
-				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 				r.Get("/audit", s.listAudit)
 				r.With(auth.RequireAdmin).Get("/panel-users", s.listPanelUsers)
 
@@ -126,9 +120,15 @@ func (s *Server) Router() chi.Router {
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireStepUp(stepUpWindow))
 
+					r.Post("/applications", s.upsertApp)
+					r.Delete("/applications/{id}", s.deleteApp)
+					r.Post("/applications/{id}/maintenance", s.postAppMaintenance)
 					r.Put("/applications/{id}/security", s.putAppSecurity)
 					r.Patch("/applications/{id}/security", s.patchAppSecurity)
 					r.Post("/applications/{id}/security/mode", s.postAppSecurityMode)
+					r.Post("/certificates", s.upsertCert)
+					r.Delete("/certificates/{id}", s.deleteCert)
+					r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
 
 					r.Post("/apply", s.apply)
 					r.Post("/revisions/{id}/rollback", s.postRevisionRollback)

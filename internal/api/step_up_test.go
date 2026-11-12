@@ -70,7 +70,13 @@ func TestTrustBoundaryWritesRequireStepUp(t *testing.T) {
 		{http.MethodPost, "/api/v1/apply", `{"label":"x"}`},
 		{http.MethodPost, "/api/v1/revisions/1/rollback", ``},
 		{http.MethodPost, "/api/v1/diagnostics/bundle", ``},
+		{http.MethodPost, "/api/v1/applications", `{}`},
+		{http.MethodDelete, "/api/v1/applications/app1", ``},
+		{http.MethodPost, "/api/v1/applications/app1/maintenance", `{}`},
 		{http.MethodPut, "/api/v1/applications/app1/security", `{}`},
+		{http.MethodPost, "/api/v1/certificates", `{}`},
+		{http.MethodDelete, "/api/v1/certificates/cert1", ``},
+		{http.MethodPost, "/api/v1/certificates/cert1/request-issue", `{}`},
 		{http.MethodPost, "/api/v1/ipbl/sync", ``},
 		{http.MethodPost, "/api/v1/integrations/crowdsec/decisions", `{}`},
 	}

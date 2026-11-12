@@ -46,3 +46,19 @@ func TestPolicyRestrictsScripts(t *testing.T) {
 		t.Errorf("unsafe script source: %s", ContentSecurityPolicy)
 	}
 }
+
+func TestStepUpRetryIsResponseDriven(t *testing.T) {
+	html, err := Assets.ReadFile("dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(html)
+	if strings.Contains(page, "needsStepUp") {
+		t.Fatal("step-up retry uses a route allowlist that can omit new privileged operations")
+	}
+	for _, want := range []string{"r.status !== 403", "j.error !== 'step_up_required'", "await confirmStepUp()"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("generic step-up retry lacks %q", want)
+		}
+	}
+}

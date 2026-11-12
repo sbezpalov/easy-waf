@@ -1044,17 +1044,17 @@
     return stepUpPrompt;
   }
 
-  const needsStepUp = (url) => typeof url === 'string'
-    && (url.startsWith('/api/v1/host/') || url.startsWith('/api/v1/panel-users') || url.startsWith('/api/v1/auth/totp/') || url === '/api/v1/settings/management-tls');
-
   // Privileged operations answer 403 step_up_required until the password is
   // confirmed; ask for it once here and repeat the request, so no caller has to know.
   window.fetch = async (url, init) => {
+    const retryInput = url instanceof Request ? url.clone() : url;
     const r = await nativeFetch(url, init);
-    if (r.status !== 403 || !needsStepUp(url)) return r;
+    if (r.status !== 403) return r;
     const j = await r.clone().json().catch(() => null);
     if (!j || j.error !== 'step_up_required' || !(await confirmStepUp())) return r;
-    return nativeFetch(url, { ...init, headers: { ...(init && init.headers), Authorization: 'Bearer ' + getTok() } });
+    const retryHeaders = new Headers((init && init.headers) || (url instanceof Request ? url.headers : undefined));
+    retryHeaders.set('Authorization', 'Bearer ' + getTok());
+    return nativeFetch(retryInput, { ...init, headers: retryHeaders });
   };
 
   const HASH_TO_PANEL = {
