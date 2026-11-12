@@ -62,11 +62,11 @@ func (s *Server) totpSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, err := auth.NewTOTPSecret()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.Eng.Store.SetTOTPPending(r.Context(), u.Username, secret); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"secret": secret, "otpauth_uri": auth.TOTPURI(totpIssuer, u.Username, secret)})
@@ -86,7 +86,7 @@ func (s *Server) totpEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	pending, err := s.Eng.Store.GetTOTPPending(r.Context(), u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if pending == "" {
@@ -100,7 +100,7 @@ func (s *Server) totpEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	codes, err := auth.GenerateRecoveryCodes(10)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	hashes := make([]string, 0, len(codes))
@@ -121,7 +121,7 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.DisableTOTP(r.Context(), u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "totp_disabled", map[string]any{"username": u.Username})

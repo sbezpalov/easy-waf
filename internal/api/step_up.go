@@ -65,7 +65,7 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	tok, err := auth.SignStepUpJWT(s.JWTSecret, u.Username, u.SessionVersion, p.ExpiresAt, now)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if limited {

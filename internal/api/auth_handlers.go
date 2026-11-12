@@ -77,7 +77,7 @@ func equalizeLoginTiming(password string) {
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	pending, err := s.Eng.Store.EnrollmentPending(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -135,7 +135,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcryptCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	err = s.Eng.Store.ConsumeEnrollmentAndCreateUser(r.Context(), secret, user, string(hash))
@@ -150,7 +150,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, store.ErrEnrollmentAlreadyCompleted):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "enrollment already completed"})
 		default:
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeInternalError(w, err)
 		}
 		return
 	}
@@ -170,7 +170,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, loginResponse{
@@ -260,7 +260,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u.Username, u.SessionVersion, sessionTTL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if s.LoginRL != nil && ipStr != "" {
@@ -312,7 +312,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.RevokeUserSessions(r.Context(), u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "logout", map[string]any{
@@ -361,11 +361,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcryptCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.Eng.Store.UpdateUserPassword(r.Context(), u.ID, string(hash), false); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	u2, err := s.Eng.Store.GetUserByUsername(r.Context(), p.Username)
@@ -378,7 +378,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, sessionTTL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "password_changed", map[string]any{

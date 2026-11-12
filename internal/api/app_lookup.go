@@ -23,7 +23,7 @@ func (s *Server) loadApplication(w http.ResponseWriter, r *http.Request, id stri
 		return config.Application{}, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return config.Application{}, false
 	}
 	return a, true

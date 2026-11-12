@@ -49,7 +49,7 @@ func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) {
 	}
 	revs, err := s.Eng.Store.ListConfigRevisions(r.Context(), limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	curSHA, _ := s.Eng.LiveHAProxySHA256()

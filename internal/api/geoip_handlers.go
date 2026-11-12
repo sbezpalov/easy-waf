@@ -63,7 +63,7 @@ func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.GeoIP().ReloadMaxMindDB(path); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	s.Eng.GeoIP().Cache.Clear()

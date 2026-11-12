@@ -57,12 +57,37 @@ func TestEveryMutatingHostRouteRequiresStepUp(t *testing.T) {
 }
 
 func TestManagementTLSRequiresStepUp(t *testing.T) {
+	assertStepUpRequired(t, http.MethodPut, "/api/v1/settings/management-tls", `{}`)
+}
+
+func TestTrustBoundaryWritesRequireStepUp(t *testing.T) {
+	cases := []struct {
+		method, path, body string
+	}{
+		{http.MethodPut, "/api/v1/settings", `{}`},
+		{http.MethodPatch, "/api/v1/settings", `{}`},
+		{http.MethodPost, "/api/v1/apply", `{"label":"x"}`},
+		{http.MethodPost, "/api/v1/revisions/1/rollback", ``},
+		{http.MethodPost, "/api/v1/diagnostics/bundle", ``},
+		{http.MethodPut, "/api/v1/applications/app1/security", `{}`},
+		{http.MethodPost, "/api/v1/ipbl/sync", ``},
+		{http.MethodPost, "/api/v1/integrations/crowdsec/decisions", `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			assertStepUpRequired(t, tc.method, tc.path, tc.body)
+		})
+	}
+}
+
+func assertStepUpRequired(t *testing.T, method, path, body string) {
+	t.Helper()
 	s, user := changePasswordServer(t)
 	tok, err := auth.SignJWT(s.JWTSecret, user, 1, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/management-tls", strings.NewReader(`{}`))
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "192.168.1.10:4000"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")

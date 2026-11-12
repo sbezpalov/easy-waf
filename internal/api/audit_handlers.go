@@ -68,7 +68,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, hasMore, err := s.Eng.Store.ListAuditLogs(r.Context(), p)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if entries == nil {
@@ -89,7 +89,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(q.Get("include_total")); v == "1" || strings.EqualFold(v, "true") {
 		total, err := s.Eng.Store.CountAuditLogs(r.Context(), p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeInternalError(w, err)
 			return
 		}
 		resp["total"] = total

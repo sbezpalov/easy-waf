@@ -28,7 +28,7 @@ func (s *Server) postDiagnosticsBundle(w http.ResponseWriter, r *http.Request) {
 		Version:  os.Getenv("EASY_WAF_VERSION"),
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 

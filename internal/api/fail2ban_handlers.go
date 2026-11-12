@@ -36,7 +36,7 @@ func (s *Server) fail2banJailStatus(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, fail2ban.ErrInvalidJail):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		default:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeClientError(w, http.StatusBadGateway, "internal error", err)
 		}
 		return
 	}
@@ -58,7 +58,7 @@ func (s *Server) fail2banUnban(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, fail2ban.ErrInvalidJail), errors.Is(err, fail2ban.ErrInvalidIP):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		default:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeClientError(w, http.StatusBadGateway, "internal error", err)
 		}
 		return
 	}

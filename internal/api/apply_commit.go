@@ -55,12 +55,13 @@ func applyContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // writeApplyRejected reports a failed apply: 503 when it ran out of time
 // (typically waiting for another apply to finish, so a retry can succeed),
 // otherwise 422 — the stored configuration could not be put live.
+// HAProxy -c / filesystem detail stays in the process log, not the response.
 func writeApplyRejected(w http.ResponseWriter, err error) {
 	if errors.Is(err, context.DeadlineExceeded) {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		writeClientError(w, http.StatusServiceUnavailable, "apply timed out; retry", err)
 		return
 	}
-	http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	writeClientError(w, http.StatusUnprocessableEntity, "apply failed", err)
 }
 
 // cloneApplication deep-copies a so later in-place edits cannot leak into the

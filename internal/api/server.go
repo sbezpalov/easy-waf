@@ -93,77 +93,85 @@ func (s *Server) Router() chi.Router {
 				r.Post("/applications", s.upsertApp)
 				r.Delete("/applications/{id}", s.deleteApp)
 				r.Get("/applications/{id}/security", s.getAppSecurity)
-				r.Put("/applications/{id}/security", s.putAppSecurity)
-				r.Patch("/applications/{id}/security", s.patchAppSecurity)
-				r.Post("/applications/{id}/security/mode", s.postAppSecurityMode)
 				r.Post("/applications/{id}/maintenance", s.postAppMaintenance)
 				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)
 				r.Post("/certificates", s.upsertCert)
 				r.Delete("/certificates/{id}", s.deleteCert)
-				r.Post("/apply", s.apply)
 				r.Get("/revisions", s.listRevisions)
-				r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
 				r.Get("/integrations/crowdsec", s.crowdsecStatus)
 				r.Get("/integrations/crowdsec/decisions", s.crowdsecDecisions)
-				r.Post("/integrations/crowdsec/decisions", s.crowdsecAddDecision)
-				r.Delete("/integrations/crowdsec/decisions/{id}", s.crowdsecDeleteDecision)
 				r.Get("/integrations/fail2ban", s.fail2banOverview)
 				r.Get("/integrations/fail2ban/jails/{jail}", s.fail2banJailStatus)
-				r.Post("/integrations/fail2ban/unban", s.fail2banUnban)
 				r.Get("/settings", s.getSettings)
-				r.Put("/settings", s.putSettings)
-				r.Patch("/settings", s.patchSettings)
 				r.Post("/notify/test", s.notifyTest)
-				// Its own step-up: with this certificate, a stolen token could
-				// intercept the password that confirms everything else.
-				r.With(auth.RequireStepUp(stepUpWindow)).Put("/settings/management-tls", s.putManagementTLS)
 
 				r.Get("/ipbl/local", s.listIPBLLocal)
-				r.Post("/ipbl/local", s.upsertIPBLLocal)
-				r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)
 				r.Get("/ipbl/sources", s.listIPBLSources)
-				r.Post("/ipbl/sources", s.upsertIPBLSource)
-				r.Delete("/ipbl/sources/{id}", s.deleteIPBLSource)
-				r.Post("/ipbl/sync", s.syncIPBL)
-
 				r.Get("/ipwl/local", s.listIPWLLocal)
-				r.Post("/ipwl/local", s.upsertIPWLLocal)
-				r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
-
 				r.Get("/security/blocked", s.listBlocked)
 				r.Get("/security/blocked-ua", s.listBlockedUA)
-				r.Post("/security/blocked-ua", s.addBlockedUA)
-				r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
-
 				r.Get("/geoip/lookup", s.geoipLookup)
 				r.Get("/geoip/stats", s.geoipStats)
 				r.Get("/geoip/providers", s.geoipListProviders)
-				r.Post("/geoip/reload", s.geoipReload)
-				r.Post("/geoip/database", s.geoipUploadDatabase)
-
 				r.Get("/stats/haproxy", s.handleStatsHAProxy)
 				r.Get("/stats/summary", s.handleStatsSummary)
-
 				r.Post("/certificates/{id}/request-issue", s.requestCertIssue)
-
 				r.Get("/audit", s.listAudit)
-
 				r.Get("/panel-users", s.listPanelUsers)
+
+				// Trust-boundary / outage-capable writes: stolen admin JWT must
+				// not widen management ACL, rebuild the edge, or dump diagnostics
+				// without a fresh password confirmation.
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireStepUp(stepUpWindow))
+
+					r.Put("/applications/{id}/security", s.putAppSecurity)
+					r.Patch("/applications/{id}/security", s.patchAppSecurity)
+					r.Post("/applications/{id}/security/mode", s.postAppSecurityMode)
+
+					r.Post("/apply", s.apply)
+					r.Post("/revisions/{id}/rollback", s.postRevisionRollback)
+
+					r.Post("/integrations/crowdsec/decisions", s.crowdsecAddDecision)
+					r.Delete("/integrations/crowdsec/decisions/{id}", s.crowdsecDeleteDecision)
+					r.Post("/integrations/fail2ban/unban", s.fail2banUnban)
+
+					r.Put("/settings", s.putSettings)
+					r.Patch("/settings", s.patchSettings)
+					// Its own step-up group already; kept here with the other
+					// settings writes so a stolen token cannot replace the TLS
+					// cert that intercepts the confirm password itself.
+					r.Put("/settings/management-tls", s.putManagementTLS)
+
+					r.Post("/ipbl/local", s.upsertIPBLLocal)
+					r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)
+					r.Post("/ipbl/sources", s.upsertIPBLSource)
+					r.Delete("/ipbl/sources/{id}", s.deleteIPBLSource)
+					r.Post("/ipbl/sync", s.syncIPBL)
+
+					r.Post("/ipwl/local", s.upsertIPWLLocal)
+					r.Delete("/ipwl/local/{id}", s.deleteIPWLLocal)
+
+					r.Post("/security/blocked-ua", s.addBlockedUA)
+					r.Delete("/security/blocked-ua/{id}", s.deleteBlockedUA)
+
+					r.Post("/geoip/reload", s.geoipReload)
+					r.Post("/geoip/database", s.geoipUploadDatabase)
+
 					r.Post("/panel-users", s.createPanelUser)
 					r.Patch("/panel-users/{username}", s.patchPanelUser)
 					r.Post("/panel-users/{username}/reset-password", s.resetPanelUserPassword)
 					r.Delete("/panel-users/{username}", s.deletePanelUser)
 					r.Delete("/panel-users/{username}/totp", s.resetPanelUserTOTP)
+
+					r.Post("/auth/totp/setup", s.totpSetup)
+					r.Post("/auth/totp/disable", s.totpDisable)
+
+					r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 				})
 
-				r.With(auth.RequireStepUp(stepUpWindow)).Post("/auth/totp/setup", s.totpSetup)
 				r.Post("/auth/totp/enable", s.totpEnable)
-				r.With(auth.RequireStepUp(stepUpWindow)).Post("/auth/totp/disable", s.totpDisable)
-
-				r.Post("/diagnostics/bundle", s.postDiagnosticsBundle)
 
 				s.mountHostRoutes(r)
 			})
@@ -257,7 +265,7 @@ func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := s.Eng.Store.ListApplications(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(apps))
@@ -308,7 +316,7 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 			old = prev
 			haveOld = true
 		} else if !errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeInternalError(w, err)
 			return
 		}
 	}
@@ -362,7 +370,7 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
 		_ = restoreTokens()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	undoDB := s.restoreApplication(old)
@@ -419,7 +427,7 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.DeleteApplication(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application-delete", s.restoreApplication(old)); err != nil {
@@ -432,7 +440,7 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listCerts(w http.ResponseWriter, r *http.Request) {
 	c, err := s.Eng.Store.ListCertificates(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(c))
@@ -441,7 +449,7 @@ func (s *Server) listCerts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listCertsSummary(w http.ResponseWriter, r *http.Request) {
 	certs, err := s.Eng.Store.ListCertificates(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	resp := BuildCertificateSummaryResponse(certs, time.Now().UTC())
@@ -452,7 +460,7 @@ func (s *Server) deleteCert(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	n, err := s.Eng.Store.CountApplicationsByCertificateID(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if n > 0 {
@@ -466,7 +474,7 @@ func (s *Server) deleteCert(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -490,12 +498,12 @@ func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), &c); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	stored, err := s.findCertificate(r.Context(), c.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, stored)
@@ -557,12 +565,12 @@ func (s *Server) crowdsecStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	raw, err := c.DecisionsSample(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -703,7 +711,7 @@ func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
 func (s *Server) listIPBLLocal(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Eng.Store.ListIPBLLocal(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(list))
@@ -727,13 +735,13 @@ func (s *Server) upsertIPBLLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertIPBLLocal(r.Context(), &e); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	// The stored row, not the request: created_at is the server's.
 	list, err := s.Eng.Store.ListIPBLLocal(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	for _, stored := range list {
@@ -757,7 +765,7 @@ func (s *Server) deleteIPBLLocal(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listIPBLSources(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Eng.Store.ListIPBLExternalSources(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(list))
@@ -775,14 +783,14 @@ func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertIPBLExternalSource(r.Context(), &e); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	// Answer with the stored row: the fetch status is the server's, not
 	// whatever the request carried.
 	srcs, err := s.Eng.Store.ListIPBLExternalSources(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	for _, src := range srcs {
@@ -801,7 +809,7 @@ func (s *Server) deleteIPBLSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -812,7 +820,7 @@ func (s *Server) syncIPBL(w http.ResponseWriter, r *http.Request) {
 	// its last_error says why), so what is left is a server-side failure.
 	res, err := s.Eng.SyncIPBL(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -838,7 +846,7 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	cc, cached, err := s.Eng.GeoIP().Lookup(r.Context(), g, ip)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ip": ip, "country": cc, "cached": cached})
@@ -855,7 +863,7 @@ func (s *Server) geoipStats(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Eng.Store.ListIPWLLocal(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(list))
@@ -877,13 +885,13 @@ func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertIPWLLocal(r.Context(), &e); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	// The stored row, not the request: created_at is the server's.
 	list, err := s.Eng.Store.ListIPWLLocal(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	for _, stored := range list {
@@ -907,7 +915,7 @@ func (s *Server) deleteIPWLLocal(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listBlockedUA(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Eng.Store.ListBlockedUserAgents(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(list))
@@ -931,7 +939,7 @@ func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
 	}
 	e.ID = ""
 	if err := s.Eng.Store.UpsertBlockedUserAgent(r.Context(), &e); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, e)
@@ -1020,7 +1028,7 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	mode, ok := resolveRequestIssueMode(body.Mode, found.Mode)
@@ -1042,7 +1050,7 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertCertificate(r.Context(), found); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, found)

@@ -43,7 +43,7 @@ func temporaryPassword() (string, error) {
 func (s *Server) listPanelUsers(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Eng.Store.ListUsers(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	out := make([]panelUserJSON, 0, len(list))
@@ -74,7 +74,7 @@ func (s *Server) createPanelUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u, err := s.Eng.Store.GetUserByUsername(r.Context(), body.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	} else if u != nil {
 		http.Error(w, "user already exists", http.StatusConflict)
@@ -82,17 +82,17 @@ func (s *Server) createPanelUser(w http.ResponseWriter, r *http.Request) {
 	}
 	pass, err := temporaryPassword()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pass), bcryptCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	u := config.AdminUser{Username: body.Username, PasswordHash: string(hash), MustChangePassword: true, Role: body.Role}
 	if err := s.Eng.Store.CreateUser(r.Context(), &u); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "panel_user_created", map[string]any{"username": u.Username, "role": u.Role})
@@ -123,7 +123,7 @@ func (s *Server) resetPanelUserPassword(w http.ResponseWriter, r *http.Request) 
 	name := chi.URLParam(r, "username")
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if u == nil {
@@ -132,17 +132,17 @@ func (s *Server) resetPanelUserPassword(w http.ResponseWriter, r *http.Request) 
 	}
 	pass, err := temporaryPassword()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pass), bcryptCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	// Also ends the user's sessions: UpdateUserPassword bumps session_version.
 	if err := s.Eng.Store.UpdateUserPassword(r.Context(), u.ID, string(hash), true); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "panel_user_password_reset", map[string]any{"username": name})
@@ -171,7 +171,7 @@ func writePanelUserErr(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, store.ErrLastAdmin):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 	}
 	return false
 }

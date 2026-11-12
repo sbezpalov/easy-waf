@@ -99,8 +99,8 @@ func normalizeDNSProvider(c *config.Certificate) {
 // writeDeleteError answers a failed delete: 404 for an unknown id, else 500.
 func writeDeleteError(w http.ResponseWriter, err error) {
 	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeClientError(w, http.StatusNotFound, "not found", nil)
 		return
 	}
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	writeInternalError(w, err)
 }

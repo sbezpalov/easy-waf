@@ -27,7 +27,7 @@ func (s *Server) notifyTest(w http.ResponseWriter, r *http.Request) {
 		Text:     "Notifications from this appliance reach you.",
 	})
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})

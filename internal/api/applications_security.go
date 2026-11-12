@@ -39,7 +39,7 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	before, err := cloneApplication(a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	normalizeRequestSecurity(&sec)
@@ -49,7 +49,7 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
@@ -71,7 +71,7 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	before, err := cloneApplication(a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	merged, err := config.MergeApplicationSecurityJSON(a.Security, body)
@@ -86,7 +86,7 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
@@ -118,7 +118,7 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 	}
 	before, err := cloneApplication(a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	prev := a.Security.Mode
@@ -128,7 +128,7 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application-security-mode", s.restoreApplication(before)); err != nil {

@@ -82,7 +82,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 func (s *Server) hostGetNetwork(w http.ResponseWriter, r *http.Request) {
 	ov, err := network.GetOverview(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ov)
@@ -110,7 +110,7 @@ func (s *Server) hostPutNetplan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := network.ApplyNetplan(r.Context(), body.YAML); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
@@ -169,7 +169,7 @@ func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostGetFirewall(w http.ResponseWriter, r *http.Request) {
 	st, err := nft.GetStatus(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -184,7 +184,7 @@ func (s *Server) hostPutFirewall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := nft.PutRuleset(r.Context(), body.Ruleset); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
@@ -192,7 +192,7 @@ func (s *Server) hostPutFirewall(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostApplyFirewall(w http.ResponseWriter, r *http.Request) {
 	if err := nft.Apply(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
@@ -251,7 +251,7 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostListServices(w http.ResponseWriter, r *http.Request) {
 	list, err := hostsystemd.List(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"services": list})
@@ -289,7 +289,13 @@ func (s *Server) hostGetJournal(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := journal.Read(r.Context(), q)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		// Validation failures are stable short strings; broker/journalctl
+		// detail must not reach the UI.
+		if strings.Contains(err.Error(), "unit") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "required") {
+			writeClientError(w, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"log": out})
@@ -298,7 +304,7 @@ func (s *Server) hostGetJournal(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostGetUpdates(w http.ResponseWriter, r *http.Request) {
 	st, err := apt.ListUpgradable(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -307,7 +313,7 @@ func (s *Server) hostGetUpdates(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostDisk(w http.ResponseWriter, r *http.Request) {
 	mounts, err := disk.Usage("/", "/var")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	resp := map[string]any{"mounts": mounts}
@@ -327,11 +333,11 @@ func (s *Server) hostDisk(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAptClean(w http.ResponseWriter, r *http.Request) {
 	before, err := apt.CacheSizeBytes(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	if err := apt.CleanCache(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	after, err := apt.CacheSizeBytes(r.Context())
@@ -353,7 +359,7 @@ func (s *Server) hostAptClean(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAptUpdate(w http.ResponseWriter, r *http.Request) {
 	st, err := apt.Update(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_apt_update", nil, false)
@@ -363,7 +369,7 @@ func (s *Server) hostAptUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 	st, err := apt.Upgrade(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_apt_upgrade", nil, true)
@@ -383,7 +389,7 @@ func (s *Server) hostAutoremoveStream(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAutoremovePreview(w http.ResponseWriter, r *http.Request) {
 	st, err := apt.AutoremovePreview(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -435,7 +441,7 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 	out, err := runner.Privileged(r.Context(), "apt-upgrade-status")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	var st map[string]any
@@ -451,7 +457,7 @@ func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAptUpgradeLog(w http.ResponseWriter, r *http.Request) {
 	out, err := runner.Privileged(r.Context(), "apt-upgrade-log")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -465,7 +471,7 @@ func (s *Server) hostAptUpgradeLog(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {
 	if err := hostPower(r.Context(), "reboot"); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_power_reboot", nil, true)
@@ -474,7 +480,7 @@ func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostPoweroff(w http.ResponseWriter, r *http.Request) {
 	if err := hostPower(r.Context(), "poweroff"); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_power_shutdown", nil, true)
@@ -489,7 +495,7 @@ func hostPower(ctx context.Context, action string) error {
 func (s *Server) hostListUsers(w http.ResponseWriter, _ *http.Request) {
 	list, err := users.List()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": list})

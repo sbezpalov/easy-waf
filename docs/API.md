@@ -86,13 +86,16 @@ password, every authenticated route except `GET /api/v1/auth/me`,
 `POST /api/v1/auth/logout` and `POST /api/v1/auth/change-password` returns **403**
 `{"error":"password_change_required","must_change_password":true}`.
 
-**Password confirmation.** `/api/v1/host/*` routes that change the host, and
-`PUT /settings/management-tls`, return **403** `{"error":"step_up_required"}` unless the session confirmed its password
-in the last **5 minutes**: call [`POST /auth/confirm`](#post-apiv1authconfirm) and
-repeat the request with the token it returns. Reads, `POST .../commit` and
-`POST /host/diagnostics/*` do not need it. A commit only keeps a change that was
-already confirmed, and a lapse must not let the auto-rollback undo it. The
-automation token does not need it either.
+**Password confirmation.** These writes return **403** `{"error":"step_up_required"}`
+unless the session confirmed its password in the last **5 minutes** (call
+[`POST /auth/confirm`](#post-apiv1authconfirm) and repeat with the new token):
+`/api/v1/host/*` routes that change the host; `PUT`/`PATCH /settings` and
+`PUT /settings/management-tls`; `POST /apply` and revision rollback; application
+security writes; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP mutations;
+panel-user and TOTP setup/disable; `POST /diagnostics/bundle`. Reads,
+`POST .../commit` and `POST /host/diagnostics/*` do not need it. A commit only
+keeps a change that was already confirmed, and a lapse must not let the
+auto-rollback undo it. The automation token does not need it either.
 
 **Automation token.** If `EASY_WAF_ADMIN_TOKEN` is set (at least 24
 characters), that value is also accepted as a bearer token. It acts as the
@@ -452,9 +455,10 @@ Switches maintenance mode on or off and applies. Body: `{"enabled": true, "bypas
 Renders the full HAProxy configuration from the database and applies it. This means validating with `haproxy -c`, promoting the managed artifact set, saving a revision snapshot, reloading HAProxy, and writing a config revision plus an `apply` audit row in one step. On any failure, the previous files are restored. This is the endpoint that puts certificate, settings, IP list and user-agent changes live; those write endpoints do not apply on their own.
 - **Request body:** optional `{"label": "string"}`. The label is stored with the revision. A missing or invalid body is ignored and the label is then empty.
 - **Response:** `200` `{"status": "applied"}`
-- **Errors (text/plain, engine error message):**
-  - `422` for an apply failure, for example `validation failed: …`, an empty TLS crt-list (`TLS: crt-list would be empty — …`) or a reload failure.
-  - `503` when the apply timed out. It waits at most 2 minutes, including the time spent waiting for the apply lock (`acquire HAProxy apply lock: context deadline exceeded`). A retry can succeed.
+- **Errors (JSON `{"error":…}`):** needs step-up. Engine detail (HAProxy `-c` output, paths) is logged server-side only.
+  - `422` `{"error":"apply failed"}` when the configuration could not be put live.
+  - `503` `{"error":"apply timed out; retry"}` when the apply timed out (at most 2 minutes, including waiting for the apply lock). A retry can succeed.
+  - `403` `{"error":"step_up_required"}` without a recent password confirmation.
 
 ### `GET /api/v1/revisions`
 Lists HAProxy config revisions, newest first.
@@ -587,7 +591,7 @@ Returns the current global settings.
   ```
 
 ### `PUT /api/v1/settings` and `PATCH /api/v1/settings`
-Both methods behave identically: they **merge** the body over the stored settings. `PUT` does not replace the whole document.
+Both methods behave identically: they **merge** the body over the stored settings. `PUT` does not replace the whole document. Needs step-up (management ACL and other trust-boundary fields take effect immediately).
 - **Merge semantics:**
   - The body must be a single JSON object of at most 1 MiB; trailing data is rejected.
   - Only keys present in the body are applied. Omitted keys keep their stored values, and unknown keys are ignored.
@@ -715,7 +719,7 @@ Lists audit-log rows, newest first (by `id` descending). Every mutating request 
 ## Diagnostics
 
 ### `POST /api/v1/diagnostics/bundle`
-Builds a support bundle on the server and returns it as a gzipped tar. This can take several minutes in the worst case: the server runs many local commands one after another with per-command timeouts of up to 45 s, including `journalctl`, `systemctl status`, `haproxy -c`, and `nft list ruleset`, and there is no overall deadline beyond the request context.
+Builds a support bundle on the server and returns it as a gzipped tar. Needs step-up. This can take several minutes in the worst case: the server runs many local commands one after another with per-command timeouts of up to 45 s, including `journalctl`, `systemctl status`, `haproxy -c`, and `nft list ruleset`, and there is no overall deadline beyond the request context.
 - **Request body:** none. Any body is ignored.
 - **Bundle contents** (all under `easy-waf-diag-api-<UTC stamp>/`):
   - `MANIFEST.txt` with the version and hostname.
@@ -729,7 +733,7 @@ Builds a support bundle on the server and returns it as a gzipped tar. This can 
   - The last 5 config revisions (id, sha256, time).
   - The nftables ruleset and `/etc/nftables/easy-waf.nft`.
 - **Response:** `200`, `Content-Type: application/gzip`, `Content-Disposition: attachment; filename="easy-waf-diag-api-YYYYMMDD-HHMMSS.tar.gz"`. The body is the `.tar.gz` bytes.
-- **Errors (JSON):** `500` with `{"error":"..."}` when the bundle cannot be built. Examples are an uncompressed tar larger than 40 MiB (`diagnostics: bundle size N exceeds limit 41943040`) or a tar write error. A failing individual command does not fail the request; its output, or nothing, lands in the file.
+- **Errors (JSON):** `403` `step_up_required` without confirmation; `500` `{"error":"internal error"}` when the bundle cannot be built (detail only in the API log). A failing individual command does not fail the request; its output, or nothing, lands in the file.
 
 ## IP blocklist (IPBL)
 

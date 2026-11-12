@@ -21,7 +21,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 	}
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	if err = c.DeleteDecision(r.Context(), id); err != nil {
@@ -29,7 +29,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, crowdsec.ErrDecisionNotFound):
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		default:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeClientError(w, http.StatusBadGateway, "internal error", err)
 		}
 		return
 	}
@@ -51,7 +51,7 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeClientError(w, http.StatusBadGateway, "internal error", err)
 		return
 	}
 	if err = c.AddDecision(r.Context(), body); err != nil {
@@ -59,7 +59,7 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, crowdsec.ErrInvalidDecisionIP):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		default:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeClientError(w, http.StatusBadGateway, "internal error", err)
 		}
 		return
 	}

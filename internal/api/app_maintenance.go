@@ -33,7 +33,7 @@ func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 	before, err := cloneApplication(a)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	a.Maintenance = body.Enabled
@@ -45,7 +45,7 @@ func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Eng.Store.UpsertApplication(r.Context(), &a); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err)
 		return
 	}
 	if err := s.applyOrUndo(r.Context(), "api-application-maintenance", s.restoreApplication(before)); err != nil {
