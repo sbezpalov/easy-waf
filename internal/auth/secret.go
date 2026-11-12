@@ -35,8 +35,18 @@ func LoadJWTSecret(stateDir string) ([]byte, error) {
 		return []byte(v), nil
 	}
 	p := filepath.Join(stateDir, "secrets", "jwt.secret")
-	if b, err := os.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) > 0 {
-		return []byte(strings.TrimSpace(string(b))), nil
+	if b, err := os.ReadFile(p); err == nil {
+		secret := strings.TrimSpace(string(b))
+		if len(secret) > 0 {
+			// Same floor as EASY_WAF_JWT_SECRET: a short on-disk key used to
+			// bypass the env check and weaken forge resistance for management JWTs.
+			if len(secret) < MinJWTSecretLen {
+				return nil, fmt.Errorf("%s is %d characters; at least %d are required "+
+					"(delete the file to regenerate a random key, or replace it with a longer secret)",
+					p, len(secret), MinJWTSecretLen)
+			}
+			return []byte(secret), nil
+		}
 	}
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {

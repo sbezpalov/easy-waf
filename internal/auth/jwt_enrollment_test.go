@@ -11,7 +11,7 @@ import (
 )
 
 func TestSignParseJWT_sessionVersion(t *testing.T) {
-	secret := []byte("0123456789abcdef")
+	secret := []byte("0123456789abcdef0123456789abcdef")
 	tok, err := SignJWT(secret, "admin", 2, time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestSignParseJWT_sessionVersion(t *testing.T) {
 }
 
 func TestParseJWT_missingSessionVersionFailsClosed(t *testing.T) {
-	secret := []byte("0123456789abcdef")
+	secret := []byte("0123456789abcdef0123456789abcdef")
 	claims := jwt.RegisteredClaims{
 		Subject:   "admin",
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),

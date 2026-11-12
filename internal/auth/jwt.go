@@ -26,10 +26,9 @@ func (c *SessionClaims) stepUpTime() time.Time {
 	return time.Unix(c.StepUpAt, 0)
 }
 
-// minSigningKeyLen bounds both signing and verification. Verifying with a key
-// too short to sign with is worse than useless: nothing can issue a token, but
-// a guessed key still forges one.
-const minSigningKeyLen = 16
+// minSigningKeyLen bounds both signing and verification. Aligned with
+// MinJWTSecretLen so a short key cannot verify forged sessions either.
+const minSigningKeyLen = MinJWTSecretLen
 
 // SignJWT issues an HS256 JWT for the given subject and session epoch.
 func SignJWT(secret []byte, username string, sessionVersion int, ttl time.Duration) (string, error) {

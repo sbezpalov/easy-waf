@@ -27,6 +27,13 @@ func TestBuildJournalArgs_rejectsBadUnit(t *testing.T) {
 	}
 }
 
+func TestBuildJournalArgs_requiresUnit(t *testing.T) {
+	_, err := buildJournalArgs(Query{Lines: 10})
+	if err == nil {
+		t.Fatal("expected error when unit is empty")
+	}
+}
+
 func TestBuildJournalArgs_rejectsInjectionSince(t *testing.T) {
 	_, err := buildJournalArgs(Query{Since: "today; rm -rf /"})
 	if err == nil {

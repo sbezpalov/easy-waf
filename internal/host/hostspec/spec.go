@@ -25,11 +25,16 @@ const (
 var (
 	usernameRE     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	journalSinceRE = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$|^[0-9]+[smhdw]?$`)
-	journalOutput  = map[string]struct{}{
+	// verbose/export can dump binary fields and broader metadata; keep
+	// operator-facing formats only.
+	journalOutput = map[string]struct{}{
 		"short": {}, "short-iso": {}, "short-precise": {}, "short-iso-precise": {},
-		"verbose": {}, "export": {}, "json": {}, "json-pretty": {}, "json-sse": {},
-		"json-seq": {}, "cat": {},
+		"json": {}, "json-pretty": {}, "json-sse": {}, "json-seq": {}, "cat": {},
 	}
+	// Matches journal.BlockedLines; interactive API queries still clamp to 2000.
+	journalMaxLines = 5000
+
+
 	jailNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
 	journalPriority = map[string]struct{}{
@@ -122,10 +127,12 @@ const JournalGrepBlocked = "[PL]R--"
 var journalGrep = map[string]struct{}{JournalGrepBlocked: {}}
 
 // ValidateJournalArgs validates journalctl arguments (not including the "journal" opcode).
+// At least one allowlisted -u is required so a peer cannot dump the whole system journal.
 func ValidateJournalArgs(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("journal: empty args")
 	}
+	units := 0
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.ContainsAny(a, "'\";&|$()") {
@@ -138,7 +145,8 @@ func ValidateJournalArgs(args []string) error {
 			if i+1 >= len(args) {
 				return fmt.Errorf("journal: -n requires value")
 			}
-			if _, err := strconv.Atoi(args[i+1]); err != nil {
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil || n < 1 || n > journalMaxLines {
 				return fmt.Errorf("journal: invalid -n")
 			}
 			i++
@@ -153,6 +161,7 @@ func ValidateJournalArgs(args []string) error {
 			if !systemdallow.AllowedUnit(u) {
 				return fmt.Errorf("journal: unit not allowed")
 			}
+			units++
 			i++
 		case "--since", "--until":
 			if i+1 >= len(args) {
@@ -189,6 +198,9 @@ func ValidateJournalArgs(args []string) error {
 		default:
 			return fmt.Errorf("journal: flag not allowed: %s", a)
 		}
+	}
+	if units < 1 {
+		return fmt.Errorf("journal: -u required")
 	}
 	return nil
 }

@@ -56,17 +56,17 @@ func buildJournalArgs(q Query) ([]string, error) {
 	if lines > 2000 {
 		lines = 2000
 	}
-	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines)}
-
-	if u := strings.TrimSpace(q.Unit); u != "" {
-		if !strings.HasSuffix(u, ".service") {
-			u += ".service"
-		}
-		if !hostsystemd.AllowedUnit(u) {
-			return nil, fmt.Errorf("unit not allowed")
-		}
-		args = append(args, "-u", u)
+	u := strings.TrimSpace(q.Unit)
+	if u == "" {
+		return nil, fmt.Errorf("unit required")
 	}
+	if !strings.HasSuffix(u, ".service") {
+		u += ".service"
+	}
+	if !hostsystemd.AllowedUnit(u) {
+		return nil, fmt.Errorf("unit not allowed")
+	}
+	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", u}
 	if s := strings.TrimSpace(q.Since); s != "" {
 		if !journalSinceRE.MatchString(s) {
 			return nil, fmt.Errorf("invalid since")

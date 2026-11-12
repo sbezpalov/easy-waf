@@ -100,4 +100,13 @@ func TestValidateJournalArgs(t *testing.T) {
 	if err := ValidateJournalArgs([]string{"--evil"}); err == nil {
 		t.Fatal("unknown flag")
 	}
+	if err := ValidateJournalArgs([]string{"--no-pager", "-n", "10"}); err == nil {
+		t.Fatal("missing -u must be rejected")
+	}
+	if err := ValidateJournalArgs([]string{"--no-pager", "-n", "5001", "-u", "haproxy.service"}); err == nil {
+		t.Fatal("oversize -n must be rejected")
+	}
+	if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--output", "export"}); err == nil {
+		t.Fatal("export output must be rejected")
+	}
 }

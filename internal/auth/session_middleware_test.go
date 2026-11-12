@@ -40,7 +40,7 @@ func TestSessionRejectsStaleJWTAfterPasswordChange(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.DeleteUserByUsername(ctx, user) })
 
-	secret := []byte("0123456789abcdef")
+	secret := []byte("0123456789abcdef0123456789abcdef")
 	oldTok, err := auth.SignJWT(secret, user, 1, time.Hour)
 	if err != nil {
 		t.Fatal(err)
