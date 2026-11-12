@@ -116,7 +116,7 @@ func TestRenderEdgeTokenIsFileNotValue(t *testing.T) {
 	if strings.Contains(cfg, secret) {
 		t.Fatal("edge token value was copied into haproxy.cfg")
 	}
-	if !strings.Contains(cfg, "-f "+file) {
+	if !strings.Contains(cfg, "-f "+filepath.ToSlash(file)) {
 		t.Fatalf("token file not referenced:\n%s", cfg)
 	}
 	if !strings.Contains(cfg, "http-request del-header X-Edge-Token") {

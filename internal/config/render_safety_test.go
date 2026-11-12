@@ -24,6 +24,34 @@ func TestValidateApplicationRenderSafety_acceptsNormalApp(t *testing.T) {
 	}
 }
 
+func TestValidateAbsoluteConfigFilePathUsesTargetSemantics(t *testing.T) {
+	for _, value := range []string{"/etc/easy-waf/easy-waf.env", "/var/lib/easy-waf/maps/ip.map"} {
+		if err := ValidateAbsoluteConfigFilePath("path", value, false); err != nil {
+			t.Fatalf("%q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{
+		`C:\etc\easy-waf\easy-waf.env`,
+		"relative/path",
+		"/etc/easy-waf/../shadow",
+		"/etc/easy-waf//easy-waf.env",
+		" /etc/easy-waf/easy-waf.env",
+		"/etc/easy-waf/easy-waf.env ",
+	} {
+		if err := ValidateAbsoluteConfigFilePath("path", value, false); err == nil {
+			t.Fatalf("%q accepted", value)
+		}
+	}
+	if !TargetPathWithin("/etc/easy-waf/ca/lab.pem", "/etc/easy-waf/ca") {
+		t.Fatal("valid child path rejected")
+	}
+	for _, value := range []string{"/etc/easy-waf/ca", "/etc/easy-waf/cab/lab.pem", "/etc/easy-waf/ca/../shadow"} {
+		if TargetPathWithin(value, "/etc/easy-waf/ca") {
+			t.Fatalf("escaping path %q accepted", value)
+		}
+	}
+}
+
 // A newline in any rendered field would close the current HAProxy directive and
 // start a new one — the resulting config is still syntactically valid, so
 // `haproxy -c` would not catch it.

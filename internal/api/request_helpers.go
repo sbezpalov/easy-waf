@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
+	pathpkg "path"
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -77,18 +77,18 @@ func validateCertificateDNS(stateDir string, c config.Certificate) error {
 	if p == "" {
 		return nil
 	}
-	if !filepath.IsAbs(p) || filepath.Clean(p) != p {
-		return fmt.Errorf("dns_credentials_env_file must be a clean absolute path")
-	}
 	if strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return fmt.Errorf("dns_credentials_env_file contains control characters")
 	}
-	for _, dir := range []string{"/etc/easy-waf", filepath.Join(stateDir, "secrets")} {
-		if strings.HasPrefix(p, filepath.Clean(dir)+string(filepath.Separator)) {
+	if err := config.ValidateAbsoluteConfigFilePath("dns_credentials_env_file", p, false); err != nil {
+		return err
+	}
+	for _, dir := range []string{"/etc/easy-waf", pathpkg.Join(stateDir, "secrets")} {
+		if config.TargetPathWithin(p, dir) {
 			return nil
 		}
 	}
-	return fmt.Errorf("dns_credentials_env_file must be under /etc/easy-waf/ or %s/", filepath.Join(stateDir, "secrets"))
+	return fmt.Errorf("dns_credentials_env_file must be under /etc/easy-waf/ or %s/", pathpkg.Join(stateDir, "secrets"))
 }
 
 // normalizeDNSProvider stores the provider name the way acmed matches it.

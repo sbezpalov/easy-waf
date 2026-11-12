@@ -4,7 +4,7 @@
 package config
 
 import (
-	"path/filepath"
+	pathpkg "path"
 	"testing"
 )
 
@@ -16,7 +16,7 @@ func TestValidateBackendCAFile(t *testing.T) {
 	if err := ValidateBackendCAFile(state, "/etc/easy-waf/ca/lab.pem"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateBackendCAFile(state, filepath.Join(state, "ca", "app.crt")); err != nil {
+	if err := ValidateBackendCAFile(state, pathpkg.Join(state, "ca", "app.crt")); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateBackendCAFile(state, "/etc/easy-waf/ca/../passwd"); err == nil {

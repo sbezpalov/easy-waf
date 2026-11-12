@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -82,17 +81,11 @@ func (s *Server) geoipReload(w http.ResponseWriter, r *http.Request) {
 // data directory and /etc/easy-waf (same render-safe rules as other config paths).
 func (s *Server) allowlistedGeoIPMMDBPath(path string) error {
 	path = strings.TrimSpace(path)
-	if err := config.ValidateConfigFilePath("mmdb_path", path, false); err != nil {
+	if err := config.ValidateAbsoluteConfigFilePath("mmdb_path", path, false); err != nil {
 		return err
 	}
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("mmdb_path must be an absolute path")
-	}
-	clean := filepath.Clean(path)
 	for _, dir := range []string{s.geoipDir(), "/etc/easy-waf"} {
-		root := filepath.Clean(dir)
-		prefix := root + string(filepath.Separator)
-		if strings.HasPrefix(clean, prefix) {
+		if config.TargetPathWithin(path, dir) {
 			return nil
 		}
 	}

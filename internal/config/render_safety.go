@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	pathpkg "path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -53,12 +54,18 @@ var (
 // rest of it. Whether the path also has to be absolute is decided by the caller
 // — api.validateRuntimeSettings requires it, the renderer does not.
 func ValidateConfigFilePath(field, path string, allowEmpty bool) error {
-	path = strings.TrimSpace(path)
-	if path == "" {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
 		if allowEmpty {
+			if path != "" {
+				return fmt.Errorf("%s must not contain leading or trailing whitespace", field)
+			}
 			return nil
 		}
 		return fmt.Errorf("%s must not be empty", field)
+	}
+	if path != trimmed {
+		return fmt.Errorf("%s must not contain leading or trailing whitespace", field)
 	}
 	if len(path) > 4096 {
 		return fmt.Errorf("%s is too long", field)
@@ -72,6 +79,37 @@ func ValidateConfigFilePath(field, path string, allowEmpty bool) error {
 		}
 	}
 	return nil
+}
+
+// ValidateAbsoluteConfigFilePath validates a path for the target Ubuntu
+// appliance. It deliberately uses POSIX semantics even when tests or tooling
+// run on Windows or macOS.
+func ValidateAbsoluteConfigFilePath(field, value string, allowEmpty bool) error {
+	if err := ValidateConfigFilePath(field, value, allowEmpty); err != nil {
+		return err
+	}
+	if value == "" && allowEmpty {
+		return nil
+	}
+	if !strings.HasPrefix(value, "/") || pathpkg.Clean(value) != value {
+		return fmt.Errorf("%s must be a clean absolute path", field)
+	}
+	return nil
+}
+
+// TargetPathWithin reports whether target is a child of root using the target
+// appliance's POSIX path rules. Equality is false: callers allow files beneath
+// a directory, not the directory itself.
+func TargetPathWithin(target, root string) bool {
+	target = pathpkg.Clean(target)
+	root = pathpkg.Clean(root)
+	if target == root {
+		return false
+	}
+	if root == "/" {
+		return strings.HasPrefix(target, "/")
+	}
+	return strings.HasPrefix(target, root+"/")
 }
 
 // ValidateHAProxyIdent checks a name rendered as a proxy, engine or ACL

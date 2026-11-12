@@ -6,6 +6,8 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -90,8 +92,8 @@ func TestSyncEdgeTokensRoundTripAndRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(file, `\`) {
-		t.Fatalf("edge token path is not HAProxy-safe: %q", file)
+	if filepath.Clean(file) != file {
+		t.Fatalf("edge token path is not clean: %q", file)
 	}
 	body, err := os.ReadFile(file)
 	if err != nil {
@@ -104,7 +106,7 @@ func TestSyncEdgeTokensRoundTripAndRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o640 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
 		t.Fatalf("mode %o", info.Mode().Perm())
 	}
 

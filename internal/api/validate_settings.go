@@ -6,7 +6,6 @@ package api
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -40,15 +39,12 @@ func validateRuntimeSettings(s config.GlobalSettings) error {
 		"blocked_user_agents_map_path": s.BlockedUserAgentsMapPath,
 	}
 	for name, path := range required {
-		if strings.TrimSpace(path) == "" {
-			return fmt.Errorf("%s must not be empty", name)
-		}
-		if !filepath.IsAbs(strings.TrimSpace(path)) {
-			return fmt.Errorf("%s must be an absolute path", name)
+		if err := config.ValidateAbsoluteConfigFilePath(name, path, false); err != nil {
+			return err
 		}
 	}
-	if raw := strings.TrimSpace(s.SPOEConfigPath); raw != "" && !filepath.IsAbs(raw) {
-		return fmt.Errorf("spoe_config_path must be an absolute path")
+	if err := config.ValidateAbsoluteConfigFilePath("spoe_config_path", s.SPOEConfigPath, true); err != nil {
+		return err
 	}
 	if s.ListenIPv6 && !hostHasIPv6() {
 		return fmt.Errorf("listen_ipv6: IPv6 is disabled on this host (/proc/net/if_inet6 is missing)")

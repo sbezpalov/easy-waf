@@ -5,7 +5,7 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
+	pathpkg "path"
 	"regexp"
 	"strings"
 	"unicode"
@@ -46,30 +46,26 @@ func ValidateBackendCAFile(stateDir, path string) error {
 	if path == "" {
 		return nil
 	}
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("backend_tls_ca_file must be an absolute path")
-	}
 	if strings.IndexFunc(path, unicode.IsSpace) >= 0 || strings.ContainsAny(path, "\x00\r\n") {
 		return fmt.Errorf("backend_tls_ca_file contains unsupported characters")
 	}
-	clean := filepath.Clean(path)
+	if err := ValidateAbsoluteConfigFilePath("backend_tls_ca_file", path, false); err != nil {
+		return err
+	}
+	clean := pathpkg.Clean(path)
 	if clean == DefaultSystemCABundle {
 		return nil
 	}
-	ext := strings.ToLower(filepath.Ext(clean))
+	ext := strings.ToLower(pathpkg.Ext(clean))
 	if ext != ".crt" && ext != ".pem" {
 		return fmt.Errorf("backend_tls_ca_file must be a .crt or .pem file")
 	}
 	allowed := []string{
-		"/etc/easy-waf/ca/",
-		filepath.Clean(filepath.Join(stateDir, "ca")) + string(filepath.Separator),
+		"/etc/easy-waf/ca",
+		pathpkg.Join(stateDir, "ca"),
 	}
-	for _, prefix := range allowed {
-		if strings.HasPrefix(clean, prefix) {
-			rel, err := filepath.Rel(filepath.Dir(strings.TrimSuffix(prefix, string(filepath.Separator))), clean)
-			if err != nil || strings.HasPrefix(rel, "..") {
-				return fmt.Errorf("backend_tls_ca_file is outside the allowlisted CA directory")
-			}
+	for _, root := range allowed {
+		if TargetPathWithin(clean, root) {
 			return nil
 		}
 	}

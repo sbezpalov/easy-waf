@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -152,7 +153,8 @@ func buildPathExposure(app config.Application, aclTag, stateDir string) (pathExp
 			if err != nil {
 				return pathExposure{}, err
 			}
-			if err := config.ValidateConfigFilePath("edge token file", file, false); err != nil {
+			targetFile := filepath.ToSlash(file)
+			if err := config.ValidateConfigFilePath("edge token file", targetFile, false); err != nil {
 				return pathExposure{}, err
 			}
 			st, err := os.Stat(file)
@@ -165,7 +167,7 @@ func buildPathExposure(app config.Application, aclTag, stateDir string) (pathExp
 				CheckName: names[i] + "_edge",
 				Header:    r.rule.EdgeTokenHeader,
 				Mode:      "file",
-				File:      file,
+				File:      targetFile,
 			})
 			if _, ok := stripSeen[r.rule.EdgeTokenHeader]; !ok {
 				stripSeen[r.rule.EdgeTokenHeader] = struct{}{}
