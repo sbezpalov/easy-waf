@@ -571,6 +571,10 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 		writeClientError(w, http.StatusBadRequest, "invalid json", err)
 		return
 	}
+	if err := config.ValidateRevisionLabel(body.Label); err != nil {
+		writeClientError(w, http.StatusBadRequest, "invalid label", err)
+		return
+	}
 	ctx, cancel := applyContext(r.Context())
 	defer cancel()
 	if err := s.Eng.Apply(ctx, body.Label); err != nil {

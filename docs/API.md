@@ -328,9 +328,10 @@ An application (`config.Application`, `internal/config/types.go`) maps a public 
 
 Omitting `path_policy` on update keeps the stored policy. Profile `ha-mcp` with no policy yet receives the preset from `GET /profiles`. Timeouts are 1–86400 seconds. At most 32 allow entries and 8 rules.
 
-Mutating endpoints in this section and the next require a password step-up no older than 5 minutes. They write to the database first and then apply the change to HAProxy. If the apply fails, the database change is undone and the endpoint returns an error (text/plain) with a message such as `change not saved, edge apply failed: …`. If the undo itself fails, the message instead reads `edge apply failed: …; undoing the database change also failed, so it is saved but not live: …`. The status code is:
-- `503` when the apply ran out of time. An apply waits at most 2 minutes, including the time spent waiting for the apply lock, so this typically means another apply was still running; a retry can succeed.
-- `422` for any other apply failure (validation, reload, …).
+Mutating endpoints in this section and the next require a password step-up no older than 5 minutes. They take the application mutation gate before reading the previous row or writing data, then apply the saved change to HAProxy. A rejected apply attempts to undo the database change. An error after a successful reload keeps the saved change and the loaded edge configuration. Apply errors use JSON `{"error":…}`; internal engine, path and database details, including any failed undo, are logged server-side. The status code is:
+- `503` with `apply timed out; retry` when the mutation-gate wait or apply deadline expires before the configuration is applied. Gate acquisition and normal apply work each have a two-minute budget; recovery reload has a separate 30-second limit.
+- `422` with `apply failed` when validation, promotion or reload fails.
+- `500` with `configuration applied; check status before retrying` when the configuration is already applied but a later step fails. Check status before retrying; the saved change is kept.
 
 With `EASY_WAF_NO_AUTO_APPLY=1`, the apply step is skipped and changes go live only after `POST /api/v1/apply`.
 
@@ -457,12 +458,14 @@ Switches maintenance mode on or off and applies. Body: `{"enabled": true, "bypas
 ## Apply and revisions
 
 ### `POST /api/v1/apply`
-Renders the full HAProxy configuration from the database and applies it. This means validating with `haproxy -c`, promoting the managed artifact set, saving a revision snapshot, reloading HAProxy, and writing a config revision plus an `apply` audit row in one step. On any failure, the previous files are restored. This is the endpoint that puts certificate, settings, IP list and user-agent changes live; those write endpoints do not apply on their own.
-- **Request body:** optional `{"label": "string"}`. The label is stored with the revision. A missing or invalid body is ignored and the label is then empty.
+Renders the full HAProxy configuration from the database and applies it. This means validating with `haproxy -c`, promoting the managed artifact set, saving a revision snapshot, reloading HAProxy, and writing a config revision plus an `apply` audit row. Failures before a successful reload attempt to restore the previous files; a later bookkeeping failure leaves the newly loaded configuration in place. Recovery failures retain their artifact snapshot; see [OPERATIONS.md](OPERATIONS.md). This is the endpoint that puts certificate, settings, IP list and user-agent changes live; those write endpoints do not apply on their own.
+- **Request body:** optional `{"label": "string"}`. The label is stored with the revision and may be empty. It must be valid UTF-8 without NUL characters. Invalid labels are rejected before edge changes. A missing body uses an empty label; malformed JSON returns `400`.
 - **Response:** `200` `{"status": "applied"}`
 - **Errors (JSON `{"error":…}`):** needs step-up. Engine detail (HAProxy `-c` output, paths) is logged server-side only.
+  - `400` with `invalid json` or `invalid label` for malformed input.
   - `422` `{"error":"apply failed"}` when the configuration could not be put live.
-  - `503` `{"error":"apply timed out; retry"}` when the apply timed out (at most 2 minutes, including waiting for the apply lock). A retry can succeed.
+  - `503` `{"error":"apply timed out; retry"}` when the apply deadline expires before the configuration is applied. Normal apply work has a two-minute budget including the lock wait; recovery reload has a separate 30-second limit.
+  - `500` `{"error":"configuration applied; check status before retrying"}` when a later step fails after a successful reload. The loaded configuration is kept.
   - `403` `{"error":"step_up_required"}` without a recent password confirmation.
 
 ### `GET /api/v1/revisions`
@@ -477,14 +480,15 @@ Lists HAProxy config revisions, newest first.
 - **Errors:** `500` (text/plain) on a database error.
 
 ### `POST /api/v1/revisions/{id}/rollback`
-Restores the managed artifact set of an earlier revision, then validates it, reloads HAProxy, and records a new revision labelled `rollback from <sha[:12]>` together with a `rollback` audit row. The detail of that audit row includes `from_revision_id` and `from_label`. Revisions that have an artifact manifest restore the full artifact set. Legacy revisions without one restore `haproxy.cfg` only. On failure, the previous files are restored. The rollback waits at most 2 minutes, including the time spent waiting for the lock. No request body.
+Restores the managed artifact set of an earlier revision, then validates it, reloads HAProxy, and records a new revision labelled `rollback from <sha[:12]>` together with a `rollback` audit row. The detail of that audit row includes `from_revision_id` and `from_label`. Revisions that have an artifact manifest restore the full artifact set. Legacy revisions without one restore `haproxy.cfg` only. Failure before a successful reload attempts to restore the previous files; a later bookkeeping failure keeps the loaded rollback configuration. Normal rollback work has a two-minute budget including the lock wait, with a separate 30-second limit for recovery reload. No request body.
 - **Path params:** `id`, a positive integer revision ID.
 - **Response:** `200` `{"status": "ok"}`
 - **Errors:**
   - `400` (text/plain): `invalid revision id` for an `id` that is not a positive integer.
   - `404` (text/plain): `revision not found`.
-  - `422` (text/plain): the rollback failed — a missing snapshot, a checksum mismatch, `validation failed: …`, a reload failure, or `already using this configuration` (legacy, cfg-only revisions only). The previous files are back in place.
-  - `503` (text/plain): it timed out, typically waiting for another apply to finish; retrying can succeed.
+  - `422` (JSON): `apply failed` for a missing/corrupt snapshot, validation or reload failure, or an already-active legacy cfg-only revision. Details and any recovery failure are logged server-side.
+  - `503` (JSON): `apply timed out; retry` when its deadline expires before the rollback is applied.
+  - `500` (JSON): `configuration applied; check status before retrying` when a later step fails after the rollback was loaded.
 
 A rollback changes only HAProxy's files. The database (applications, settings) is left as it is, so the next apply, or the next API mutation that triggers one, renders the current database state again.
 

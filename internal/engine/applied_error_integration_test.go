@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/audit"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
@@ -84,8 +85,13 @@ func TestApplyBookkeepingFailureReportsKeptConfiguration(t *testing.T) {
 					t.Errorf("clean audit: %v", err)
 				}
 			})
-			if err := e.Apply(ctx, "outcome-baseline"); err != nil {
+			const baselineLabel = "outcome baseline — проверка"
+			if err := e.Apply(ctx, baselineLabel); err != nil {
 				t.Fatal(err)
+			}
+			revisions, err := st.ListConfigRevisions(ctx, 1)
+			if err != nil || len(revisions) != 1 || revisions[0].Label != baselineLabel {
+				t.Fatalf("Unicode label did not round-trip: %v, %v", revisions, err)
 			}
 			baseline, err := os.ReadFile(cfgPath)
 			if err != nil {
@@ -96,17 +102,18 @@ func TestApplyBookkeepingFailureReportsKeptConfiguration(t *testing.T) {
 			if err := st.UpsertApplication(ctx, &app); err != nil {
 				t.Fatal(err)
 			}
-			// PostgreSQL rejects NUL in text. The label is first persisted after
-			// reload, so this injects a bookkeeping failure without schema changes.
-			label := "outcome-bookkeeping\x00failure"
+			// A deliberately corrupt internal actor fails the final audit insert
+			// after reload, without using invalid input labels or changing schema.
+			faultCtx := audit.WithMeta(ctx, audit.Meta{User: "outcome-bookkeeping\x00failure"})
+			label := "outcome-bookkeeping-failure"
 			if tc.onlyIfChanged {
 				var applied bool
-				applied, err = e.ApplyIfChanged(ctx, label)
+				applied, err = e.ApplyIfChanged(faultCtx, label)
 				if applied == tc.skipReload {
 					t.Fatalf("applied=%v after failed bookkeeping, skipReload=%v", applied, tc.skipReload)
 				}
 			} else {
-				err = e.Apply(ctx, label)
+				err = e.Apply(faultCtx, label)
 			}
 			var appliedErr *engine.AppliedError
 			if err == nil || errors.As(err, &appliedErr) == tc.skipReload || !strings.Contains(err.Error(), "record HAProxy revision and audit") {

@@ -29,6 +29,9 @@ func runApplyEdge() error {
 	databaseURL := fs.String("database-url", "", "optional: postgres DSN (overrides DATABASE_URL from env file / environment)")
 	label := fs.String("label", "easy-waf-admin-apply-edge", "revision label stored in config_revisions")
 	_ = fs.Parse(os.Args[2:])
+	if err := config.ValidateRevisionLabel(*label); err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 	st, err := openStoreFromEnvFile(*envFile, *databaseURL)

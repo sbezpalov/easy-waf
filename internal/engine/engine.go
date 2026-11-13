@@ -642,6 +642,9 @@ func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error)
 }
 
 func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (applied bool, retErr error) {
+	if err := config.ValidateRevisionLabel(label); err != nil {
+		return false, err
+	}
 	// Prefetch IPBL feeds before the apply lock so HTTP downloads do not
 	// serialize every Apply behind network RTT.
 	if peek, err := e.reloadSettings(ctx); err == nil {
