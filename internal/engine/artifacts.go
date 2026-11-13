@@ -389,6 +389,9 @@ func restoreArtifactManifest(
 		if err := copyFileAtomic(backupAbs, currentConfigPath, os.FileMode(configFile.Mode)); err != nil {
 			return artifactManifest{}, fmt.Errorf("restore config at current path %s: %w", currentConfigPath, err)
 		}
+		// This destination may have been configured after the revision was
+		// saved. It is part of the restored set, not an obsolete artifact.
+		targetSet[artifactPathKey(currentConfigPath)] = struct{}{}
 	}
 
 	for _, path := range currentManaged {
@@ -454,12 +457,12 @@ func (s *artifactSnapshot) hasFile(path string) bool {
 	return ok
 }
 
-func (e *Engine) beginArtifactTransaction(cfg config.GlobalSettings) (*artifactTransaction, error) {
-	managed, err := e.managedArtifactPaths(cfg, nil)
+func (e *Engine) beginArtifactTransaction(cfg config.GlobalSettings, extra ...string) (*artifactTransaction, error) {
+	managed, err := e.managedArtifactPaths(cfg, extra)
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := e.newArtifactSnapshot(cfg, ".apply-before", nil)
+	snapshot, err := e.newArtifactSnapshot(cfg, ".apply-before", extra)
 	if err != nil {
 		return nil, err
 	}

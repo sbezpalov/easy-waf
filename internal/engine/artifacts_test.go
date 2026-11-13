@@ -234,6 +234,24 @@ func TestRevisionArtifactManifestRestoresSet(t *testing.T) {
 	}
 }
 
+func TestArtifactManifestKeepsRelocatedLiveConfig(t *testing.T) {
+	e := newArtifactTestEngine(t)
+	_, oldConfigPath, _ := haproxy.Paths(e.StateDir)
+	writeArtifactTestFile(t, oldConfigPath, "historical-config")
+	snapshot, err := e.createRevisionSnapshot(e.Settings(), sha256HexBytes([]byte("historical-config")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentConfigPath := filepath.Join(e.StateDir, "relocated", "haproxy.cfg")
+	writeArtifactTestFile(t, currentConfigPath, "current-config")
+	if _, err := restoreArtifactManifest(snapshot.ManifestPath, []string{oldConfigPath, currentConfigPath}, currentConfigPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := readArtifactTestFile(t, currentConfigPath); got != "historical-config" {
+		t.Fatalf("config at current path = %q", got)
+	}
+}
+
 func TestArtifactManifestRejectsCorruptBackupBeforeRestore(t *testing.T) {
 	e := newArtifactTestEngine(t)
 	_, cfgPath, _ := haproxy.Paths(e.StateDir)

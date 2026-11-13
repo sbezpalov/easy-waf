@@ -764,8 +764,23 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		return fmt.Errorf("invalid stored revision hash")
 	}
 
+	manifestRevision := filepath.Base(filepath.Clean(rev.ContentPath)) == "manifest.json"
+	var targetExtra []string
+	if manifestRevision {
+		targetManifest, err := readAndVerifyArtifactManifest(rev.ContentPath)
+		if err != nil {
+			return fmt.Errorf("revision artifact manifest invalid: %w", err)
+		}
+		if !strings.EqualFold(targetManifest.ConfigSHA256, rev.HAProxySHA256) {
+			return fmt.Errorf("revision artifact manifest config checksum mismatch")
+		}
+		targetExtra = artifactManifestPaths(targetManifest)
+	}
+
 	cfgPath := haproxy.LiveCfgPath(e.StateDir, cfg.HAProxyConfigPath)
-	tx, err := e.beginArtifactTransaction(cfg)
+	// A historical revision can write paths no longer present in settings.
+	// Snapshot their current contents (or absence) before restoring any file.
+	tx, err := e.beginArtifactTransaction(cfg, targetExtra...)
 	if err != nil {
 		return fmt.Errorf("snapshot current HAProxy artifacts: %w", err)
 	}
@@ -795,16 +810,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		}
 	}()
 
-	var targetExtra []string
-	if filepath.Base(filepath.Clean(rev.ContentPath)) == "manifest.json" {
-		targetManifest, err := readAndVerifyArtifactManifest(rev.ContentPath)
-		if err != nil {
-			return fmt.Errorf("revision artifact manifest invalid: %w", err)
-		}
-		if !strings.EqualFold(targetManifest.ConfigSHA256, rev.HAProxySHA256) {
-			return fmt.Errorf("revision artifact manifest config checksum mismatch")
-		}
-		targetExtra = artifactManifestPaths(targetManifest)
+	if manifestRevision {
 		currentManaged, err := e.managedArtifactPaths(cfg, targetExtra)
 		if err != nil {
 			return err

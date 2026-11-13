@@ -34,6 +34,12 @@ set before manually reloading HAProxy. These recovery snapshots are separate
 from the revisions listed in the UI and are not automatically retried or
 removed by a later Apply.
 
+When configured artifact paths have changed since a revision was saved,
+rollback also writes its HAProxy config to the currently configured path.
+Its recovery snapshot covers both current and historical artifact paths, so
+a failed rollback restores overwritten files and removes files it created
+at previously absent historical paths.
+
 ## Manual check before reload
 
 The apply pipeline already runs:
