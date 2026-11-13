@@ -91,7 +91,7 @@ func TestLivePathPolicy(t *testing.T) {
 	// GitHub's container cannot raise the FD limit high enough for maxconn 50000.
 	cfg = strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200")
 	cfg = stripPrivilegeDrop(cfg)
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o640); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(hx, "-f", cfgPath, "-db")
@@ -180,7 +180,7 @@ func httptestServer(t *testing.T) *testBackend {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return &testBackend{port: ln.Addr().(*net.TCPAddr).Port, srv: srv}
 }

@@ -47,7 +47,7 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			}
 			cfgBody = bytes.ReplaceAll(cfgBody, []byte(DefaultForwardAuthLuaPath), []byte(luaPath))
 			tmp := filepath.Join(d, "c.cfg")
-			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
+			if err := os.WriteFile(tmp, cfgBody, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := apply.Validate(t.Context(), hx, tmp); err != nil {
