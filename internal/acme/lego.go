@@ -69,29 +69,14 @@ func registerLegoClientTimeout(email, accountKeyPath string, staging bool, timeo
 	return user, client, nil
 }
 
-// obtainWithContext runs Lego Obtain and returns when ctx is done. Lego's
-// ObtainRequest has no Context field; we bound Certificate.Timeout from the
-// deadline and abandon waiting on cancel (the in-flight goroutine may still
-// finish and burn CA quota — callers heartbeat the claim and persist orphans).
+// obtainWithContext runs synchronously inside the owned issue child. Lego has
+// no Obtain context; the parent and child's process deadline bound the entire
+// operation rather than abandoning a goroutine during a noncancelable SDK wait.
 func obtainWithContext(ctx context.Context, client *lego.Client, request certificate.ObtainRequest) (*certificate.Resource, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	type outcome struct {
-		res *certificate.Resource
-		err error
-	}
-	ch := make(chan outcome, 1)
-	go func() {
-		res, err := client.Certificate.Obtain(request)
-		ch <- outcome{res, err}
-	}()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case out := <-ch:
-		return out.res, out.err
-	}
+	return client.Certificate.Obtain(request)
 }
 
 func registerAccount(client *lego.Client, user *LegoUser) error {
@@ -108,6 +93,9 @@ func registerAccount(client *lego.Client, user *LegoUser) error {
 
 // IssueHTTP01Webroot obtains a certificate using HTTP-01 with a filesystem webroot (HAProxy must expose it on :80).
 func IssueHTTP01Webroot(ctx context.Context, email string, domains []string, webrootPath string, staging bool, accountKeyPath string) (*certificate.Resource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if email == "" || len(domains) == 0 {
 		return nil, fmt.Errorf("email and domains required")
 	}

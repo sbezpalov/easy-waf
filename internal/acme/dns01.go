@@ -24,6 +24,9 @@ const DefaultDNSProvider = "cloudns"
 // IssueDNS01 runs ACME DNS-01 using Lego. Secrets must be supplied via env file (see docs/DNS01.md).
 // dnsResolvers optionally overrides recursive resolvers for propagation checks (split-DNS; e.g. 1.1.1.1:53).
 func IssueDNS01(ctx context.Context, email string, domains []string, staging bool, accountKeyPath, providerName, envFile string, dnsResolvers []string) (*certificate.Resource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if email == "" || len(domains) == 0 {
 		return nil, fmt.Errorf("email and domains required")
 	}

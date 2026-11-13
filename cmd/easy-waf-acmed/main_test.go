@@ -10,9 +10,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/acme"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 )
+
+func TestMain(m *testing.M) {
+	if child, code := issueChildEntry(); child {
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
+
+func TestChildEntryDoesNotStartTheDatabaseWorker(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATABASE_URL", "")
+	res, err := acme.IssueInProcess(t.Context(), executable, acme.IssueRequest{Email: "ops@example.test", Mode: "unsupported", Domains: []string{"example.test"}})
+	if err == nil || res != nil || !strings.Contains(err.Error(), "unsupported ACME challenge mode") || strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatal("child command entered the parent database loop or accepted an invalid challenge")
+	}
+}
 
 func TestApplyPendingMark(t *testing.T) {
 	state := t.TempDir()

@@ -32,12 +32,10 @@ const (
 	// that died mid-issuance; it is claimed again. Lego's own timeouts, DNS
 	// propagation included, finish well inside it.
 	staleIssuing = time.Hour
-	// issueTimeout bounds one issuance: the ACME order, then the apply-lock
-	// wait and certificate writes (the HAProxy apply that follows has its own
-	// applyTimeout). Lego's own timeouts normally end an issuance long
-	// before; whether every Lego step honors the context is not guaranteed,
-	// which is why the deadline also covers the writes.
-	issueTimeout = 45 * time.Minute
+	// issueTimeout bounds an owned child issuance, then the apply-lock wait
+	// and certificate writes. The child and parent enforce its hard deadline
+	// even when the SDK ignores context. HAProxy apply has its own budget.
+	issueTimeout = acme.IssueProcessTimeout
 	// claimMargin: every row of a batch is claimed at once and issued one
 	// after another, so each issuance must also end this long before the
 	// batch's claim turns staleIssuing old; otherwise another worker could
@@ -61,6 +59,9 @@ const (
 
 // ACME worker (architecture C): issues and renews certificates (HTTP-01 and DNS-01) using shared PostgreSQL state.
 func main() {
+	if child, code := issueChildEntry(); child {
+		os.Exit(code)
+	}
 	dsn := strings.TrimSpace(strings.ReplaceAll(os.Getenv("DATABASE_URL"), "\r", ""))
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required; check /etc/easy-waf/easy-waf.env")
@@ -109,6 +110,13 @@ func main() {
 		case <-time.After(tick):
 		}
 	}
+}
+
+func issueChildEntry() (bool, int) {
+	if len(os.Args) == 2 && os.Args[1] == acme.IssueChildArg {
+		return true, acme.RunIssueChild(os.Stdin, os.Stdout)
+	}
+	return false, 0
 }
 
 // worker carries what acmed keeps between ticks.
@@ -350,19 +358,21 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 
 	stopHB := startACMEClaimHeartbeat(ctx, st, c)
 	switch mode {
-	case "dns-01":
-		provider := strings.TrimSpace(c.DNSProvider)
-		if provider == "" {
-			provider = acme.DefaultDNSProvider
-		}
+	case "dns-01", "http-01":
 		envFile := strings.TrimSpace(c.DNSCredentialsEnvFile)
-		if envFile == "" {
+		if mode == "dns-01" && envFile == "" {
 			err = fmt.Errorf("dns-01: dns_credentials_env_file must point to a root-readable env file on the appliance")
 			break
 		}
-		res, err = acme.IssueDNS01(ctx, email, domains, staging, accountKey, provider, envFile, eng.Settings().ACMEDNSResolvers)
-	case "http-01":
-		res, err = acme.IssueHTTP01Webroot(ctx, email, domains, webroot, staging, accountKey)
+		executable, executableErr := os.Executable()
+		if executableErr != nil {
+			err = executableErr
+			break
+		}
+		log.Printf("acme issue started id=%s mode=%q", c.ID, mode)
+		res, err = acme.IssueInProcess(ctx, executable, acme.IssueRequest{Email: email, Domains: domains,
+			Mode: mode, Staging: staging, AccountKeyPath: accountKey, WebrootPath: webroot,
+			DNSProvider: strings.TrimSpace(c.DNSProvider), DNSCredentialsEnvFile: envFile, DNSResolvers: eng.Settings().ACMEDNSResolvers})
 	default:
 		err = fmt.Errorf("unsupported certificate mode %q (use http-01 or dns-01)", c.Mode)
 	}
