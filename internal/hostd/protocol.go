@@ -5,6 +5,8 @@ package hostd
 
 import "time"
 
+const maxHostRequestBytes = 64 << 10
+
 // Request is one privileged operation from easy-waf-api.
 type Request struct {
 	Argv []string `json:"argv"`

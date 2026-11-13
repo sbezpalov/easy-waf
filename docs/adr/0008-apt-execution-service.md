@@ -65,6 +65,12 @@ Restarting/crashing broker no longer interrupts APT or replaces its run ID/resul
 Unavailable worker produces an explicit error rather than a duplicate/local run.
 Forwarding retains bounded memory, per-write deadlines and the existing overall
 operation lifetime. The worker is an additional internal root service to monitor.
+Each broker/worker listener admits at most 32 concurrent handlers, closing excess
+connections before decoding or dispatch. Request JSON objects are limited to
+64 KiB including whitespace. Saved-log downloads encode 32 KiB source chunks,
+retaining a single JSON response without whole-log allocation in the APT owner.
+These limits bound those transport resources; they do not impose a service-wide
+memory limit on external package tools or the API's decoded response.
 
 Worker failure, SIGKILL, power loss and full host reboot remain distinct from
 broker restart. Restarting the worker can lose its last in-memory result; saved

@@ -20,6 +20,15 @@ WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` rout
 
 Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib/easy-waf/staging/`, mode 0600. Each input is closed before the broker reads it and removed after the synchronous operation returns, including validation and broker failures. Concurrent requests do not share filenames. Cleanup errors are reported together with any operation error; netplan staging files may contain Wi-Fi credentials and must not accumulate as history.
 
+Each broker and APT-worker listener admits at most 32 concurrent handlers,
+including connections still sending a request and long-running observers.
+Excess connections close before decoding or execution; retry after capacity
+becomes available. A privileged JSON request object, including leading whitespace,
+is limited to 64 KiB. Oversized input is rejected without execution; closing a
+socket with unread excess bytes can reset it before the error reply is received.
+Large configuration files continue to use staged paths rather than inline JSON.
+These transport limits do not bound all external-command or API process memory.
+
 Synchronous broker commands have a **two-minute execution budget per command**;
 `apt-get` has **30 minutes** so a slow package transaction is not interrupted by
 the ordinary control-command limit. APT belongs to `easy-waf-apt.service`, outside
@@ -133,7 +142,7 @@ For a nonempty nftables baseline, rollback recreates the tables declared in the 
 - **Output capture:** primary and attach readers accept lines up to 1 MiB. If stdout/stderr scanning fails (including an oversized line), the broker drains the remaining pipe with bounded memory so apt can finish, then reports incomplete output capture. A nonzero apt exit code is preserved; a zero exit is not presented as success when capture failed.
 - **Request cancellation and deadlines** close the API's broker connection and unblock socket reads/writes. Regular broker calls are bounded by two minutes or an earlier caller deadline; streams use a 15-second connection timeout and retain the caller's context for subsequent I/O. Canceling a stream stops observation while the APT service continues independently. Broker forwarding also bounds each client write to five seconds.
 - **`GET /host/updates/upgrade/status`** — `{"active":true|false,"exit_code":…,"error":…,"run_id":"…"}` for UI observation on the System tab. `run_id` is omitted when no record is retained.
-- **`GET /host/updates/upgrade/log`** — last saved log file (read-only).
+- **`GET /host/updates/upgrade/log`** — last saved log file (read-only). The APT worker sends its existing JSON `stdout` string incrementally in 32 KiB source chunks rather than buffering the whole file. One download pins the original descriptor and observed size (at most 64 MiB); later appends/replacement cannot extend it or switch to another operation's log. UTF-8 and JSON escaping retain the previous wire semantics. Read failures report an unsuccessful response; failed writes stop delivery. The API still decodes the returned string before serving its text response.
 - **UI:** `fetch` POST + `ReadableStream` (not `EventSource`).
 
 Legacy `POST /host/updates/upgrade` still blocks until the non-streaming `apt-upgrade` opcode completes.

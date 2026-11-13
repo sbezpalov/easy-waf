@@ -6,6 +6,7 @@ package hostd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -16,6 +17,8 @@ import (
 
 // DefaultSocket is the unix socket path (root:easy-waf 0660).
 const DefaultSocket = "/run/easy-waf/hostd.sock"
+
+const maxHostConnections = 32
 
 type socketRole uint8
 
@@ -67,6 +70,7 @@ func serveSocket(ctx context.Context, sockPath string, role socketRole) error {
 		}
 	}
 	var handlers sync.WaitGroup
+	slots := make(chan struct{}, maxHostConnections)
 	var connectionsMu sync.Mutex
 	connections := make(map[net.Conn]struct{})
 
@@ -96,6 +100,14 @@ func serveSocket(ctx context.Context, sockPath string, role socketRole) error {
 				return err
 			}
 		}
+		// Bound descriptors, decoders and long-lived observers before starting
+		// another goroutine. An excess peer must reconnect after capacity frees.
+		select {
+		case slots <- struct{}{}:
+		default:
+			_ = conn.Close()
+			continue
+		}
 		connectionsMu.Lock()
 		connections[conn] = struct{}{}
 		connectionsMu.Unlock()
@@ -105,6 +117,7 @@ func serveSocket(ctx context.Context, sockPath string, role socketRole) error {
 		handlers.Add(1)
 		go func() {
 			defer handlers.Done()
+			defer func() { <-slots }()
 			defer func() {
 				connectionsMu.Lock()
 				delete(connections, conn)
@@ -138,10 +151,8 @@ func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketR
 		return
 	}
 	_ = c.SetDeadline(time.Now().Add(2 * time.Minute))
-	var req Request
-	dec := json.NewDecoder(c)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	req, err := ReadRequest(c)
+	if err != nil {
 		_ = writeResponse(c, failResp("invalid request: "+err.Error(), 1))
 		return
 	}
@@ -180,7 +191,7 @@ func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketR
 		dispatchAptStream(c, "autoremove")
 		return
 	case "apt-upgrade-log", "apt-action-log":
-		_ = writeResponse(c, dispatchAptActionLog())
+		_ = writeAptActionLogResponse(aptProxyWriter{conn: c, expires: time.Now().Add(hostCommandTimeout)})
 		return
 	case "apt-upgrade-status", "apt-action-status":
 		_ = writeResponse(c, dispatchAptActionStatus())
@@ -190,8 +201,8 @@ func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketR
 	_ = writeResponse(c, resp)
 }
 
-func writeResponse(c net.Conn, resp Response) error {
-	enc := json.NewEncoder(c)
+func writeResponse(w io.Writer, resp Response) error {
+	enc := json.NewEncoder(w)
 	return enc.Encode(resp)
 }
 
@@ -206,11 +217,16 @@ func ServeDefault() error {
 	return Serve(ctx, DefaultSocket)
 }
 
-// ReadRequest decodes one request (for tests).
+// ReadRequest decodes one bounded request, rejecting unknown fields.
 func ReadRequest(r io.Reader) (Request, error) {
 	var req Request
-	dec := json.NewDecoder(r)
+	dec := json.NewDecoder(io.LimitReader(r, maxHostRequestBytes+1))
 	dec.DisallowUnknownFields()
-	err := dec.Decode(&req)
-	return req, err
+	if err := dec.Decode(&req); err != nil {
+		return Request{}, err
+	}
+	if dec.InputOffset() > maxHostRequestBytes {
+		return Request{}, fmt.Errorf("request exceeds %d bytes", maxHostRequestBytes)
+	}
+	return req, nil
 }
