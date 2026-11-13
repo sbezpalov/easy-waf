@@ -25,6 +25,10 @@ the restored config is reloaded when a previous live revision exists. A
 revision/audit bookkeeping failure after a successful reload reports an error
 and leaves the newly loaded edge in place.
 
+A failed advisory-lock acquisition or release closes the physical PostgreSQL
+session. An uncertain session lock therefore cannot remain attached to a
+connection reused by the pool.
+
 The API keeps saved changes when a failure occurs after a successful reload.
 It responds with `500` and `configuration applied; check status before retrying`,
 while the process log records the underlying error. Apply failure notifications

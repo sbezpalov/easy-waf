@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -374,7 +375,7 @@ func (s *Store) AcquireAdvisoryLock(ctx context.Context, key int64) (func() erro
 		return nil, err
 	}
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, key); err != nil {
-		_ = conn.Close()
+		discardAdvisoryLockConn(conn)
 		return nil, err
 	}
 
@@ -390,13 +391,22 @@ func (s *Store) AcquireAdvisoryLock(ctx context.Context, key int64) (func() erro
 			} else if !unlocked {
 				releaseErr = fmt.Errorf("postgres advisory lock %d was not held", key)
 			}
-			if err := conn.Close(); releaseErr == nil && err != nil {
-				releaseErr = err
+			if releaseErr != nil {
+				discardAdvisoryLockConn(conn)
+				return
 			}
+			releaseErr = conn.Close()
 		})
 		return releaseErr
 	}
 	return release, nil
+}
+
+func discardAdvisoryLockConn(conn *sql.Conn) {
+	// Close alone returns the physical session to the pool. ErrBadConn makes
+	// database/sql discard it, releasing even a lock whose reply was lost.
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	_ = conn.Close()
 }
 
 // AppendRevision records a successful HAProxy config revision.
