@@ -34,6 +34,7 @@ For a nonempty nftables baseline, rollback recreates the tables declared in the 
 
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).
 - **Events:** `{"type":"line","data":"…"}` and `{"type":"exit","code":N,"error":"…"}`.
+- **Completion:** the broker must send a newline-terminated `exit` event with an explicit integer `code` (including zero). EOF without it, malformed/unknown events, contradictory zero-code errors, and records over 8 MiB are transport/protocol failures, not successful apt completion. The API reports these as `exit` code `-1` and does not record a successful completion audit. A valid terminal event completes the stream without waiting for socket EOF.
 - **Broker:** `apt-upgrade-stream` runs `apt-get -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=120 upgrade` (`DEBIAN_FRONTEND=noninteractive`). Emits a start line immediately, then heartbeat lines if apt is silent for ~15s, then apt stdout/stderr.
 - **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails root-only `/var/lib/easy-waf-hostd/apt-action.log` through the broker), and does not start another apt. First line: `==> attaching to apt action already in progress ...`.
 - **`code: -1`** is reserved for attach/log read failures (with explicit `error`), not for “already running”.

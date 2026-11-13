@@ -51,7 +51,7 @@ func setAptActionHeartbeatIntervalForTest(d time.Duration) {
 type streamEvent struct {
 	Type  string `json:"type"`
 	Data  string `json:"data,omitempty"`
-	Code  int    `json:"code,omitempty"`
+	Code  int    `json:"code"`
 	Error string `json:"error,omitempty"`
 }
 
@@ -299,6 +299,9 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
+		if code == 0 {
+			code = 1
+		}
 	}
 	aptActionFinish(code, errMsg)
 	emitExit(code, errMsg)

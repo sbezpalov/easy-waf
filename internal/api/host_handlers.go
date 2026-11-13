@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -397,26 +398,31 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 
 	s.hostAppendAudit(r.Context(), auditEvent, map[string]any{"stream": true}, false)
 
-	var exitCode int
+	exitCode := -1
+	exitSeen := false
 	flush := func() {
 		_ = rc.Flush()
 	}
 
 	err := privilegedStreamFn(r.Context(), func(line []byte) error {
+		var ev struct {
+			Type  string `json:"type"`
+			Code  *int   `json:"code"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(line, &ev) == nil && ev.Type == "exit" && ev.Code != nil && (*ev.Code != 0 || ev.Error == "") {
+			exitCode = *ev.Code
+			exitSeen = true
+		}
 		if _, werr := w.Write(append(line, '\n')); werr != nil {
 			return werr
 		}
 		flush()
-		var ev struct {
-			Type  string `json:"type"`
-			Code  int    `json:"code"`
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(line, &ev) == nil && ev.Type == "exit" {
-			exitCode = ev.Code
-		}
 		return nil
 	}, brokerOp)
+	if err == nil && !exitSeen {
+		err = io.ErrUnexpectedEOF
+	}
 	if err != nil {
 		// Client may have disconnected; broker still runs apt — do not claim the action stopped.
 		b, _ := json.Marshal(map[string]any{"type": "exit", "code": -1, "error": err.Error()})

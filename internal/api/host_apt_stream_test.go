@@ -180,3 +180,32 @@ func TestHostAutoremoveStream_flushesIncrementally(t *testing.T) {
 		t.Fatalf("flushes=%d", w.flushes)
 	}
 }
+
+func TestHostAptStreamRejectsMissingCompletion(t *testing.T) {
+	for _, op := range []string{"apt-upgrade-stream", "apt-autoremove-stream"} {
+		t.Run(op, func(t *testing.T) {
+			previous := privilegedStreamFn
+			t.Cleanup(func() { privilegedStreamFn = previous })
+			privilegedStreamFn = func(_ context.Context, onLine func([]byte) error, _ ...string) error {
+				return onLine([]byte(`{"type":"line","data":"working"}`))
+			}
+			eng := engine.New("", nil, config.GlobalSettings{})
+			s := &Server{Eng: eng}
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			recorder := httptest.NewRecorder()
+			s.streamAptAction(recorder, req, op, "started", "done")
+			var terminal struct {
+				Type  string `json:"type"`
+				Code  int    `json:"code"`
+				Error string `json:"error"`
+			}
+			lines := strings.Split(strings.TrimSpace(recorder.Body.String()), "\n")
+			if err := json.Unmarshal([]byte(lines[len(lines)-1]), &terminal); err != nil {
+				t.Fatal(err)
+			}
+			if terminal.Type != "exit" || terminal.Code != -1 || terminal.Error == "" {
+				t.Fatalf("missing exit was treated as successful completion: %s", recorder.Body.String())
+			}
+		})
+	}
+}

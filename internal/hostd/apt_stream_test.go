@@ -5,8 +5,10 @@ package hostd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -124,6 +126,22 @@ func TestDispatchAptStream_unknownAction(t *testing.T) {
 	last := events[len(events)-1]
 	if last.Type != "exit" || last.Code != -1 || !strings.Contains(last.Error, "unknown apt action") {
 		t.Fatalf("exit: %+v", last)
+	}
+}
+
+func TestDispatchAptStreamExecutionErrorCannotReportZeroExit(t *testing.T) {
+	resetAptUpgradeState()
+	overrideAptActionLogForTest(t)
+	defer resetAptUpgradeState()
+	SetAptUpgradeStreamHookForTest(func(context.Context, func(string) error) (int, error) {
+		return 0, fmt.Errorf("execution failed")
+	})
+	var output bytes.Buffer
+	dispatchAptUpgradeStream(&output)
+	events := readStreamEvents(t, &output)
+	last := events[len(events)-1]
+	if last.Type != "exit" || last.Code != 1 || last.Error == "" {
+		t.Fatalf("execution error reported as success: %+v", last)
 	}
 }
 

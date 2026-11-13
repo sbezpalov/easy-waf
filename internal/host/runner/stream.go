@@ -39,28 +39,63 @@ func PrivilegedStream(ctx context.Context, onLine func([]byte) error, argv ...st
 		return fmt.Errorf("privileged stream: encode request: %w", brokerIOError(ctx, err))
 	}
 
-	br := bufio.NewReader(conn)
+	return relayBrokerStream(ctx, conn, onLine)
+}
+
+// Apt's scanner accepts up to 1 MiB of text per line; JSON escaping can expand
+// that sixfold. Bound framing without rejecting any event hostd can produce.
+const maxBrokerStreamRecordBytes = 8 << 20
+
+func relayBrokerStream(ctx context.Context, input io.Reader, onLine func([]byte) error) error {
+	scanner := bufio.NewScanner(input)
+	scanner.Buffer(make([]byte, 64<<10), maxBrokerStreamRecordBytes)
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			return i + 1, data[:i], nil
+		}
+		if atEOF && len(data) > 0 {
+			return 0, nil, io.ErrUnexpectedEOF
+		}
+		return 0, nil, nil
+	})
 	relay := true
-	for {
+	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("privileged stream: read: %w", err)
 		}
-		line, err := br.ReadBytes('\n')
-		if len(line) > 0 {
-			trimmed := bytes.TrimSpace(line)
-			if len(trimmed) > 0 {
-				if relay {
-					if err := onLine(trimmed); err != nil {
-						relay = false
-					}
-				}
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Type  string `json:"type"`
+			Data  string `json:"data"`
+			Code  *int   `json:"code"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(line, &event) != nil {
+			return fmt.Errorf("privileged stream: invalid JSON event")
+		}
+		switch event.Type {
+		case "line":
+		case "exit":
+			if event.Code == nil || (*event.Code == 0 && event.Error != "") {
+				return fmt.Errorf("privileged stream: invalid exit event")
+			}
+		default:
+			return fmt.Errorf("privileged stream: unknown event type")
+		}
+		if relay {
+			if err := onLine(line); err != nil {
+				relay = false
 			}
 		}
-		if err != nil {
-			if err == io.EOF && ctx.Err() == nil {
-				return nil
-			}
-			return fmt.Errorf("privileged stream: read: %w", brokerIOError(ctx, err))
+		if event.Type == "exit" {
+			return nil
 		}
 	}
+	if err := brokerIOError(ctx, scanner.Err()); err != nil {
+		return fmt.Errorf("privileged stream: read: %w", err)
+	}
+	return fmt.Errorf("privileged stream: missing exit event: %w", io.ErrUnexpectedEOF)
 }

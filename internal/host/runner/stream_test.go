@@ -6,6 +6,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -111,4 +112,35 @@ func BrokerAvailableWithSocket(sock string) bool {
 	}
 	_ = c.Close()
 	return true
+}
+
+func TestPrivilegedStreamRejectsEOFWithoutExit(t *testing.T) {
+	socket := shortTempSock(t)
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("EASY_WAF_HOSTD_SOCKET", socket)
+	brokerDone := make(chan struct{})
+	go func() {
+		defer close(brokerDone)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var req brokerRequest
+		if json.NewDecoder(conn).Decode(&req) != nil {
+			return
+		}
+		_, _ = io.WriteString(conn, "{\"type\":\"line\",\"data\":\"working\"}\n")
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err = PrivilegedStream(ctx, func([]byte) error { return nil }, "apt-upgrade-stream")
+	<-brokerDone
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("incomplete stream accepted: %v", err)
+	}
 }
