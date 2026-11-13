@@ -22,9 +22,12 @@ Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib
 
 Network and firewall commit stop both the rollback timer and its service before
 deleting the pending backup. If cancellation or backup deletion fails, the broker
-returns an error and keeps the pending state for recovery; do not treat the change
-as confirmed. If apply fails, the broker still attempts an immediate rollback even
-when systemd cancellation fails.
+attempts an immediate rollback: systemd may have stopped the safety timer even
+when its stop command reports failure. The confirmation still returns an error;
+do not treat the change as kept. If recovery also fails, both errors are reported
+and available recovery state is retained for retry. Canceling the confirmation
+context does not suppress recovery. If apply fails, the broker also attempts an
+immediate rollback even when systemd cancellation fails.
 
 A repeated commit succeeds only when the root-owned receipt for that subsystem
 matches the token. An absent backup alone does not prove confirmation: the change

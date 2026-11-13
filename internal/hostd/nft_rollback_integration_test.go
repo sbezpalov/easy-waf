@@ -6,6 +6,7 @@
 package hostd
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -34,11 +35,11 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	nft("-f", nftRulesPath)
-	for _, table := range []struct{ family, name string }{
-		{"inet", "easy_waf_test"}, {"ip", "easy_waf_test_added"}, {"inet", "easy_waf_test_foreign"},
-	} {
-		t.Cleanup(func() { _ = exec.Command(binNft, "delete", "table", table.family, table.name).Run() })
-	}
+	t.Cleanup(func() {
+		_ = exec.Command(binNft, "delete", "table", "inet", "easy_waf_test").Run()
+		_ = exec.Command(binNft, "delete", "table", "ip", "easy_waf_test_added").Run()
+		_ = exec.Command(binNft, "delete", "table", "inet", "easy_waf_test_foreign").Run()
+	})
 	if err := stateWriteFile(rollbackBackupPath("nft", testToken), []byte(baseline), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -101,11 +102,39 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 		if err := RunRevert("nft", testToken); err != nil {
 			t.Fatalf("empty-baseline cycle %d: %v", cycle, err)
 		}
-		for _, table := range []struct{ family, name string }{{"inet", "easy_waf_test"}, {"ip", "easy_waf_test_added"}} {
-			if out, err := exec.Command(binNft, "list", "table", table.family, table.name).CombinedOutput(); err == nil {
-				t.Fatalf("empty-baseline cycle %d left table: %s", cycle, out)
-			}
+		if out, err := exec.Command(binNft, "list", "table", "inet", "easy_waf_test").CombinedOutput(); err == nil {
+			t.Fatalf("empty-baseline cycle %d left the managed table: %s", cycle, out)
+		}
+		if out, err := exec.Command(binNft, "list", "table", "ip", "easy_waf_test_added").CombinedOutput(); err == nil {
+			t.Fatalf("empty-baseline cycle %d left the added table: %s", cycle, out)
 		}
 		nft("list", "table", "inet", "easy_waf_test_foreign")
+	}
+	// A failed confirmation must undo real kernel rules even when systemd
+	// cancellation cannot be trusted. Only that stop command is mocked.
+	if err := stateWriteFile(rollbackBackupPath("nft", testToken), []byte(baseline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nftRulesPath, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nft("-f", nftRulesPath)
+	stopFailure := &recordingRunner{failOn: map[string]bool{binSystemctl + " stop": true}}
+	resp := nftCommit(context.Background(), stopFailure, testToken)
+	if resp.OK || !strings.Contains(resp.Error, "stop rollback units") {
+		t.Fatalf("confirmation failure hidden: %+v", resp)
+	}
+	restored := nft("list", "table", "inet", "easy_waf_test")
+	if strings.Count(restored, "tcp dport 80 accept") != 1 || strings.Contains(restored, "443") {
+		t.Fatalf("failed confirmation did not restore kernel rules:\n%s", restored)
+	}
+	if _, err := exec.Command(binNft, "list", "table", "ip", "easy_waf_test_added").CombinedOutput(); err == nil {
+		t.Fatal("failed confirmation retained the added table")
+	}
+	nft("list", "table", "inet", "easy_waf_test_foreign")
+	for _, path := range []string{rollbackBackupPath("nft", testToken), rollbackRevertingPath("nft", testToken)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("completed confirmation recovery left state: %v", err)
+		}
 	}
 }

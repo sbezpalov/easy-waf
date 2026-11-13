@@ -457,10 +457,10 @@ func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token str
 		return fmt.Errorf("change is not pending and has no confirmation receipt; it may have been reverted; check current configuration")
 	}
 	if err := stopRollbackUnit(ctx, r, kind, token); err != nil {
-		return err
+		return recoverFailedConfirmation(kind, token, err)
 	}
 	if err := removePendingRollback(backup); err != nil {
-		return err
+		return recoverFailedConfirmation(kind, token, err)
 	}
 	// Do not record success before removing the backup: a failed removal
 	// leaves it eligible for safety recovery on broker restart. If this later
@@ -469,6 +469,17 @@ func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token str
 		return fmt.Errorf("change kept but recording confirmation failed; check current configuration: %w", err)
 	}
 	return nil
+}
+
+// The stop request may have disabled the timer even when systemd reports an
+// error. Recover immediately rather than leaving an unconfirmed change with
+// no working watchdog. The caller already holds the rollback operation lock;
+// runRevert uses its own context and retains available recovery state on failure.
+func recoverFailedConfirmation(kind, token string, cause error) error {
+	if err := runRevert(kind, token); err != nil {
+		return fmt.Errorf("confirmation failed: %w; immediate rollback also failed: %w", cause, err)
+	}
+	return fmt.Errorf("confirmation failed; safety rollback attempted; check current configuration: %w", cause)
 }
 
 func removePendingRollback(backup string) error {

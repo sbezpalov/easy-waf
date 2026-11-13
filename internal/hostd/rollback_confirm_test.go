@@ -172,7 +172,11 @@ func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 			t.Run(kind+"/"+scenario, func(t *testing.T) {
 				m, _ := rollbackTestEnv(t)
 				backup := rollbackBackupPath(kind, testToken)
-				if err := stateWriteFile(backup, []byte("previous configuration"), 0o600); err != nil {
+				baseline, live := []byte("table inet easy_waf { }\n"), nftRulesPath
+				if kind == "netplan" {
+					baseline, live = []byte("network: {version: 2, ethernets: {}}\n"), netplanPath
+				}
+				if err := stateWriteFile(backup, baseline, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				if scenario == "backup removal failure" {
@@ -201,14 +205,21 @@ func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 					if resp.OK || resp.Code == 0 || resp.Error == "" {
 						t.Fatalf("commit hid %s: %+v", scenario, resp)
 					}
-					if _, err := os.Stat(backup); err != nil {
-						t.Fatalf("pending backup lost on failure: %v", err)
+					if scenario == "stop failure" {
+						if data, err := os.ReadFile(live); err != nil || string(data) != string(baseline) {
+							t.Fatalf("failed cancellation did not recover: %q, %v", data, err)
+						}
+					} else if _, err := os.Stat(backup); err != nil {
+						t.Fatalf("failed recovery lost its backup: %v", err)
 					}
 					if confirmed, err := readRollbackReceipt(kind); err != nil || confirmed != "" {
 						t.Fatalf("failed commit left confirmation evidence: %q, %v", confirmed, err)
 					}
 					if scenario == "backup removal failure" && !strings.Contains(resp.Error, "remove pending rollback") {
 						t.Fatalf("did not exercise backup removal: %+v", resp)
+					}
+					if scenario == "backup removal failure" && !strings.Contains(resp.Error, "immediate rollback also failed") {
+						t.Fatalf("failed recovery of an unreadable backup was hidden: %+v", resp)
 					}
 					return
 				}
