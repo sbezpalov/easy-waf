@@ -87,8 +87,8 @@ func TestBrokerCallsStopWaitingWhenContextEnds(t *testing.T) {
 				case <-time.After(4 * time.Second):
 					// Let a broken implementation exit instead of leaking a blocked test.
 					releaseBroker()
-					<-result
-					t.Fatal("context ended but broker call remained blocked")
+					err := <-result
+					t.Fatalf("context ended but broker call remained blocked until broker close: %v", err)
 				}
 			})
 		}

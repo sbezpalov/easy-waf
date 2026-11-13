@@ -38,7 +38,8 @@ func TestRequireAPIPeerExeRejectsMatchingBasenameOutsideInstalledPath(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, input, 0o755); err != nil {
+	// This private fixture must execute to test the peer's actual /proc executable.
+	if err := os.WriteFile(path, input, 0o700); err != nil { // #nosec G306 -- only the test owner may read, write or execute this temporary binary.
 		t.Fatal(err)
 	}
 	cmd := exec.Command(path, "-test.run=TestRequireAPIPeerExeRejectsMatchingBasenameOutsideInstalledPath")

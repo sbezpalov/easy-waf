@@ -89,10 +89,11 @@ func TestRevertReportsCleanupFailureAndCanRetry(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			m, _ := rollbackTestEnv(t)
 			kind, data := "nft", []byte("table inet easy_waf { }\n")
-			if scenario == "nft-empty" {
+			switch scenario {
+			case "nft-empty":
 				data = nil
 				writeRules(t)
-			} else if scenario == "netplan" {
+			case "netplan":
 				kind = "netplan"
 				data = []byte("network: {version: 2, ethernets: {}}\n")
 			}
