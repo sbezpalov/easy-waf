@@ -5,6 +5,7 @@ package hostd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,6 +317,99 @@ func TestRevertNftEmptyBackupDestroysOnlyManagedTables(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(nftRulesPath); string(got) != nftEmptyRuleset {
 		t.Fatalf("managed file after revert: %q", got)
+	}
+}
+
+func TestRevertNftNoRulesetSurvivesRepeatedApplyCycles(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	for cycle := 0; cycle < 2; cycle++ {
+		if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(nftRulesPath, []byte("table inet easy_waf { }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := RunRevert("nft", testToken); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.nftSeen) != cycle+1 || !strings.Contains(m.nftSeen[cycle], "destroy table inet easy_waf\n") {
+			t.Fatalf("cycle %d did not remove the newly applied rules: %v", cycle, m.nftSeen)
+		}
+		if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != nftEmptyRuleset {
+			t.Fatalf("cycle %d did not preserve no-ruleset baseline: %q, %v", cycle, got, err)
+		}
+	}
+}
+
+func TestBeginConfirmedChangeRejectsUnrestorableBaseline(t *testing.T) {
+	for _, kind := range []string{"nft", "netplan"} {
+		t.Run(kind, func(t *testing.T) {
+			m, _ := rollbackTestEnv(t)
+			path, mode := nftRulesPath, nftRulesMode
+			data := []byte("include \"/etc/other.nft\"\n")
+			if kind == "netplan" {
+				path, mode = netplanPath, netplanMode
+				data = []byte("network: {version: 2, tunnels: {}}\n")
+			}
+			if err := os.WriteFile(path, data, mode); err != nil {
+				t.Fatal(err)
+			}
+			err := beginConfirmedChange(context.Background(), m, kind, testToken, path, mode, 90)
+			if err == nil || !strings.Contains(err.Error(), "rollback baseline rejected") {
+				t.Fatalf("unrestorable baseline accepted: %v", err)
+			}
+			if len(m.calls) != 0 {
+				t.Fatalf("timer/commands ran before rejecting baseline: %v", m.calls)
+			}
+			if _, err := os.Stat(rollbackBackupPath(kind, testToken)); !os.IsNotExist(err) {
+				t.Fatalf("invalid pending state was created: %v", err)
+			}
+			if got, err := os.ReadFile(path); err != nil || string(got) != string(data) {
+				t.Fatalf("live configuration changed: %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestRollbackBackupSizeLimit(t *testing.T) {
+	for _, size := range []int64{maxRollbackBackupBytes, maxRollbackBackupBytes + 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			m, _ := rollbackTestEnv(t)
+			backup := rollbackBackupPath("nft", testToken)
+			f, err := os.Create(backup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Truncate(size); err != nil {
+				_ = f.Close()
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			data, ok, err := readRollbackBackup(backup)
+			if size == maxRollbackBackupBytes {
+				if err != nil || !ok || int64(len(data)) != size {
+					t.Fatalf("boundary backup rejected: len=%d ok=%v err=%v", len(data), ok, err)
+				}
+				return
+			}
+			if err == nil || data != nil || ok {
+				t.Fatalf("oversized backup was truncated/accepted: len=%d ok=%v err=%v", len(data), ok, err)
+			}
+			if err := os.Rename(backup, nftRulesPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err == nil {
+				t.Fatal("oversized baseline accepted")
+			}
+			if len(m.calls) != 0 {
+				t.Fatalf("timer armed with oversized baseline: %v", m.calls)
+			}
+			if _, err := os.Stat(backup); !os.IsNotExist(err) {
+				t.Fatalf("oversized pending state created: %v", err)
+			}
+		})
 	}
 }
 

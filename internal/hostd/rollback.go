@@ -99,19 +99,62 @@ func runRevert(kind, token string) error {
 }
 
 // saveRollbackBackup copies the current root-owned file into the root-only
-// hostd state directory. An absent source is recorded as an empty backup, which is what
-// tells the revert to flush back to nothing.
+// hostd state directory. An absent source is recorded as an empty backup, which
+// tells the revert to remove only the newly declared managed tables for nft.
 //
 // The write also goes through descriptor-anchored state-directory helpers.
-func saveRollbackBackup(src, bak string, mode os.FileMode) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		if !os.IsNotExist(err) {
+func saveRollbackBackup(kind, src, bak string, mode os.FileMode) error {
+	var data []byte
+	f, err := os.Open(src)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil {
+		defer f.Close()
+		data, err = readRollbackContents(f)
+		if err != nil {
 			return err
 		}
-		data = nil
+	}
+	// Reject a baseline that the safety revert would refuse, before arming
+	// anything or replacing the live file.
+	if len(data) > 0 {
+		switch kind {
+		case "nft":
+			err = hostspec.ValidateNftRuleset(data)
+		case "netplan":
+			err = validateNetplanYAML(data)
+		default:
+			err = fmt.Errorf("unknown rollback kind")
+		}
+		if err != nil {
+			return fmt.Errorf("rollback baseline rejected: %w", err)
+		}
 	}
 	return stateWriteFile(bak, data, mode)
+}
+
+func readRollbackContents(f *os.File) ([]byte, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("rollback source is not a regular file")
+	}
+	if info.Size() > maxRollbackBackupBytes {
+		return nil, fmt.Errorf("rollback backup exceeds %d bytes", maxRollbackBackupBytes)
+	}
+	// Check the read length too: the file may grow after Stat. Never pass a
+	// silently truncated configuration to nft or netplan.
+	data, err := io.ReadAll(io.LimitReader(f, maxRollbackBackupBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxRollbackBackupBytes {
+		return nil, fmt.Errorf("rollback backup exceeds %d bytes", maxRollbackBackupBytes)
+	}
+	return data, nil
 }
 
 // readRollbackBackup returns the saved contents, or ok=false when there is no
@@ -121,22 +164,15 @@ func saveRollbackBackup(src, bak string, mode os.FileMode) error {
 // remains descriptor-anchored even if deployment ownership drifts. See
 // statefile.go.
 func readRollbackBackup(bak string) (data []byte, ok bool, err error) {
-	sz, exists, err := stateFileSize(bak)
-	if err != nil {
-		return nil, false, err
-	}
-	if !exists {
-		return nil, false, nil
-	}
-	if sz == 0 {
-		return nil, true, nil
-	}
 	f, err := stateOpenFile(bak)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, maxRollbackBackupBytes))
+	b, err := readRollbackContents(f)
 	if err != nil {
 		return nil, false, err
 	}
@@ -173,12 +209,11 @@ func revertNft(token string) error {
 		return nil
 	}
 	ctx := context.Background()
-	if len(data) == 0 {
+	if len(data) == 0 || string(data) == nftEmptyRuleset {
 		// No managed ruleset existed before this change, so undo it by removing
-		// the tables it declared. A blanket `flush ruleset` would also wipe
-		// fail2ban's, CrowdSec's and Docker's tables; it is only the fallback
-		// when the applied ruleset declares no table we can name, because
-		// removing the rule that locked the operator out matters more.
+		// the tables it declared. The persisted empty-ruleset marker has the
+		// same meaning on later apply/revert cycles. Never globally flush:
+		// fail2ban, CrowdSec and Docker may own other tables.
 		current, _ := os.ReadFile(nftRulesPath)
 		script := nftDestroyScript(current)
 		if script == "" {
@@ -320,7 +355,7 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 	if err := rejectPendingChange(kind); err != nil {
 		return err
 	}
-	if err := saveRollbackBackup(livePath, bak, mode); err != nil {
+	if err := saveRollbackBackup(kind, livePath, bak, mode); err != nil {
 		return err
 	}
 	if err := scheduleRevert(ctx, r, kind, token, timeoutSec); err != nil {

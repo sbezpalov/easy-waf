@@ -251,7 +251,7 @@ func TestRollbackBackupRoundTripAndSymlinkRefusal(t *testing.T) {
 	}
 	bak := filepath.Join(state, "rollback", "nft-abcdef01.bak")
 
-	if err := saveRollbackBackup(src, bak, 0o644); err != nil {
+	if err := saveRollbackBackup("nft", src, bak, 0o644); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	data, ok, err := readRollbackBackup(bak)
@@ -262,7 +262,7 @@ func TestRollbackBackupRoundTripAndSymlinkRefusal(t *testing.T) {
 	// A missing source is recorded as an empty backup, which is what makes the
 	// revert flush the ruleset instead of leaving the new rules live.
 	empty := filepath.Join(state, "rollback", "nft-abcdef02.bak")
-	if err := saveRollbackBackup(filepath.Join(t.TempDir(), "absent"), empty, 0o644); err != nil {
+	if err := saveRollbackBackup("nft", filepath.Join(t.TempDir(), "absent"), empty, 0o644); err != nil {
 		t.Fatalf("save absent: %v", err)
 	}
 	data, ok, err = readRollbackBackup(empty)

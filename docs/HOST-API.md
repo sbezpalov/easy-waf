@@ -22,6 +22,8 @@ Network and firewall commit stop both the rollback timer and its service before 
 
 Only one unconfirmed change per subsystem (network or firewall) is allowed. Another apply, including the legacy immediate broker operations, is rejected until the pending change is committed or reverted. Apply, commit and revert serialize access to the live configuration; an interactive request during another mutation returns a busy error and can be retried. On Linux the broker and standalone timer process share a kernel lock on the root-owned state directory. The timer waits for an in-progress mutation before restoring the backup.
 
+Before arming the timer, the existing configuration must pass the same policy validation used by rollback. An incompatible baseline (for example, an nftables `include` or unsupported netplan tunnel) rejects the new safe apply without changing the live file. Backups are limited to 16 MiB; oversized files are rejected rather than truncated. The generated no-managed-ruleset marker is restored by removing the newly declared tables, including on repeated apply/revert cycles.
+
 ### `POST /host/updates/upgrade/stream` (live apt log)
 
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).
