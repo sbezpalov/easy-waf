@@ -11,6 +11,8 @@ UNITS="easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service easy-w
 case "$1" in
 remove | deconfigure)
 	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		# A queued maintenance helper must not restart a removed package later.
+		systemctl stop easy-waf-hostd-restart.service >/dev/null 2>&1 || true
 		for u in $UNITS; do
 			systemctl stop "$u" >/dev/null 2>&1 || true
 		done

@@ -12,6 +12,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "restart-after-packages" {
+		if err := hostd.RunPostUpgradeRestart(); err != nil {
+			fmt.Fprintf(os.Stderr, "[easy-waf-hostd] post-upgrade restart: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) >= 4 && os.Args[1] == "revert" {
 		if err := hostd.RunRevert(os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintf(os.Stderr, "[easy-waf-hostd] revert: %v\n", err)
@@ -20,7 +27,7 @@ func main() {
 		os.Exit(0)
 	}
 	if len(os.Args) > 1 {
-		fmt.Fprintf(os.Stderr, "usage: %s | %s revert <nft|netplan> <token>\n", os.Args[0], os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s | %s revert <nft|netplan> <token> | %s restart-after-packages\n", os.Args[0], os.Args[0], os.Args[0])
 		os.Exit(2)
 	}
 	if err := hostd.ServeDefault(); err != nil {

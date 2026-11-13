@@ -48,9 +48,9 @@ export EASY_WAF_INSTALL_POSTGRES="${EASY_WAF_INSTALL_POSTGRES:-0}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 bash "${SCRIPT_DIR}/install.sh"
 
-# Match packaging/deb/postinst: hostd ABI/privilege changes must not stay on the
-# old process until reboot.
-systemctl restart easy-waf-hostd.service 2>/dev/null || true
-systemctl restart easy-waf-api.service 2>/dev/null || true
-systemctl restart easy-waf-acmed.service 2>/dev/null || true
-echo "Restarted easy-waf-hostd, easy-waf-api and easy-waf-acmed (if units exist)"
+# This outer installer has finished its own package work. Use the same lock
+# helper directly: do not cancel another maintenance service during its job.
+/usr/sbin/easy-waf-hostd restart-after-packages || echo "WARNING: broker restart failed; inspect the error above before accepting this upgrade" >&2
+systemctl try-restart --no-block easy-waf-api.service 2>/dev/null || true
+systemctl try-restart --no-block easy-waf-acmed.service 2>/dev/null || true
+echo "Requested package-safe broker restart; queued active API/ACME restarts"

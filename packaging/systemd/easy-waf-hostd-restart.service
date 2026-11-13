@@ -1,0 +1,25 @@
+[Unit]
+Description=Easy Home WAF broker restart after package transactions
+# No dependency/ordering on hostd: ExecStart waits for a synchronous restart job.
+# This service must run in its own cgroup, outside the broker's APT children.
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/sbin/easy-waf-hostd restart-after-packages
+# Helper budget is 35 minutes; leave time for cancellation/process cleanup.
+TimeoutStartSec=36min
+# TERM cancels lock acquisition. Once a restart job is submitted, let its
+# systemctl child finish the bounded wait before releasing package locks.
+KillMode=mixed
+TimeoutStopSec=3min
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+# Keep name replacements visible for the helper's final inode check. Per-file
+# bind mounts would pin an old lock inode even after its host path is replaced.
+ReadWritePaths=/var/lib/dpkg
+ProtectControlGroups=true
+NoNewPrivileges=true

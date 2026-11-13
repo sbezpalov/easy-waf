@@ -127,7 +127,38 @@ The verifier checks the artifact digest only after authenticating `SHA256SUMS.si
 reload HAProxy) and the HAProxy systemd drop-in under
 `/etc/systemd/system/haproxy.service.d/easy-waf.conf` (unprivileged master on
 the generated config). It restarts **only the units that were already running**,
-so a deliberately stopped service stays stopped. Database migrations still run
+so a deliberately stopped service stays stopped. API/acmed restarts are queued
+with `try-restart --no-block`, so ACME's graceful stop (up to 50 minutes) cannot
+hold dpkg past the parent APT's 30-minute budget;
+broker restart is queued in `easy-waf-hostd-restart.service`, outside the
+broker's cgroup. That root helper waits for the real APT frontend and dpkg
+backend locks and holds both across `systemctl try-restart easy-waf-hostd.service`.
+It cannot kill the package transaction configuring Easy WAF, including when
+the running broker is an older binary. It never creates/deletes those lock files
+or weakens the broker's systemd kill policy. A scheduling/inspection/lock timeout
+failure leaves the old broker running and requires operator attention; there
+is no immediate-restart fallback. Lock acquisition has 32 minutes, followed by
+a separate two-minute restart-command budget and cleanup allowance within the
+35-minute helper budget. An expiring lock-wait deadline cannot cut short a
+newly submitted restart job's wait.
+Interrupt/TERM cancels acquisition; after job submission the helper finishes
+the bounded wait before releasing locks. Its own service uses mixed termination
+and a three-minute stop allowance for that wait; the broker's kill policy is
+unchanged.
+
+The packaged `/etc/needrestart/conf.d/easy-waf-hostd.conf` conffile excludes the
+three managed static Go daemons from automatic `needrestart` selection:
+Ubuntu 24.04 runs that hook inside APT, so it must not bypass the package's
+broker coordination or wait on the queued ACME drain. All other services keep
+their existing restart policy. The source installer installs the
+same policy. The maintenance unit is not enabled at boot and has no ordering
+dependency on the broker (its command synchronously waits for the restart job).
+Each package configuration uses `restart --no-block` on that helper, refreshing
+an earlier request even if the previous oneshot is just finishing. This is safe
+inside dpkg: its lock prevents the earlier helper from concurrently owning both
+locks and running a protected broker restart.
+
+Database migrations still run
 when the API starts: only those not yet in `schema_migrations`, each in one
 transaction, so a failed migration leaves the schema as it was. Your
 `/etc/easy-waf/easy-waf.env` is preserved: dpkg treats it as a conffile, and if a
@@ -139,8 +170,22 @@ After a package-only upgrade, confirm:
 ```bash
 test -f /etc/polkit-1/rules.d/99-easy-waf-haproxy.rules
 systemctl cat haproxy.service | grep -F /var/lib/easy-waf/haproxy/haproxy.cfg
+systemctl show easy-waf-hostd-restart.service -p ActiveState -p Result -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+journalctl -u easy-waf-hostd-restart.service -n 40 --no-pager
 sudo bash scripts/smoke-appliance.sh
 ```
+
+The queued job can remain `activating` while package work finishes. A successful
+oneshot ends `inactive` with `Result=success`; `failed` requires investigation.
+After resolving a failure and finishing package work, run
+`sudo systemctl start easy-waf-hostd-restart.service` and check its result again.
+Do not remove package lock files. When upgrading through the panel, API restart
+can interrupt its stream; reopen System to observe the current operation/log.
+After broker restart, the prior in-memory APT exit result may be unknown rather
+than fabricated as success. Package removal stops any queued maintenance job.
+API/ACME restarts may still be pending; confirm their final service state before
+accepting the upgrade. A draining issuance is allowed to finish before the new
+ACME process starts.
 
 **Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`;
 without the flag `apt` refuses. Below 1.5.0 the edge keeps serving its current
@@ -162,4 +207,6 @@ state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
 **Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
 directory or `.tar.gz` of new binaries; it flattens a nested `dist/` from the
 release tarball (and fails if `easy-waf-api` is still missing), reuses
-`install.sh`, and restarts **hostd**, **api**, and **acmed**.
+`install.sh`, waits through the same lock-protected broker helper after its own
+package work finishes, and queues active **api** and **acmed** restarts. It does not cancel an
+already running maintenance helper to restart the broker.

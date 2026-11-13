@@ -145,12 +145,32 @@ systemd_available() {
 	command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
 
+# The installing APT/dpkg may be a child of hostd. Restarting it here would
+# terminate this very transaction. The separate, asynchronous service takes
+# both real package locks before restarting hostd; never fall back to an
+# immediate restart if scheduling fails. Keep intentionally stopped units off.
+restart_active_units() {
+	for u in $UNITS; do
+		if systemctl is-active --quiet "$u"; then
+			if [ "$u" = easy-waf-hostd.service ]; then
+				# Requeue even if a previous helper is finishing. While dpkg owns
+				# its lock, that helper cannot be inside the protected restart.
+				systemctl restart --no-block easy-waf-hostd-restart.service || info "WARNING: broker restart was not queued — after package work finishes, check: systemctl status easy-waf-hostd-restart.service"
+			else
+				# ACME can drain an issuance for up to 50 minutes; do not hold
+				# dpkg/its parent APT (30-minute budget) waiting for that job.
+				systemctl try-restart --no-block "$u" || info "WARNING: failed to queue restart of ${u} — check: journalctl -u ${u} -n 40"
+			fi
+		fi
+	done
+}
+
 # Units installed by an older scripts/install.sh live in /etc/systemd/system and
 # take precedence over the packaged ones in /lib. Silently shadowing the package
 # is exactly the failure that makes an upgrade look applied when it is not.
 warn_shadowing_units() {
 	shadowed=""
-	for u in $UNITS; do
+	for u in $UNITS easy-waf-hostd-restart.service; do
 		if [ -f "/etc/systemd/system/${u}" ]; then
 			shadowed="${shadowed} ${u}"
 		fi
@@ -204,11 +224,7 @@ configure)
 		# Upgrade. Restart only what was already running, so a deliberately
 		# stopped unit stays stopped.
 		if systemd_available; then
-			for u in $UNITS; do
-				if systemctl is-active --quiet "$u"; then
-					systemctl restart "$u" || info "WARNING: failed to restart ${u} — check: journalctl -u ${u} -n 40"
-				fi
-			done
+			restart_active_units
 		fi
 		info "Upgraded from ${2}. Verify with: sudo easy-waf-admin doctor"
 		info "Post-upgrade checks against this live appliance: sudo bash scripts/smoke-appliance.sh"
