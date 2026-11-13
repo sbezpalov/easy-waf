@@ -519,22 +519,27 @@ func (e *Engine) finishFailedArtifactTransaction(
 		return
 	}
 	restoreErr := tx.rollback()
-	appendFailure(retErr, "restore previous HAProxy artifacts", restoreErr)
+	if restoreErr != nil {
+		appendFailure(retErr, fmt.Sprintf("restore previous HAProxy artifacts (recovery manifest retained at %s)", tx.snapshot.ManifestPath), restoreErr)
+		// Reload only a completely restored set. Loading a partial recovery
+		// could replace a still-running edge with mixed configuration and maps.
+		return
+	}
 	if promoted && tx.snapshot.hasFile(cfgPath) {
 		// The reload loads whatever certificate files are on disk now,
 		// renewed ones included (a rollback does not restore PEMs).
 		certs := e.certsBeforeLoad()
 		if skipReload {
-			if restoreErr == nil {
-				e.saveLoadedCerts(certs)
-			}
+			e.saveLoadedCerts(certs)
 			return
 		}
 		reloadErr := apply.ReloadHAProxy()
-		appendFailure(retErr, "reload restored HAProxy configuration", reloadErr)
-		if reloadErr == nil {
-			e.saveLoadedCerts(certs)
+		if reloadErr != nil {
+			tx.retainRecovery = true
+			appendFailure(retErr, fmt.Sprintf("reload restored HAProxy configuration (recovery manifest retained at %s)", tx.snapshot.ManifestPath), reloadErr)
+			return
 		}
+		e.saveLoadedCerts(certs)
 	}
 }
 

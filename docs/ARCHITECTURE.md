@@ -154,7 +154,7 @@ Operational note: if a hostname is routed to an app but **no matching PEM** is i
 
 1. User creates a **certificate** record (ACME HTTP-01 / DNS-01, or manual paths) and links it from each **application** via `certificate_id`.
 2. ACME client (Lego) obtains or renews cert → PEM bundle written to HAProxy-ready paths.
-3. The complete generated artifact set is staged/snapshotted; `haproxy -c` runs before reload. Reload and revision/audit bookkeeping succeed together, or the previous files are restored.
+3. The complete generated artifact set is staged/snapshotted; `haproxy -c` runs before reload. Validation, promotion, or reload failures restore the previous files. Failed recovery retains its snapshot and reports its path; incomplete file restoration prevents a recovery reload. Revision/audit bookkeeping is one database transaction after reload; a bookkeeping failure leaves the newly loaded edge in place and reports an error.
 4. Renewal scheduler in `easy-waf-acmed` (periodic tick); staging toggle per CA account.
 
 ## Config generation / apply flow

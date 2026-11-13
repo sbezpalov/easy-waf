@@ -19,10 +19,20 @@ Settings also store `haproxy_config_path` / `haproxy_binary` — apply writes to
 
 Apply and rollback serialize through a PostgreSQL advisory lock shared by the
 API and ACME worker. The generated config, crt-list, IP maps, blocked-UA map,
-and GeoIP maps are treated as one revision. If validation, promotion, reload,
-or revision bookkeeping fails, the previous set is restored; after a failed
-post-promotion reload, the restored config is reloaded when a previous live
-revision exists.
+and GeoIP maps are treated as one revision. If validation, promotion, or reload
+fails, the previous set is restored; after a failed post-promotion reload,
+the restored config is reloaded when a previous live revision exists. A
+revision/audit bookkeeping failure after a successful reload reports an error
+and leaves the newly loaded edge in place.
+
+If restoring files fails, the engine does not reload the incomplete artifact
+set. If restoration or the recovery reload fails, the error includes the
+retained recovery manifest at `$STATE/revisions/.apply-before-*/manifest.json`.
+Keep that directory and its `files/` backups until recovery is complete. Check
+the reported filesystem or systemd error and validate the complete artifact
+set before manually reloading HAProxy. These recovery snapshots are separate
+from the revisions listed in the UI and are not automatically retried or
+removed by a later Apply.
 
 ## Manual check before reload
 

@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,110 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 )
+
+func TestFailedArtifactRecoveryKeepsSnapshotForRetry(t *testing.T) {
+	for _, promoted := range []bool{false, true} {
+		name := "before-promotion"
+		if promoted {
+			name = "after-promotion"
+		}
+		t.Run(name, func(t *testing.T) {
+			e := newArtifactTestEngine(t)
+			_, cfgPath, _ := haproxy.Paths(e.StateDir)
+			mapPath := e.Settings().IPBlacklistMapPath
+			writeArtifactTestFile(t, cfgPath, "config-before")
+			writeArtifactTestFile(t, mapPath, "map-before")
+			tx, err := e.beginArtifactTransaction(e.Settings())
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeArtifactTestFile(t, cfgPath, "config-after")
+			if err := os.Remove(mapPath); err != nil {
+				t.Fatal(err)
+			}
+			// A directory at a managed file path makes restoration fail on both
+			// Windows and Unix, including when the test process is root.
+			if err := os.Mkdir(mapPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", t.TempDir())
+			retErr := errors.New("apply failed")
+			e.finishFailedArtifactTransaction(tx, cfgPath, promoted, false, false, &retErr)
+			if !strings.Contains(retErr.Error(), "restore previous HAProxy artifacts") {
+				t.Fatalf("missing restoration failure: %v", retErr)
+			}
+			if strings.Contains(retErr.Error(), "reload restored HAProxy") {
+				t.Fatalf("attempted reload after incomplete restoration: %v", retErr)
+			}
+			if !strings.Contains(retErr.Error(), tx.snapshot.ManifestPath) {
+				t.Fatalf("missing recovery manifest path: %v", retErr)
+			}
+			if err := tx.remove(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readAndVerifyArtifactManifest(tx.snapshot.ManifestPath); err != nil {
+				t.Fatalf("recovery snapshot lost after failed restoration: %v", err)
+			}
+			if err := os.Remove(mapPath); err != nil {
+				t.Fatal(err)
+			}
+			retErr = errors.New("retry recovery")
+			e.finishFailedArtifactTransaction(tx, cfgPath, promoted, false, true, &retErr)
+			if retErr.Error() != "retry recovery" {
+				t.Fatalf("retry failed: %v", retErr)
+			}
+			if got := readArtifactTestFile(t, cfgPath); got != "config-before" {
+				t.Fatalf("config after retry = %q", got)
+			}
+			if got := readArtifactTestFile(t, mapPath); got != "map-before" {
+				t.Fatalf("map after retry = %q", got)
+			}
+			if err := tx.remove(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(tx.snapshot.Dir); !os.IsNotExist(err) {
+				t.Fatalf("successful recovery did not permit cleanup: %v", err)
+			}
+		})
+	}
+}
+
+func TestFailedRecoveryReloadKeepsSnapshot(t *testing.T) {
+	e := newArtifactTestEngine(t)
+	_, cfgPath, _ := haproxy.Paths(e.StateDir)
+	writeArtifactTestFile(t, cfgPath, "config-before")
+	tx, err := e.beginArtifactTransaction(e.Settings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactTestFile(t, cfgPath, "config-after")
+	t.Setenv("PATH", t.TempDir())
+	retErr := errors.New("apply reload failed")
+	e.finishFailedArtifactTransaction(tx, cfgPath, true, false, false, &retErr)
+	if !strings.Contains(retErr.Error(), "reload restored HAProxy") || !strings.Contains(retErr.Error(), tx.snapshot.ManifestPath) {
+		t.Fatalf("missing recovery reload failure or manifest: %v", retErr)
+	}
+	if got := readArtifactTestFile(t, cfgPath); got != "config-before" {
+		t.Fatalf("configuration was not restored before failed reload: %q", got)
+	}
+	if err := tx.remove(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readAndVerifyArtifactManifest(tx.snapshot.ManifestPath); err != nil {
+		t.Fatalf("recovery snapshot lost after failed reload: %v", err)
+	}
+	retErr = errors.New("retry recovery")
+	e.finishFailedArtifactTransaction(tx, cfgPath, true, false, true, &retErr)
+	if retErr.Error() != "retry recovery" {
+		t.Fatalf("retry failed: %v", retErr)
+	}
+	if err := tx.remove(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tx.snapshot.Dir); !os.IsNotExist(err) {
+		t.Fatalf("successful recovery did not permit cleanup: %v", err)
+	}
+}
 
 func writeArtifactTestFile(t *testing.T, path, body string) {
 	t.Helper()

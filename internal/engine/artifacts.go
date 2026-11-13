@@ -57,6 +57,8 @@ type artifactTransaction struct {
 	cfg           config.GlobalSettings
 	snapshot      *artifactSnapshot
 	managedBefore []string
+	// A failed recovery keeps its baseline available for inspection and retry.
+	retainRecovery bool
 }
 
 func normalizeArtifactPath(path string) string {
@@ -469,10 +471,11 @@ func (e *Engine) beginArtifactTransaction(cfg config.GlobalSettings) (*artifactT
 	}, nil
 }
 
-func (t *artifactTransaction) rollback() error {
+func (t *artifactTransaction) rollback() (retErr error) {
 	if t == nil || t.snapshot == nil {
 		return nil
 	}
+	defer func() { t.retainRecovery = retErr != nil }()
 	extra := append([]string(nil), t.managedBefore...)
 	extra = append(extra, artifactManifestPaths(t.snapshot.Manifest)...)
 	current, err := t.engine.managedArtifactPaths(t.cfg, extra)
@@ -485,7 +488,7 @@ func (t *artifactTransaction) rollback() error {
 }
 
 func (t *artifactTransaction) remove() error {
-	if t == nil {
+	if t == nil || t.retainRecovery {
 		return nil
 	}
 	return t.snapshot.remove()
