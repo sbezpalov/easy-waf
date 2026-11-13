@@ -8,6 +8,8 @@ package hostd
 import (
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // dpkgLockBusyHook overrides lock detection in tests (linux only).
@@ -23,14 +25,23 @@ func dpkgLockBusy() bool {
 	if dpkgLockBusyHook != nil {
 		return dpkgLockBusyHook()
 	}
-	f, err := os.OpenFile("/var/lib/dpkg/lock-frontend", os.O_RDWR, 0)
+	return dpkgLockFileBusy("/var/lib/dpkg/lock-frontend")
+}
+
+func dpkgLockFileBusy(path string) bool {
+	f, err := os.OpenFile(path, os.O_RDWR|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return true
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
 		return true
 	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	return false
+	// APT/dpkg use POSIX record locks, independent of flock on Linux. Query
+	// without taking a competing lock: this is only an advisory user hint.
+	lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: int16(unix.SEEK_SET)}
+	if err := unix.FcntlFlock(f.Fd(), unix.F_GETLK, &lock); err != nil {
+		return true
+	}
+	return lock.Type != unix.F_UNLCK
 }
