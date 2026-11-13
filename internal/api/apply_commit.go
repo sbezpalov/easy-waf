@@ -16,14 +16,15 @@ import (
 )
 
 // applyOrUndo applies the edge after a database change and, when the apply
-// fails, reverts that change with undo.
+// is rejected, reverts that change with undo. A failure after the new edge
+// configuration is already applied keeps the saved change.
 //
 // Handlers used to commit the row and then apply. A row HAProxy rejected
 // stayed in the database ("saved but edge apply failed"), and every later
 // apply rendered it again and failed too, ACME renewals included, until
-// someone found and fixed it. A failed Apply has already put the previous
-// artifact set back on disk, so undoing the row leaves the database and the
-// edge matching again.
+// someone found and fixed it. Undo a rejected change to keep the database
+// aligned with the edge; AppliedError instead means the new configuration
+// is already live and its saved state must remain in place.
 func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(context.Context) error) error {
 	release, lerr := s.Eng.Store.AcquireAdvisoryLock(ctx, engine.ApplyOrUndoAdvisoryLockKey)
 	if lerr != nil {
@@ -31,8 +32,16 @@ func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(contex
 	}
 	defer func() { _ = release() }()
 	err := s.maybeAutoApply(ctx, label)
+	return undoRejectedApply(ctx, err, undo)
+}
+
+func undoRejectedApply(ctx context.Context, err error, undo func(context.Context) error) error {
 	if err == nil {
 		return nil
+	}
+	var applied *engine.AppliedError
+	if errors.As(err, &applied) {
+		return err
 	}
 	// The undo must survive a client that disconnected, but not hang: it
 	// gets its own deadline rather than the (possibly spent) request one.
@@ -60,9 +69,15 @@ func applyContext(ctx context.Context) (context.Context, context.CancelFunc) {
 
 // writeApplyRejected reports a failed apply: 503 when it ran out of time
 // (typically waiting for another apply to finish, so a retry can succeed),
-// otherwise 422 — the stored configuration could not be put live.
+// otherwise 422 — the stored configuration could not be put live. An already
+// applied configuration with a later failure reports 500 and its kept state.
 // HAProxy -c / filesystem detail stays in the process log, not the response.
 func writeApplyRejected(w http.ResponseWriter, err error) {
+	var applied *engine.AppliedError
+	if errors.As(err, &applied) {
+		writeClientError(w, http.StatusInternalServerError, "configuration applied; check status before retrying", err)
+		return
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		writeClientError(w, http.StatusServiceUnavailable, "apply timed out; retry", err)
 		return

@@ -589,11 +589,12 @@ func (e *Engine) refreshForApply(ctx context.Context) (config.GlobalSettings, er
 }
 
 // Apply renders and validates one complete managed artifact set, promotes it,
-// records a full revision manifest, and reloads HAProxy. Any failure restores
-// the previous files; a failed post-promotion reload also reloads that restored
-// configuration when one existed.
+// records a full revision manifest, and reloads HAProxy. Failure before a
+// successful reload restores the previous files. Later failures return an
+// AppliedError and keep the applied configuration in place.
 func (e *Engine) Apply(ctx context.Context, label string) error {
-	_, err := e.apply(ctx, label, false)
+	applied, err := e.apply(ctx, label, false)
+	err = appliedOperationError(applied, err)
 	e.notifyApplyFailure(label, err)
 	return err
 }
@@ -605,6 +606,7 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 // reload (or an empty revision) on every ordinary restart.
 func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error) {
 	applied, err := e.apply(ctx, label, true)
+	err = appliedOperationError(applied, err)
 	e.notifyApplyFailure(label, err)
 	return applied, err
 }
@@ -649,6 +651,9 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		if runtimeChanged {
 			return
 		}
+		// In skip-reload mode a failed bookkeeping step still restores the
+		// artifacts; report that outcome instead of claiming they were kept.
+		applied = false
 		e.finishFailedArtifactTransaction(
 			tx,
 			cfgPath,
@@ -740,7 +745,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		"apply",
 		detail,
 	); err != nil {
-		return true, fmt.Errorf("edge applied but bookkeeping failed: %w", err)
+		return true, fmt.Errorf("record HAProxy revision and audit: %w", err)
 	}
 	return true, nil
 }
@@ -748,6 +753,8 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 // Rollback restores a full managed artifact set for new revisions. Legacy rows
 // without a manifest retain cfg-only fallback behavior.
 func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) {
+	runtimeChanged := false
+	defer func() { retErr = appliedOperationError(runtimeChanged, retErr) }()
 	releaseLock, err := e.lockApply(ctx)
 	if err != nil {
 		return err
@@ -792,7 +799,6 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 
 	skipReload := envflag.Enabled("EASY_WAF_SKIP_RELOAD")
 	promoted := false
-	runtimeChanged := false
 	var revisionSnapshot *artifactSnapshot
 	defer func() {
 		if retErr == nil {
@@ -900,7 +906,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		"rollback",
 		detail,
 	); err != nil {
-		return fmt.Errorf("edge rolled back but bookkeeping failed: %w", err)
+		return fmt.Errorf("record rollback revision and audit: %w", err)
 	}
 	return nil
 }

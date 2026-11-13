@@ -25,6 +25,13 @@ the restored config is reloaded when a previous live revision exists. A
 revision/audit bookkeeping failure after a successful reload reports an error
 and leaves the newly loaded edge in place.
 
+The API keeps saved changes when a failure occurs after a successful reload.
+It responds with `500` and `configuration applied; check status before retrying`,
+while the process log records the underlying error. Apply failure notifications
+also distinguish an applied change from a rejection. Check the current status
+before retrying so a missing revision/audit record is not mistaken for an
+unapplied configuration.
+
 If restoring files fails, the engine does not reload the incomplete artifact
 set. If restoration or the recovery reload fails, the error includes the
 retained recovery manifest at `$STATE/revisions/.apply-before-*/manifest.json`.
