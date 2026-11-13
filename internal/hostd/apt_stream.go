@@ -13,10 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -79,45 +77,6 @@ func aptActionPIDPath() string {
 		return aptActionLogPathOverride + ".pid"
 	}
 	return filepath.Join(stateDir, "apt-action.pid")
-}
-
-func aptActionPIDAlive() bool {
-	b, err := readAptActionPID()
-	if err != nil {
-		return false
-	}
-	var pid int
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(b)), "%d", &pid); err != nil || pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0: existence check on Unix.
-	return proc.Signal(syscall.Signal(0)) == nil
-}
-
-func readAptActionPID() ([]byte, error) {
-	path := aptActionPIDPath()
-	if underStateDir(path) {
-		f, err := stateOpenFile(path)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		return io.ReadAll(io.LimitReader(f, 128))
-	}
-	return os.ReadFile(path)
-}
-
-func writeAptActionPID(pid int) error {
-	path := aptActionPIDPath()
-	data := []byte(fmt.Sprintf("%d\n", pid))
-	if underStateDir(path) {
-		return stateWriteFile(path, data, 0o600)
-	}
-	return os.WriteFile(path, data, 0o600)
 }
 
 func clearAptActionPID() error {
@@ -285,6 +244,10 @@ func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
 
 	_ = emitLine("==> attaching to apt action already in progress ...")
 	<-record.ready
+	if active, code, message := aptRecordSnapshot(record); active && message != "" {
+		emitExit(code, message)
+		return
+	}
 	if record.logErr != nil {
 		emitExit(-1, "cannot read apt action log: "+record.logErr.Error())
 		return
@@ -295,6 +258,10 @@ func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
 		// Observe completion before reading: a completed run can no longer
 		// append, so the final drain cannot miss a line written before Finish.
 		active, code, errMsg := aptRecordSnapshot(record)
+		if active && errMsg != "" {
+			emitExit(code, errMsg)
+			return
+		}
 		lines, newOff, err := readAptActionLogFileFrom(record.log, offset)
 		offset = newOff
 		for _, line := range lines {

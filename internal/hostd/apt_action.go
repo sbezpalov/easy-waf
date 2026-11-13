@@ -13,13 +13,14 @@ import (
 // slot. Mutable lifecycle/results/refs are protected by aptActionMu. Closing
 // ready publishes log/logErr once; references keep that descriptor alive.
 type aptActionRecord struct {
-	phase  aptActionPhase
-	code   int
-	errMsg string
-	refs   int
-	ready  chan struct{}
-	log    *os.File
-	logErr error
+	phase   aptActionPhase
+	code    int
+	errMsg  string
+	refs    int
+	ready   chan struct{}
+	log     *os.File
+	logErr  error
+	process *aptProcessIdentity
 }
 
 func newAptActionRecord(phase aptActionPhase) *aptActionRecord {
@@ -128,8 +129,23 @@ func aptRecordSnapshotLocked(record *aptActionRecord) (active bool, code int, er
 		// PID publication/liveness cannot release a local reservation.
 		return true, record.code, record.errMsg
 	case aptRecovered:
-		if record == aptActionCurrent && aptActionPIDAlive() {
-			return true, 0, ""
+		if record == aptActionCurrent {
+			if record.process == nil {
+				identity, err := recoverAptActionProcess()
+				if err != nil && !errors.Is(err, errNoSavedAptProcess) {
+					return true, -1, fmt.Sprintf("cannot verify apt action process: %v", err)
+				}
+				record.process = identity
+			}
+			if record.process != nil {
+				identity, err := resolveAptProcess(*record.process)
+				if err != nil {
+					return true, -1, fmt.Sprintf("cannot verify apt action process: %v", err)
+				}
+				if identity != nil {
+					return true, 0, ""
+				}
+			}
 		}
 		record.phase, record.code, record.errMsg = aptFinished, -1, unknownAptActionResult
 	}
@@ -144,15 +160,16 @@ func aptRecordSnapshot(record *aptActionRecord) (active bool, code int, errMsg s
 
 func aptActionSnapshotLocked() (active bool, code int, errMsg string) {
 	if aptActionCurrent == nil {
-		if aptActionPIDAlive() {
-			aptActionCurrent = newAptActionRecord(aptRecovered)
-			publishAptActionLogLocked(aptActionCurrent, nil)
-		} else {
-			if _, err := readAptActionPID(); !os.IsNotExist(err) {
-				return false, -1, unknownAptActionResult
-			}
+		identity, err := recoverAptActionProcess()
+		if errors.Is(err, errNoSavedAptProcess) {
 			return false, 0, ""
 		}
+		if identity == nil && err == nil {
+			return false, -1, unknownAptActionResult
+		}
+		aptActionCurrent = newAptActionRecord(aptRecovered)
+		aptActionCurrent.process = identity
+		publishAptActionLogLocked(aptActionCurrent, nil)
 	}
 	return aptRecordSnapshotLocked(aptActionCurrent)
 }

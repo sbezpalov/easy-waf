@@ -84,7 +84,7 @@ func TestAptStatusCannotInventSuccessForRecoveredDeadPID(t *testing.T) {
 	resetAptUpgradeState()
 	defer resetAptUpgradeState()
 	// An invalid/non-live PID models stale bookkeeping after a broker restart.
-	if err := writeAptActionPID(0); err != nil {
+	if err := storeAptActionPID([]byte("0\n")); err != nil {
 		t.Fatal(err)
 	}
 	if active, code, message := aptActionSnapshot(); active || code != -1 || message == "" {

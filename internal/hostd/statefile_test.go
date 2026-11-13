@@ -111,7 +111,7 @@ func TestAptActionPIDRefusesSymlinkAndDoesNotTruncate(t *testing.T) {
 	if err := os.Symlink(secret, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := writeAptActionPID(12345); err != nil {
+	if err := writeAptActionPID(os.Getpid()); err != nil {
 		t.Fatalf("safe PID replacement failed: %v", err)
 	}
 	b, err := os.ReadFile(secret)
@@ -128,8 +128,13 @@ func TestAptActionPIDRefusesSymlinkAndDoesNotTruncate(t *testing.T) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		t.Fatalf("PID path was not replaced with a regular file: %v", info.Mode())
 	}
-	if got, err := os.ReadFile(link); err != nil || string(got) != "12345\n" {
-		t.Fatalf("PID file = %q, %v", got, err)
+	got, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := parseAptActionPID(got)
+	if err != nil || identity.pid != os.Getpid() {
+		t.Fatalf("PID identity = %+v, %v", identity, err)
 	}
 }
 
