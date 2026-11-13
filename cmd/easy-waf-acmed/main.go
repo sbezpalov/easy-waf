@@ -199,26 +199,11 @@ func (w *worker) notifyCertificateAttention(ctx context.Context, certs []config.
 // startACMEClaimHeartbeat refreshes the claim stamp during a long Obtain so
 // another worker does not reclaim an overlapping in-flight issuance.
 func startACMEClaimHeartbeat(ctx context.Context, st *store.Store, c *config.Certificate) func() {
-	done := make(chan struct{})
-	go func() {
-		t := time.NewTicker(5 * time.Minute)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
-				if err := st.TouchCertificateACMEClaim(hctx, c); err != nil {
-					log.Printf("acme id=%s: claim heartbeat: %v", c.ID, err)
-				}
-				cancel()
-			}
+	return startClaimHeartbeat(ctx, 5*time.Minute, dbTimeout, func(hctx context.Context) {
+		if err := st.TouchCertificateACMEClaim(hctx, c); err != nil {
+			log.Printf("acme id=%s: claim heartbeat: %v", c.ID, err)
 		}
-	}()
-	return func() { close(done) }
+	})
 }
 
 // applyPendingPath marks a certificate acmed stored whose HAProxy apply has

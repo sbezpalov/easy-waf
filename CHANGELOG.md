@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **ACME heartbeat finalization.** The worker now joins an in-flight claim heartbeat before finalizing issuance, preventing concurrent claim-stamp updates from causing a valid result to be discarded. Stop is idempotent, and running database touches settle within their existing query budget.
 - **Reliable local database test gate.** `make test` now serializes packages like CI, preventing shared PostgreSQL settings/revision fixtures from corrupting each other's expectations. Development docs give the same native Go command for Windows and macOS and distinguish skipped database tests from integration coverage.
 - **Unambiguous broker stream results.** Live observation and saved-log download now reject duplicate/case-folded fields, null metadata and invalid UTF-8 before interpreting completion or forwarding data. A failed result cannot become a successful download through a second spelling of `code`; valid legacy events and future metadata remain supported.
 - **Verified browser package streams.** The panel rejects malformed, oversized or incomplete NDJSON instead of displaying success, completes on a verified exit without waiting for EOF, and releases its reader on all paths. Nonzero reconnect outcomes stay visible without an error string; live output keeps a bounded tail with an explicit truncation notice.
