@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,8 @@ import (
 
 // aptActionLogPathOverride is set in tests to use a temp directory.
 var aptActionLogPathOverride string
+
+const maxAptOutputLineBytes = 1 << 20
 
 func aptActionLogPath() string {
 	if aptActionLogPathOverride != "" {
@@ -375,6 +378,7 @@ func readAptActionLogFrom(offset int64) (lines []string, newOffset int64, err er
 		return nil, offset, err
 	}
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), maxAptOutputLineBytes)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
 	}
@@ -451,7 +455,10 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 	}
 	cmd := exec.CommandContext(ctx, binAptGet, args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	return execAptCommand(cmd, emit)
+}
 
+func execAptCommand(cmd *exec.Cmd, emit func(string) error) (int, error) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return 1, err
@@ -472,34 +479,52 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 	}
 
 	lineCh := make(chan string, 64)
+	captureErrors := make(chan error, 2)
 	var wg sync.WaitGroup
-	pipeLines := func(r io.Reader) {
+	pipeLines := func(r io.Reader, stream string) {
 		defer wg.Done()
 		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		sc.Buffer(make([]byte, 64<<10), maxAptOutputLineBytes)
 		for sc.Scan() {
 			lineCh <- sc.Text()
 		}
+		if scanErr := sc.Err(); scanErr != nil {
+			// In particular, ErrTooLong leaves the child able to fill this pipe
+			// and block forever. Keep consuming with bounded memory so apt can
+			// finish; report incomplete capture rather than pretending success.
+			_, drainErr := io.Copy(io.Discard, r)
+			captureErrors <- fmt.Errorf("apt output (%s): %w", stream, errors.Join(scanErr, drainErr))
+		}
 	}
 	wg.Add(2)
-	go pipeLines(stdout)
-	go pipeLines(stderr)
+	go pipeLines(stdout, "stdout")
+	go pipeLines(stderr, "stderr")
 	go func() {
 		wg.Wait()
 		close(lineCh)
+		close(captureErrors)
 	}()
 
 	for line := range lineCh {
 		_ = emit(line)
 	}
 
-	if err := cmd.Wait(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return ee.ExitCode(), err
-		}
-		return 1, err
+	var captureErr error
+	for err := range captureErrors {
+		captureErr = errors.Join(captureErr, err)
 	}
-	return 0, nil
+	code := 0
+	runErr := cmd.Wait()
+	if runErr != nil {
+		code = 1
+		if ee, ok := runErr.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+	}
+	if code == 0 && captureErr != nil {
+		code = 1
+	}
+	return code, errors.Join(runErr, captureErr)
 }
 
 func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
