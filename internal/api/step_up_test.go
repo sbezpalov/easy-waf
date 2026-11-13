@@ -18,10 +18,12 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
-// Diagnostics only send probes and stay outside RequireStepUp.
+// Diagnostics send probes; APT observation only follows an existing run.
+// These routes stay outside RequireStepUp while retaining admin/XHR checks.
 var hostRoutesWithoutStepUp = map[string]bool{
-	"POST /host/diagnostics/ping":  true,
-	"POST /host/diagnostics/trace": true,
+	"POST /host/diagnostics/ping":      true,
+	"POST /host/diagnostics/trace":     true,
+	"POST /host/updates/attach/stream": true,
 }
 
 func TestEveryMutatingHostRouteRequiresStepUp(t *testing.T) {

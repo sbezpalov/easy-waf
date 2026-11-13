@@ -80,6 +80,14 @@ func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 		return
 	}
 	switch req.Argv[0] {
+	case "apt-action-attach-stream":
+		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
+		if len(req.Argv) != 2 {
+			_ = newAptStreamConn(c).writeEvent(streamEvent{Type: "exit", Code: -1, Error: "APT observation requires one run ID"})
+			return
+		}
+		dispatchAptObserveStream(c, req.Argv[1])
+		return
 	case "apt-upgrade-stream":
 		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
 		logOp("op=apt-upgrade-stream (stream)")

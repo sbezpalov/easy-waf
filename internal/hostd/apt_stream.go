@@ -203,6 +203,23 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string, record *aptActio
 }
 
 func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
+	followAptRecord(sc, record, "==> attaching to apt action already in progress ...")
+}
+
+// Unlike mutation streams, this opcode only reads the selected record, even
+// when it completed after the client's status request. It never starts APT.
+func dispatchAptObserveStream(conn io.Writer, id string) {
+	sc := newAptStreamConn(conn)
+	record, err := acquireObservedAptAction(id)
+	if err != nil {
+		_ = sc.writeEvent(streamEvent{Type: "exit", Code: -1, Error: err.Error()})
+		return
+	}
+	defer releaseAptAction(record)
+	followAptRecord(sc, record, "==> following saved apt action output ...")
+}
+
+func followAptRecord(sc *aptStreamConn, record *aptActionRecord, banner string) {
 	emitExit := func(code int, errMsg string) {
 		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
@@ -219,7 +236,7 @@ func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
 		return nil
 	}
 
-	_ = emitLine("==> attaching to apt action already in progress ...")
+	_ = emitLine(banner)
 	<-record.ready
 	if active, code, message := aptRecordSnapshot(record); active && message != "" {
 		emitExit(code, message)
@@ -289,6 +306,9 @@ func dispatchAptActionStatus() Response {
 		"active":    active,
 		"exit_code": code,
 		"error":     errMsg,
+	}
+	if aptActionCurrent != nil {
+		status["run_id"] = aptActionCurrent.id
 	}
 	if aptActionCurrent != nil && aptActionCurrent.action != "" {
 		status["action"] = aptActionCurrent.action

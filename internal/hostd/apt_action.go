@@ -4,9 +4,14 @@
 package hostd
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/google/uuid"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // An attached client owns this run, not whichever run later occupies the global
@@ -23,6 +28,7 @@ type aptActionRecord struct {
 	process *aptProcessIdentity
 	action  string
 	mode    aptActionMode
+	id      string
 }
 
 type aptActionMode uint8
@@ -33,7 +39,25 @@ const (
 )
 
 func newAptActionRecord(phase aptActionPhase) *aptActionRecord {
-	return &aptActionRecord{phase: phase, refs: 1, ready: make(chan struct{})}
+	id := uuid.New()
+	return &aptActionRecord{phase: phase, refs: 1, ready: make(chan struct{}), id: hex.EncodeToString(id[:])}
+}
+
+// Observation never uses acquire-or-start. Matching and retaining the record
+// share one lock, so completion/replacement cannot redirect the subscriber.
+func acquireObservedAptAction(id string) (*aptActionRecord, error) {
+	if len(id) != 32 || !hostspec.ValidToken(id) {
+		return nil, errors.New("invalid APT run ID")
+	}
+	aptActionMu.Lock()
+	defer aptActionMu.Unlock()
+	aptActionSnapshotLocked()
+	record := aptActionCurrent
+	if record == nil || record.id != id {
+		return nil, errors.New("APT operation changed or is no longer available; refresh status")
+	}
+	record.refs++
+	return record, nil
 }
 
 func releaseAptActionLocked(record *aptActionRecord) {

@@ -32,7 +32,12 @@ func (w *aptReplayGate) Write(p []byte) (int, error) {
 }
 
 func TestAptFollowerKeepsFinalOutputAndOriginalResult(t *testing.T) {
-	for _, fixture := range []struct{ nextAction, anchored bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+	for _, fixture := range []struct{ nextAction, anchored, observer, synchronous bool }{
+		{}, {nextAction: true}, {anchored: true}, {nextAction: true, anchored: true},
+		{observer: true}, {nextAction: true, observer: true}, {anchored: true, observer: true},
+		{nextAction: true, anchored: true, observer: true},
+		{nextAction: true, anchored: true, observer: true, synchronous: true},
+	} {
 		nextAction := fixture.nextAction
 		name := "final_drain"
 		if nextAction {
@@ -40,6 +45,12 @@ func TestAptFollowerKeepsFinalOutputAndOriginalResult(t *testing.T) {
 		}
 		if fixture.anchored {
 			name += "_state"
+		}
+		if fixture.observer {
+			name += "_observer"
+		}
+		if fixture.synchronous {
+			name += "_synchronous"
 		}
 		t.Run(name, func(t *testing.T) {
 			if fixture.anchored {
@@ -56,7 +67,7 @@ func TestAptFollowerKeepsFinalOutputAndOriginalResult(t *testing.T) {
 			primaryDone := make(chan struct{})
 			gate := &aptReplayGate{entered: make(chan struct{}), release: make(chan struct{})}
 			followerDone := make(chan struct{})
-			SetAptUpgradeStreamHookForTest(func(ctx context.Context, emit func(string) error) (int, error) {
+			execute := func(ctx context.Context, emit func(string) error) (int, error) {
 				_ = emit("first-line")
 				close(started)
 				select {
@@ -66,7 +77,8 @@ func TestAptFollowerKeepsFinalOutputAndOriginalResult(t *testing.T) {
 				}
 				_ = emit("last-line")
 				return 7, nil
-			})
+			}
+			SetAptUpgradeStreamHookForTest(execute)
 			t.Cleanup(func() {
 				for _, ch := range []chan struct{}{finishPrimary, gate.release} {
 					select {
@@ -84,13 +96,31 @@ func TestAptFollowerKeepsFinalOutputAndOriginalResult(t *testing.T) {
 				}
 				resetAptUpgradeState()
 			})
-			go func() { defer close(primaryDone); dispatchAptStream(io.Discard, "upgrade") }()
+			go func() {
+				defer close(primaryDone)
+				if fixture.synchronous {
+					d := Dispatcher{Runner: &aptMutationRunner{run: func(ctx context.Context, _ string, _ []string, emit func(string) error) (int, error) {
+						return execute(ctx, emit)
+					}}}
+					_ = d.Dispatch(context.Background(), []string{"apt-clean"})
+				} else {
+					dispatchAptStream(io.Discard, "upgrade")
+				}
+			}()
 			select {
 			case <-started:
 			case <-time.After(3 * time.Second):
 				t.Fatal("primary did not start")
 			}
-			go func() { defer close(followerDone); dispatchAptStream(gate, "autoremove") }()
+			id := aptStatusRunID(t)
+			go func() {
+				defer close(followerDone)
+				if fixture.observer {
+					dispatchAptObserveStream(gate, id)
+				} else {
+					dispatchAptStream(gate, "autoremove")
+				}
+			}()
 			select {
 			case <-gate.entered:
 			case <-time.After(3 * time.Second):

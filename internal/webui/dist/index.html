@@ -4243,25 +4243,20 @@
       }
       return;
     }
-    if (j.stream === false) {
+    if (typeof j.run_id !== 'string' || !/^[a-f0-9]{32}$/.test(j.run_id)) {
       if (msg) {
-        const labels = new Map([
-          ['update', 'Package index refresh is in progress.'],
-          ['upgrade', 'Package upgrade is in progress.'],
-          ['clean', 'Package cache cleanup is in progress.']
-        ]);
-        msg.textContent = (labels.get(j.action) || 'Package operation is in progress.') + ' Check status again after it finishes.';
+        msg.textContent = 'Automatic reconnect is unavailable. Check the saved package log.';
         msg.className = 'warn';
         msg.dataset.aptStatusText = msg.textContent;
       }
       return;
     }
     if (msg) {
-      msg.textContent = 'Reconnected to running apt action…';
+      msg.textContent = 'Following package operation…';
       msg.className = 'warn';
       delete msg.dataset.aptStatusText;
     }
-    await runAptStream('/api/v1/host/updates/upgrade/stream', {
+    await runAptStream('/api/v1/host/updates/attach/stream?run_id=' + encodeURIComponent(j.run_id), {
       reconnect: true,
       successMsg: 'Package operation finished.',
       successToast: 'Package operation complete'
@@ -4523,16 +4518,25 @@
       });
       if (!resp.ok || !resp.body) {
         setAptButtonsDisabled(false);
-        if (!o.reconnect) {
-          { const __m = await apiMessage(resp); toast(__m, 'err'); if (msg) msg.textContent = __m; }
+        const detail = await apiMessage(resp);
+        if (msg) {
+          msg.textContent = detail;
+          msg.className = 'warn';
         }
-        return { exitCode: -1, exitErr: '' };
+        if (!o.reconnect) toast(detail, 'err');
+        return { exitCode: -1, exitErr: detail };
       }
       return await consumeAptStream(resp, o);
     } catch (e) {
       setAptButtonsDisabled(false);
-      if (o.reconnect) return { exitCode: -1, exitErr: '' };
       const transport = e && e.message ? e.message : 'network error';
+      if (o.reconnect) {
+        if (msg) {
+          msg.textContent = 'Package log connection interrupted. Refresh status to reconnect.';
+          msg.className = 'warn';
+        }
+        return { exitCode: -1, exitErr: transport };
+      }
       if (msg) {
         msg.textContent =
           'Stream interrupted — apt may still be running on the host. Reopen System tab or retry to re-attach.';

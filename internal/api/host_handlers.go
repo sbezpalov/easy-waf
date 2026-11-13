@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -50,6 +51,9 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Get("/updates", s.hostGetUpdates)
 		r.Get("/updates/upgrade/log", s.hostAptUpgradeLog)
 		r.Get("/updates/upgrade/status", s.hostAptUpgradeStatus)
+		// Read-only observation, like the saved-log GET: admin/XHR apply,
+		// but this endpoint cannot start an action and does not need step-up.
+		r.Post("/updates/attach/stream", s.hostAptAttachStream)
 		r.Get("/updates/autoremove/preview", s.hostAutoremovePreview)
 		r.Get("/disk", s.hostDisk)
 		r.Get("/users", s.hostListUsers)
@@ -371,6 +375,16 @@ func (s *Server) hostAptUpgrade(w http.ResponseWriter, r *http.Request) {
 
 var privilegedStreamFn = runner.PrivilegedStream
 
+func (s *Server) hostAptAttachStream(w http.ResponseWriter, r *http.Request) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	ids := query["run_id"]
+	if err != nil || len(ids) != 1 || len(ids[0]) != 32 || !hostspec.ValidToken(ids[0]) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "one valid APT run_id is required"})
+		return
+	}
+	s.streamAptAction(w, r, "apt-action-attach-stream", "host_apt_attach", "host_apt_attach_done", ids[0])
+}
+
 func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 	s.streamAptAction(w, r, "apt-upgrade-stream", "host_apt_upgrade", "host_apt_upgrade_done")
 }
@@ -388,7 +402,7 @@ func (s *Server) hostAutoremovePreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
-func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerOp, auditEvent, auditDoneEvent string) {
+func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerOp, auditEvent, auditDoneEvent string, brokerArgs ...string) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -396,7 +410,12 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Content-Encoding", "identity")
 
-	s.hostAppendAudit(r.Context(), auditEvent, map[string]any{"stream": true}, false)
+	detail := map[string]any{"stream": true}
+	if brokerOp == "apt-action-attach-stream" && len(brokerArgs) == 1 {
+		detail["run_id"] = brokerArgs[0]
+	}
+	s.hostAppendAudit(r.Context(), auditEvent, detail, false)
+	argv := append([]string{brokerOp}, brokerArgs...)
 
 	exitCode := -1
 	exitSeen := false
@@ -419,7 +438,7 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 		}
 		flush()
 		return nil
-	}, brokerOp)
+	}, argv...)
 	if err == nil && !exitSeen {
 		err = io.ErrUnexpectedEOF
 	}
@@ -431,9 +450,8 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 		return
 	}
 
-	s.hostAppendAudit(r.Context(), auditDoneEvent, map[string]any{
-		"stream": true, "exit_code": exitCode,
-	}, exitCode != 0)
+	detail["exit_code"] = exitCode
+	s.hostAppendAudit(r.Context(), auditDoneEvent, detail, exitCode != 0)
 }
 
 func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
