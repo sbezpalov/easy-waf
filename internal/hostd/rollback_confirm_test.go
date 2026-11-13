@@ -172,6 +172,84 @@ func TestBeginConfirmedChangeArmsTimerAndRefusesReusedToken(t *testing.T) {
 	}
 }
 
+func TestPendingChangeRejectsOtherTokensAndLegacyWrites(t *testing.T) {
+	for _, kind := range []string{"nft", "netplan"} {
+		t.Run(kind, func(t *testing.T) {
+			m, _ := rollbackTestEnv(t)
+			path, mode := nftRulesPath, nftRulesMode
+			if kind == "netplan" {
+				path, mode = netplanPath, netplanMode
+			}
+			ctx := context.Background()
+			if err := beginConfirmedChange(ctx, m, kind, testToken, path, mode, 90); err != nil {
+				t.Fatal(err)
+			}
+			const nextToken = "1234567890abcdef"
+			before := len(m.calls)
+			if err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err == nil {
+				t.Fatal("second unconfirmed change accepted with a different token")
+			}
+			if len(m.calls) != before {
+				t.Fatalf("second timer armed: %v", m.calls[before:])
+			}
+			d := Dispatcher{Runner: m}
+			for _, op := range []string{kind + "-apply", kind + "-install"} {
+				resp := d.Dispatch(ctx, []string{op, "/unused/staged"})
+				if resp.OK || !strings.Contains(resp.Error, "pending change") {
+					t.Fatalf("legacy mutation bypassed pending state: %+v", resp)
+				}
+			}
+			commit := nftCommit
+			if kind == "netplan" {
+				commit = netplanCommit
+			}
+			if resp := commit(ctx, m, testToken); !resp.OK {
+				t.Fatal(resp.Error)
+			}
+			if err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err != nil {
+				t.Fatalf("new change rejected after commit: %v", err)
+			}
+		})
+	}
+}
+
+func TestRollbackOperationsRejectConcurrentMutation(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	unlock, err := lockRollback(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Release exactly once, including when an assertion fails.
+	t.Cleanup(unlock)
+	d := Dispatcher{Runner: m}
+	for _, argv := range [][]string{
+		{"nft-apply-confirm", "/unused", "90", testToken},
+		{"netplan-apply-confirm", "/unused", "90", testToken},
+		{"nft-commit", testToken}, {"netplan-commit", testToken},
+		{"nft-apply"}, {"nft-install", "/unused"},
+		{"netplan-apply"}, {"netplan-install", "/unused"},
+	} {
+		resp := d.Dispatch(context.Background(), argv)
+		if resp.OK || !strings.Contains(resp.Error, "busy") {
+			t.Fatalf("concurrent mutation accepted for %v: %+v", argv, resp)
+		}
+	}
+	if len(m.calls) != 0 {
+		t.Fatalf("busy operations ran commands: %v", m.calls)
+	}
+}
+
+func TestPendingChangesAreIndependentBySubsystem(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	ctx := context.Background()
+	if err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+		t.Fatal(err)
+	}
+	if err := beginConfirmedChange(ctx, m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
+		t.Fatalf("unrelated subsystem blocked: %v", err)
+	}
+}
+
 func TestBeginConfirmedChangeTimerFailureLeavesNothingPending(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
 	m.failOn["systemd-run"] = true

@@ -78,6 +78,16 @@ func RunRevert(kind, token string) error {
 	if !hostspec.ValidToken(token) {
 		return fmt.Errorf("invalid token")
 	}
+	unlock, err := lockRollback(true)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return runRevert(kind, token)
+}
+
+// runRevert is used when the caller already holds the operation lock.
+func runRevert(kind, token string) error {
 	switch kind {
 	case "nft":
 		return revertNft(token)
@@ -307,12 +317,39 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 	} else if exists {
 		return fmt.Errorf("token already has a pending change")
 	}
+	if err := rejectPendingChange(kind); err != nil {
+		return err
+	}
 	if err := saveRollbackBackup(livePath, bak, mode); err != nil {
 		return err
 	}
 	if err := scheduleRevert(ctx, r, kind, token, timeoutSec); err != nil {
 		_ = stateRemoveFile(bak)
 		return err
+	}
+	return nil
+}
+
+// Caller holds the operation lock while inspecting and changing pending state.
+func rejectPendingChange(kind string) error {
+	// Each subsystem owns one live file. A second token would back up the
+	// first unconfirmed configuration and give two timers conflicting history.
+	dir, err := stateOpenFile(filepath.Join(stateDir, "rollback"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("inspect pending changes: %w", err)
+	}
+	if err == nil {
+		entries, readErr := dir.ReadDir(-1)
+		_ = dir.Close()
+		if readErr != nil {
+			return fmt.Errorf("inspect pending changes: %w", readErr)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, kind+"-") && strings.HasSuffix(name, ".bak") {
+				return fmt.Errorf("%s already has a pending change; confirm it or wait for rollback", kind)
+			}
+		}
 	}
 	return nil
 }
@@ -324,7 +361,7 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 func abortConfirmedChange(ctx context.Context, r CommandRunner, kind, token string) error {
 	stopErr := stopRollbackUnit(ctx, r, kind, token)
 	// A systemd failure must not prevent the immediate safety rollback.
-	return errors.Join(stopErr, RunRevert(kind, token))
+	return errors.Join(stopErr, runRevert(kind, token))
 }
 
 func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token string) error {
@@ -348,6 +385,11 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	if !hostspec.ValidToken(token) || !hostspec.ValidRollbackTimeout(timeoutStr) {
 		return failResp("invalid token or timeout", 1)
 	}
+	unlock, err := lockRollback(false)
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	defer unlock()
 	stagedCopy, cleanup, err := materializeStagedFile(staged)
 	if err != nil {
 		return failResp("invalid staged path: "+err.Error(), 1)
@@ -390,6 +432,11 @@ func nftCommit(ctx context.Context, r CommandRunner, token string) Response {
 	if !hostspec.ValidToken(token) {
 		return failResp("invalid token", 1)
 	}
+	unlock, err := lockRollback(false)
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	defer unlock()
 	if err := commitConfirmedChange(ctx, r, "nft", token); err != nil {
 		return failResp(err.Error(), 1)
 	}
@@ -401,6 +448,11 @@ func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutSt
 	if !hostspec.ValidToken(token) || !hostspec.ValidRollbackTimeout(timeoutStr) {
 		return failResp("invalid token or timeout", 1)
 	}
+	unlock, err := lockRollback(false)
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	defer unlock()
 	stagedCopy, cleanup, err := materializeStagedFile(staged)
 	if err != nil {
 		return failResp("invalid staged path: "+err.Error(), 1)
@@ -468,6 +520,11 @@ func netplanCommit(ctx context.Context, r CommandRunner, token string) Response 
 	if !hostspec.ValidToken(token) {
 		return failResp("invalid token", 1)
 	}
+	unlock, err := lockRollback(false)
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	defer unlock()
 	if err := commitConfirmedChange(ctx, r, "netplan", token); err != nil {
 		return failResp(err.Error(), 1)
 	}

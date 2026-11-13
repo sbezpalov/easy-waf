@@ -27,6 +27,22 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	}
 	op := argv[0]
 	logOp("op=%s argc=%d", op, len(argv)-1)
+	// Legacy immediate mutations must not bypass the confirmed-change history.
+	switch op {
+	case "nft-apply", "nft-install", "netplan-apply", "netplan-install":
+		unlock, err := lockRollback(false)
+		if err != nil {
+			return failResp(err.Error(), 1)
+		}
+		defer unlock()
+		kind := "nft"
+		if op == "netplan-apply" || op == "netplan-install" {
+			kind = "netplan"
+		}
+		if err := rejectPendingChange(kind); err != nil {
+			return failResp(err.Error(), 1)
+		}
+	}
 
 	switch op {
 	case "systemctl":
@@ -117,7 +133,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if !hostspec.ValidToken(argv[1]) {
 			return failResp("invalid token", 1)
 		}
-		if err := revertNft(argv[1]); err != nil {
+		if err := RunRevert("nft", argv[1]); err != nil {
 			return failResp(err.Error(), 1)
 		}
 		return okResp(nil, nil, 0)
@@ -169,7 +185,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if !hostspec.ValidToken(argv[1]) {
 			return failResp("invalid token", 1)
 		}
-		if err := revertNetplan(argv[1]); err != nil {
+		if err := RunRevert("netplan", argv[1]); err != nil {
 			return failResp(err.Error(), 1)
 		}
 		return okResp(nil, nil, 0)
