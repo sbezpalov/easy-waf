@@ -124,6 +124,10 @@ sudo --preserve-env=EASY_WAF_E2E_USERNAME,EASY_WAF_E2E_PASSWORD,EASY_WAF_E2E_TOT
 
 Without **`RUN_BACKUP_RESTORE_E2E=1`**, the script exits **0** immediately (safe for accidental invocations).
 
+If a run fails after creating its backup, the script **keeps the recovery archive** and prints its path. By default it remains in a private temporary directory; set **`EASY_WAF_E2E_BACKUP_PATH`** to an unused path outside the appliance state tree on persistent storage when recovery must survive a reboot. Restore it manually with `scripts/restore.sh` after diagnosing the failure. The archive contains the E2E application and certificate as well as the original data. Only a fully successful verification and cleanup removes the archive.
+
+`make test-backup-restore-workflow` exercises JSON requests and recovery-archive retention with mocked appliance commands. It runs without root, PostgreSQL or systemd and is included in `make verify`; it does not replace the live destructive E2E test.
+
 ## Legacy archives
 
 Older one-off `tar` layouts (only `/var/lib/easy-waf` without `easywaf.dump` / `MANIFEST.txt`) are **not** supported by `restore.sh` — re-backup with the current `backup.sh` or restore files and DB manually.

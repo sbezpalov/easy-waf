@@ -1,4 +1,4 @@
-.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
+.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
@@ -57,7 +57,7 @@ check-version-docs:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		cd scripts && shellcheck -x install.sh install-interactive.sh build-offline-bundle.sh install-offline-bundle.sh download-release.sh smoke-appliance.sh diagnostics.sh test-backup-restore.sh test-env-file.sh test-management-listen.sh test-release-verify.sh test-offline-bundle.sh backup.sh test-backup-rotate.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh lib/env-file.sh lib/backup-rotate.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
+		cd scripts && shellcheck -x install.sh install-interactive.sh build-offline-bundle.sh install-offline-bundle.sh download-release.sh smoke-appliance.sh diagnostics.sh test-backup-restore.sh test-backup-restore-workflow.sh test-env-file.sh test-management-listen.sh test-release-verify.sh test-offline-bundle.sh backup.sh test-backup-rotate.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh lib/env-file.sh lib/backup-rotate.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. apt install shellcheck)"; \
 	fi
@@ -86,12 +86,16 @@ test-offline-bundle:
 test-backup-rotate:
 	bash scripts/test-backup-rotate.sh
 
+# Mocked workflow regression tests; safe without an appliance or root.
+test-backup-restore-workflow:
+	bash scripts/test-backup-restore-workflow.sh
+
 # Post-upgrade checks against a LIVE appliance: real PostgreSQL, real HAProxy
 # reload, installed systemd units. Not part of `verify` — needs a host, not CI.
 smoke-appliance:
 	bash scripts/smoke-appliance.sh
 
-verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate
+verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-management-listen test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow
 
 # Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
 verify.:

@@ -11,6 +11,7 @@
 #           insecure recovery test
 
 set -euo pipefail
+umask 077
 
 if [[ "${RUN_BACKUP_RESTORE_E2E:-}" != "1" ]]; then
   echo "SKIP: set RUN_BACKUP_RESTORE_E2E=1 and run as root (destructive: factory-reset + restore)"
@@ -39,14 +40,26 @@ CERT_ID="e2e-backup-restore-cert"
 APP_ID="e2e-backup-restore-app"
 BUNDLE_PATH="${STATE}/certs/_e2e/e2e-bundle.pem"
 BACKUP_CREATED=0
+RUN_SUCCEEDED=0
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 cleanup() {
-  rm -rf "$E2E_TMPDIR"
-  if [[ "$BACKUP_CREATED" == "1" ]]; then
+  local status=$?
+  if [[ "$BACKUP_CREATED" == "1" && "$RUN_SUCCEEDED" != "1" ]]; then
+    echo "[e2e] FAILED — recovery backup retained: $BACKUP_PATH" >&2
+    # The default archive lives inside this private temporary directory. Keep
+    # it on failure, but discard the temporary login response and test keys.
+    if [[ "$BACKUP_PATH" == "$E2E_TMPDIR/backup.tar.gz" ]]; then
+      rm -f "$E2E_TMPDIR/auth-response"
+      rm -rf "$E2E_TMPDIR/cert"
+      return "$status"
+    fi
+  elif [[ "$BACKUP_CREATED" == "1" ]]; then
     rm -f "$BACKUP_PATH" 2>/dev/null || true
   fi
+  rm -rf "$E2E_TMPDIR"
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -174,8 +187,10 @@ else
   install -m0640 -o easy-waf -g easy-waf "$CERT_SRC" "${STATE}/certs/_e2e/e2e-bundle.pem"
 fi
 
-CERT_JSON="$(printf '%s' "{\"id\":\"%s\",\"primary_domain\":\"%s\",\"mode\":\"self-signed\",\"pem_crt_path\":\"%s\"}" "$CERT_ID" "$APP_HOST" "$BUNDLE_PATH")"
-APP_JSON="$(printf '%s' "{\"id\":\"%s\",\"name\":\"E2E Backup\",\"public_host\":\"%s\",\"backend_host\":\"%s\",\"backend_port\":8080,\"profile\":\"balanced\",\"certificate_id\":\"%s\",\"enabled\":true}" "$APP_ID" "$APP_HOST" "$BACKEND_IP" "$CERT_ID")"
+CERT_JSON="$(printf '{"id":"%s","primary_domain":"%s","mode":"self-signed","pem_crt_path":"%s"}' \
+  "$CERT_ID" "$APP_HOST" "$(json_escape "$BUNDLE_PATH")")"
+APP_JSON="$(printf '{"id":"%s","name":"E2E Backup","public_host":"%s","backend_host":"%s","backend_port":8080,"profile":"balanced","certificate_id":"%s","enabled":true}' \
+  "$APP_ID" "$APP_HOST" "$BACKEND_IP" "$CERT_ID")"
 
 echo "[e2e] upsert certificate + application"
 api_post "${BASE}/api/v1/certificates" "$CERT_JSON"
@@ -219,4 +234,5 @@ api_post "${BASE}/api/v1/apply" '{"label":"e2e-cleanup"}'
 rm -f "$BUNDLE_PATH"
 rmdir "${STATE}/certs/_e2e" 2>/dev/null || true
 
+RUN_SUCCEEDED=1
 echo "[e2e] OK — backup/restore round-trip succeeded"
