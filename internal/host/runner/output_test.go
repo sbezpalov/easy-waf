@@ -4,6 +4,7 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
 func TestLocalRunnerOutputHelper(_ *testing.T) {
@@ -34,8 +37,52 @@ func TestLocalRunnerOutputHelper(_ *testing.T) {
 	if err := os.WriteFile(os.Getenv("EASY_WAF_LOCAL_OUTPUT_MARKER"), []byte("drained"), 0o600); err != nil {
 		os.Exit(93)
 	}
+	if mode == "overflow-wait" {
+		time.Sleep(20 * time.Second)
+	}
 	code, _ := strconv.Atoi(os.Getenv("EASY_WAF_LOCAL_OUTPUT_EXIT"))
 	os.Exit(code)
+}
+
+func TestLocalRunnerPreservesCancellationAndOutputLimitTogether(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(t.TempDir(), "output-drained")
+	t.Setenv("EASY_WAF_LOCAL_OUTPUT_TEST", "overflow-wait")
+	t.Setenv("EASY_WAF_LOCAL_OUTPUT_MARKER", marker)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := Run(ctx, 10*time.Second, executable, "-test.run=^TestLocalRunnerOutputHelper$")
+		done <- err
+	}()
+	joined := false
+	t.Cleanup(func() {
+		cancel()
+		if !joined {
+			select {
+			case cleanupErr := <-done:
+				if cleanupErr != nil {
+					t.Log("overflow fixture joined after cleanup cancellation")
+				}
+			case <-time.After(4 * time.Second):
+				t.Error("overflow/cancellation fixture did not join")
+			}
+		}
+	})
+	waitLocalProcessFile(t, marker)
+	cancel()
+	select {
+	case err := <-done:
+		joined = true
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, commandoutput.ErrLimit) {
+			t.Fatal("cancellation or output-limit cause was lost")
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("output overflow prevented cancellation")
+	}
 }
 
 func TestLocalRunnerBoundsOutputAndPreservesExitFailure(t *testing.T) {

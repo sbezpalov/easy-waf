@@ -53,6 +53,19 @@ the worker is still finishing work. Earlier caller deadlines still apply to
 ordinary broker control commands. These are not whole-operation budgets:
 multi-command apply/recovery and filesystem/lock waits can take longer.
 
+Local read-only API commands (network/service snapshots, update listings,
+diagnostics and `nft -c`) use the same process policy as ordinary broker commands.
+After parent exit/cancellation, inherited stdout/stderr waits last at most two
+additional seconds; incomplete capture reports an error. On Linux/macOS these
+commands get their own process group, canceled as a group and cleaned on return,
+including successful parents that leave helpers behind. Caller cancellation and
+the earlier of caller/command deadlines retain their error cause alongside output
+or cleanup failures. Windows development uses native parent cancellation and
+bounded pipe waits; it does not promise descendant termination. A descendant that
+deliberately leaves its Unix group is outside this policy too. This is process
+cleanup, not a service cgroup boundary; APT ownership remains in its separate
+service, with successful package-started services allowed to continue.
+
 After process exit or cancellation, captured stdout/stderr pipe waits are limited
 to another two seconds. An inherited pipe that never closes is an output-capture
 failure rather than a successful result. Linux/macOS commands run in their own

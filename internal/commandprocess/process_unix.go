@@ -3,7 +3,7 @@
 
 //go:build linux || darwin
 
-package hostd
+package commandprocess
 
 import (
 	"errors"
@@ -12,12 +12,12 @@ import (
 	"syscall"
 )
 
-func prepareCommandProcess(cmd *exec.Cmd) {
+func prepare(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return killCommandGroup(cmd) }
+	cmd.Cancel = func() error { return killGroup(cmd) }
 }
 
-func killCommandGroup(cmd *exec.Cmd) error {
+func killGroup(cmd *exec.Cmd) error {
 	if cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return os.ErrProcessDone
 	}
@@ -28,11 +28,8 @@ func killCommandGroup(cmd *exec.Cmd) error {
 	return err
 }
 
-func finishCommandProcess(cmd *exec.Cmd, stopGroup bool) error {
-	if !stopGroup {
-		return nil
-	}
-	err := killCommandGroup(cmd)
+func finish(cmd *exec.Cmd) error {
+	err := killGroup(cmd)
 	if errors.Is(err, os.ErrProcessDone) {
 		return nil
 	}

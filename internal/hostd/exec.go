@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
+	"github.com/easy-waf/easy-waf/internal/commandprocess"
 )
 
 // CommandRunner runs subprocesses without a shell.
@@ -26,13 +27,12 @@ type osRunner struct{}
 const (
 	hostCommandTimeout = 2 * time.Minute
 	aptCommandTimeout  = 30 * time.Minute
-	commandWaitDelay   = 2 * time.Second
+	commandWaitDelay   = commandprocess.WaitDelay
 )
 
 func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = commandWaitDelay
-	prepareCommandProcess(cmd)
+	commandprocess.Prepare(cmd)
 	var capture commandoutput.Capture
 	cmd.Stdout = capture.Stdout()
 	cmd.Stderr = capture.Stderr()
@@ -40,7 +40,7 @@ func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, [
 	out, stderr, captureErr := capture.Result()
 	// Ordinary control commands must not leave helpers running after releasing
 	// the rollback lock. Successful APT scripts may intentionally start services.
-	cleanupErr := finishCommandProcess(cmd, name != binAptGet || runErr != nil || captureErr != nil)
+	cleanupErr := commandprocess.Finish(cmd, name != binAptGet || runErr != nil || captureErr != nil)
 	code := 0
 	if runErr != nil {
 		var ee *exec.ExitError

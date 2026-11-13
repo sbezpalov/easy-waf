@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
+	"github.com/easy-waf/easy-waf/internal/commandprocess"
 )
 
 // Privileged sends a validated subcommand to easy-waf-hostd over the unix socket.
@@ -79,12 +80,19 @@ func Run(ctx context.Context, timeout time.Duration, name string, args ...string
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	commandprocess.Prepare(cmd)
 	var capture commandoutput.Capture
 	cmd.Stdout = capture.Stdout()
 	cmd.Stderr = capture.Stderr()
 	runErr := cmd.Run()
 	stdout, stderr, captureErr := capture.Result()
-	err := errors.Join(runErr, captureErr)
+	cleanupErr := commandprocess.Finish(cmd, true)
+	if runErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(runErr, ctxErr) {
+			runErr = errors.Join(runErr, ctxErr)
+		}
+	}
+	err := errors.Join(runErr, captureErr, cleanupErr)
 	if err != nil {
 		msg := strings.TrimSpace(string(stderr))
 		if msg == "" {

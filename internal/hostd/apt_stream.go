@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/commandprocess"
 )
 
 // aptActionLogPathOverride is set in tests to use a temp directory.
@@ -435,8 +437,7 @@ func execAptCommand(ctx context.Context, cmd *exec.Cmd, emit func(string) error)
 	defer stderr.Close()
 	defer stderrWriter.Close()
 	cmd.Stdout, cmd.Stderr = stdoutWriter, stderrWriter
-	cmd.WaitDelay = commandWaitDelay
-	prepareCommandProcess(cmd)
+	commandprocess.Prepare(cmd)
 	if err := cmd.Start(); err != nil {
 		return 1, err
 	}
@@ -445,7 +446,7 @@ func execAptCommand(ctx context.Context, cmd *exec.Cmd, emit func(string) error)
 	_ = stderrWriter.Close()
 	if cmd.Process != nil {
 		if err := writeAptActionPID(cmd.Process.Pid); err != nil {
-			cleanupErr := finishCommandProcess(cmd, true)
+			cleanupErr := commandprocess.Finish(cmd, true)
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			return 1, errors.Join(fmt.Errorf("write apt action pid: %w", err), cleanupErr)
@@ -512,7 +513,7 @@ func execAptCommand(ctx context.Context, cmd *exec.Cmd, emit func(string) error)
 	}
 	// A successful package script may intentionally start a service. Failed
 	// commands/capture must not leave their process group holding dpkg resources.
-	cleanupErr := finishCommandProcess(cmd, runErr != nil || captureErr != nil)
+	cleanupErr := commandprocess.Finish(cmd, runErr != nil || captureErr != nil)
 	resultErr := errors.Join(runErr, captureErr, cleanupErr)
 	code := cmd.ProcessState.ExitCode()
 	if code == 0 && resultErr != nil {
