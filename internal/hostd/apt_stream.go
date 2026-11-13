@@ -125,17 +125,42 @@ func SetAptActionLogPathOverrideForTest(path string) {
 
 // aptStreamConn serializes NDJSON writes (heartbeat and apt output share one bufio.Writer).
 type aptStreamConn struct {
-	bw *bufio.Writer
-	mu sync.Mutex
+	bw      *bufio.Writer
+	writer  io.Writer
+	expires time.Time
+	mu      sync.Mutex
 }
 
+const (
+	aptStreamWriteTimeout = 5 * time.Second
+	aptStreamLifetime     = 35 * time.Minute
+)
+
 func newAptStreamConn(conn io.Writer) *aptStreamConn {
-	return &aptStreamConn{bw: bufio.NewWriter(conn)}
+	return &aptStreamConn{bw: bufio.NewWriter(conn), writer: conn, expires: time.Now().Add(aptStreamLifetime)}
+}
+
+func (s *aptStreamConn) close() {
+	if closer, ok := s.writer.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 func (s *aptStreamConn) writeEvent(ev streamEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if time.Now().After(s.expires) {
+		return os.ErrDeadlineExceeded
+	}
+	if socket, ok := s.writer.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		deadline := time.Now().Add(aptStreamWriteTimeout)
+		if deadline.After(s.expires) {
+			deadline = s.expires
+		}
+		if err := socket.SetWriteDeadline(deadline); err != nil {
+			return err
+		}
+	}
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err
@@ -180,26 +205,15 @@ func dispatchAptStream(conn io.Writer, action string) {
 }
 
 func dispatchAptActionPrimary(sc *aptStreamConn, action string, record *aptActionRecord) {
-	clientDown := false
-	emitLine := func(line string) error {
-		if clientDown {
-			return nil
-		}
-		if err := sc.writeEvent(streamEvent{Type: "line", Data: line}); err != nil {
-			clientDown = true
-			return nil
-		}
-		return nil
-	}
-
+	delivery := newAptLiveDelivery(sc)
 	code, runErr := runAptPrimary(context.Background(), record, action, func(ctx context.Context, emit func(string) error) (int, error) {
 		return runAptActionStream(ctx, action, emit)
-	}, emitLine)
+	}, delivery.line)
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
 	}
-	_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
+	delivery.finish(code, errMsg)
 }
 
 func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
@@ -224,20 +238,20 @@ func followAptRecord(sc *aptStreamConn, record *aptActionRecord, banner string) 
 		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
-	clientDown := false
 	emitLine := func(line string) error {
-		if clientDown {
-			return nil
-		}
-		if err := sc.writeEvent(streamEvent{Type: "line", Data: line}); err != nil {
-			clientDown = true
-			return nil
-		}
-		return nil
+		return sc.writeEvent(streamEvent{Type: "line", Data: line})
 	}
 
-	_ = emitLine(banner)
-	<-record.ready
+	if err := emitLine(banner); err != nil {
+		return
+	}
+	readyTimeout := time.NewTimer(time.Until(sc.expires))
+	defer readyTimeout.Stop()
+	select {
+	case <-record.ready:
+	case <-readyTimeout.C:
+		return
+	}
 	if active, code, message := aptRecordSnapshot(record); active && message != "" {
 		emitExit(code, message)
 		return
@@ -248,6 +262,7 @@ func followAptRecord(sc *aptStreamConn, record *aptActionRecord, banner string) 
 	}
 
 	var offset int64
+	lastDelivery := time.Now()
 	for {
 		// Observe completion before reading: a completed run can no longer
 		// append, so the final drain cannot miss a line written before Finish.
@@ -259,7 +274,10 @@ func followAptRecord(sc *aptStreamConn, record *aptActionRecord, banner string) 
 		lines, newOff, err := readAptActionLogFileFrom(record.log, offset)
 		offset = newOff
 		for _, line := range lines {
-			_ = emitLine(line)
+			if err := emitLine(line); err != nil {
+				return
+			}
+			lastDelivery = time.Now()
 		}
 		if err != nil {
 			emitExit(-1, "cannot read apt action log: "+err.Error())
@@ -281,6 +299,12 @@ func followAptRecord(sc *aptStreamConn, record *aptActionRecord, banner string) 
 			}
 			emitExit(code, errMsg)
 			return
+		}
+		if time.Since(lastDelivery) >= aptActionHeartbeatInterval() {
+			if err := emitLine("==> waiting for apt action output ..."); err != nil {
+				return
+			}
+			lastDelivery = time.Now()
 		}
 		time.Sleep(250 * time.Millisecond)
 	}

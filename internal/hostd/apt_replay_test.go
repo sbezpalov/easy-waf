@@ -373,7 +373,11 @@ func TestAptLogCreationFailureCannotReportSuccess(t *testing.T) {
 	// not the earlier PID cleanup (ENOTDIR classification differs by platform).
 	SetAptActionLogPathOverrideForTest(blocker)
 	called := false
-	SetAptUpgradeStreamHookForTest(func(context.Context, func(string) error) (int, error) { called = true; return 0, nil })
+	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
+		called = true
+		_ = emit("output survives log creation failure")
+		return 0, nil
+	})
 	var output bytes.Buffer
 	dispatchAptStream(&output, "upgrade")
 	if !called {
@@ -381,6 +385,15 @@ func TestAptLogCreationFailureCannotReportSuccess(t *testing.T) {
 	}
 	events := readStreamEvents(t, &output)
 	last := events[len(events)-1]
+	liveOutput := false
+	for _, event := range events {
+		if event.Data == "output survives log creation failure" {
+			liveOutput = true
+		}
+	}
+	if !liveOutput {
+		t.Fatal("saved-log failure prevented healthy live delivery")
+	}
 	if last.Code == 0 || !strings.Contains(last.Error, "apt action log") {
 		t.Fatalf("unavailable log reported as success: %+v", last)
 	}

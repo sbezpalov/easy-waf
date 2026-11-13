@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/host/apt"
@@ -402,9 +403,23 @@ func (s *Server) hostAutoremovePreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+const aptHTTPWriteTimeout = 5 * time.Second
+
 func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerOp, auditEvent, auditDoneEvent string, brokerArgs ...string) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
+	// chi's logging wrapper implements Flush without returning the underlying
+	// FlushError. Writes still pass through it for logging; unwrap only this
+	// known non-buffering wrapper for error-aware flushes.
+	flushTarget := w
+	for {
+		wrapped, ok := flushTarget.(middleware.WrapResponseWriter)
+		if !ok {
+			break
+		}
+		flushTarget = wrapped.Unwrap()
+	}
+	flushController := http.NewResponseController(flushTarget)
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -419,11 +434,35 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 
 	exitCode := -1
 	exitSeen := false
-	flush := func() {
-		_ = rc.Flush()
+	clientFailed := false
+	writeLine := func(line []byte) error {
+		// Bound each delivery, not the interval between events: an HTTP/2
+		// write deadline left armed while idle can terminate a healthy stream.
+		err := rc.SetWriteDeadline(time.Now().Add(aptHTTPWriteTimeout))
+		if err != nil && !errors.Is(err, http.ErrNotSupported) {
+			clientFailed = true
+			return err
+		}
+		if _, err := w.Write(append(line, '\n')); err != nil {
+			clientFailed = true
+			return err
+		}
+		if err := flushController.Flush(); err != nil {
+			clientFailed = true
+			return err
+		}
+		err = rc.SetWriteDeadline(time.Time{})
+		if err != nil && !errors.Is(err, http.ErrNotSupported) {
+			clientFailed = true
+			return err
+		}
+		return nil
 	}
 
 	err := privilegedStreamFn(r.Context(), func(line []byte) error {
+		if err := writeLine(line); err != nil {
+			return err
+		}
 		var ev struct {
 			Type  string `json:"type"`
 			Code  *int   `json:"code"`
@@ -433,10 +472,6 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 			exitCode = *ev.Code
 			exitSeen = true
 		}
-		if _, werr := w.Write(append(line, '\n')); werr != nil {
-			return werr
-		}
-		flush()
 		return nil
 	}, argv...)
 	if err == nil && !exitSeen {
@@ -444,9 +479,10 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 	}
 	if err != nil {
 		// Client may have disconnected; broker still runs apt — do not claim the action stopped.
-		b, _ := json.Marshal(map[string]any{"type": "exit", "code": -1, "error": err.Error()})
-		_, _ = w.Write(append(b, '\n'))
-		flush()
+		if !clientFailed {
+			b, _ := json.Marshal(map[string]any{"type": "exit", "code": -1, "error": err.Error()})
+			_ = writeLine(b)
+		}
 		return
 	}
 

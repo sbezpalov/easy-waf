@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
 	"github.com/easy-waf/easy-waf/internal/audit"
@@ -159,10 +160,12 @@ func TestHostAptObservationAuditDoesNotClaimAnUpgrade(t *testing.T) {
 	for _, fixture := range []struct {
 		name, event string
 		code        int
+		failFlush   bool
 	}{
-		{"completed", `{"type":"exit","code":0}`, 0},
-		{"replaced", `{"type":"exit","code":-1,"error":"run changed"}`, -1},
-		{"transport", "", -1},
+		{name: "completed", event: `{"type":"exit","code":0}`},
+		{name: "replaced", event: `{"type":"exit","code":-1,"error":"run changed"}`, code: -1},
+		{name: "transport", code: -1},
+		{name: "client_delivery", event: `{"type":"exit","code":0}`, failFlush: true},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			privilegedStreamFn = func(_ context.Context, onLine func([]byte) error, _ ...string) error {
@@ -174,10 +177,16 @@ func TestHostAptObservationAuditDoesNotClaimAnUpgrade(t *testing.T) {
 			user := "apt-observer-" + uuid.NewString()
 			ctx := audit.WithMeta(t.Context(), audit.Meta{User: user})
 			req := httptest.NewRequest(http.MethodPost, "/?run_id="+aptObserveTestID, nil).WithContext(ctx)
-			s.hostAptAttachStream(httptest.NewRecorder(), req)
+			var writer http.ResponseWriter = httptest.NewRecorder()
+			if fixture.failFlush {
+				writer = middleware.NewWrapResponseWriter(&aptHTTPDeliveryProbe{
+					streamSpy: &streamSpy{}, phase: "flush", failure: errors.New("fixture client flush failure"),
+				}, 1)
+			}
+			s.hostAptAttachStream(writer, req)
 			entries, more, err := st.ListAuditLogs(ctx, store.AuditListParams{User: user, Limit: 10})
 			want := 2
-			if fixture.event == "" {
+			if fixture.event == "" || fixture.failFlush {
 				want = 1
 			}
 			if err != nil || more || len(entries) != want {

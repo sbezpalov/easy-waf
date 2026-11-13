@@ -30,6 +30,13 @@ func TestHostdCommandProcessHelper(_ *testing.T) {
 			os.Exit(91)
 		}
 	}
+	if mode == "burst" {
+		for range 128 {
+			_, _ = fmt.Fprintln(os.Stdout, "fixture stdout "+strings.Repeat("o", 4096))
+			_, _ = fmt.Fprintln(os.Stderr, "fixture stderr "+strings.Repeat("e", 4096))
+		}
+		os.Exit(0)
+	}
 	if mode == "exit" {
 		_, _ = fmt.Fprintln(os.Stdout, "captured stdout")
 		_, _ = fmt.Fprintln(os.Stderr, "captured stderr")
