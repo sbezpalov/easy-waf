@@ -55,9 +55,18 @@ type streamEvent struct {
 	Error string `json:"error,omitempty"`
 }
 
+type aptActionPhase uint8
+
+const (
+	aptIdle      aptActionPhase = iota
+	aptLocal                    // owned by this broker, including the gap before PID publication
+	aptRecovered                // observed a surviving child whose result this broker cannot collect
+	aptFinished                 // this broker collected the exit result
+)
+
 var (
 	aptActionMu         sync.Mutex
-	aptActionActive     bool
+	aptActionState      aptActionPhase
 	aptActionLastCode   int
 	aptActionLastErr    string
 	aptActionStreamHook func(ctx context.Context, action string, emit func(string) error) (code int, err error)
@@ -127,19 +136,19 @@ func clearAptActionPID() error {
 func aptActionTryStart() (bool, error) {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
-	if aptActionActive {
+	if aptActionState == aptLocal {
 		return false, nil
 	}
 	// Persist across hostd restarts: an apt-get left running still owns the
 	// dpkg lock; treat it as in-flight so callers attach instead of starting a second.
-	if aptActionPIDAlive() {
-		aptActionActive = true
+	if aptActionState != aptFinished && aptActionPIDAlive() {
+		aptActionState = aptRecovered
 		return false, nil
 	}
 	if err := clearAptActionPID(); err != nil {
 		return false, fmt.Errorf("clear apt action pid: %w", err)
 	}
-	aptActionActive = true
+	aptActionState = aptLocal
 	aptActionLastCode = 0
 	aptActionLastErr = ""
 	return true, nil
@@ -147,29 +156,35 @@ func aptActionTryStart() (bool, error) {
 
 func aptActionFinish(code int, errMsg string) {
 	aptActionMu.Lock()
-	aptActionActive = false
-	aptActionLastCode = code
-	aptActionLastErr = errMsg
-	aptActionMu.Unlock()
+	defer aptActionMu.Unlock()
+	// Clear the old PID before releasing single-flight ownership. Otherwise a
+	// new primary could publish its PID and have this completion remove it.
 	if err := clearAptActionPID(); err != nil {
 		logOp("clear apt action pid: %v", err)
 	}
+	aptActionState = aptFinished
+	aptActionLastCode = code
+	aptActionLastErr = errMsg
 }
 
 func aptActionSnapshot() (active bool, code int, errMsg string) {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
-	alive := aptActionPIDAlive()
-	if aptActionActive {
-		if !alive {
-			// Primary Finish clears the PID; if the PID vanished without Finish
-			// (hostd restart while apt exited), drop the stale in-memory flag.
-			aptActionActive = false
-		}
-		return aptActionActive, aptActionLastCode, aptActionLastErr
+	if aptActionState == aptLocal {
+		// PID liveness cannot release a local reservation: the child may not
+		// have started yet, or may have exited before its owner calls Finish.
+		return true, aptActionLastCode, aptActionLastErr
 	}
-	if alive {
+	if aptActionState == aptFinished {
+		return false, aptActionLastCode, aptActionLastErr
+	}
+	if aptActionPIDAlive() {
+		aptActionState = aptRecovered
 		return true, 0, ""
+	}
+	_, pidErr := readAptActionPID()
+	if aptActionState == aptRecovered || !os.IsNotExist(pidErr) {
+		return false, -1, "apt action exit status unavailable after broker restart; inspect the apt action log"
 	}
 	return false, aptActionLastCode, aptActionLastErr
 }
@@ -182,7 +197,7 @@ func ResetAptUpgradeStateForTest() {
 // ResetAptActionStateForTest clears single-flight state (tests only).
 func ResetAptActionStateForTest() {
 	aptActionMu.Lock()
-	aptActionActive = false
+	aptActionState = aptIdle
 	aptActionLastCode = 0
 	aptActionLastErr = ""
 	aptActionMu.Unlock()

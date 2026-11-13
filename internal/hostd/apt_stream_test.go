@@ -59,6 +59,46 @@ func readStreamEvents(t *testing.T, r io.Reader) []streamEvent {
 	return out
 }
 
+func TestAptStatusCannotReleaseLocalSingleFlightBeforePIDExists(t *testing.T) {
+	overrideAptActionLogForTest(t)
+	resetAptUpgradeState()
+	defer resetAptUpgradeState()
+	started, err := aptActionTryStart()
+	if err != nil || !started {
+		t.Fatalf("start: %v, %v", started, err)
+	}
+	if active, _, _ := aptActionSnapshot(); !active {
+		t.Error("status cleared the reservation before the child PID was persisted")
+	}
+	if started, err := aptActionTryStart(); err != nil || started {
+		t.Fatalf("status allowed a second primary: %v, %v", started, err)
+	}
+	aptActionFinish(2, "apt failed")
+	if active, code, message := aptActionSnapshot(); active || code != 2 || message != "apt failed" {
+		t.Fatalf("finished result lost: active=%v code=%d error=%q", active, code, message)
+	}
+}
+
+func TestAptStatusCannotInventSuccessForRecoveredDeadPID(t *testing.T) {
+	overrideAptActionLogForTest(t)
+	resetAptUpgradeState()
+	defer resetAptUpgradeState()
+	// An invalid/non-live PID models stale bookkeeping after a broker restart.
+	if err := writeAptActionPID(0); err != nil {
+		t.Fatal(err)
+	}
+	if active, code, message := aptActionSnapshot(); active || code != -1 || message == "" {
+		t.Fatalf("unknown result reported as success: active=%v code=%d error=%q", active, code, message)
+	}
+	if started, err := aptActionTryStart(); err != nil || !started {
+		t.Fatalf("stale PID blocked a new operation: %v, %v", started, err)
+	}
+	aptActionFinish(0, "")
+	if active, code, message := aptActionSnapshot(); active || code != 0 || message != "" {
+		t.Fatalf("new operation result did not replace unknown state: active=%v code=%d error=%q", active, code, message)
+	}
+}
+
 func TestDispatchAptUpgradeStream_emitsLinesAndExit(t *testing.T) {
 	resetAptUpgradeState()
 	SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
@@ -160,7 +200,7 @@ func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 		close(started)
 		_ = emit("primary-line")
 		time.Sleep(300 * time.Millisecond)
-		return 0, nil
+		return 7, nil
 	})
 
 	pr1, pw1 := io.Pipe()
@@ -185,7 +225,7 @@ func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 		t.Fatalf("attach banner: %+v", events[0])
 	}
 	last := events[len(events)-1]
-	if last.Type != "exit" || last.Code != 0 {
+	if last.Type != "exit" || last.Code != 7 {
 		t.Fatalf("attach exit: %+v", last)
 	}
 	_ = pr1.Close()
