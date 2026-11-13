@@ -19,11 +19,15 @@ type recordingRunner struct {
 	nftSeen []string
 	failOn  map[string]bool
 	onStop  func()
+	onRun   func(string, []string)
 }
 
 func (m *recordingRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	call := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	m.calls = append(m.calls, call)
+	if m.onRun != nil {
+		m.onRun(name, args)
+	}
 	if name == binNft && len(args) == 2 && args[0] == "-f" {
 		b, _ := os.ReadFile(args[1])
 		m.nftSeen = append(m.nftSeen, string(b))
@@ -66,6 +70,98 @@ func rollbackTestEnv(t *testing.T) (*recordingRunner, string) {
 }
 
 const testToken = "abcdef0123456789abcdef0123456789"
+
+func replaceBackupWithNonemptyDirectory(t *testing.T, backup string) {
+	t.Helper()
+	if err := os.Remove(backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(backup, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backup, "keep"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRevertReportsCleanupFailureAndCanRetry(t *testing.T) {
+	for _, scenario := range []string{"nft", "nft-empty", "netplan"} {
+		t.Run(scenario, func(t *testing.T) {
+			m, _ := rollbackTestEnv(t)
+			kind, data := "nft", []byte("table inet easy_waf { }\n")
+			if scenario == "nft-empty" {
+				data = nil
+				writeRules(t)
+			} else if scenario == "netplan" {
+				kind = "netplan"
+				data = []byte("network: {version: 2, ethernets: {}}\n")
+			}
+			backup := rollbackBackupPath(kind, testToken)
+			if err := stateWriteFile(backup, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			m.onRun = func(string, []string) {
+				m.onRun = nil
+				replaceBackupWithNonemptyDirectory(t, backup)
+			}
+			if err := RunRevert(kind, testToken); err == nil || !strings.Contains(err.Error(), "remove pending rollback") {
+				t.Fatalf("rollback cleanup failure hidden: %v", err)
+			}
+			if err := os.Remove(filepath.Join(backup, "keep")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(backup); err != nil {
+				t.Fatal(err)
+			}
+			if err := stateWriteFile(backup, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := RunRevert(kind, testToken); err != nil {
+				t.Fatalf("retry after repair failed: %v", err)
+			}
+			if _, err := os.Stat(backup); !os.IsNotExist(err) {
+				t.Fatalf("retry left pending backup: %v", err)
+			}
+		})
+	}
+}
+
+func TestNetplanRevertReportsLiveFileRemovalFailure(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	backup := rollbackBackupPath("netplan", testToken)
+	if err := stateWriteFile(backup, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(netplanPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(netplanPath, "keep"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunRevert("netplan", testToken); err == nil || !strings.Contains(err.Error(), "remove netplan") {
+		t.Fatalf("failed live-file removal hidden: %v", err)
+	}
+	if len(m.calls) != 0 {
+		t.Fatalf("netplan applied despite failed removal: %v", m.calls)
+	}
+	if _, err := os.Stat(backup); err != nil {
+		t.Fatalf("pending recovery backup lost: %v", err)
+	}
+}
+
+func TestTimerFailureReportsBackupCleanupFailure(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	m.failOn["systemd-run"] = true
+	m.onRun = func(name string, _ []string) {
+		if name == "systemd-run" {
+			replaceBackupWithNonemptyDirectory(t, rollbackBackupPath("netplan", testToken))
+		}
+	}
+	err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90)
+	if err == nil || !strings.Contains(err.Error(), "systemd-run") || !strings.Contains(err.Error(), "remove pending rollback") {
+		t.Fatalf("timer/cleanup failure not preserved: %v", err)
+	}
+}
 
 func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 	for _, kind := range []string{"nft", "netplan"} {

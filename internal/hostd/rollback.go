@@ -214,13 +214,20 @@ func revertNft(token string) error {
 		// the tables it declared. The persisted empty-ruleset marker has the
 		// same meaning on later apply/revert cycles. Never globally flush:
 		// fail2ban, CrowdSec and Docker may own other tables.
-		current, _ := os.ReadFile(nftRulesPath)
-		script := nftDestroyScript(current)
-		if script == "" {
-			return fmt.Errorf("nft revert: managed ruleset declares no table to destroy (refusing global flush)")
+		current, err := os.ReadFile(nftRulesPath)
+		if err != nil {
+			return fmt.Errorf("read current managed ruleset: %w", err)
 		}
-		if err := runNftScript(ctx, script); err != nil {
-			return err
+		// Cleanup or guard reload may have failed after the previous attempt
+		// removed the tables and wrote the marker. Retry the remaining steps.
+		if string(current) != nftEmptyRuleset {
+			script := nftDestroyScript(current)
+			if script == "" {
+				return fmt.Errorf("nft revert: managed ruleset declares no table to destroy (refusing global flush)")
+			}
+			if err := runNftScript(ctx, script); err != nil {
+				return err
+			}
 		}
 		if err := writeFileAtomic(nftRulesPath, []byte(nftEmptyRuleset), nftRulesMode); err != nil {
 			return err
@@ -228,7 +235,9 @@ func revertNft(token string) error {
 		if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
 			return err
 		}
-		_ = stateRemoveFile(bak)
+		if err := removePendingRollback(bak); err != nil {
+			return err
+		}
 		logOp("nft reverted to no managed ruleset (token %s)", token)
 		return nil
 	}
@@ -247,7 +256,9 @@ func revertNft(token string) error {
 	if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
 		return err
 	}
-	_ = stateRemoveFile(bak)
+	if err := removePendingRollback(bak); err != nil {
+		return err
+	}
 	logOp("nft reverted (token %s)", token)
 	return nil
 }
@@ -327,14 +338,18 @@ func revertNetplan(token string) error {
 			return err
 		}
 	} else {
-		_ = os.Remove(netplanPath)
+		if err := os.Remove(netplanPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove netplan configuration: %w", err)
+		}
 	}
 	ctx := context.Background()
 	_, stderr, code, err := runCmd(ctx, DefaultRunner, binNetplan, "apply")
 	if err != nil || code != 0 {
 		return fmt.Errorf("netplan apply: %s", string(stderr))
 	}
-	_ = stateRemoveFile(bak)
+	if err := removePendingRollback(bak); err != nil {
+		return err
+	}
 	logOp("netplan reverted (token %s)", token)
 	return nil
 }
@@ -359,8 +374,7 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 		return err
 	}
 	if err := scheduleRevert(ctx, r, kind, token, timeoutSec); err != nil {
-		_ = stateRemoveFile(bak)
-		return err
+		return errors.Join(err, removePendingRollback(bak))
 	}
 	return nil
 }
@@ -410,6 +424,10 @@ func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token str
 	if err := stopRollbackUnit(ctx, r, kind, token); err != nil {
 		return err
 	}
+	return removePendingRollback(backup)
+}
+
+func removePendingRollback(backup string) error {
 	if err := stateRemoveFile(backup); err != nil {
 		return fmt.Errorf("remove pending rollback: %w", err)
 	}

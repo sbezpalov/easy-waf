@@ -24,6 +24,8 @@ Only one unconfirmed change per subsystem (network or firewall) is allowed. Anot
 
 Before arming the timer, the existing configuration must pass the same policy validation used by rollback. An incompatible baseline (for example, an nftables `include` or unsupported netplan tunnel) rejects the new safe apply without changing the live file. Backups are limited to 16 MiB; oversized files are rejected rather than truncated. The generated no-managed-ruleset marker is restored by removing the newly declared tables, including on repeated apply/revert cycles.
 
+A revert reports failure if the live netplan file cannot be removed or the pending backup cannot be deleted. Pending recovery state remains available for retry after the filesystem problem is repaired. Retrying an nftables revert that already wrote the no-managed-ruleset marker resumes guard reload and cleanup without attempting to rediscover removed tables. Timer-creation errors also report any failure to clean up their unused backup.
+
 ### `POST /host/updates/upgrade/stream` (live apt log)
 
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).
