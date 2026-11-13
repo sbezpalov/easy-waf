@@ -112,8 +112,9 @@ verify.:
 test-backup-restore-e2e:
 	bash scripts/test-backup-restore.sh
 
+# Integration packages share DATABASE_URL; match CI's package serialization.
 test:
-	go test ./...
+	go test -p 1 ./...
 
 # Regenerate internal/haproxy/testdata/golden/*.cfg and companion .crt-list.txt from Render().
 golden-update:

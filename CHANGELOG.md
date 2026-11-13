@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reliable local database test gate.** `make test` now serializes packages like CI, preventing shared PostgreSQL settings/revision fixtures from corrupting each other's expectations. Development docs give the same native Go command for Windows and macOS and distinguish skipped database tests from integration coverage.
 - **Unambiguous broker stream results.** Live observation and saved-log download now reject duplicate/case-folded fields, null metadata and invalid UTF-8 before interpreting completion or forwarding data. A failed result cannot become a successful download through a second spelling of `code`; valid legacy events and future metadata remain supported.
 - **Verified browser package streams.** The panel rejects malformed, oversized or incomplete NDJSON instead of displaying success, completes on a verified exit without waiting for EOF, and releases its reader on all paths. Nonzero reconnect outcomes stay visible without an error string; live output keeps a bounded tail with an explicit truncation notice.
 - **Single package interaction in the panel.** Update checks, cache cleanup and live/reconnected package streams share control ownership through completion and error handling. Reopening System avoids duplicate observation; disk/list replies cannot re-enable busy cleanup or overwrite a newer operation's log.

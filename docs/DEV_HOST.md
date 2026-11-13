@@ -67,7 +67,7 @@ The reference environment is Ubuntu 24.04, which is also what CI uses
 ssh waf-dev 'cd ~/easy-waf && git pull && make ci'
 ```
 
-`make ci` covers `go vet`, the pinned `golangci-lint`, `go test ./...` and
+`make ci` covers `go vet`, the pinned `golangci-lint`, `go test -p 1 ./...` and
 `make verify` (including ShellCheck). Two things only a Linux host with HAProxy
 installed can prove:
 
@@ -83,12 +83,28 @@ ssh waf-dev 'cd ~/easy-waf && sudo bash scripts/smoke-appliance.sh'
 Pull on the host **before** running anything, or you will be testing older code
 and chasing failures that do not exist.
 
-## 4. Working from Windows
+## 4. Working from Windows or macOS
 
-Development on Windows is fine, but treat Linux as the source of truth:
+Windows and macOS support native Go development. Ubuntu 24.04 remains the
+appliance validation target. The same native commands work in PowerShell and
+POSIX shells:
+
+```text
+go test -p 1 -count=1 ./...
+go vet ./...
+```
+
+Set `DATABASE_URL` to a disposable test PostgreSQL instance for integration
+coverage; without it, database-dependent tests skip. Packages share settings,
+revisions and other state in that database, so run them one at a time (`-p 1`),
+as `make test` and CI do. Do not run multiple test commands against the same
+database concurrently or use an appliance's production database.
 
 - shell scripts must keep **LF** endings (`.gitattributes` enforces
   `scripts/**/*.sh text eol=lf`; bash fails on CRLF with `$'\r': command not found`);
 - never commit `.exe` or `.dll` build artifacts — `scripts/check-linux-artifacts.sh`
   fails the build if you do;
-- run the checks from Git Bash, WSL or the dev host, not `go test` alone.
+- native Go tests cover components; the complete `make ci` gate also needs a
+  POSIX shell and its verification tools. On Windows use a prepared Git Bash/
+  WSL environment or the dev host; on macOS use the native POSIX environment.
+  HAProxy/systemd/appliance checks still run on the Ubuntu target.
