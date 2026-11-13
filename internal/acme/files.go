@@ -22,6 +22,10 @@ import (
 // ambiguous DB commits may leave an unreferenced generation; never remove it on
 // a commit error, because the DB may have committed despite a lost acknowledgement.
 func WriteCertificateResource(stateDir, certID string, res *certificate.Resource) (fullchainPath, keyPath string, notBefore, notAfter time.Time, err error) {
+	return writeCertificateGeneration(stateDir, certID, res, "generation-")
+}
+
+func writeCertificateGeneration(stateDir, certID string, res *certificate.Resource, prefix string) (fullchainPath, keyPath string, notBefore, notAfter time.Time, err error) {
 	if res == nil {
 		return "", "", time.Time{}, time.Time{}, fmt.Errorf("nil resource")
 	}
@@ -40,7 +44,7 @@ func WriteCertificateResource(stateDir, certID string, res *certificate.Resource
 	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return "", "", time.Time{}, time.Time{}, err
 	}
-	dir, err := os.MkdirTemp(parent, "generation-*")
+	dir, err := os.MkdirTemp(parent, prefix+"*")
 	if err != nil {
 		return "", "", time.Time{}, time.Time{}, err
 	}
@@ -66,25 +70,13 @@ func WriteCertificateResource(stateDir, certID string, res *certificate.Resource
 
 // SaveOrphanCertificateResource keeps PEMs when the ACME claim was lost after a
 // successful Obtain so Let's Encrypt quota is not thrown away. Files land under
-// certs/<id>/orphan-<stamp>/ for operator recovery / later reuse.
+// unique private certs/<id>/orphan-* directories for operator recovery / reuse.
 func SaveOrphanCertificateResource(stateDir, certID string, res *certificate.Resource) (string, error) {
-	if res == nil {
-		return "", fmt.Errorf("nil resource")
-	}
-	if err := config.ValidateResourceID("certificate", certID); err != nil {
+	full, _, _, _, err := writeCertificateGeneration(stateDir, certID, res, "orphan-")
+	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(stateDir, "certs", certID, "orphan-"+time.Now().UTC().Format("20060102-150405"))
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", err
-	}
-	if err := apply.WriteAtomic(filepath.Join(dir, "fullchain.pem"), res.Certificate, 0o600); err != nil {
-		return "", err
-	}
-	if err := apply.WriteAtomic(filepath.Join(dir, "privkey.pem"), res.PrivateKey, 0o600); err != nil {
-		return "", err
-	}
-	return dir, nil
+	return filepath.Dir(full), nil
 }
 
 func parseFirstCertTimes(pemChain []byte) (time.Time, time.Time, error) {

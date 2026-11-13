@@ -10,10 +10,68 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-acme/lego/v4/certificate"
 )
+
+func TestOrphanCertificatesHaveIndependentPrivateDirectories(t *testing.T) {
+	state := t.TempDir()
+	const attempts = 12
+	type result struct {
+		dir      string
+		err      error
+		resource *certificate.Resource
+	}
+	results := make(chan result, attempts)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range attempts {
+		res, err := issueTestResource()
+		if err != nil {
+			t.Fatal(err)
+		}
+		wg.Go(func() {
+			<-start
+			dir, err := SaveOrphanCertificateResource(state, "test-cert", res)
+			results <- result{dir: dir, err: err, resource: res}
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	seen := map[string]bool{}
+	for got := range results {
+		if got.err != nil {
+			t.Error(got.err)
+			continue
+		}
+		if seen[got.dir] {
+			t.Error("independent results share a recovery directory")
+		}
+		seen[got.dir] = true
+		chain, err := os.ReadFile(filepath.Join(got.dir, "fullchain.pem"))
+		if err != nil || !bytes.Equal(chain, got.resource.Certificate) {
+			t.Error("recovery certificate was replaced")
+		}
+		key, err := os.ReadFile(filepath.Join(got.dir, "privkey.pem"))
+		if err != nil || !bytes.Equal(key, got.resource.PrivateKey) {
+			t.Error("recovery private key was replaced")
+		}
+		if _, err := tls.X509KeyPair(chain, key); err != nil {
+			t.Error("recovery pair is mismatched")
+		}
+		if runtime.GOOS != "windows" {
+			for path, want := range map[string]os.FileMode{got.dir: 0o700, filepath.Join(got.dir, "fullchain.pem"): 0o600, filepath.Join(got.dir, "privkey.pem"): 0o600} {
+				info, err := os.Stat(path)
+				if err != nil || info.Mode().Perm() != want {
+					t.Error("recovery material permissions are not private")
+				}
+			}
+		}
+	}
+}
 
 func TestWriteCertificateResourceRejectsTraversalID(t *testing.T) {
 	_, _, _, _, err := WriteCertificateResource(t.TempDir(), "../../acme/webroot/.well-known/acme-challenge", &certificate.Resource{})
@@ -111,6 +169,9 @@ func TestCertificateGenerationRejectsInvalidPairWithoutWrites(t *testing.T) {
 	for _, invalid := range []*certificate.Resource{nil, {}, {Certificate: res.Certificate, PrivateKey: other.PrivateKey}, {Certificate: []byte("partial certificate"), PrivateKey: res.PrivateKey}} {
 		if _, _, _, _, err := WriteCertificateResource(state, "test-cert", invalid); err == nil {
 			t.Fatal("invalid resource accepted")
+		}
+		if _, err := SaveOrphanCertificateResource(state, "test-cert", invalid); err == nil {
+			t.Fatal("invalid recovery resource accepted")
 		}
 	}
 	entries, err := os.ReadDir(state)

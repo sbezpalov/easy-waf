@@ -124,6 +124,11 @@ change. Schema downgrade protection rejects older binaries after migration 027;
 rollback requires the normal matched pre-upgrade database/state restore procedure,
 tested on a copy first, rather than deleting the pending-work table.
 
+When a successful issuance loses its database claim, its validated PEM pair is
+saved in a separate private `certs/<id>/orphan-*` directory for manual recovery.
+Each result has a unique directory even when attempts finish simultaneously;
+these files are not automatically published or applied. A failed save is logged.
+
 ## Multiple hostnames / one public IP
 
 Each **certificate** is a separate row (DNS names in `primary_domain` / `san`). Each **application** sets `certificate_id` to the cert that covers its `public_host`. HAProxy uses a **single `crt-list`** on **:443** so **SNI** selects the right PEM while **Host** routes to the backend — see **TLS, SNI, and per-application certificates** in [ARCHITECTURE.md](ARCHITECTURE.md).
