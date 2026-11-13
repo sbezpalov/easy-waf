@@ -172,6 +172,13 @@ func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketR
 		ctx = context.WithoutCancel(ctx)
 	}
 	switch req.Argv[0] {
+	case "apt-action-log-stream":
+		if len(req.Argv) != 1 {
+			_ = newAptStreamConn(c).writeEvent(streamEvent{Type: "exit", Code: -1, Error: "saved APT log takes no arguments"})
+			return
+		}
+		dispatchAptLogDownload(c)
+		return
 	case "apt-action-attach-stream":
 		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
 		if len(req.Argv) != 2 {

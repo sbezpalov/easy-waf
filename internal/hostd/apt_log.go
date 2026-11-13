@@ -11,13 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // The apt action log lives in the root-only hostd state directory. These
 // wrappers keep access descriptor-anchored there and fall back to plain file
 // access only for the temp-directory override tests use. See statefile.go.
 
-const maxAptActionLogBytes = 64 << 20
+const maxAptActionLogBytes = hostspec.MaxAPTLogBytes
 
 func underStateDir(path string) bool {
 	_, err := stateRel(path)

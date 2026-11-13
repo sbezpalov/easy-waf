@@ -92,6 +92,10 @@ func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
 // Relay tests own their wire peer; actual broker/worker package ownership is
 // exercised by hostd's real systemd integration fixture.
 func streamWireFixture(t *testing.T, body func(net.Conn) error) func() error {
+	return streamWireFixtureFor(t, "apt-upgrade-stream", body)
+}
+
+func streamWireFixtureFor(t *testing.T, opcode string, body func(net.Conn) error) func() error {
 	t.Helper()
 	socket := shortTempSock(t)
 	listener, err := net.Listen("unix", socket)
@@ -118,7 +122,7 @@ func streamWireFixture(t *testing.T, body func(net.Conn) error) func() error {
 			result = err
 			return
 		}
-		if len(request.Argv) != 1 || request.Argv[0] != "apt-upgrade-stream" {
+		if len(request.Argv) != 1 || request.Argv[0] != opcode {
 			result = fmt.Errorf("unexpected relay request: %v", request.Argv)
 			return
 		}

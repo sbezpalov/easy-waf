@@ -100,7 +100,7 @@ func TestAPTProxyUnavailableDoesNotExecuteLocally(t *testing.T) {
 	previous := DefaultRunner
 	DefaultRunner = runner
 	t.Cleanup(func() { DefaultRunner = previous })
-	for _, op := range []string{"apt-update", "apt-upgrade-stream", "apt-action-attach-stream"} {
+	for _, op := range []string{"apt-update", "apt-upgrade-stream", "apt-action-attach-stream", "apt-action-log-stream"} {
 		t.Run(op, func(t *testing.T) {
 			client, proxy := net.Pipe()
 			socket := shortTempSock(t)

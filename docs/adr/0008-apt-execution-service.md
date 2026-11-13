@@ -67,10 +67,15 @@ Forwarding retains bounded memory, per-write deadlines and the existing overall
 operation lifetime. The worker is an additional internal root service to monitor.
 Each broker/worker listener admits at most 32 concurrent handlers, closing excess
 connections before decoding or dispatch. Request JSON objects are limited to
-64 KiB including whitespace. Saved-log downloads encode 32 KiB source chunks,
-retaining a single JSON response without whole-log allocation in the APT owner.
-These limits bound those transport resources; they do not impose a service-wide
-memory limit on external package tools or the API's decoded response.
+64 KiB including whitespace. Legacy saved-log JSON aliases encode 32 KiB source
+chunks without whole-log allocation in the APT owner. New API downloads use the
+read-only `apt-action-log-stream` snapshot opcode and bounded NDJSON frames.
+They validate completion into private temporary storage before serving the same
+plain-text URL, avoiding a whole-log decode in the API while retaining HTTP 500
+for incomplete downloads. Two admitted downloads and decoded-size/time limits
+bound this storage; see [download limits](../HOST-API.md). No mutating or legacy
+whole-JSON fallback is permitted during a rolling upgrade. These policies do not
+impose a service-wide memory limit on external package tools or other API replies.
 
 Worker failure, SIGKILL, power loss and full host reboot remain distinct from
 broker restart. Restarting the worker can lose its last in-memory result; saved

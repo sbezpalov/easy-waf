@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"unicode/utf8"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
-const aptLogResponseChunkBytes = 32 << 10
+const aptLogResponseChunkBytes = hostspec.APTLogChunkBytes
 
 func writeAptActionLogResponse(w io.Writer) error {
 	f, err := openAptActionLog(aptActionLogPath())
@@ -43,35 +45,16 @@ func writeAptLogJSON(w io.Writer, r io.Reader, size int64) error {
 	if _, err := bw.WriteString(`{"stdout":"`); err != nil {
 		return err
 	}
-	buf := make([]byte, aptLogResponseChunkBytes+utf8.UTFMax)
-	var carry int
-	var readErr error
-	for size > 0 {
-		want := int(min(size, aptLogResponseChunkBytes))
-		var n int
-		n, readErr = io.ReadFull(r, buf[carry:carry+want])
-		size -= int64(n)
-		data := buf[:carry+n]
-		end := len(data)
-		if readErr == nil && size > 0 {
-			for start := max(0, len(data)-(utf8.UTFMax-1)); start < len(data); start++ {
-				if utf8.RuneStart(data[start]) && !utf8.FullRune(data[start:]) {
-					end = start
-					break
-				}
-			}
-		}
-		encoded, err := json.Marshal(string(data[:end]))
+	readErr, err := readAptLogChunks(r, size, func(data []byte) error {
+		encoded, err := json.Marshal(string(data))
 		if err != nil {
 			return err
 		}
-		if _, err := bw.Write(encoded[1 : len(encoded)-1]); err != nil {
-			return err
-		}
-		carry = copy(buf, data[end:])
-		if readErr != nil {
-			break
-		}
+		_, err = bw.Write(encoded[1 : len(encoded)-1])
+		return err
+	})
+	if err != nil {
+		return err
 	}
 	// Metadata follows stdout: an I/O failure after a partial read must not be
 	// reported as a successful download. A failed socket write returns at once.
@@ -99,4 +82,34 @@ func writeAptLogJSON(w io.Writer, r io.Reader, size int64) error {
 		return err
 	}
 	return bw.Flush()
+}
+
+// Keep an incomplete UTF-8 tail with the next source chunk. Callbacks borrow
+// this buffer only until return; read and delivery errors remain distinguishable.
+func readAptLogChunks(r io.Reader, size int64, emit func([]byte) error) (readErr, deliveryErr error) {
+	buf := make([]byte, aptLogResponseChunkBytes+utf8.UTFMax)
+	var carry int
+	for size > 0 {
+		want := int(min(size, aptLogResponseChunkBytes))
+		n, err := io.ReadFull(r, buf[carry:carry+want])
+		size -= int64(n)
+		data := buf[:carry+n]
+		end := len(data)
+		if err == nil && size > 0 {
+			for start := max(0, len(data)-(utf8.UTFMax-1)); start < len(data); start++ {
+				if utf8.RuneStart(data[start]) && !utf8.FullRune(data[start:]) {
+					end = start
+					break
+				}
+			}
+		}
+		if emitErr := emit(data[:end]); emitErr != nil {
+			return nil, emitErr
+		}
+		carry = copy(buf, data[end:])
+		if err != nil {
+			return err, nil
+		}
+	}
+	return nil, nil
 }

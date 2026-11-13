@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
 const packageSystemdRoot = "/opt/easy-waf-package-fixture"
@@ -348,6 +350,11 @@ func TestPackageRestartSystemdLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(replay.String(), "Setting up easy-waf") {
 			t.Fatalf("reattached stream lost saved package output: %s", replay.String())
+		}
+		t.Setenv("EASY_WAF_HOSTD_SOCKET", DefaultSocket)
+		var saved strings.Builder
+		if err := runner.DownloadAPTLog(t.Context(), &saved); err != nil || !strings.Contains(saved.String(), "Setting up easy-waf") {
+			t.Fatalf("saved-log download through real broker/worker failed: bytes=%d err=%v", saved.Len(), err)
 		}
 		if audit := f.run("dpkg", "--audit"); strings.TrimSpace(audit) != "" {
 			t.Fatalf("broker interruption damaged package state: %s", audit)

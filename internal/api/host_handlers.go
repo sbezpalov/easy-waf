@@ -506,21 +506,6 @@ func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
-func (s *Server) hostAptUpgradeLog(w http.ResponseWriter, r *http.Request) {
-	out, err := runner.Privileged(r.Context(), "apt-upgrade-log")
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if len(out) == 0 {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(out)
-}
-
 func (s *Server) hostReboot(w http.ResponseWriter, r *http.Request) {
 	if err := hostPower(r.Context(), "reboot"); err != nil {
 		writeInternalError(w, err)

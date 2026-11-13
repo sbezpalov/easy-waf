@@ -23,7 +23,7 @@ func isAPTWorkerOpcode(op string) bool {
 	switch op {
 	case "apt-update", "apt-upgrade", "apt-simulate", "apt-autoremove-simulate", "apt-cache-size", "apt-clean",
 		"apt-upgrade-stream", "apt-autoremove-stream", "apt-action-attach-stream",
-		"apt-upgrade-status", "apt-action-status", "apt-upgrade-log", "apt-action-log":
+		"apt-upgrade-status", "apt-action-status", "apt-upgrade-log", "apt-action-log", "apt-action-log-stream":
 		return true
 	}
 	return false
@@ -38,7 +38,7 @@ func isAPTMutationOpcode(op string) bool {
 }
 
 func isAPTStreamOpcode(op string) bool {
-	return op == "apt-upgrade-stream" || op == "apt-autoremove-stream" || op == "apt-action-attach-stream"
+	return op == "apt-upgrade-stream" || op == "apt-autoremove-stream" || op == "apt-action-attach-stream" || op == "apt-action-log-stream"
 }
 
 // RunAPTWorker owns package processes and their observation state independently

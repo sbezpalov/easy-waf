@@ -47,8 +47,13 @@ func PrivilegedStream(ctx context.Context, onLine func([]byte) error, argv ...st
 const maxBrokerStreamRecordBytes = 8 << 20
 
 func relayBrokerStream(ctx context.Context, input io.Reader, onLine func([]byte) error) error {
+	scanner := brokerRecordScanner(input, maxBrokerStreamRecordBytes)
+	return relayBrokerEvents(ctx, scanner, onLine)
+}
+
+func brokerRecordScanner(input io.Reader, limit int) *bufio.Scanner {
 	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 64<<10), maxBrokerStreamRecordBytes)
+	scanner.Buffer(make([]byte, 64<<10), limit)
 	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
 		if i := bytes.IndexByte(data, '\n'); i >= 0 {
 			return i + 1, data[:i], nil
@@ -58,6 +63,10 @@ func relayBrokerStream(ctx context.Context, input io.Reader, onLine func([]byte)
 		}
 		return 0, nil, nil
 	})
+	return scanner
+}
+
+func relayBrokerEvents(ctx context.Context, scanner *bufio.Scanner, onLine func([]byte) error) error {
 	relay := true
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
