@@ -313,7 +313,9 @@ func TestHostAptSavedLogFetchWaitAndHTTP2Delivery(t *testing.T) {
 				_, err := io.WriteString(w, "validated 世🙂\n")
 				return err
 			})
+			done := make(chan struct{})
 			handler := middleware.Logger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(done)
 				(&Server{}).hostAptUpgradeLog(w, r)
 			}))
 			server := httptest.NewUnstartedServer(handler)
@@ -339,6 +341,13 @@ func TestHostAptSavedLogFetchWaitAndHTTP2Delivery(t *testing.T) {
 			body, err := io.ReadAll(response.Body)
 			if err != nil || response.StatusCode != http.StatusOK || string(body) != "validated 世🙂\n" || (response.ProtoMajor == 2) != http2 || response.ContentLength != int64(len(body)) {
 				t.Fatalf("saved log delivery failed after fetch wait: status=%d proto=%s bytes=%d err=%v", response.StatusCode, response.Proto, len(body), err)
+			}
+			// The last flush can reach the client before server-side defers run.
+			// Join the handler before checking close/remove or restoring globals.
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("completed HTTP download did not finish handler cleanup")
 			}
 			assertAPTLogTempCleanup(t, dir, nil)
 		})
