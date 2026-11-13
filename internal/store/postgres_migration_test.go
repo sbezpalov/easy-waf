@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,8 @@ import (
 type migrationCountingDriver struct {
 	execs atomic.Int64
 }
+
+var diagnosticDriverSequence atomic.Uint64
 
 func (d *migrationCountingDriver) Open(string) (driver.Conn, error) {
 	return &migrationCountingConn{execs: &d.execs}, nil
@@ -37,7 +40,9 @@ func (c *migrationCountingConn) ExecContext(context.Context, string, []driver.Na
 func TestDiagnosticStoreOpenSkipsMigrations(t *testing.T) {
 	t.Parallel()
 
-	const driverName = "easy-waf-test-diagnostic-no-migrations"
+	// sql.Register is process-global and has no unregister operation. Each
+	// -count iteration needs its own driver and isolated execution counter.
+	driverName := fmt.Sprintf("easy-waf-test-diagnostic-no-migrations-%d", diagnosticDriverSequence.Add(1))
 	drv := &migrationCountingDriver{}
 	sql.Register(driverName, drv)
 
