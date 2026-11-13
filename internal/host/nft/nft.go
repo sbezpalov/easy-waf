@@ -75,16 +75,18 @@ func ApplyRulesetWithRollback(ctx context.Context, content string, timeoutSec in
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	var deadline time.Time
 	if err := staging.WithFile("easy-waf-*.nft", []byte(content+"\n"), func(path string) error {
 		if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", path); err != nil {
 			return fmt.Errorf("nft -c: %w", err)
 		}
-		_, err := runner.Privileged(ctx, "nft-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
+		var err error
+		deadline, err = runner.PrivilegedWithRollback(ctx, time.Duration(timeoutSec)*time.Second, "nft-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
 		return err
 	}); err != nil {
 		return "", time.Time{}, err
 	}
-	return tok, time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second), nil
+	return tok, deadline, nil
 }
 
 // CommitRuleset cancels the rollback timer and removes the backup for token.

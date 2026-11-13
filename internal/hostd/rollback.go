@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
@@ -46,16 +47,19 @@ func rollbackBackupPath(kind, token string) string {
 	return filepath.Join(stateDir, "rollback", kind+"-"+token+".bak")
 }
 
-func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, timeoutSec int) error {
+func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, timeoutSec int) (time.Time, error) {
 	unit := fmt.Sprintf("easy-waf-rb-%s-%s", kind, token)
+	// Capture before arming: neither systemd-run latency nor the subsequent
+	// apply may extend the time the API advertises for confirmation.
+	deadline := time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second)
 	_, stderr, code, err := runCmd(ctx, r, "systemd-run", "--collect",
 		"--unit="+unit,
 		fmt.Sprintf("--on-active=%ds", timeoutSec),
 		hostdBin, "revert", kind, token)
 	if err != nil || code != 0 {
-		return fmt.Errorf("systemd-run: %s", string(stderr))
+		return time.Time{}, fmt.Errorf("systemd-run: %s", string(stderr))
 	}
-	return nil
+	return deadline, nil
 }
 
 func stopRollbackUnit(ctx context.Context, r CommandRunner, kind, token string) error {
@@ -366,25 +370,26 @@ func revertNetplan(token string) error {
 // change is made. Arming it afterwards, as this used to, meant a systemd-run
 // failure (or a reused token whose unit name was taken) left the new network
 // or firewall config live with nothing scheduled to undo it.
-func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, livePath string, mode os.FileMode, timeoutSec int) error {
+func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, livePath string, mode os.FileMode, timeoutSec int) (time.Time, error) {
 	bak := rollbackBackupPath(kind, token)
 	// A reused token would overwrite the backup of a change still pending,
 	// losing the state that change's revert must restore.
 	if _, exists, err := stateFileSize(bak); err != nil {
-		return err
+		return time.Time{}, err
 	} else if exists {
-		return fmt.Errorf("token already has a pending change")
+		return time.Time{}, fmt.Errorf("token already has a pending change")
 	}
 	if err := rejectPendingChange(kind); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if err := saveRollbackBackup(kind, livePath, bak, mode); err != nil {
-		return err
+		return time.Time{}, err
 	}
-	if err := scheduleRevert(ctx, r, kind, token, timeoutSec); err != nil {
-		return errors.Join(err, removePendingRollback(bak))
+	deadline, err := scheduleRevert(ctx, r, kind, token, timeoutSec)
+	if err != nil {
+		return time.Time{}, errors.Join(err, removePendingRollback(bak))
 	}
-	return nil
+	return deadline, nil
 }
 
 // Caller holds the operation lock while inspecting and changing pending state.
@@ -466,7 +471,8 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 	if err != nil || code != 0 {
 		return failExec(stdout, stderr, code, err)
 	}
-	if err := beginConfirmedChange(ctx, r, "nft", token, nftRulesPath, nftRulesMode, timeoutSec); err != nil {
+	deadline, err := beginConfirmedChange(ctx, r, "nft", token, nftRulesPath, nftRulesMode, timeoutSec)
+	if err != nil {
 		return failResp(err.Error(), 1)
 	}
 	fail := func(resp Response) Response {
@@ -486,7 +492,9 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 		return fail(failResp(err.Error(), 1))
 	}
 	logOp("nft applied with rollback in %ds (token %s)", timeoutSec, token)
-	return okResp(stdout, stderr, 0)
+	resp := okResp(stdout, stderr, 0)
+	resp.RollbackExpiresAt = &deadline
+	return resp
 }
 
 func nftCommit(ctx context.Context, r CommandRunner, token string) Response {
@@ -524,7 +532,8 @@ func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutSt
 		return failResp("netplan-apply-confirm: "+err.Error(), 1)
 	}
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
-	if err := beginConfirmedChange(ctx, r, "netplan", token, netplanPath, netplanMode, timeoutSec); err != nil {
+	deadline, err := beginConfirmedChange(ctx, r, "netplan", token, netplanPath, netplanMode, timeoutSec)
+	if err != nil {
 		return failResp(err.Error(), 1)
 	}
 	fail := func(resp Response) Response {
@@ -545,7 +554,9 @@ func netplanApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutSt
 		return fail(failExec(stdout, stderr, code, err))
 	}
 	logOp("netplan applied with rollback in %ds (token %s)", timeoutSec, token)
-	return okResp(stdout, stderr, 0)
+	resp := okResp(stdout, stderr, 0)
+	resp.RollbackExpiresAt = &deadline
+	return resp
 }
 
 // RevertPendingChanges undoes every confirm-or-revert change still waiting

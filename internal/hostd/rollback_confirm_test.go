@@ -158,7 +158,7 @@ func TestTimerFailureReportsBackupCleanupFailure(t *testing.T) {
 			replaceBackupWithNonemptyDirectory(t, rollbackBackupPath("netplan", testToken))
 		}
 	}
-	err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90)
+	_, err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90)
 	if err == nil || !strings.Contains(err.Error(), "systemd-run") || !strings.Contains(err.Error(), "remove pending rollback") {
 		t.Fatalf("timer/cleanup failure not preserved: %v", err)
 	}
@@ -259,13 +259,13 @@ func TestBeginConfirmedChangeArmsTimerAndRefusesReusedToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+	if _, err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
 		t.Fatal(err)
 	}
 	if indexOf(m.calls, "systemd-run") < 0 {
 		t.Fatalf("revert timer not armed: %v", m.calls)
 	}
-	if err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err == nil {
+	if _, err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err == nil {
 		t.Fatal("reused token accepted; it would overwrite the pending backup")
 	}
 }
@@ -279,12 +279,12 @@ func TestPendingChangeRejectsOtherTokensAndLegacyWrites(t *testing.T) {
 				path, mode = netplanPath, netplanMode
 			}
 			ctx := context.Background()
-			if err := beginConfirmedChange(ctx, m, kind, testToken, path, mode, 90); err != nil {
+			if _, err := beginConfirmedChange(ctx, m, kind, testToken, path, mode, 90); err != nil {
 				t.Fatal(err)
 			}
 			const nextToken = "1234567890abcdef"
 			before := len(m.calls)
-			if err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err == nil {
+			if _, err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err == nil {
 				t.Fatal("second unconfirmed change accepted with a different token")
 			}
 			if len(m.calls) != before {
@@ -304,7 +304,7 @@ func TestPendingChangeRejectsOtherTokensAndLegacyWrites(t *testing.T) {
 			if resp := commit(ctx, m, testToken); !resp.OK {
 				t.Fatal(resp.Error)
 			}
-			if err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err != nil {
+			if _, err := beginConfirmedChange(ctx, m, kind, nextToken, path, mode, 90); err != nil {
 				t.Fatalf("new change rejected after commit: %v", err)
 			}
 		})
@@ -340,10 +340,10 @@ func TestRollbackOperationsRejectConcurrentMutation(t *testing.T) {
 func TestPendingChangesAreIndependentBySubsystem(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
 	ctx := context.Background()
-	if err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+	if _, err := beginConfirmedChange(ctx, m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
 		t.Fatal(err)
 	}
-	if err := beginConfirmedChange(ctx, m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
+	if _, err := beginConfirmedChange(ctx, m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
 		t.Fatalf("unrelated subsystem blocked: %v", err)
 	}
 }
@@ -351,7 +351,7 @@ func TestPendingChangesAreIndependentBySubsystem(t *testing.T) {
 func TestBeginConfirmedChangeTimerFailureLeavesNothingPending(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
 	m.failOn["systemd-run"] = true
-	if err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90); err == nil {
+	if _, err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90); err == nil {
 		t.Fatal("expected systemd-run failure")
 	}
 	if _, exists, _ := stateFileSize(rollbackBackupPath("netplan", testToken)); exists {
@@ -368,7 +368,7 @@ func TestAbortConfirmedChangeRestoresNetplan(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := beginConfirmedChange(ctx, m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
+	if _, err := beginConfirmedChange(ctx, m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(netplanPath, []byte("broken: ["), 0o600); err != nil {
@@ -393,7 +393,7 @@ func TestAbortConfirmedChangeRestoresNetplan(t *testing.T) {
 // `flush ruleset`, wiping fail2ban's, CrowdSec's and Docker's tables too.
 func TestRevertNftEmptyBackupDestroysOnlyManagedTables(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
-	if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+	if _, err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
 		t.Fatal(err)
 	}
 	applied := "table inet easy_waf {\n  chain input {\n  }\n}\ntable ip easy_waf_nat {\n}\n"
@@ -420,7 +420,7 @@ func TestRevertNftEmptyBackupDestroysOnlyManagedTables(t *testing.T) {
 func TestRevertNftNoRulesetSurvivesRepeatedApplyCycles(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
 	for cycle := 0; cycle < 2; cycle++ {
-		if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+		if _, err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(nftRulesPath, []byte("table inet easy_waf { }\n"), 0o600); err != nil {
@@ -451,7 +451,7 @@ func TestBeginConfirmedChangeRejectsUnrestorableBaseline(t *testing.T) {
 			if err := os.WriteFile(path, data, mode); err != nil {
 				t.Fatal(err)
 			}
-			err := beginConfirmedChange(context.Background(), m, kind, testToken, path, mode, 90)
+			_, err := beginConfirmedChange(context.Background(), m, kind, testToken, path, mode, 90)
 			if err == nil || !strings.Contains(err.Error(), "rollback baseline rejected") {
 				t.Fatalf("unrestorable baseline accepted: %v", err)
 			}
@@ -497,7 +497,7 @@ func TestRollbackBackupSizeLimit(t *testing.T) {
 			if err := os.Rename(backup, nftRulesPath); err != nil {
 				t.Fatal(err)
 			}
-			if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err == nil {
+			if _, err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err == nil {
 				t.Fatal("oversized baseline accepted")
 			}
 			if len(m.calls) != 0 {
@@ -556,7 +556,7 @@ func TestRevertPendingChangesAtStartup(t *testing.T) {
 	if err := os.WriteFile(netplanPath, prev, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
+	if _, err := beginConfirmedChange(context.Background(), m, "netplan", testToken, netplanPath, netplanMode, 90); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(netplanPath, []byte("network: {version: 2, ethernets: {}}\n"), 0o600); err != nil {

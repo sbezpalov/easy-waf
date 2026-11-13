@@ -4096,15 +4096,18 @@
     const tick = () => {
       const left = Math.max(0, Math.ceil((hostRollback.deadline - Date.now()) / 1000));
       if (cd) cd.textContent = String(left);
-      if (left <= 0) {
+      if (!Number.isFinite(hostRollback.deadline) || left <= 0) {
         clearInterval(hostRollback.timer);
         hostRollback.timer = null;
         toast('Safety window expired — if access was lost, changes were reverted. Reload the page.', 'warn', 12000);
         hideHostRollbackBanner();
+        return false;
       }
+      return true;
     };
-    tick();
+    if (!tick()) return false;
     hostRollback.timer = setInterval(tick, 500);
+    return true;
   }
 
   document.getElementById('btn-host-rollback-keep').onclick = async () => {
@@ -4139,7 +4142,13 @@
       return;
     }
     const j = await r.json();
-    showHostRollbackBanner(opts.kind, j.token, j.expires_at, opts.commitUrl);
+    if (!showHostRollbackBanner(opts.kind, j.token, j.expires_at, opts.commitUrl)) {
+      if (opts.msgEl) {
+        opts.msgEl.textContent = 'Safety window expired. Reload to check the current configuration.';
+        opts.msgEl.className = 'warn';
+      }
+      return;
+    }
     toast('Applied — confirm within the safety window.', 'warn', 8000);
     if (opts.msgEl) {
       opts.msgEl.textContent = 'Applied. Click “Keep changes” before the timer ends.';

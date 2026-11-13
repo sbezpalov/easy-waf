@@ -83,6 +83,11 @@ make ci     # go vet + golangci-lint + go test ./... + make verify
 make vuln   # govulncheck: CI fails on a reachable vulnerability
 ```
 
+With Node.js on `PATH`, `go test ./internal/webui` also executes the embedded
+rollback countdown with a controlled clock and DOM. That behavioral test skips
+on Go-only development machines; CI already installs Node.js. It needs no npm
+packages and adds no appliance runtime dependency.
+
 CI additionally runs, and you should too if you touch the relevant area:
 
 ```bash

@@ -6,6 +6,7 @@ package runner
 import (
 	"os"
 	"strings"
+	"time"
 )
 
 const defaultBrokerSocket = "/run/easy-waf/hostd.sock"
@@ -15,11 +16,12 @@ type brokerRequest struct {
 }
 
 type brokerResponse struct {
-	OK     bool   `json:"ok"`
-	Stdout string `json:"stdout"`
-	Stderr string `json:"stderr"`
-	Code   int    `json:"code"`
-	Error  string `json:"error,omitempty"`
+	OK                bool       `json:"ok"`
+	Stdout            string     `json:"stdout"`
+	Stderr            string     `json:"stderr"`
+	Code              int        `json:"code"`
+	Error             string     `json:"error,omitempty"`
+	RollbackExpiresAt *time.Time `json:"rollback_expires_at,omitempty"`
 }
 
 // BrokerSocket returns the hostd unix socket path.

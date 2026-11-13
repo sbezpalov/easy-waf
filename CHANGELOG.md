@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Network/firewall confirmation window.** `expires_at` now follows the deadline recorded when hostd arms rollback, so a slow apply consumes the safety window instead of granting extra time in the UI. Expired responses no longer restart a countdown or advertise time to keep changes.
 - UI: saving Security → Edge network with any TCP service line failed (lines were split on spaces).
 - **HSTS no longer breaks plain HTTP.** It was sent with `includeSubDomains` on every HTTPS response, so an `http_and_https` host lost its HTTP side, and so did any plain-HTTP host below a published one. HSTS now skips `http_and_https` hosts, and `includeSubDomains` is opt-in (`hsts_include_subdomains`).
 - **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.

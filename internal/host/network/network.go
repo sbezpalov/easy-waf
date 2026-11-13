@@ -94,13 +94,15 @@ func ApplyNetplanWithRollback(ctx context.Context, yaml string, timeoutSec int) 
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	var deadline time.Time
 	if err := staging.WithFile("netplan-*.yaml", []byte(yaml+"\n"), func(path string) error {
-		_, err := runner.Privileged(ctx, "netplan-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
+		var err error
+		deadline, err = runner.PrivilegedWithRollback(ctx, time.Duration(timeoutSec)*time.Second, "netplan-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
 		return err
 	}); err != nil {
 		return "", time.Time{}, err
 	}
-	return tok, time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second), nil
+	return tok, deadline, nil
 }
 
 // CommitNetplan cancels the rollback timer and removes the backup for token.

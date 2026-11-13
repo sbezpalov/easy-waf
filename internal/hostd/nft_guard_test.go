@@ -69,7 +69,7 @@ func TestRevertNftReloadsGuard(t *testing.T) {
 	m, _ := rollbackTestEnv(t)
 	writeRules(t)
 	writeGuard(t)
-	if err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
+	if _, err := beginConfirmedChange(context.Background(), m, "nft", testToken, nftRulesPath, nftRulesMode, 90); err != nil {
 		t.Fatal(err)
 	}
 	if err := RunRevert("nft", testToken); err != nil {

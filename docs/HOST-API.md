@@ -22,6 +22,15 @@ Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib
 
 Network and firewall commit stop both the rollback timer and its service before deleting the pending backup. If cancellation or backup deletion fails, the broker returns an error and keeps the pending state for recovery; do not treat the change as confirmed. A repeated commit after the backup has already been removed is safe. If apply fails, the broker still attempts an immediate rollback even when systemd cancellation fails.
 
+The rollback timer is armed **before** changing the live configuration. The API's
+`expires_at` comes from a conservative deadline recorded by hostd immediately
+before arming it; time spent applying the change consumes that window. An older
+broker that omits the optional `rollback_expires_at` response field uses a
+fallback recorded before the API's broker call. The UI does not start a new
+countdown or offer confirmation when the response already reports an expired
+window. This deadline does not claim to predict systemd scheduling latency;
+check the current configuration after expiry.
+
 Only one unconfirmed change per subsystem (network or firewall) is allowed. Another apply, including the legacy immediate broker operations, is rejected until the pending change is committed or reverted. Apply, commit and revert serialize access to the live configuration; an interactive request during another mutation returns a busy error and can be retried. On Linux the broker and standalone timer process share a kernel lock on the root-owned state directory. The timer waits for an in-progress mutation before restoring the backup.
 
 Before arming the timer, the existing configuration must pass the same policy validation used by rollback. An incompatible baseline (for example, an nftables `include` or unsupported netplan tunnel) rejects the new safe apply without changing the live file. Backups are limited to 16 MiB; oversized files are rejected rather than truncated. The generated no-managed-ruleset marker is restored by removing the newly declared tables, including on repeated apply/revert cycles.

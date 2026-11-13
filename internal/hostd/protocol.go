@@ -3,6 +3,8 @@
 
 package hostd
 
+import "time"
+
 // Request is one privileged operation from easy-waf-api.
 type Request struct {
 	Argv []string `json:"argv"`
@@ -15,4 +17,6 @@ type Response struct {
 	Stderr string `json:"stderr"`
 	Code   int    `json:"code"`
 	Error  string `json:"error,omitempty"`
+	// Only confirmed changes carry the conservative deadline of their timer.
+	RollbackExpiresAt *time.Time `json:"rollback_expires_at,omitempty"`
 }
