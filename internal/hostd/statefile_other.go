@@ -131,7 +131,13 @@ func stateWriteFile(path string, data []byte, mode os.FileMode) error {
 		_ = os.Remove(tmpPath)
 		return err
 	}
-	if err := os.Rename(tmpPath, filepath.Join(dir, base)); err != nil {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	defer root.Close()
+	if err := root.Rename(filepath.Base(tmpPath), base); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}

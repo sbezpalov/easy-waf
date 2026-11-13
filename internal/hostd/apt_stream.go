@@ -59,17 +59,14 @@ type streamEvent struct {
 type aptActionPhase uint8
 
 const (
-	aptIdle      aptActionPhase = iota
-	aptLocal                    // owned by this broker, including the gap before PID publication
-	aptRecovered                // observed a surviving child whose result this broker cannot collect
-	aptFinished                 // this broker collected the exit result
+	aptLocal     aptActionPhase = iota // owned by this broker, including the gap before PID publication
+	aptRecovered                       // observed a surviving child whose result this broker cannot collect
+	aptFinished                        // this broker collected the exit result
 )
 
 var (
 	aptActionMu         sync.Mutex
-	aptActionState      aptActionPhase
-	aptActionLastCode   int
-	aptActionLastErr    string
+	aptActionCurrent    *aptActionRecord
 	aptActionStreamHook func(ctx context.Context, action string, emit func(string) error) (code int, err error)
 )
 
@@ -134,62 +131,6 @@ func clearAptActionPID() error {
 	return nil
 }
 
-func aptActionTryStart() (bool, error) {
-	aptActionMu.Lock()
-	defer aptActionMu.Unlock()
-	if aptActionState == aptLocal {
-		return false, nil
-	}
-	// Persist across hostd restarts: an apt-get left running still owns the
-	// dpkg lock; treat it as in-flight so callers attach instead of starting a second.
-	if aptActionState != aptFinished && aptActionPIDAlive() {
-		aptActionState = aptRecovered
-		return false, nil
-	}
-	if err := clearAptActionPID(); err != nil {
-		return false, fmt.Errorf("clear apt action pid: %w", err)
-	}
-	aptActionState = aptLocal
-	aptActionLastCode = 0
-	aptActionLastErr = ""
-	return true, nil
-}
-
-func aptActionFinish(code int, errMsg string) {
-	aptActionMu.Lock()
-	defer aptActionMu.Unlock()
-	// Clear the old PID before releasing single-flight ownership. Otherwise a
-	// new primary could publish its PID and have this completion remove it.
-	if err := clearAptActionPID(); err != nil {
-		logOp("clear apt action pid: %v", err)
-	}
-	aptActionState = aptFinished
-	aptActionLastCode = code
-	aptActionLastErr = errMsg
-}
-
-func aptActionSnapshot() (active bool, code int, errMsg string) {
-	aptActionMu.Lock()
-	defer aptActionMu.Unlock()
-	if aptActionState == aptLocal {
-		// PID liveness cannot release a local reservation: the child may not
-		// have started yet, or may have exited before its owner calls Finish.
-		return true, aptActionLastCode, aptActionLastErr
-	}
-	if aptActionState == aptFinished {
-		return false, aptActionLastCode, aptActionLastErr
-	}
-	if aptActionPIDAlive() {
-		aptActionState = aptRecovered
-		return true, 0, ""
-	}
-	_, pidErr := readAptActionPID()
-	if aptActionState == aptRecovered || !os.IsNotExist(pidErr) {
-		return false, -1, "apt action exit status unavailable after broker restart; inspect the apt action log"
-	}
-	return false, aptActionLastCode, aptActionLastErr
-}
-
 // ResetAptUpgradeStateForTest clears single-flight state (tests only).
 func ResetAptUpgradeStateForTest() {
 	ResetAptActionStateForTest()
@@ -198,9 +139,8 @@ func ResetAptUpgradeStateForTest() {
 // ResetAptActionStateForTest clears single-flight state (tests only).
 func ResetAptActionStateForTest() {
 	aptActionMu.Lock()
-	aptActionState = aptIdle
-	aptActionLastCode = 0
-	aptActionLastErr = ""
+	releaseAptActionLocked(aptActionCurrent)
+	aptActionCurrent = nil
 	aptActionMu.Unlock()
 	aptActionStreamHook = nil
 	_ = clearAptActionPID()
@@ -263,30 +203,33 @@ func dispatchAptStream(conn io.Writer, action string) {
 		emitExit(-1, "unknown apt action: "+action)
 		return
 	}
-	started, err := aptActionTryStart()
+	record, started, err := acquireAptAction()
 	if err != nil {
 		emitExit(1, err.Error())
 		return
 	}
+	defer releaseAptAction(record)
 	if !started {
-		dispatchAptActionAttach(sc)
+		dispatchAptActionAttach(sc, record)
 		return
 	}
-	dispatchAptActionPrimary(sc, action)
+	dispatchAptActionPrimary(sc, action, record)
 }
 
-func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
+func dispatchAptActionPrimary(sc *aptStreamConn, action string, record *aptActionRecord) {
 	emitExit := func(code int, errMsg string) {
 		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
 
 	logPath := aptActionLogPath()
 	logFile, err := createAptActionLog(logPath)
+	publishAptActionLog(record, err)
 	if err != nil {
 		logOp("apt-stream %s: log file: %v", action, err)
 	}
+	logSink := aptLogSink{err: err}
 	if logFile != nil {
-		defer logFile.Close()
+		logSink.file = logFile
 	}
 
 	aptCtx, cancel := context.WithTimeout(context.Background(), aptCommandTimeout)
@@ -294,10 +237,7 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 
 	clientDown := false
 	emitLine := func(line string) error {
-		if logFile != nil {
-			_, _ = fmt.Fprintln(logFile, line)
-			_ = logFile.Sync()
-		}
+		logSink.line(line)
 		if clientDown {
 			return nil
 		}
@@ -312,6 +252,9 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 	emitDpkgLockHint(emitLine)
 
 	code, runErr := runAptActionStream(aptCtx, action, emitLine)
+	if logErr := logSink.close(); logErr != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("apt action log incomplete (command exit code %d): %w", code, logErr))
+	}
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
@@ -319,11 +262,11 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 			code = 1
 		}
 	}
-	aptActionFinish(code, errMsg)
+	finishAptAction(record, code, errMsg)
 	emitExit(code, errMsg)
 }
 
-func dispatchAptActionAttach(sc *aptStreamConn) {
+func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
 	emitExit := func(code int, errMsg string) {
 		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 	}
@@ -341,21 +284,40 @@ func dispatchAptActionAttach(sc *aptStreamConn) {
 	}
 
 	_ = emitLine("==> attaching to apt action already in progress ...")
+	<-record.ready
+	if record.logErr != nil {
+		emitExit(-1, "cannot read apt action log: "+record.logErr.Error())
+		return
+	}
 
 	var offset int64
 	for {
-		lines, newOff, err := readAptActionLogFrom(offset)
-		if err != nil {
-			emitExit(-1, "cannot read apt action log: "+err.Error())
-			return
-		}
+		// Observe completion before reading: a completed run can no longer
+		// append, so the final drain cannot miss a line written before Finish.
+		active, code, errMsg := aptRecordSnapshot(record)
+		lines, newOff, err := readAptActionLogFileFrom(record.log, offset)
 		offset = newOff
 		for _, line := range lines {
 			_ = emitLine(line)
 		}
+		if err != nil {
+			emitExit(-1, "cannot read apt action log: "+err.Error())
+			return
+		}
 
-		active, code, errMsg := aptActionSnapshot()
+		if len(lines) > 0 {
+			continue // catch up/drain bounded batches without a polling delay
+		}
 		if !active {
+			st, statErr := record.log.Stat()
+			if statErr != nil {
+				emitExit(-1, "cannot read apt action log: "+statErr.Error())
+				return
+			}
+			if offset < st.Size() {
+				emitExit(-1, "incomplete final apt action log line")
+				return
+			}
 			emitExit(code, errMsg)
 			return
 		}
@@ -372,19 +334,7 @@ func readAptActionLogFrom(offset int64) (lines []string, newOffset int64, err er
 		return nil, offset, err
 	}
 	defer f.Close()
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, offset, err
-	}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), maxAptOutputLineBytes)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	if err := sc.Err(); err != nil {
-		return lines, offset, err
-	}
-	newOffset, err = f.Seek(0, io.SeekCurrent)
-	return lines, newOffset, err
+	return readAptActionLogFileFrom(f, offset)
 }
 
 // dispatchAptActionStatus returns whether an apt action is in progress (JSON in stdout).

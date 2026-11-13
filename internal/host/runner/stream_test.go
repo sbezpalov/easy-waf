@@ -35,6 +35,8 @@ func shortTempSock(t *testing.T) string {
 
 func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 	hostd.SetBypassPeerCheckForTest(true)
+	hostd.SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	t.Cleanup(func() { hostd.ResetAptActionStateForTest(); hostd.SetAptActionLogPathOverrideForTest("") })
 	sock := shortTempSock(t)
 
 	hostd.ResetAptUpgradeStateForTest()
@@ -80,6 +82,8 @@ func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 
 func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
 	hostd.SetBypassPeerCheckForTest(true)
+	hostd.SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
+	t.Cleanup(func() { hostd.ResetAptActionStateForTest(); hostd.SetAptActionLogPathOverrideForTest("") })
 	sock := shortTempSock(t)
 
 	hostd.ResetAptUpgradeStateForTest()
@@ -101,6 +105,26 @@ func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
 	}, "apt-upgrade-stream")
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The relay returns before the broker finishes. Wait for its result before
+	// resetting globals/removing the log fixture; cancellation must not cancel APT.
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelWait()
+	for {
+		payload, err := Privileged(waitCtx, "apt-action-status")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status struct {
+			Active bool `json:"active"`
+		}
+		if err := json.Unmarshal(payload, &status); err != nil {
+			t.Fatal(err)
+		}
+		if !status.Active {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

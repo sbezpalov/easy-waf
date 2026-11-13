@@ -8,6 +8,7 @@ package hostd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // openFileNoFollow is the Windows development fallback. It rejects an existing
@@ -22,7 +23,14 @@ func openFileNoFollow(path string, flags int, mode os.FileMode) (*os.File, error
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	return os.OpenFile(path, flags, mode)
+	// Root.OpenFile includes delete sharing, so atomic state/log replacement
+	// remains possible while another operation retains a read descriptor.
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.OpenFile(filepath.Base(path), flags, mode)
 }
 
 // Windows has no numeric Unix UID/GID ownership to apply. The production Linux

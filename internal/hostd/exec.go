@@ -172,7 +172,14 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	// Root.Rename uses Windows POSIX replacement semantics too, allowing
+	// replacement while readers that share delete access retain the old inode.
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Rename(filepath.Base(tmpName), filepath.Base(path))
 }
 
 func touchEmpty(path string) error {
