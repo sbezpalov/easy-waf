@@ -13,6 +13,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
+	"github.com/easy-waf/easy-waf/internal/host/staging"
 )
 
 // Account is a local UNIX account (non-system focus).
@@ -101,11 +102,6 @@ func SetSSHKeys(ctx context.Context, username string, keys []string) error {
 	if err := ValidateSSHPublicKeys(keys); err != nil {
 		return err
 	}
-	dir := "/var/lib/easy-waf/staging"
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-	path := dir + "/authorized_keys-" + username
 	var b strings.Builder
 	for _, k := range keys {
 		k = strings.TrimSpace(k)
@@ -115,9 +111,8 @@ func SetSSHKeys(ctx context.Context, username string, keys []string) error {
 		b.WriteString(k)
 		b.WriteByte('\n')
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+	return staging.WithFile("authorized_keys-"+username+"-*", []byte(b.String()), func(path string) error {
+		_, err := runner.Privileged(ctx, "ssh-authorized-keys", username, path)
 		return err
-	}
-	_, err := runner.Privileged(ctx, "ssh-authorized-keys", username, path)
-	return err
+	})
 }

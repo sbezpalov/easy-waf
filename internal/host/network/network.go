@@ -14,6 +14,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/host/rollback"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
+	"github.com/easy-waf/easy-waf/internal/host/staging"
 )
 
 // Overview is host network state for the API.
@@ -76,16 +77,10 @@ func ApplyNetplan(ctx context.Context, yaml string) error {
 	if yaml == "" {
 		return os.ErrInvalid
 	}
-	dir := "/var/lib/easy-waf/staging"
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	return staging.WithFile("netplan-*.yaml", []byte(yaml+"\n"), func(path string) error {
+		_, err := runner.Privileged(ctx, "netplan-install", path)
 		return err
-	}
-	staged := filepath.Join(dir, "99-easy-waf.yaml")
-	if err := os.WriteFile(staged, []byte(yaml+"\n"), 0o600); err != nil {
-		return err
-	}
-	_, err := runner.Privileged(ctx, "netplan-install", staged)
-	return err
+	})
 }
 
 // ApplyNetplanWithRollback stages YAML and applies with a systemd-run auto-revert window.
@@ -99,15 +94,10 @@ func ApplyNetplanWithRollback(ctx context.Context, yaml string, timeoutSec int) 
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	dir := "/var/lib/easy-waf/staging"
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", time.Time{}, err
-	}
-	staged := filepath.Join(dir, "netplan-"+tok+".yaml")
-	if err := os.WriteFile(staged, []byte(yaml+"\n"), 0o600); err != nil {
-		return "", time.Time{}, err
-	}
-	if _, err := runner.Privileged(ctx, "netplan-apply-confirm", staged, strconv.Itoa(timeoutSec), tok); err != nil {
+	if err := staging.WithFile("netplan-*.yaml", []byte(yaml+"\n"), func(path string) error {
+		_, err := runner.Privileged(ctx, "netplan-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
+		return err
+	}); err != nil {
 		return "", time.Time{}, err
 	}
 	return tok, time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second), nil

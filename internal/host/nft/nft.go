@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/host/rollback"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
+	"github.com/easy-waf/easy-waf/internal/host/staging"
 )
 
 const RulesPath = "/etc/nftables/easy-waf.nft"
@@ -55,19 +55,13 @@ func PutRuleset(ctx context.Context, content string) error {
 	if content == "" {
 		return os.ErrInvalid
 	}
-	dir := "/var/lib/easy-waf/staging"
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	return staging.WithFile("easy-waf-*.nft", []byte(content+"\n"), func(path string) error {
+		if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", path); err != nil {
+			return fmt.Errorf("nft -c: %w", err)
+		}
+		_, err := runner.Privileged(ctx, "nft-install", path)
 		return err
-	}
-	tmpPath := filepath.Join(dir, "easy-waf.nft")
-	if err := os.WriteFile(tmpPath, []byte(content+"\n"), 0o600); err != nil {
-		return err
-	}
-	if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", tmpPath); err != nil {
-		return fmt.Errorf("nft -c: %w", err)
-	}
-	_, err := runner.Privileged(ctx, "nft-install", tmpPath)
-	return err
+	})
 }
 
 // ApplyRulesetWithRollback stages rules, validates, applies via privileged helper with systemd-run revert.
@@ -81,18 +75,13 @@ func ApplyRulesetWithRollback(ctx context.Context, content string, timeoutSec in
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	dir := "/var/lib/easy-waf/staging"
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", time.Time{}, err
-	}
-	staged := filepath.Join(dir, "easy-waf-"+tok+".nft")
-	if err := os.WriteFile(staged, []byte(content+"\n"), 0o600); err != nil {
-		return "", time.Time{}, err
-	}
-	if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", staged); err != nil {
-		return "", time.Time{}, fmt.Errorf("nft -c: %w", err)
-	}
-	if _, err := runner.Privileged(ctx, "nft-apply-confirm", staged, strconv.Itoa(timeoutSec), tok); err != nil {
+	if err := staging.WithFile("easy-waf-*.nft", []byte(content+"\n"), func(path string) error {
+		if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", path); err != nil {
+			return fmt.Errorf("nft -c: %w", err)
+		}
+		_, err := runner.Privileged(ctx, "nft-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
+		return err
+	}); err != nil {
 		return "", time.Time{}, err
 	}
 	return tok, time.Now().UTC().Add(time.Duration(timeoutSec) * time.Second), nil

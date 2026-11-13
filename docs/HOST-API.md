@@ -18,6 +18,8 @@ Authenticated routes under **`/api/v1/host/*`** (JWT; admin role; `X-Requested-W
 
 WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes; authentication, error handling and every other endpoint are in the [REST API reference](API.md).
 
+Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib/easy-waf/staging/`, mode 0600. Each input is closed before the broker reads it and removed after the synchronous operation returns, including validation and broker failures. Concurrent requests do not share filenames. Cleanup errors are reported together with any operation error; netplan staging files may contain Wi-Fi credentials and must not accumulate as history.
+
 Network and firewall commit stop both the rollback timer and its service before deleting the pending backup. If cancellation or backup deletion fails, the broker returns an error and keeps the pending state for recovery; do not treat the change as confirmed. A repeated commit after the backup has already been removed is safe. If apply fails, the broker still attempts an immediate rollback even when systemd cancellation fails.
 
 Only one unconfirmed change per subsystem (network or firewall) is allowed. Another apply, including the legacy immediate broker operations, is rejected until the pending change is committed or reverted. Apply, commit and revert serialize access to the live configuration; an interactive request during another mutation returns a busy error and can be retried. On Linux the broker and standalone timer process share a kernel lock on the root-owned state directory. The timer waits for an in-progress mutation before restoring the backup.
