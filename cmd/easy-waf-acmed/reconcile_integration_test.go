@@ -271,3 +271,42 @@ func TestReconcileAcknowledgementFailureRetriesWithoutReload(t *testing.T) {
 		t.Fatal("acknowledgement retry created another revision")
 	}
 }
+
+func TestRunOnceDoesNotReserveUnstartedCertificates(t *testing.T) {
+	st, eng, _ := reconcileFixture(t)
+	cfg := eng.Settings()
+	cfg.ACMEEmail = "ops@example.test"
+	eng.SetSettings(cfg)
+	if err := eng.SaveSettings(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		c := &config.Certificate{PrimaryDomain: fmt.Sprintf("queue-%d.example.test", i), Mode: "unsupported-test-mode", ACMEStatus: "pending"}
+		if err := st.UpsertCertificate(t.Context(), c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := worker{eng: eng}
+	w.runOnce(t.Context(), st)
+	rows, err := st.ListCertificates(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, row := range rows {
+		counts[row.ACMEStatus]++
+	}
+	if len(rows) != 2 || counts["failed"] != 1 || counts["pending"] != 1 {
+		t.Fatalf("worker reserved work beyond its current attempt: statuses=%v", counts)
+	}
+	w.runOnce(t.Context(), st)
+	rows, err = st.ListCertificates(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.ACMEStatus != "failed" || row.ACMEAttempts != 1 {
+			t.Fatal("next tick did not process the waiting row without retrying the first")
+		}
+	}
+}

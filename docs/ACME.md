@@ -62,7 +62,7 @@ Empty list = system resolver (`/etc/resolv.conf`). See [DNS.md](DNS.md).
 
 ## Renewal
 
-- `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). Each tick it claims due rows with `FOR UPDATE SKIP LOCKED` (so two workers never issue the same certificate) and marks them `issuing`. A row is due when it is:
+- `easy-waf-acmed` runs a periodic loop (`EASY_WAF_ACME_TICK`, default 30s). Each tick it claims one due row with `FOR UPDATE SKIP LOCKED` and marks it `issuing`. Issuance is synchronous: other rows remain available to another worker or the next tick, rather than spending their claim budget waiting for a long-running attempt. A row is due when it is:
   - `pending` (new, or the operator pressed **Request issue** / **Retry now**);
   - `failed` and its `acme_next_attempt_at` has passed;
   - `ready`, ACME-managed and its `not_after` falls inside the renewal window;

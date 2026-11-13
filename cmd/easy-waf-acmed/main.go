@@ -36,10 +36,8 @@ const (
 	// and certificate writes. The child and parent enforce its hard deadline
 	// even when the SDK ignores context. HAProxy apply has its own budget.
 	issueTimeout = acme.IssueProcessTimeout
-	// claimMargin: every row of a batch is claimed at once and issued one
-	// after another, so each issuance must also end this long before the
-	// batch's claim turns staleIssuing old; otherwise another worker could
-	// reclaim a row still waiting its turn and order it a second time.
+	// claimMargin leaves time before the claimed row becomes reclaimable,
+	// even if the query or subsequent setup is slow.
 	claimMargin = 5 * time.Minute
 	// minIssueBudget: an issuance is not started with less time than this
 	// left before the claim goes stale. It would only time out (DNS-01
@@ -325,7 +323,9 @@ func (w *worker) runOnce(ctx context.Context, st *store.Store) {
 		Now:          now,
 		RenewBefore:  now.Add(renewWindow),
 		StaleIssuing: staleIssuing,
-		Limit:        5,
+		// This worker issues synchronously. Reserve only the attempt it can
+		// start now; queued rows remain available to other workers/next ticks.
+		Limit: 1,
 	})
 	if err != nil {
 		log.Printf("claim certificates: %v", err)
