@@ -191,18 +191,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(nil, nil, 0)
 
 	case "apt-update":
-		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "update", "-qq")
-		if err != nil || code != 0 {
-			return failExec(stdout, stderr, code, err)
-		}
-		return okResp(stdout, stderr, code)
+		return dispatchAptSynchronous(ctx, r, "update")
 
 	case "apt-upgrade":
-		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "upgrade", "-y", "-qq")
-		if err != nil || code != 0 {
-			return failExec(stdout, stderr, code, err)
-		}
-		return okResp(stdout, stderr, code)
+		return dispatchAptSynchronous(ctx, r, "upgrade")
 
 	case "apt-simulate":
 		stdout, stderr, code, err := runCmd(ctx, r, binAptGet, "-s", "upgrade")
@@ -226,12 +218,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		return okResp(stdout, stderr, code)
 
 	case "apt-clean":
-		stdout, stderr, code, err := runCmd(ctx, r,
-			binAptGet, "-o", "DPkg::Lock::Timeout=120", "clean")
-		if err != nil || code != 0 {
-			return failExec(stdout, stderr, code, err)
-		}
-		return okResp(stdout, stderr, code)
+		return dispatchAptSynchronous(ctx, r, "clean")
 
 	case "journal":
 		jargs := argv[1:]

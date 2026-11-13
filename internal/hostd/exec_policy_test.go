@@ -57,7 +57,15 @@ func (p *commandDeadlineProbe) Run(ctx context.Context, _ string, _ ...string) (
 	return nil, nil, 0, nil
 }
 
+func (p *commandDeadlineProbe) RunApt(ctx context.Context, name string, args []string, _ func(string) error) (int, error) {
+	_, _, code, err := p.Run(ctx, name, args...)
+	return code, err
+}
+
 func TestDispatchBoundsCommandsAndPreservesEarlierDeadline(t *testing.T) {
+	overrideAptActionLogForTest(t)
+	resetAptUpgradeState()
+	t.Cleanup(resetAptUpgradeState)
 	for _, tc := range []struct {
 		name   string
 		argv   []string

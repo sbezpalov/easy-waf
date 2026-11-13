@@ -21,7 +21,16 @@ type aptActionRecord struct {
 	log     *os.File
 	logErr  error
 	process *aptProcessIdentity
+	action  string
+	mode    aptActionMode
 }
+
+type aptActionMode uint8
+
+const (
+	aptStreaming aptActionMode = iota
+	aptSynchronous
+)
 
 func newAptActionRecord(phase aptActionPhase) *aptActionRecord {
 	return &aptActionRecord{phase: phase, refs: 1, ready: make(chan struct{})}
@@ -77,7 +86,7 @@ func aptActionTryStart() (bool, error) {
 }
 
 // Reserve the record under the same lock that decides primary vs follower.
-func acquireAptAction() (*aptActionRecord, bool, error) {
+func acquireAptAction(action string, mode aptActionMode) (*aptActionRecord, bool, error) {
 	aptActionMu.Lock()
 	defer aptActionMu.Unlock()
 	started, err := aptActionTryStartLocked()
@@ -85,6 +94,9 @@ func acquireAptAction() (*aptActionRecord, bool, error) {
 		return nil, false, err
 	}
 	record := aptActionCurrent
+	if started {
+		record.action, record.mode = action, mode
+	}
 	record.refs++
 	return record, started, nil
 }

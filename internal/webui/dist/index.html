@@ -4224,16 +4224,47 @@
     const st = await fetch('/api/v1/host/updates/upgrade/status', { headers: hdr() });
     if (!st.ok) return;
     const j = await st.json().catch(() => ({}));
-    if (!j.active) return;
     const msg = document.getElementById('sys-apt-msg');
+    if (!j.active) {
+      if (msg && msg.dataset.aptStatusText !== undefined) {
+        if (msg.textContent === msg.dataset.aptStatusText) {
+          msg.textContent = j.error || '';
+          msg.className = j.error ? 'warn' : '';
+        }
+        delete msg.dataset.aptStatusText;
+      }
+      return;
+    }
+    if (j.error) {
+      if (msg) {
+        msg.textContent = j.error;
+        msg.className = 'warn';
+        msg.dataset.aptStatusText = msg.textContent;
+      }
+      return;
+    }
+    if (j.stream === false) {
+      if (msg) {
+        const labels = new Map([
+          ['update', 'Package index refresh is in progress.'],
+          ['upgrade', 'Package upgrade is in progress.'],
+          ['clean', 'Package cache cleanup is in progress.']
+        ]);
+        msg.textContent = (labels.get(j.action) || 'Package operation is in progress.') + ' Check status again after it finishes.';
+        msg.className = 'warn';
+        msg.dataset.aptStatusText = msg.textContent;
+      }
+      return;
+    }
     if (msg) {
       msg.textContent = 'Reconnected to running apt action…';
       msg.className = 'warn';
+      delete msg.dataset.aptStatusText;
     }
     await runAptStream('/api/v1/host/updates/upgrade/stream', {
       reconnect: true,
-      successMsg: 'Upgrade finished.',
-      successToast: 'Upgrade complete'
+      successMsg: 'Package operation finished.',
+      successToast: 'Package operation complete'
     });
   }
 

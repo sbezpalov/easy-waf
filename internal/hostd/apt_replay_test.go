@@ -234,7 +234,7 @@ func TestAptFollowerReportsIncompleteFinalLine(t *testing.T) {
 	overrideAptActionLogForTest(t)
 	resetAptUpgradeState()
 	defer resetAptUpgradeState()
-	record, started, err := acquireAptAction()
+	record, started, err := acquireAptAction("upgrade", aptStreaming)
 	if err != nil || !started {
 		t.Fatalf("reserve: %v %v", started, err)
 	}

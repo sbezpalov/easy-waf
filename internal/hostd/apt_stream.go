@@ -162,13 +162,17 @@ func dispatchAptStream(conn io.Writer, action string) {
 		emitExit(-1, "unknown apt action: "+action)
 		return
 	}
-	record, started, err := acquireAptAction()
+	record, started, err := acquireAptAction(action, aptStreaming)
 	if err != nil {
 		emitExit(1, err.Error())
 		return
 	}
 	defer releaseAptAction(record)
 	if !started {
+		if record.mode == aptSynchronous {
+			emitExit(1, aptBusyMessage(record))
+			return
+		}
 		dispatchAptActionAttach(sc, record)
 		return
 	}
@@ -176,27 +180,8 @@ func dispatchAptStream(conn io.Writer, action string) {
 }
 
 func dispatchAptActionPrimary(sc *aptStreamConn, action string, record *aptActionRecord) {
-	emitExit := func(code int, errMsg string) {
-		_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
-	}
-
-	logPath := aptActionLogPath()
-	logFile, err := createAptActionLog(logPath)
-	publishAptActionLog(record, err)
-	if err != nil {
-		logOp("apt-stream %s: log file: %v", action, err)
-	}
-	logSink := aptLogSink{err: err}
-	if logFile != nil {
-		logSink.file = logFile
-	}
-
-	aptCtx, cancel := context.WithTimeout(context.Background(), aptCommandTimeout)
-	defer cancel()
-
 	clientDown := false
 	emitLine := func(line string) error {
-		logSink.line(line)
 		if clientDown {
 			return nil
 		}
@@ -207,22 +192,14 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string, record *aptActio
 		return nil
 	}
 
-	_ = emitLine(fmt.Sprintf("==> starting apt-get %s ...", action))
-	emitDpkgLockHint(emitLine)
-
-	code, runErr := runAptActionStream(aptCtx, action, emitLine)
-	if logErr := logSink.close(); logErr != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("apt action log incomplete (command exit code %d): %w", code, logErr))
-	}
+	code, runErr := runAptPrimary(context.Background(), record, action, func(ctx context.Context, emit func(string) error) (int, error) {
+		return runAptActionStream(ctx, action, emit)
+	}, emitLine)
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
-		if code == 0 {
-			code = 1
-		}
 	}
-	finishAptAction(record, code, errMsg)
-	emitExit(code, errMsg)
+	_ = sc.writeEvent(streamEvent{Type: "exit", Code: code, Error: errMsg})
 }
 
 func dispatchAptActionAttach(sc *aptStreamConn, record *aptActionRecord) {
@@ -306,12 +283,19 @@ func readAptActionLogFrom(offset int64) (lines []string, newOffset int64, err er
 
 // dispatchAptActionStatus returns whether an apt action is in progress (JSON in stdout).
 func dispatchAptActionStatus() Response {
-	active, code, errMsg := aptActionSnapshot()
-	payload, err := json.Marshal(map[string]any{
+	aptActionMu.Lock()
+	active, code, errMsg := aptActionSnapshotLocked()
+	status := map[string]any{
 		"active":    active,
 		"exit_code": code,
 		"error":     errMsg,
-	})
+	}
+	if aptActionCurrent != nil && aptActionCurrent.action != "" {
+		status["action"] = aptActionCurrent.action
+		status["stream"] = aptActionCurrent.mode == aptStreaming
+	}
+	aptActionMu.Unlock()
+	payload, err := json.Marshal(status)
 	if err != nil {
 		return failResp(err.Error(), 1)
 	}
@@ -341,6 +325,15 @@ func dispatchAptUpgradeLog() Response {
 }
 
 func runAptActionStream(ctx context.Context, action string, emit func(string) error) (int, error) {
+	return runAptOutput(ctx, func(ctx context.Context, emit func(string) error) (int, error) {
+		if aptActionStreamHook != nil {
+			return aptActionStreamHook(ctx, action, emit)
+		}
+		return execAptStream(ctx, action, emit)
+	}, emit)
+}
+
+func runAptOutput(ctx context.Context, execute aptExecution, emit func(string) error) (int, error) {
 	done := make(chan struct{})
 	heartbeatDone := make(chan struct{})
 	var emitMu sync.Mutex
@@ -366,20 +359,15 @@ func runAptActionStream(ctx context.Context, action string, emit func(string) er
 		return emit(line)
 	}
 
-	if aptActionStreamHook != nil {
-		return aptActionStreamHook(ctx, action, wrapEmit)
-	}
-	return execAptStream(ctx, action, wrapEmit)
+	return execute(ctx, wrapEmit)
 }
 
 func execAptStream(ctx context.Context, action string, emit func(string) error) (int, error) {
-	args := []string{
-		"-y",
-		"-o", "Dpkg::Use-Pty=0",
-		"-o", "DPkg::Lock::Timeout=120",
-		action,
-	}
-	cmd := exec.CommandContext(ctx, binAptGet, args...)
+	return runAptMutation(ctx, DefaultRunner, action, emit)
+}
+
+func (osRunner) RunApt(ctx context.Context, name string, args []string, emit func(string) error) (int, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	return execAptCommand(ctx, cmd, emit)
 }
