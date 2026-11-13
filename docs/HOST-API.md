@@ -18,6 +18,8 @@ Authenticated routes under **`/api/v1/host/*`** (JWT; admin role; `X-Requested-W
 
 WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` routes; authentication, error handling and every other endpoint are in the [REST API reference](API.md).
 
+Network and firewall commit stop both the rollback timer and its service before deleting the pending backup. If cancellation or backup deletion fails, the broker returns an error and keeps the pending state for recovery; do not treat the change as confirmed. A repeated commit after the backup has already been removed is safe. If apply fails, the broker still attempts an immediate rollback even when systemd cancellation fails.
+
 ### `POST /host/updates/upgrade/stream` (live apt log)
 
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).

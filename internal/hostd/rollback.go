@@ -58,10 +58,19 @@ func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, ti
 	return nil
 }
 
-func stopRollbackUnit(ctx context.Context, r CommandRunner, kind, token string) {
+func stopRollbackUnit(ctx context.Context, r CommandRunner, kind, token string) error {
 	unit := fmt.Sprintf("easy-waf-rb-%s-%s", kind, token)
-	_, _, _, _ = runCmd(ctx, r, binSystemctl, "stop", unit+".service")
+	// systemd-run --on-active creates a timer as well as a service. Stopping
+	// only the service leaves the timer armed and able to start it again.
+	_, stderr, code, err := runCmd(ctx, r, binSystemctl, "stop", unit+".timer", unit+".service")
+	if err != nil {
+		return fmt.Errorf("stop rollback units: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("stop rollback units (exit %d): %s", code, strings.TrimSpace(string(stderr)))
+	}
 	_, _, _, _ = runCmd(ctx, r, binSystemctl, "reset-failed", unit+".service")
+	return nil
 }
 
 // RunRevert restores backup for kind (nft|netplan); used by CLI and transient timer.
@@ -178,8 +187,8 @@ func revertNft(token string) error {
 		logOp("nft reverted to no managed ruleset (token %s)", token)
 		return nil
 	}
-	// The backup sits in a directory the easy-waf account owns; check it like
-	// any other ruleset before root loads it.
+	// Validate root-owned backup contents too, as defense in depth against
+	// damaged state or unsafe privileged maintenance.
 	if err := hostspec.ValidateNftRuleset(data); err != nil {
 		return fmt.Errorf("backup rejected: %w", err)
 	}
@@ -313,8 +322,26 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 // generate` rejected, which used to stay in /etc/netplan and take effect at
 // the next boot), and cancels the timer.
 func abortConfirmedChange(ctx context.Context, r CommandRunner, kind, token string) error {
-	stopRollbackUnit(ctx, r, kind, token)
-	return RunRevert(kind, token)
+	stopErr := stopRollbackUnit(ctx, r, kind, token)
+	// A systemd failure must not prevent the immediate safety rollback.
+	return errors.Join(stopErr, RunRevert(kind, token))
+}
+
+func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token string) error {
+	backup := rollbackBackupPath(kind, token)
+	if _, exists, err := stateFileSize(backup); err != nil {
+		return fmt.Errorf("inspect pending rollback: %w", err)
+	} else if !exists {
+		// Already committed or reverted; transient units may have been collected.
+		return nil
+	}
+	if err := stopRollbackUnit(ctx, r, kind, token); err != nil {
+		return err
+	}
+	if err := stateRemoveFile(backup); err != nil {
+		return fmt.Errorf("remove pending rollback: %w", err)
+	}
+	return nil
 }
 
 func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, token string) Response {
@@ -363,8 +390,9 @@ func nftCommit(ctx context.Context, r CommandRunner, token string) Response {
 	if !hostspec.ValidToken(token) {
 		return failResp("invalid token", 1)
 	}
-	stopRollbackUnit(ctx, r, "nft", token)
-	_ = stateRemoveFile(rollbackBackupPath("nft", token))
+	if err := commitConfirmedChange(ctx, r, "nft", token); err != nil {
+		return failResp(err.Error(), 1)
+	}
 	logOp("nft change committed (token %s)", token)
 	return okResp(nil, nil, 0)
 }
@@ -440,8 +468,9 @@ func netplanCommit(ctx context.Context, r CommandRunner, token string) Response 
 	if !hostspec.ValidToken(token) {
 		return failResp("invalid token", 1)
 	}
-	stopRollbackUnit(ctx, r, "netplan", token)
-	_ = stateRemoveFile(rollbackBackupPath("netplan", token))
+	if err := commitConfirmedChange(ctx, r, "netplan", token); err != nil {
+		return failResp(err.Error(), 1)
+	}
 	logOp("netplan change committed (token %s)", token)
 	return okResp(nil, nil, 0)
 }

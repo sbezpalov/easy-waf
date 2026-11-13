@@ -17,6 +17,7 @@ type recordingRunner struct {
 	calls   []string
 	nftSeen []string
 	failOn  map[string]bool
+	onStop  func()
 }
 
 func (m *recordingRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
@@ -30,6 +31,9 @@ func (m *recordingRunner) Run(_ context.Context, name string, args ...string) ([
 		if strings.HasPrefix(call, prefix) {
 			return nil, []byte("boom"), 1, nil
 		}
+	}
+	if name == binSystemctl && len(args) > 0 && args[0] == "stop" && m.onStop != nil {
+		m.onStop()
 	}
 	return nil, nil, 0, nil
 }
@@ -61,6 +65,86 @@ func rollbackTestEnv(t *testing.T) (*recordingRunner, string) {
 }
 
 const testToken = "abcdef0123456789abcdef0123456789"
+
+func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
+	for _, kind := range []string{"nft", "netplan"} {
+		for _, scenario := range []string{"success", "stop failure", "backup removal failure"} {
+			t.Run(kind+"/"+scenario, func(t *testing.T) {
+				m, _ := rollbackTestEnv(t)
+				backup := rollbackBackupPath(kind, testToken)
+				if err := stateWriteFile(backup, []byte("previous configuration"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "backup removal failure" {
+					m.onStop = func() {
+						// Simulate a filesystem failure after pending-state inspection.
+						if err := os.Remove(backup); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Mkdir(backup, 0o700); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(backup, "keep"), nil, 0o600); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if scenario == "stop failure" {
+					m.failOn[binSystemctl+" stop"] = true
+				}
+				commit := nftCommit
+				if kind == "netplan" {
+					commit = netplanCommit
+				}
+				resp := commit(context.Background(), m, testToken)
+				if scenario != "success" {
+					if resp.OK || resp.Code == 0 || resp.Error == "" {
+						t.Fatalf("commit hid %s: %+v", scenario, resp)
+					}
+					if _, err := os.Stat(backup); err != nil {
+						t.Fatalf("pending backup lost on failure: %v", err)
+					}
+					if scenario == "backup removal failure" && !strings.Contains(resp.Error, "remove pending rollback") {
+						t.Fatalf("did not exercise backup removal: %+v", resp)
+					}
+					return
+				}
+				if !resp.OK {
+					t.Fatalf("commit: %+v", resp)
+				}
+				unit := "easy-waf-rb-" + kind + "-" + testToken
+				stop := binSystemctl + " stop " + unit + ".timer " + unit + ".service"
+				if indexOf(m.calls, stop) < 0 {
+					t.Fatalf("timer and service not both stopped: %v", m.calls)
+				}
+				if _, err := os.Stat(backup); !os.IsNotExist(err) {
+					t.Fatalf("backup remains after commit: %v", err)
+				}
+				// A collected transient unit is absent on a retry. No systemd
+				// operation is needed once pending state has been removed.
+				m.failOn[binSystemctl+" stop"] = true
+				if resp := commit(context.Background(), m, testToken); !resp.OK {
+					t.Fatalf("repeat commit: %+v", resp)
+				}
+			})
+		}
+	}
+}
+
+func TestAbortRestoresEvenWhenTimerStopFails(t *testing.T) {
+	m, _ := rollbackTestEnv(t)
+	previous := []byte("network:\n  version: 2\n  ethernets: {}\n")
+	if err := stateWriteFile(rollbackBackupPath("netplan", testToken), previous, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.failOn[binSystemctl+" stop"] = true
+	if err := abortConfirmedChange(context.Background(), m, "netplan", testToken); err == nil {
+		t.Fatal("timer cancellation failure hidden")
+	}
+	if got, err := os.ReadFile(netplanPath); err != nil || string(got) != string(previous) {
+		t.Fatalf("previous configuration not restored: %q, %v", got, err)
+	}
+}
 
 func indexOf(calls []string, prefix string) int {
 	for i, c := range calls {
