@@ -58,6 +58,11 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
 	a, ok := s.loadApplication(w, r, id)
 	if !ok {
 		return
@@ -90,6 +95,11 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
 	a, ok := s.loadApplication(w, r, id)
 	if !ok {
 		return
@@ -137,6 +147,11 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown mode"})
 		return
 	}
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
 	a, ok := s.loadApplication(w, r, id)
 	if !ok {
 		return

@@ -310,6 +310,12 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
+
 	var old config.Application
 	haveOld := false
 	if strings.TrimSpace(a.ID) != "" {
@@ -422,6 +428,11 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
 	// An unknown id is a 404, not a successful no-op delete followed by a
 	// full HAProxy apply and a new revision.
 	old, ok := s.loadApplication(w, r, id)

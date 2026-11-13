@@ -27,6 +27,11 @@ func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	if !ok {
+		return
+	}
+	defer releaseMutation()
 	a, ok := s.loadApplication(w, r, id)
 	if !ok {
 		return

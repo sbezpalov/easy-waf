@@ -31,6 +31,13 @@ connection reused by the pool.
 Contended lock requests retry without holding a pooled connection between
 attempts, leaving capacity for the lock owner to finish its database work.
 
+Application write requests take a shared mutation lock before reading the
+previous application or changing its row and token files. They hold it through
+apply and any compensation. Apply, rollback and ACME certificate-file updates
+use the same gate, so another process cannot load a temporary application
+change that the request later undoes. A request waiting for this gate can time
+out without saving its change.
+
 The API keeps saved changes when a failure occurs after a successful reload.
 It responds with `500` and `configuration applied; check status before retrying`,
 while the process log records the underlying error. Apply failure notifications

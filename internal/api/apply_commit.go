@@ -24,13 +24,9 @@ import (
 // apply rendered it again and failed too, ACME renewals included, until
 // someone found and fixed it. Undo a rejected change to keep the database
 // aligned with the edge; AppliedError instead means the new configuration
-// is already live and its saved state must remain in place.
+// is already live and its saved state must remain in place. The caller holds
+// the application mutation lease from before its preimage read until undo ends.
 func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(context.Context) error) error {
-	release, lerr := s.Eng.Store.AcquireAdvisoryLock(ctx, engine.ApplyOrUndoAdvisoryLockKey)
-	if lerr != nil {
-		return lerr
-	}
-	defer func() { _ = release() }()
 	err := s.maybeAutoApply(ctx, label)
 	return undoRejectedApply(ctx, err, undo)
 }

@@ -42,8 +42,8 @@ const haproxyApplyAdvisoryLockKey int64 = 0x455741464150504c // "EWAFAPPL"
 // (api vs admin CLI), complementing the in-process settingsMu.
 const settingsAdvisoryLockKey int64 = 0x4557414653455453 // "EWAFSETS"
 
-// ApplyOrUndoAdvisoryLockKey serializes edge apply compensation across handlers
-// so concurrent undos cannot restore a stale preimage over a newer row.
+// ApplyOrUndoAdvisoryLockKey serializes application mutations and edge operations
+// so a render cannot observe an application change before its apply or undo ends.
 const ApplyOrUndoAdvisoryLockKey int64 = 0x45574146414F5501 // "EWAFAO1"
 
 // Engine coordinates render + apply + revision bookkeeping. It is shared by
@@ -343,11 +343,20 @@ func (g *renderGeo) close() {
 	}
 }
 
-// RenderFromStore builds HAProxy config from current DB state.
-func (e *Engine) RenderFromStore(ctx context.Context) (haproxy.Rendered, error) {
+// RenderFromStore builds HAProxy config and generated maps under the same
+// locks as apply, so it cannot overwrite artifacts during another transaction.
+func (e *Engine) RenderFromStore(ctx context.Context) (rendered haproxy.Rendered, retErr error) {
 	cfg := e.Settings()
 	_ = ipbl.PrefetchFeeds(ctx, e.Store, cfg, e.StateDir)
-	return e.renderFromStore(ctx, cfg)
+	retErr = e.WithApplyLock(ctx, func() error {
+		cfg, err := e.refreshForApply(ctx)
+		if err != nil {
+			return err
+		}
+		rendered, err = e.renderFromStore(ctx, cfg)
+		return err
+	})
+	return rendered, retErr
 }
 
 func (e *Engine) reloadPendingPath() string {
@@ -549,20 +558,35 @@ func (e *Engine) finishFailedArtifactTransaction(
 
 // WithApplyLock runs fn while holding the HAProxy apply lock, so files fn
 // writes (for example renewed PEMs that a render reads) never change in the
-// middle of another process's Apply or Rollback. fn must not call Apply.
+// middle of another process's Apply or Rollback. fn must not call another
+// operation that acquires the apply lock.
 func (e *Engine) WithApplyLock(ctx context.Context, fn func() error) (retErr error) {
 	release, err := e.lockApply(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		appendFailure(&retErr, "release HAProxy apply lock", release())
+		appendFailure(&retErr, "release apply locks", release())
 	}()
 	return fn()
 }
 
-// lockApply takes the in-process and the cross-process apply locks.
+// lockApply takes the mutation gate before the local and cross-process apply
+// locks. A handler holding a mutation lease may apply without reacquiring it.
 func (e *Engine) lockApply(ctx context.Context) (func() error, error) {
+	return e.lockApplyWith(ctx, e.Store.AcquireAdvisoryLock)
+}
+
+func (e *Engine) lockApplyWith(ctx context.Context, acquire advisoryLockAcquire) (release func() error, retErr error) {
+	_, releaseMutation, err := e.lockApplicationMutation(ctx, acquire)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if retErr != nil {
+			appendFailure(&retErr, "release application mutation lock", releaseMutation())
+		}
+	}()
 	e.applySemOnce.Do(func() { e.applySem = make(chan struct{}, 1) })
 	select {
 	case e.applySem <- struct{}{}:
@@ -570,14 +594,20 @@ func (e *Engine) lockApply(ctx context.Context) (func() error, error) {
 		return nil, fmt.Errorf("acquire HAProxy apply lock: %w", ctx.Err())
 	}
 	unlock := func() { <-e.applySem }
-	release, err := e.Store.AcquireAdvisoryLock(ctx, haproxyApplyAdvisoryLockKey)
+	releaseEdge, err := acquire(ctx, haproxyApplyAdvisoryLockKey)
 	if err != nil {
 		unlock()
 		return nil, fmt.Errorf("acquire HAProxy apply lock: %w", err)
 	}
+	var once sync.Once
+	var releaseErr error
 	return func() error {
-		defer unlock()
-		return release()
+		once.Do(func() {
+			defer unlock()
+			appendFailure(&releaseErr, "release HAProxy apply lock", releaseEdge())
+			appendFailure(&releaseErr, "release application mutation lock", releaseMutation())
+		})
+		return releaseErr
 	}, nil
 }
 
@@ -623,7 +653,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		return false, err
 	}
 	defer func() {
-		appendFailure(&retErr, "release HAProxy apply lock", releaseLock())
+		appendFailure(&retErr, "release apply locks", releaseLock())
 	}()
 	cfg, err := e.refreshForApply(ctx)
 	if err != nil {
@@ -760,7 +790,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		return err
 	}
 	defer func() {
-		appendFailure(&retErr, "release HAProxy apply lock", releaseLock())
+		appendFailure(&retErr, "release apply locks", releaseLock())
 	}()
 	cfg, err := e.refreshForApply(ctx)
 	if err != nil {

@@ -25,7 +25,9 @@ func TestLockApply_WaitHonorsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	release, err := e.lockApply(ctx)
+	release, err := e.lockApplyWith(ctx, func(context.Context, int64) (func() error, error) {
+		return func() error { return nil }, nil
+	})
 	if err == nil {
 		_ = release()
 		t.Fatal("acquired a lock that is held")
