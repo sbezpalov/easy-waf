@@ -63,6 +63,9 @@ type ACMEClaimWindow struct {
 // inside the renewal window, or stuck in 'issuing'. FOR UPDATE SKIP LOCKED keeps
 // two workers from claiming the same row. Each returned row's UpdatedAt is the
 // claim stamp the Fail/Complete calls check.
+// Already expired certificates have priority (earliest expiry first); remaining
+// eligible rows retain FIFO ordering so initial issuance is not behind every
+// still-valid renewal. Priority never bypasses retry/claim eligibility.
 func (s *Store) ClaimCertificatesACME(ctx context.Context, w ACMEClaimWindow) ([]config.Certificate, error) {
 	now := w.Now.UTC().Truncate(time.Microsecond)
 	rows, err := s.db.QueryContext(ctx, `
@@ -73,7 +76,9 @@ func (s *Store) ClaimCertificatesACME(ctx context.Context, w ACMEClaimWindow) ([
 			   OR (acme_status = 'failed' AND (acme_next_attempt_at IS NULL OR acme_next_attempt_at <= $1))
 			   OR (acme_status = 'ready' AND mode IN ('http-01', 'dns-01') AND not_after IS NOT NULL AND not_after < $2)
 			   OR (acme_status = 'issuing' AND updated_at < $3)
-			ORDER BY updated_at ASC
+			ORDER BY CASE WHEN not_after <= $1 THEN 0 ELSE 1 END,
+			         CASE WHEN not_after <= $1 THEN not_after END ASC NULLS LAST,
+			         updated_at ASC, id ASC
 			LIMIT $4
 			FOR UPDATE SKIP LOCKED
 		)

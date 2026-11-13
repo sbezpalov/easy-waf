@@ -178,3 +178,38 @@ func TestACMEStaleIssuingAndRenewalAreClaimed(t *testing.T) {
 		t.Fatal("stale issuing row not reclaimed")
 	}
 }
+
+func TestACMEQueuePrioritizesExpiredWithoutBypassingBackoff(t *testing.T) {
+	st := openFresh(t, freshSchemaDSN(t))
+	now := time.Now().UTC().Truncate(time.Second)
+	validUntil := now.Add(20 * 24 * time.Hour)
+	expiredAt := now.Add(-time.Hour)
+	olderExpiry := now.Add(-2 * time.Hour)
+	valid := newACMECert(t, st, "ready", &validUntil)
+	pending := newACMECert(t, st, "pending", nil)
+	expired := newACMECert(t, st, "ready", &expiredAt)
+	oldest := newACMECert(t, st, "ready", &olderExpiry)
+	backoff := newACMECert(t, st, "failed", &olderExpiry)
+	for i, c := range []*config.Certificate{valid, pending, expired, oldest, backoff} {
+		if _, err := st.db.ExecContext(t.Context(), `UPDATE certificates SET updated_at=$2 WHERE id=$1`, c.ID, now.Add(time.Duration(i-10)*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.db.ExecContext(t.Context(), `UPDATE certificates SET acme_next_attempt_at=$2 WHERE id=$1`, backoff.ID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	w := ACMEClaimWindow{Now: now, RenewBefore: now.Add(30 * 24 * time.Hour), StaleIssuing: time.Hour, Limit: 1}
+	for _, want := range []string{oldest.ID, expired.ID, valid.ID, pending.ID} {
+		got, err := st.ClaimCertificatesACME(t.Context(), w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0].ID != want {
+			t.Fatal("queue did not prioritize expired certificates while preserving other due work order")
+		}
+	}
+	got, err := st.ClaimCertificatesACME(t.Context(), w)
+	if err != nil || len(got) != 0 {
+		t.Fatal("priority bypassed backoff or reclaimed fresh issuance")
+	}
+}
