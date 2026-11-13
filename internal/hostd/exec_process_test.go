@@ -37,6 +37,25 @@ func TestHostdCommandProcessHelper(_ *testing.T) {
 		}
 		os.Exit(0)
 	}
+	if mode == "capture-overflow" || mode == "overflow-inherited" {
+		for range 256 {
+			if _, err := os.Stdout.WriteString(strings.Repeat("o", 32<<10)); err != nil {
+				os.Exit(95)
+			}
+			if _, err := os.Stderr.WriteString(strings.Repeat("e", 32<<10)); err != nil {
+				os.Exit(96)
+			}
+		}
+		write("output-drained", "ready")
+		if os.Getenv("EASY_WAF_EXEC_TEST_WAIT") == "1" {
+			time.Sleep(30 * time.Second)
+		}
+		if mode == "capture-overflow" {
+			code, _ := strconv.Atoi(os.Getenv("EASY_WAF_EXEC_TEST_EXIT"))
+			os.Exit(code)
+		}
+		mode = "inherited"
+	}
 	if mode == "exit" {
 		_, _ = fmt.Fprintln(os.Stdout, "captured stdout")
 		_, _ = fmt.Fprintln(os.Stderr, "captured stderr")
@@ -174,7 +193,7 @@ func TestOSRunnerPreservesCancellationCause(t *testing.T) {
 }
 
 func TestOSRunnerBoundsInheritedPipesAndCleansControlChildren(t *testing.T) {
-	for _, mode := range []string{"inherited", "closed", "cancel-tree"} {
+	for _, mode := range []string{"inherited", "closed", "cancel-tree", "overflow-inherited"} {
 		t.Run(mode, func(t *testing.T) {
 			executable, dir := commandProcessFixture(t, mode)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
@@ -221,8 +240,11 @@ func TestOSRunnerBoundsInheritedPipesAndCleansControlChildren(t *testing.T) {
 			select {
 			case got := <-done:
 				received = true
-				if mode == "inherited" && (got.code == 0 || !errors.Is(got.err, exec.ErrWaitDelay)) {
+				if (mode == "inherited" || mode == "overflow-inherited") && (got.code == 0 || !errors.Is(got.err, exec.ErrWaitDelay)) {
 					t.Fatalf("inherited pipe was not reported as incomplete capture: code=%d err=%v", got.code, got.err)
+				}
+				if mode == "overflow-inherited" && (got.err == nil || !strings.Contains(got.err.Error(), "capture limit") || !strings.Contains(got.err.Error(), "command exit code 0")) {
+					t.Fatalf("capture overflow replaced the exited parent's actual status: code=%d err=%v", got.code, got.err)
 				}
 				if mode == "closed" && (got.code != 0 || got.err != nil) {
 					t.Fatalf("normal parent exit changed: %+v", got)

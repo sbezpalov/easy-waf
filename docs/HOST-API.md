@@ -29,6 +29,20 @@ socket with unread excess bytes can reset it before the error reply is received.
 Large configuration files continue to use staged paths rather than inline JSON.
 These transport limits do not bound all external-command or API process memory.
 
+Ordinary command capture in both the root broker and local API runner retains
+at most **4 MiB combined stdout/stderr per command**. The two pipe readers share
+that budget. After it fills, excess output is consumed and discarded so a command
+can finish without blocking on a full pipe. The reply reports incomplete capture,
+even if the child exits zero; root replies keep a nonzero child exit code and
+otherwise use code 1, with the actual zero exit stated in the error. Cancellation
+and cleanup errors remain visible. Retained prefixes can end mid-line and are
+not successful complete results. Narrow large journal queries with line/time
+filters; very large ruleset/diagnostic output can also exceed this limit.
+This policy includes APT simulations, not tracked APT mutations: mutations retain
+their separate 1 MiB synchronous excerpt, live-delivery and 64 MiB saved-log
+limits described below. It does not cap the subprocess's own memory or the API's
+decoded responses.
+
 Synchronous broker commands have a **two-minute execution budget per command**;
 `apt-get` has **30 minutes** so a slow package transaction is not interrupted by
 the ordinary control-command limit. APT belongs to `easy-waf-apt.service`, outside

@@ -4,14 +4,16 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
 // Privileged sends a validated subcommand to easy-waf-hostd over the unix socket.
@@ -77,16 +79,18 @@ func Run(ctx context.Context, timeout time.Duration, name string, args ...string
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	var capture commandoutput.Capture
+	cmd.Stdout = capture.Stdout()
+	cmd.Stderr = capture.Stderr()
+	runErr := cmd.Run()
+	stdout, stderr, captureErr := capture.Result()
+	err := errors.Join(runErr, captureErr)
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
+		msg := strings.TrimSpace(string(stderr))
 		if msg == "" {
 			msg = err.Error()
 		}
-		return stdout.Bytes(), fmt.Errorf("%w: %s", err, msg)
+		return stdout, fmt.Errorf("%w: %s", err, msg)
 	}
-	return stdout.Bytes(), nil
+	return stdout, nil
 }

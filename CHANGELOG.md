@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Bounded subprocess output.** Root broker and local API commands share a 4 MiB combined stdout/stderr capture policy. Excess output is drained to let commands finish, then reported as incomplete; nonzero child exits and execution/cancellation errors remain visible. Tracked APT mutation output keeps its separate live/log policies.
 - **Bounded host-management requests.** Broker and APT worker cap admitted connections at 32 and privileged request JSON at 64 KiB. Saved APT logs stream through bounded JSON chunks instead of whole-log allocation in the package owner, retaining the existing response and Unicode semantics.
 - **TLS hardening on :443.** The generated config sets TLS 1.2 as the minimum, ECDHE AEAD ciphers only (Mozilla "intermediate" without DHE) and disables session tickets. Clients from before roughly 2014 can no longer connect.
 - **Built with Go 1.27.4.** It fixes GO-2026-6859 in `net/http`, which `govulncheck` reports as reachable from the API, the ACME worker and the CrowdSec client. `go.mod` and the installer's Go bootstrap (`EASY_WAF_BOOTSTRAP_GO_VERSION`, with its checksums) move to 1.27.4.

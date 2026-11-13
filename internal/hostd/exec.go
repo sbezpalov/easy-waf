@@ -4,7 +4,6 @@
 package hostd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
 // CommandRunner runs subprocesses without a shell.
@@ -32,20 +33,21 @@ func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, [
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = commandWaitDelay
 	prepareCommandProcess(cmd)
-	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
+	var capture commandoutput.Capture
+	cmd.Stdout = capture.Stdout()
+	cmd.Stderr = capture.Stderr()
 	runErr := cmd.Run()
+	out, stderr, captureErr := capture.Result()
 	// Ordinary control commands must not leave helpers running after releasing
 	// the rollback lock. Successful APT scripts may intentionally start services.
-	cleanupErr := finishCommandProcess(cmd, name != binAptGet || runErr != nil)
+	cleanupErr := finishCommandProcess(cmd, name != binAptGet || runErr != nil || captureErr != nil)
 	code := 0
 	if runErr != nil {
 		var ee *exec.ExitError
 		if errors.As(runErr, &ee) {
 			code = ee.ExitCode()
 			if ctx.Err() == nil && cleanupErr == nil {
-				return out.Bytes(), errb.Bytes(), code, nil
+				runErr = nil // A normal nonzero exit is represented by code.
 			}
 		} else {
 			code = 1
@@ -53,12 +55,19 @@ func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, [
 		if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(runErr, ctxErr) {
 			runErr = errors.Join(runErr, ctxErr)
 		}
-		return out.Bytes(), errb.Bytes(), code, errors.Join(runErr, cleanupErr)
 	}
-	if cleanupErr != nil {
-		return out.Bytes(), errb.Bytes(), 1, cleanupErr
+	if captureErr != nil {
+		commandCode := code
+		if cmd.ProcessState != nil {
+			commandCode = cmd.ProcessState.ExitCode()
+		}
+		captureErr = fmt.Errorf("incomplete command output (command exit code %d): %w", commandCode, captureErr)
 	}
-	return out.Bytes(), errb.Bytes(), code, nil
+	resultErr := errors.Join(runErr, captureErr, cleanupErr)
+	if code == 0 && resultErr != nil {
+		code = 1
+	}
+	return out, stderr, code, resultErr
 }
 
 // DefaultRunner is the production command executor.
