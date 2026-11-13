@@ -38,9 +38,15 @@ pipe waits. Host broker peer verification is supported only on Linux; other
 platforms reject connections except for the explicit unit-test bypass. The
 `easy-waf` UID lookup is performed only on Linux.
 
-Streaming APT retains its separate transaction/output executor and independent
-30-minute parent-command context; the synchronous-command pipe policy above does
-not describe that executor.
+Streaming APT has an independent 30-minute command context that survives client
+disconnects. It reads output while reaping the parent concurrently, then allows
+two seconds for the remaining stdout/stderr to drain. An inherited pipe that
+stays open is closed and reported as incomplete capture, so it cannot leave the
+completed transaction permanently active. Cancellation/deadline errors retain
+their cause; Linux/macOS terminate the command group on cancellation or failure.
+Successful scripts may leave services running once they release output pipes.
+These limits cover commands and pipe waits, not blocking filesystem I/O or a
+blocked output callback.
 
 Network and firewall commit stop both the rollback timer and its service before
 deleting the pending backup. If cancellation or backup deletion fails, the broker

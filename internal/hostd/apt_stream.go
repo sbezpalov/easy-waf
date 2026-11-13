@@ -291,7 +291,7 @@ func dispatchAptActionPrimary(sc *aptStreamConn, action string) {
 		defer logFile.Close()
 	}
 
-	aptCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	aptCtx, cancel := context.WithTimeout(context.Background(), aptCommandTimeout)
 	defer cancel()
 
 	clientDown := false
@@ -455,26 +455,42 @@ func execAptStream(ctx context.Context, action string, emit func(string) error) 
 	}
 	cmd := exec.CommandContext(ctx, binAptGet, args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	return execAptCommand(cmd, emit)
+	return execAptCommand(ctx, cmd, emit)
 }
 
-func execAptCommand(cmd *exec.Cmd, emit func(string) error) (int, error) {
-	stdout, err := cmd.StdoutPipe()
+func execAptCommand(ctx context.Context, cmd *exec.Cmd, emit func(string) error) (int, error) {
+	if cmd.Stdout != nil || cmd.Stderr != nil {
+		return 1, errors.New("apt output already configured")
+	}
+	// Own these descriptors: StdoutPipe/StderrPipe would let concurrent Wait
+	// close the readers before all buffered output has been consumed.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return 1, err
 	}
-	stderr, err := cmd.StderrPipe()
+	defer stdout.Close()
+	defer stdoutWriter.Close()
+	stderr, stderrWriter, err := os.Pipe()
 	if err != nil {
 		return 1, err
 	}
+	defer stderr.Close()
+	defer stderrWriter.Close()
+	cmd.Stdout, cmd.Stderr = stdoutWriter, stderrWriter
+	cmd.WaitDelay = commandWaitDelay
+	prepareCommandProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return 1, err
 	}
+	// Only the child owns write ends now, so EOF reflects child/descendant exit.
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
 	if cmd.Process != nil {
 		if err := writeAptActionPID(cmd.Process.Pid); err != nil {
+			cleanupErr := finishCommandProcess(cmd, true)
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			return 1, fmt.Errorf("write apt action pid: %w", err)
+			return 1, errors.Join(fmt.Errorf("write apt action pid: %w", err), cleanupErr)
 		}
 	}
 
@@ -499,10 +515,29 @@ func execAptCommand(cmd *exec.Cmd, emit func(string) error) (int, error) {
 	wg.Add(2)
 	go pipeLines(stdout, "stdout")
 	go pipeLines(stderr, "stderr")
+	readersDone := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(lineCh)
 		close(captureErrors)
+		close(readersDone)
+	}()
+	waitResult := make(chan error, 1)
+	go func() {
+		// Reap the parent even when a service/helper inherited an output pipe.
+		// Give normal buffered output time to drain; an open inherited pipe
+		// cannot keep single-flight ownership forever after the parent exits.
+		runErr := cmd.Wait()
+		timer := time.NewTimer(commandWaitDelay)
+		defer timer.Stop()
+		select {
+		case <-readersDone:
+		case <-timer.C:
+			_ = stdout.Close()
+			_ = stderr.Close()
+			runErr = errors.Join(runErr, exec.ErrWaitDelay)
+		}
+		waitResult <- runErr
 	}()
 
 	for line := range lineCh {
@@ -513,18 +548,19 @@ func execAptCommand(cmd *exec.Cmd, emit func(string) error) (int, error) {
 	for err := range captureErrors {
 		captureErr = errors.Join(captureErr, err)
 	}
-	code := 0
-	runErr := cmd.Wait()
-	if runErr != nil {
-		code = 1
-		if ee, ok := runErr.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
+	runErr := <-waitResult
+	if ctxErr := ctx.Err(); runErr != nil && ctxErr != nil && !errors.Is(runErr, ctxErr) {
+		runErr = errors.Join(runErr, ctxErr)
 	}
-	if code == 0 && captureErr != nil {
+	// A successful package script may intentionally start a service. Failed
+	// commands/capture must not leave their process group holding dpkg resources.
+	cleanupErr := finishCommandProcess(cmd, runErr != nil || captureErr != nil)
+	resultErr := errors.Join(runErr, captureErr, cleanupErr)
+	code := cmd.ProcessState.ExitCode()
+	if code == 0 && resultErr != nil {
 		code = 1
 	}
-	return code, errors.Join(runErr, captureErr)
+	return code, resultErr
 }
 
 func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
