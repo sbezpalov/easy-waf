@@ -9,25 +9,11 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/user"
-	"strconv"
 	"time"
 )
 
 // DefaultSocket is the unix socket path (root:easy-waf 0660).
 const DefaultSocket = "/run/easy-waf/hostd.sock"
-
-// easyWafUID is the uid easy-waf-api runs as. It stays -1 when the account cannot
-// be resolved, in which case allowPeer accepts root only — an unresolvable
-// service account must not turn the peer check into a no-op.
-var easyWafUID = -1
-
-func init() {
-	u, err := user.Lookup("easy-waf")
-	if err == nil {
-		easyWafUID, _ = strconv.Atoi(u.Uid)
-	}
-}
 
 // Serve listens on sockPath until ctx is cancelled.
 func Serve(ctx context.Context, sockPath string) error {

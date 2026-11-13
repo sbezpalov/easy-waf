@@ -3,13 +3,15 @@
 
 package hostd
 
+import "sync/atomic"
+
 // SetBypassPeerCheckForTest disables SO_PEERCRED checks (unit tests dial as non-easy-waf uid).
 func SetBypassPeerCheckForTest(v bool) {
-	bypassPeerCheckForTest = v
+	bypassPeerCheckForTest.Store(v)
 }
 
-var bypassPeerCheckForTest bool
+var bypassPeerCheckForTest atomic.Bool
 
 func peerCheckBypassed() bool {
-	return bypassPeerCheckForTest
+	return bypassPeerCheckForTest.Load()
 }

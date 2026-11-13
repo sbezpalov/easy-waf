@@ -5,8 +5,14 @@
 
 package hostd
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 func allowPeer(_ *net.UnixConn) error {
-	return nil
+	if peerCheckBypassed() {
+		return nil
+	}
+	return fmt.Errorf("host broker peer verification requires Linux")
 }

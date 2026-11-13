@@ -20,6 +20,28 @@ WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` rout
 
 Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib/easy-waf/staging/`, mode 0600. Each input is closed before the broker reads it and removed after the synchronous operation returns, including validation and broker failures. Concurrent requests do not share filenames. Cleanup errors are reported together with any operation error; netplan staging files may contain Wi-Fi credentials and must not accumulate as history.
 
+Synchronous broker commands have a **two-minute execution budget per command**;
+`apt-get` has **30 minutes** so a slow package transaction is not interrupted by
+the ordinary control-command limit. Earlier internal caller deadlines remain in
+force. The API's socket/request deadline is separate and can end its wait while
+the broker is still finishing work. These are not whole-operation budgets:
+multi-command apply/recovery and filesystem/lock waits can take longer.
+
+After process exit or cancellation, captured stdout/stderr pipe waits are limited
+to another two seconds. An inherited pipe that never closes is an output-capture
+failure rather than a successful result. Linux/macOS commands run in their own
+process group; cancellation terminates that group, and ordinary control commands
+clean up remaining helpers before returning. Successful APT scripts retain their
+normal service-start behavior; systemd-managed jobs are separate from the CLI
+process group. Windows development uses native parent cancellation and bounded
+pipe waits. Host broker peer verification is supported only on Linux; other
+platforms reject connections except for the explicit unit-test bypass. The
+`easy-waf` UID lookup is performed only on Linux.
+
+Streaming APT retains its separate transaction/output executor and independent
+30-minute parent-command context; the synchronous-command pipe policy above does
+not describe that executor.
+
 Network and firewall commit stop both the rollback timer and its service before
 deleting the pending backup. If cancellation or backup deletion fails, the broker
 attempts an immediate rollback: systemd may have stopped the safety timer even

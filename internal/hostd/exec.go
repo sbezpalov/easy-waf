@@ -6,10 +6,13 @@ package hostd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // CommandRunner runs subprocesses without a shell.
@@ -19,19 +22,41 @@ type CommandRunner interface {
 
 type osRunner struct{}
 
+const (
+	hostCommandTimeout = 2 * time.Minute
+	aptCommandTimeout  = 30 * time.Minute
+	commandWaitDelay   = 2 * time.Second
+)
+
 func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = commandWaitDelay
+	prepareCommandProcess(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	runErr := cmd.Run()
+	// Ordinary control commands must not leave helpers running after releasing
+	// the rollback lock. Successful APT scripts may intentionally start services.
+	cleanupErr := finishCommandProcess(cmd, name != binAptGet || runErr != nil)
 	code := 0
 	if runErr != nil {
-		if ee, ok := runErr.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(runErr, &ee) {
 			code = ee.ExitCode()
+			if ctx.Err() == nil && cleanupErr == nil {
+				return out.Bytes(), errb.Bytes(), code, nil
+			}
 		} else {
-			return out.Bytes(), errb.Bytes(), 1, runErr
+			code = 1
 		}
+		if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(runErr, ctxErr) {
+			runErr = errors.Join(runErr, ctxErr)
+		}
+		return out.Bytes(), errb.Bytes(), code, errors.Join(runErr, cleanupErr)
+	}
+	if cleanupErr != nil {
+		return out.Bytes(), errb.Bytes(), 1, cleanupErr
 	}
 	return out.Bytes(), errb.Bytes(), code, nil
 }
@@ -39,7 +64,15 @@ func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, [
 // DefaultRunner is the production command executor.
 var DefaultRunner CommandRunner = osRunner{}
 
+// runCmd is the policy boundary for synchronous broker commands. A socket
+// deadline alone cannot stop a command or release the rollback operation lock.
 func runCmd(ctx context.Context, r CommandRunner, name string, args ...string) (stdout, stderr []byte, code int, err error) {
+	budget := hostCommandTimeout
+	if name == binAptGet {
+		budget = aptCommandTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	if r == nil {
 		r = DefaultRunner
 	}
@@ -59,10 +92,23 @@ func failResp(msg string, code int) Response {
 
 func failExec(stdout, stderr []byte, code int, err error) Response {
 	msg := string(stderr)
-	if msg == "" && err != nil {
-		msg = err.Error()
+	if err != nil {
+		msg = commandFailure(stderr, code, err).Error()
 	}
 	return Response{OK: false, Stdout: string(stdout), Stderr: string(stderr), Code: code, Error: msg}
+}
+
+// Keep cancellation/start failures even when the tool printed a warning before
+// failing. Rollback wrappers must not replace a deadline cause with stderr alone.
+func commandFailure(stderr []byte, code int, err error) error {
+	detail := strings.TrimSpace(string(stderr))
+	if err != nil {
+		if detail != "" {
+			return fmt.Errorf("%w: %s", err, detail)
+		}
+		return err
+	}
+	return fmt.Errorf("exit code %d: %s", code, detail)
 }
 
 // copyFile writes src to dst atomically: a temporary file in the destination

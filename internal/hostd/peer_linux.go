@@ -9,8 +9,20 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
+	"strconv"
 	"syscall"
 )
+
+// The service account is a Linux appliance identity. Failure to resolve it
+// leaves non-root peers denied; development builds do not perform this lookup.
+var easyWafUID = -1
+
+func init() {
+	if u, err := user.Lookup("easy-waf"); err == nil {
+		easyWafUID, _ = strconv.Atoi(u.Uid)
+	}
+}
 
 var trustedAPIPeerExecutables = []string{
 	"/usr/sbin/easy-waf-api",

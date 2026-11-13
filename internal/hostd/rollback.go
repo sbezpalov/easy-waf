@@ -57,7 +57,7 @@ func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, ti
 		fmt.Sprintf("--on-active=%ds", timeoutSec),
 		hostdBin, "revert", kind, token)
 	if err != nil || code != 0 {
-		return time.Time{}, fmt.Errorf("systemd-run: %s", string(stderr))
+		return time.Time{}, fmt.Errorf("systemd-run: %w", commandFailure(stderr, code, err))
 	}
 	return deadline, nil
 }
@@ -325,7 +325,7 @@ func runNftScript(ctx context.Context, script string) error {
 	}
 	_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", f.Name())
 	if err != nil || code != 0 {
-		return fmt.Errorf("nft -f: %s", string(stderr))
+		return fmt.Errorf("nft -f: %w", commandFailure(stderr, code, err))
 	}
 	return nil
 }
@@ -355,7 +355,7 @@ func revertNetplan(token string) error {
 	ctx := context.Background()
 	_, stderr, code, err := runCmd(ctx, DefaultRunner, binNetplan, "apply")
 	if err != nil || code != 0 {
-		return fmt.Errorf("netplan apply: %s", string(stderr))
+		return fmt.Errorf("netplan apply: %w", commandFailure(stderr, code, err))
 	}
 	if err := removePendingRollback(bak); err != nil {
 		return err
