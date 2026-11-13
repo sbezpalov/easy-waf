@@ -20,7 +20,28 @@ WAF tabs (Applications, HAProxy apply, etc.) remain on existing `/api/v1/*` rout
 
 Netplan, firewall and SSH-key writes use unique temporary inputs under `/var/lib/easy-waf/staging/`, mode 0600. Each input is closed before the broker reads it and removed after the synchronous operation returns, including validation and broker failures. Concurrent requests do not share filenames. Cleanup errors are reported together with any operation error; netplan staging files may contain Wi-Fi credentials and must not accumulate as history.
 
-Network and firewall commit stop both the rollback timer and its service before deleting the pending backup. If cancellation or backup deletion fails, the broker returns an error and keeps the pending state for recovery; do not treat the change as confirmed. A repeated commit after the backup has already been removed is safe. If apply fails, the broker still attempts an immediate rollback even when systemd cancellation fails.
+Network and firewall commit stop both the rollback timer and its service before
+deleting the pending backup. If cancellation or backup deletion fails, the broker
+returns an error and keeps the pending state for recovery; do not treat the change
+as confirmed. If apply fails, the broker still attempts an immediate rollback even
+when systemd cancellation fails.
+
+A repeated commit succeeds only when the root-owned receipt for that subsystem
+matches the token. An absent backup alone does not prove confirmation: the change
+may have reverted, or the token may be unknown. Such requests return an error
+instead of `committed`. The receipt survives broker restart and contains only the
+last confirmed token, with at most one file per subsystem. Starting another safe
+apply invalidates its subsystem's old receipt. A new apply cannot reuse the token
+in its current receipt. Pending changes from an older version remain
+confirmable; an old completed change without a receipt is treated as unknown.
+When recovery finds both a pending backup and a stale receipt, it invalidates the
+receipt before restoring the backup. An invalidation failure leaves pending
+recovery state available and is reported as an error.
+
+The receipt is written after backup removal. If that later write fails, the error
+explicitly says `change kept but recording confirmation failed`; check the current
+configuration before retrying. A retry without a matching receipt does not invent
+confirmation or change the live configuration.
 
 The rollback timer is armed **before** changing the live configuration. The API's
 `expires_at` comes from a conservative deadline recorded by hostd immediately

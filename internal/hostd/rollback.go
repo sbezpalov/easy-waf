@@ -212,6 +212,9 @@ func revertNft(token string) error {
 	if !ok {
 		return nil
 	}
+	if err := invalidateRollbackReceipt("nft"); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	if len(data) == 0 || string(data) == nftEmptyRuleset {
 		// No managed ruleset existed before this change, so undo it by removing
@@ -340,6 +343,9 @@ func revertNetplan(token string) error {
 	if !ok {
 		return nil
 	}
+	if err := invalidateRollbackReceipt("netplan"); err != nil {
+		return err
+	}
 	if len(data) > 0 {
 		if err := validateNetplanYAML(data); err != nil {
 			return fmt.Errorf("backup rejected: %w", err)
@@ -382,8 +388,18 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 	if err := rejectPendingChange(kind); err != nil {
 		return time.Time{}, err
 	}
+	confirmed, err := readRollbackReceipt(kind)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if confirmed == token {
+		return time.Time{}, fmt.Errorf("token already confirmed; use a new token")
+	}
 	if err := saveRollbackBackup(kind, livePath, bak, mode); err != nil {
 		return time.Time{}, err
+	}
+	if err := stateRemoveFile(rollbackReceiptPath(kind)); err != nil {
+		return time.Time{}, errors.Join(fmt.Errorf("invalidate previous confirmation: %w", err), removePendingRollback(bak))
 	}
 	deadline, err := scheduleRevert(ctx, r, kind, token, timeoutSec)
 	if err != nil {
@@ -431,13 +447,28 @@ func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token str
 	if _, exists, err := stateFileSize(backup); err != nil {
 		return fmt.Errorf("inspect pending rollback: %w", err)
 	} else if !exists {
-		// Already committed or reverted; transient units may have been collected.
-		return nil
+		confirmed, err := readRollbackReceipt(kind)
+		if err != nil {
+			return err
+		}
+		if confirmed == token {
+			return nil
+		}
+		return fmt.Errorf("change is not pending and has no confirmation receipt; it may have been reverted; check current configuration")
 	}
 	if err := stopRollbackUnit(ctx, r, kind, token); err != nil {
 		return err
 	}
-	return removePendingRollback(backup)
+	if err := removePendingRollback(backup); err != nil {
+		return err
+	}
+	// Do not record success before removing the backup: a failed removal
+	// leaves it eligible for safety recovery on broker restart. If this later
+	// write fails, the configuration is kept but its confirmation is uncertain.
+	if err := stateWriteFile(rollbackReceiptPath(kind), []byte(token), 0o600); err != nil {
+		return fmt.Errorf("change kept but recording confirmation failed; check current configuration: %w", err)
+	}
+	return nil
 }
 
 func removePendingRollback(backup string) error {

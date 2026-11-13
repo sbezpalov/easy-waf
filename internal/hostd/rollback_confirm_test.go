@@ -202,6 +202,9 @@ func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 					if _, err := os.Stat(backup); err != nil {
 						t.Fatalf("pending backup lost on failure: %v", err)
 					}
+					if confirmed, err := readRollbackReceipt(kind); err != nil || confirmed != "" {
+						t.Fatalf("failed commit left confirmation evidence: %q, %v", confirmed, err)
+					}
 					if scenario == "backup removal failure" && !strings.Contains(resp.Error, "remove pending rollback") {
 						t.Fatalf("did not exercise backup removal: %+v", resp)
 					}
