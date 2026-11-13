@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -46,24 +47,99 @@ func writeLegacyApplyPending(t *testing.T, state string) {
 	}
 }
 
+func legacyPendingForTest(t *testing.T, state string) bool {
+	t.Helper()
+	pending, err := applyPending(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pending
+}
+
 func TestLegacyApplyPendingMark(t *testing.T) {
 	state := t.TempDir()
-	if applyPending(state) {
+	if legacyPendingForTest(t, state) {
 		t.Fatal("pending before anything was stored")
 	}
 	writeLegacyApplyPending(t, state)
-	if !applyPending(state) {
+	if !legacyPendingForTest(t, state) {
 		t.Fatal("mark not visible")
 	}
 	b, err := os.ReadFile(applyPendingPath(state))
 	if err != nil || len(b) == 0 {
 		t.Fatalf("mark content: %q %v", b, err)
 	}
-	clearApplyPending(state)
-	if applyPending(state) {
+	if err := clearApplyPending(state); err != nil {
+		t.Fatal(err)
+	}
+	if legacyPendingForTest(t, state) {
 		t.Fatal("mark not cleared")
 	}
-	clearApplyPending(state) // clearing twice is fine
+	if err := clearApplyPending(state); err != nil {
+		t.Fatal(err)
+	} // clearing twice is fine
+}
+
+func TestLegacyMarkerErrorsStopBeforeDatabaseOrApply(t *testing.T) {
+	for _, kind := range []string{"directory", "invalid-path"} {
+		t.Run(kind, func(t *testing.T) {
+			state := t.TempDir()
+			if kind == "directory" {
+				if err := os.MkdirAll(applyPendingPath(state), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				state = filepath.Join(state, "invalid\x00path")
+			}
+			if pending, err := applyPending(state); pending || err == nil {
+				t.Fatal("invalid marker was accepted or hidden as absent")
+			}
+			eng := engine.New(state, nil, config.DefaultSettings(state))
+			if applied, err := reconcileCertificateApplies(t.Context(), eng, "acme-test"); applied || err == nil {
+				t.Fatal("invalid marker did not prevent reconciliation")
+			}
+		})
+	}
+	state := t.TempDir()
+	path := applyPendingPath(state)
+	if err := os.MkdirAll(filepath.Join(path, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearApplyPending(state); err == nil {
+		t.Fatal("cleanup failure was hidden")
+	}
+}
+
+func TestLegacyMarkerPermissionAndSymlinkErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permissions and unprivileged symlinks")
+	}
+	state := t.TempDir()
+	writeLegacyApplyPending(t, state)
+	dir := filepath.Dir(applyPendingPath(state))
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if pending, err := applyPending(state); pending || err == nil {
+		t.Fatal("unreadable marker hidden as absent")
+	}
+	eng := engine.New(state, nil, config.DefaultSettings(state))
+	if applied, err := reconcileCertificateApplies(t.Context(), eng, "acme-test"); applied || err == nil {
+		t.Fatal("unreadable marker allowed reconciliation")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearApplyPending(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(state, "missing-target"), applyPendingPath(state)); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := applyPending(state); pending || err == nil {
+		t.Fatal("dangling symlink hidden as absent")
+	}
 }
 
 // reconcile must not query/apply while backing off or
@@ -90,7 +166,7 @@ func TestReconcileOnlyWhenPending(t *testing.T) {
 	w.lastTry = time.Time{}
 	t.Setenv("EASY_WAF_ACME_SKIP_APPLY", "1")
 	mustNotApply("applies disabled")
-	if !applyPending(state) {
+	if !legacyPendingForTest(t, state) {
 		t.Fatal("mark dropped without a successful apply")
 	}
 }

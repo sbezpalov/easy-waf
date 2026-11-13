@@ -141,7 +141,7 @@ func requirePendingToken(t *testing.T, st *store.Store, token store.ACMEApplyTok
 func TestReconcileCommittedCertificateAfterRestart(t *testing.T) {
 	st, eng, dsn := reconcileFixture(t)
 	token := commitReconcileCertificate(t, st, eng)
-	if applyPending(eng.StateDir) {
+	if legacyPendingForTest(t, eng.StateDir) {
 		t.Fatal("new publication depends on legacy local marker")
 	}
 	// Reopen the database and discard the old engine/worker's in-memory state.
@@ -182,7 +182,7 @@ func TestReconcileCommittedCertificateAfterRestart(t *testing.T) {
 	writeLegacyApplyPending(t, eng.StateDir)
 	w.reconcile(t.Context())
 	after, err := st.ListConfigRevisions(t.Context(), 1000)
-	if err != nil || len(after) != len(before) || applyPending(eng.StateDir) {
+	if err != nil || len(after) != len(before) || legacyPendingForTest(t, eng.StateDir) {
 		t.Fatal("already-applied retry changed edge or lost legacy cleanup")
 	}
 }
@@ -215,7 +215,7 @@ func TestReconcileFailureCancellationAndSkipKeepIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.reconcile(t.Context())
-	if w.lastTry.IsZero() || !applyPending(eng.StateDir) {
+	if w.lastTry.IsZero() || !legacyPendingForTest(t, eng.StateDir) {
 		t.Fatal("failed apply lost retry/backoff or legacy intent")
 	}
 	requirePendingToken(t, st, token, true)
@@ -227,7 +227,7 @@ func TestReconcileFailureCancellationAndSkipKeepIntent(t *testing.T) {
 	w.lastTry = time.Time{}
 	w.reconcile(t.Context())
 	requirePendingToken(t, st, token, false)
-	if applyPending(eng.StateDir) {
+	if legacyPendingForTest(t, eng.StateDir) {
 		t.Fatal("successful recovery kept legacy marker")
 	}
 }

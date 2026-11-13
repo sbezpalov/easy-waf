@@ -221,15 +221,25 @@ func applyPendingPath(stateDir string) string {
 	return filepath.Join(stateDir, "acme", "apply-pending")
 }
 
-func applyPending(stateDir string) bool {
-	_, err := os.Stat(applyPendingPath(stateDir))
-	return err == nil
+func applyPending(stateDir string) (bool, error) {
+	info, err := os.Lstat(applyPendingPath(stateDir))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect legacy apply marker: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("legacy apply marker must be a regular file")
+	}
+	return true, nil
 }
 
-func clearApplyPending(stateDir string) {
+func clearApplyPending(stateDir string) error {
 	if err := os.Remove(applyPendingPath(stateDir)); err != nil && !os.IsNotExist(err) {
-		log.Printf("acmed: clear apply pending: %v", err)
+		return fmt.Errorf("clear legacy apply marker: %w", err)
 	}
+	return nil
 }
 
 // reconcile applies the edge while a certificate acmed stored is not live
@@ -259,13 +269,16 @@ func (w *worker) reconcile(ctx context.Context) {
 // A publication committed during/after apply keeps its newer token for retry.
 // Failure, stop or a crash before acknowledgement leaves committed work intact.
 func reconcileCertificateApplies(ctx context.Context, eng *engine.Engine, label string) (bool, error) {
+	legacy, err := applyPending(eng.StateDir)
+	if err != nil {
+		return false, err
+	}
 	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	tokens, err := eng.Store.PendingCertificateACMEApplies(qctx)
 	cancel()
 	if err != nil {
 		return false, fmt.Errorf("read pending certificate applies: %w", err)
 	}
-	legacy := applyPending(eng.StateDir)
 	if len(tokens) == 0 && !legacy {
 		return false, nil
 	}
@@ -281,7 +294,9 @@ func reconcileCertificateApplies(ctx context.Context, eng *engine.Engine, label 
 		return applied, fmt.Errorf("acknowledge certificate applies: %w", err)
 	}
 	if legacy {
-		clearApplyPending(eng.StateDir)
+		if err := clearApplyPending(eng.StateDir); err != nil {
+			return applied, err
+		}
 	}
 	return applied, nil
 }

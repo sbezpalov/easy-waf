@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Visible legacy ACME recovery errors.** Marker inspection and cleanup failures now keep reconciliation in its retry path; invalid file types and symlinks cannot masquerade as absent or completed work.
 - **Isolated ACME recovery results.** Lost-claim certificate/key pairs use unique private directories and matching-pair validation, preventing simultaneous attempts from overwriting each other's recovery material.
 - **Crash-consistent ACME publication.** Validated PEM pairs use immutable private generations, and ready metadata commits with a PostgreSQL apply token. Restart/failure retries acknowledge only the generations seen before apply; concurrent renewals and failed acknowledgements cannot lose work. Migration 027 retains existing paths and legacy-marker recovery; old/unreferenced generations are preserved for recovery.
 - **Stable ACME account identity.** First issuance publishes a complete private account key without replacing an existing file. Concurrent workers use the same winning key; interrupted staging cannot expose a partial canonical PEM, and corrupt existing keys fail explicitly without automatic rotation.

@@ -108,7 +108,13 @@ See [ADR 0010](adr/0010-acme-publication.md).
 
 Existing certificate paths remain readable. The worker still consumes the old
 `acme/apply-pending` marker on upgrade, clearing it after successful reconciliation;
-new publications use PostgreSQL only. Allow the package's graceful worker restart
+new publications use PostgreSQL only.
+
+The legacy marker must be a regular file. Inspection errors, symlinks and other
+file types fail reconciliation explicitly; only a missing marker means no legacy
+work. Cleanup failures are reported for retry instead of being treated as success.
+
+Allow the package's graceful worker restart
 to finish: an already-running older worker still uses its old publication code.
 Do not operate mixed worker versions as a steady state. This change does not
 automatically repair old partially promoted `.pem.new` files or reconstruct a
