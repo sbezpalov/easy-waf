@@ -26,6 +26,8 @@ Before arming the timer, the existing configuration must pass the same policy va
 
 A revert reports failure if the live netplan file cannot be removed or the pending backup cannot be deleted. Pending recovery state remains available for retry after the filesystem problem is repaired. Retrying an nftables revert that already wrote the no-managed-ruleset marker resumes guard reload and cleanup without attempting to rediscover removed tables. Timer-creation errors also report any failure to clean up their unused backup.
 
+For a nonempty nftables baseline, rollback recreates the tables declared in the current and saved managed files, then loads the saved rules in the same nft transaction. Simply loading the saved file would merge rules and retain changes. Tables belonging to other owners are left alone. Table removal uses an atomic ensure-exists/delete pair and does not require kernel support for `destroy table`. The nightly `nft-rollback` E2E job verifies this with real nftables on Ubuntu 24.04 inside a private network namespace; its integration test requires both the `integration` build tag and explicit `RUN_NFT_ROLLBACK_INTEGRATION=1` opt-in.
+
 ### `POST /host/updates/upgrade/stream` (live apt log)
 
 - **Content-Type:** `application/x-ndjson` — one JSON object per line; API flushes with `http.ResponseController.Flush()` after each line (chunked streaming).

@@ -246,12 +246,19 @@ func revertNft(token string) error {
 	if err := hostspec.ValidateNftRuleset(data); err != nil {
 		return fmt.Errorf("backup rejected: %w", err)
 	}
-	if err := writeFileAtomic(nftRulesPath, data, nftRulesMode); err != nil {
+	current, err := os.ReadFile(nftRulesPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read current managed ruleset: %w", err)
+	}
+	// Loading declarative nft source merges it with existing tables; it does
+	// not replace their rules. Recreate the union of the old/new managed tables
+	// in the same atomic nft transaction, preserving unrelated owners' tables.
+	tables := append(append(append([]byte(nil), current...), '\n'), data...)
+	if err := runNftScript(ctx, nftDestroyScript(tables)+string(data)); err != nil {
 		return err
 	}
-	_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", nftRulesPath)
-	if err != nil || code != 0 {
-		return fmt.Errorf("nft -f: %s", string(stderr))
+	if err := writeFileAtomic(nftRulesPath, data, nftRulesMode); err != nil {
+		return err
 	}
 	if err := reloadNftGuard(ctx, DefaultRunner); err != nil {
 		return err
@@ -285,8 +292,9 @@ func nftDestroyScript(ruleset []byte) string {
 			continue
 		}
 		seen[key] = struct{}{}
-		// destroy, unlike delete, does not fail when the table is already gone.
-		b.WriteString("destroy table " + key + "\n")
+		// Ensure existence, then delete in the same transaction. Unlike destroy,
+		// this also works on kernels lacking NFT_MSG_DESTROYTABLE support.
+		b.WriteString("table " + key + "\ndelete table " + key + "\n")
 	}
 	if b.Len() == 0 {
 		// Never global-flush: that would wipe fail2ban/CrowdSec/Docker and the

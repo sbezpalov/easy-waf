@@ -12,6 +12,25 @@ permissions:
   contents: read
 
 jobs:
+  nft-rollback:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install native nftables
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends nftables util-linux
+      - name: Rollback restores real nftables in a private network namespace
+        run: |
+          set -euo pipefail
+          test_dir="$(mktemp -d)"
+          trap 'rm -rf "$test_dir"' EXIT
+          CGO_ENABLED=0 go test -tags=integration -c -o "$test_dir/hostd.test" ./internal/hostd
+          sudo unshare --net -- env RUN_NFT_ROLLBACK_INTEGRATION=1 \
+            "$test_dir/hostd.test" -test.run '^TestNftRollbackReplacesManagedTables$' -test.v -test.timeout 30s
+
   body-policy:
     runs-on: ubuntu-latest
     steps:

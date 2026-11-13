@@ -407,8 +407,8 @@ func TestRevertNftEmptyBackupDestroysOnlyManagedTables(t *testing.T) {
 	}
 	script := m.nftSeen[0]
 	if strings.Contains(script, "flush ruleset") ||
-		!strings.Contains(script, "destroy table inet easy_waf\n") ||
-		!strings.Contains(script, "destroy table ip easy_waf_nat\n") {
+		!strings.Contains(script, "table inet easy_waf\ndelete table inet easy_waf\n") ||
+		!strings.Contains(script, "table ip easy_waf_nat\ndelete table ip easy_waf_nat\n") {
 		t.Fatalf("revert script:\n%s", script)
 	}
 	if got, _ := os.ReadFile(nftRulesPath); string(got) != nftEmptyRuleset {
@@ -428,7 +428,7 @@ func TestRevertNftNoRulesetSurvivesRepeatedApplyCycles(t *testing.T) {
 		if err := RunRevert("nft", testToken); err != nil {
 			t.Fatal(err)
 		}
-		if len(m.nftSeen) != cycle+1 || !strings.Contains(m.nftSeen[cycle], "destroy table inet easy_waf\n") {
+		if len(m.nftSeen) != cycle+1 || !strings.Contains(m.nftSeen[cycle], "delete table inet easy_waf\n") {
 			t.Fatalf("cycle %d did not remove the newly applied rules: %v", cycle, m.nftSeen)
 		}
 		if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != nftEmptyRuleset {
@@ -513,7 +513,7 @@ func TestNftDestroyScriptRefusesFlushFallback(t *testing.T) {
 	if got := nftDestroyScript([]byte("add rule ip filter input drop\n")); got != "" {
 		t.Fatalf("expected empty (hard fail), got %q", got)
 	}
-	if got := nftDestroyScript([]byte("table filter {\n}\n")); got != "destroy table ip filter\n" {
+	if got := nftDestroyScript([]byte("table filter {\n}\n")); got != "table ip filter\ndelete table ip filter\n" {
 		t.Fatalf("family defaults to ip: %q", got)
 	}
 }
