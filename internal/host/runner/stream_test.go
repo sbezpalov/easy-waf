@@ -18,11 +18,17 @@ import (
 
 func shortTempSock(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "h-")
+	// Keep socket paths short on Windows too: t.TempDir includes the full
+	// subtest name, which can exceed the AF_UNIX path limit.
+	dir, err := os.MkdirTemp(".", ".sock-")
 	if err != nil {
-		return filepath.Join(t.TempDir(), "h.sock")
+		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return filepath.Join(dir, "s.sock")
 }
 

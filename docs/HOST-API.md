@@ -38,6 +38,7 @@ For a nonempty nftables baseline, rollback recreates the tables declared in the 
 - **Single process:** only one `apt` action (`upgrade` or `autoremove`) runs at a time. A second stream request while active **attaches** as a follower (tails root-only `/var/lib/easy-waf-hostd/apt-action.log` through the broker), and does not start another apt. First line: `==> attaching to apt action already in progress ...`.
 - **`code: -1`** is reserved for attach/log read failures (with explicit `error`), not for “already running”.
 - **Client disconnect** does not stop apt; the broker finishes the transaction.
+- **Request cancellation and deadlines** close the API's broker connection and unblock socket reads/writes. Regular broker calls are bounded by two minutes or an earlier caller deadline; streams use a 15-second connection timeout and retain the caller's context for subsequent I/O. Canceling a stream stops the API wait while the broker continues apt independently.
 - **`GET /host/updates/upgrade/status`** — `{"active":true|false,"exit_code":…,"error":…}` for UI re-attach on the System tab.
 - **`GET /host/updates/upgrade/log`** — last saved log file (read-only).
 - **UI:** `fetch` POST + `ReadableStream` (not `EventSource`).

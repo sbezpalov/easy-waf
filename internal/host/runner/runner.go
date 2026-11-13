@@ -29,13 +29,15 @@ func Privileged(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("privileged: dial broker: %w", err)
 	}
 	defer conn.Close()
+	stop := closeOnCancel(ctx, conn)
+	defer stop()
 	req := brokerRequest{Argv: args}
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		return nil, err
+		return nil, brokerIOError(ctx, err)
 	}
 	var resp brokerResponse
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("privileged: decode response: %w", err)
+		return nil, fmt.Errorf("privileged: decode response: %w", brokerIOError(ctx, err))
 	}
 	out := []byte(resp.Stdout)
 	if !resp.OK || resp.Code != 0 {

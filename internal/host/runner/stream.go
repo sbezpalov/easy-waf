@@ -24,20 +24,27 @@ func PrivilegedStream(ctx context.Context, onLine func([]byte) error, argv ...st
 		return fmt.Errorf("privileged stream: host broker unavailable at %s", BrokerSocket())
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(dialCtx, "unix", BrokerSocket())
+	cancel()
 	if err != nil {
 		return fmt.Errorf("privileged stream: dial broker: %w", err)
 	}
 	defer conn.Close()
+	// Use the request context, not the short dial context: apt may stream for
+	// many minutes and continues in hostd after this client disconnects.
+	stop := closeOnCancel(ctx, conn)
+	defer stop()
 
 	if err := json.NewEncoder(conn).Encode(brokerRequest{Argv: argv}); err != nil {
-		return fmt.Errorf("privileged stream: encode request: %w", err)
+		return fmt.Errorf("privileged stream: encode request: %w", brokerIOError(ctx, err))
 	}
 
 	br := bufio.NewReader(conn)
 	relay := true
 	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("privileged stream: read: %w", err)
+		}
 		line, err := br.ReadBytes('\n')
 		if len(line) > 0 {
 			trimmed := bytes.TrimSpace(line)
@@ -50,10 +57,10 @@ func PrivilegedStream(ctx context.Context, onLine func([]byte) error, argv ...st
 			}
 		}
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && ctx.Err() == nil {
 				return nil
 			}
-			return fmt.Errorf("privileged stream: read: %w", err)
+			return fmt.Errorf("privileged stream: read: %w", brokerIOError(ctx, err))
 		}
 	}
 }
