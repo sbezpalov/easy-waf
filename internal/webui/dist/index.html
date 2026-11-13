@@ -4214,19 +4214,36 @@
     }
     if (reclaimEl) reclaimEl.textContent = hints.join(' · ');
     if (cleanBtn) {
-      cleanBtn.disabled = !Number.isFinite(cache) || cache < 1024 * 1024;
-      cleanBtn.title = cleanBtn.disabled ? 'Package cache is already small' : 'Remove downloaded .deb files from /var/cache/apt/archives';
+      aptCacheSmall = !Number.isFinite(cache) || cache < 1024 * 1024;
+      cleanBtn.disabled = !!aptInteraction || aptCacheSmall;
+      cleanBtn.title = aptCacheSmall ? 'Package cache is already small' : 'Remove downloaded .deb files from /var/cache/apt/archives';
     }
   }
 
   let aptStatusRevision = 0;
+  let aptInteraction = null;
+  let aptCacheSmall = false;
 
   function invalidateAptStatus() {
     aptStatusRevision++;
   }
 
+  function beginAptInteraction() {
+    if (aptInteraction) return null;
+    const owner = {};
+    aptInteraction = owner;
+    setAptButtonsDisabled(true);
+    return owner;
+  }
+
+  function endAptInteraction(owner) {
+    if (aptInteraction !== owner) return;
+    aptInteraction = null;
+    setAptButtonsDisabled(false);
+  }
+
   async function tryAttachRunningAptUpgrade() {
-    if (!getTok()) return;
+    if (!getTok() || aptInteraction) return;
     const revision = ++aptStatusRevision;
     const msg = document.getElementById('sys-apt-msg');
     const initialText = msg && msg.textContent;
@@ -4255,7 +4272,7 @@
       return;
     }
     // A delayed poll must not replace a message from a newer user action.
-    if (!isCurrent()) return;
+    if (!isCurrent() || aptInteraction) return;
     if (!j.active) {
       const outcome = j.error || (j.exit_code === -1
         ? 'Previous package outcome is unavailable. Check the saved package log.'
@@ -4351,29 +4368,34 @@
   document.getElementById('btn-sys-services-refresh').onclick = () => loadSystemServicesTable();
 
   document.getElementById('btn-sys-apt-check').onclick = async () => {
-    invalidateAptStatus();
+    const owner = beginAptInteraction();
+    if (!owner) return;
     const msg = document.getElementById('sys-apt-msg');
     const out = document.getElementById('sys-apt-output');
     if (msg) msg.textContent = '';
-    await withBusy(document.getElementById('btn-sys-apt-check'), async () => {
-      const u = await fetch('/api/v1/host/updates/update', { method: 'POST', headers: hdr(), body: '{}' });
-      if (!u.ok) {
-        { const __m = await apiMessage(u); toast(__m, 'err'); if (msg) msg.textContent = __m; }
-        return;
-      }
-      const r = await fetch('/api/v1/host/updates', { headers: hdr() });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        toast(await apiMessage(r), 'err');
-        return;
-      }
-      if (out) out.textContent = j.output || '(no output)';
-      if (msg) {
-        msg.textContent = 'Package list refreshed.';
-        msg.className = 'ok';
-      }
-      toast('Update check done', 'ok');
-    });
+    try {
+      await withBusy(document.getElementById('btn-sys-apt-check'), async () => {
+        const u = await fetch('/api/v1/host/updates/update', { method: 'POST', headers: hdr(), body: '{}' });
+        if (!u.ok) {
+          { const __m = await apiMessage(u); toast(__m, 'err'); if (msg) msg.textContent = __m; }
+          return;
+        }
+        const r = await fetch('/api/v1/host/updates', { headers: hdr() });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          toast(await apiMessage(r), 'err');
+          return;
+        }
+        if (out) out.textContent = j.output || '(no output)';
+        if (msg) {
+          msg.textContent = 'Package list refreshed.';
+          msg.className = 'ok';
+        }
+        toast('Update check done', 'ok');
+      });
+    } finally {
+      endAptInteraction(owner);
+    }
   };
 
   let aptLogStickBottom = true;
@@ -4395,16 +4417,17 @@
     if (disabled) invalidateAptStatus();
     ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove', 'btn-sys-apt-clean'].forEach((id) => {
       const b = document.getElementById(id);
-      if (b) b.disabled = !!disabled;
+      if (b) b.disabled = !!disabled || (id === 'btn-sys-apt-clean' && aptCacheSmall);
     });
   }
 
   async function refreshAptPackageList() {
+    const revision = aptStatusRevision;
     const out = document.getElementById('sys-apt-output');
     const r = await fetch('/api/v1/host/updates', { headers: hdr() });
     if (r.ok) {
       const j = await r.json().catch(() => ({}));
-      if (out && j.output) out.textContent = j.output;
+      if (out && j.output && revision === aptStatusRevision) out.textContent = j.output;
     }
   }
 
@@ -4482,7 +4505,6 @@
   function finishAptStream(exitCode, exitErr, opts) {
     const o = opts || {};
     const msg = document.getElementById('sys-apt-msg');
-    setAptButtonsDisabled(false);
     const successMsg = o.successMsg || 'Finished.';
     const successToast = o.successToast || 'Complete';
     if (exitCode === 0) {
@@ -4510,7 +4532,6 @@
 
   function finishAptStreamReconnect(exitCode, exitErr, opts) {
     const o = opts || {};
-    setAptButtonsDisabled(false);
     const msg = document.getElementById('sys-apt-msg');
     const successMsg = o.successMsg || 'Finished.';
     const successToast = o.successToast || 'Complete';
@@ -4528,6 +4549,8 @@
   }
 
   async function runAptStream(streamUrl, opts) {
+    const owner = beginAptInteraction();
+    if (!owner) return { exitCode: -1, exitErr: 'Another package interaction is already in progress.' };
     const o = opts || {};
     const msg = document.getElementById('sys-apt-msg');
     const out = document.getElementById('sys-apt-output');
@@ -4540,7 +4563,6 @@
       msg.textContent = o.startMsg;
       msg.className = 'warn';
     }
-    setAptButtonsDisabled(true);
     try {
       const resp = await fetch(streamUrl, {
         method: 'POST',
@@ -4549,7 +4571,6 @@
         body: '{}'
       });
       if (!resp.ok || !resp.body) {
-        setAptButtonsDisabled(false);
         const detail = await apiMessage(resp);
         if (msg) {
           msg.textContent = detail;
@@ -4560,7 +4581,6 @@
       }
       return await consumeAptStream(resp, o);
     } catch (e) {
-      setAptButtonsDisabled(false);
       const transport = e && e.message ? e.message : 'network error';
       if (o.reconnect) {
         if (msg) {
@@ -4577,16 +4597,19 @@
       toast('Stream interrupted: ' + transport, 'warn', 10000);
       void refreshAptPackageList();
       return { exitCode: -1, exitErr: transport };
+    } finally {
+      endAptInteraction(owner);
     }
   }
 
   document.getElementById('btn-sys-apt-clean').onclick = async () => {
+    const owner = beginAptInteraction();
+    if (!owner) return;
     const msg = document.getElementById('sys-apt-msg');
     if (msg) {
       msg.textContent = 'Cleaning cache…';
       msg.className = 'warn';
     }
-    setAptButtonsDisabled(true);
     try {
       const r = await fetch('/api/v1/host/updates/clean', {
         method: 'POST',
@@ -4606,7 +4629,7 @@
       }
       await loadHostDiskPanel();
     } finally {
-      setAptButtonsDisabled(false);
+      endAptInteraction(owner);
     }
   };
 
