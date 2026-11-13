@@ -76,23 +76,9 @@ func relayBrokerEvents(ctx context.Context, scanner *bufio.Scanner, onLine func(
 		if len(line) == 0 {
 			continue
 		}
-		var event struct {
-			Type  string `json:"type"`
-			Data  string `json:"data"`
-			Code  *int   `json:"code"`
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(line, &event) != nil {
-			return fmt.Errorf("privileged stream: invalid JSON event")
-		}
-		switch event.Type {
-		case "line":
-		case "exit":
-			if event.Code == nil || (*event.Code == 0 && event.Error != "") {
-				return fmt.Errorf("privileged stream: invalid exit event")
-			}
-		default:
-			return fmt.Errorf("privileged stream: unknown event type")
+		event, err := decodeBrokerStreamEvent(line)
+		if err != nil {
+			return fmt.Errorf("privileged stream: %w", err)
 		}
 		if relay {
 			if err := onLine(line); err != nil {

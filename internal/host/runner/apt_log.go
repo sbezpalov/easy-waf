@@ -49,13 +49,8 @@ func copyAPTLogEvents(ctx context.Context, input io.Reader, dst io.Writer) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var event struct {
-			Type  string `json:"type"`
-			Data  string `json:"data"`
-			Code  *int   `json:"code"`
-			Error string `json:"error"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		event, err := decodeBrokerStreamEvent(scanner.Bytes())
+		if err != nil {
 			return fmt.Errorf("APT saved log: invalid event: %w", err)
 		}
 		switch event.Type {
