@@ -5,7 +5,7 @@ set -euo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_ROOT="$(mktemp -d)"
+TEST_ROOT="$(command mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 id() { printf '0\n'; }

@@ -116,6 +116,8 @@ if [[ "$(id -u)" == "0" ]]; then
   runuser -u easy-waf -- chmod 0644 "$INSTALL_TMP"
   runuser -u easy-waf -- mv -f -- "$INSTALL_TMP" "$DEST/GeoLite2-Country.mmdb"
 else
+  # Parent modes follow the caller's umask; only the GeoIP leaf gets 0750.
+  # shellcheck disable=SC2174
   mkdir -p -m 0750 -- "$DEST"
   [[ -d "$DEST" && -w "$DEST" ]] || {
     echo "[update-geoip-db] ERROR: destination is not writable: $DEST" >&2
