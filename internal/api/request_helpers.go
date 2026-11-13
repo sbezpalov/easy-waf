@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,27 @@ import (
 // maxJSONObjectBytes caps bodies read whole for a JSON merge (settings,
 // security PATCH).
 const maxJSONObjectBytes = 1 << 20
+
+// decodeJSONRequest requires one complete value followed only by whitespace.
+// Initial EOF is preserved for endpoints with optional bodies. Existing body
+// readers retain their route-specific byte limits.
+func decodeJSONRequest(r *http.Request, value any) error {
+	if r.Body == nil {
+		return io.EOF
+	}
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return err
+		}
+		return errors.New("request body must contain a single JSON value")
+	}
+	return nil
+}
 
 // readJSONBody reads a request body of at most maxJSONObjectBytes. A larger
 // body is a 413; it used to be cut off silently and reported as a confusing

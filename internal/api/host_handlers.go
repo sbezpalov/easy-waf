@@ -121,7 +121,7 @@ func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
 		YAML            string `json:"yaml"`
 		RollbackSeconds int    `json:"rollback_seconds"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -150,7 +150,7 @@ func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -194,7 +194,7 @@ func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
 		Ruleset         string `json:"ruleset"`
 		RollbackSeconds int    `json:"rollback_seconds"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -223,7 +223,7 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -503,7 +503,7 @@ func (s *Server) hostCreateUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -542,7 +542,7 @@ func (s *Server) hostPutSSHKeys(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Keys []string `json:"keys"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -562,7 +562,7 @@ func (s *Server) hostPing(w http.ResponseWriter, r *http.Request) {
 		Host  string `json:"host"`
 		Count int    `json:"count"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -578,7 +578,7 @@ func (s *Server) hostTrace(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Host string `json:"host"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}

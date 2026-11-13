@@ -4,7 +4,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -48,7 +47,7 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var body confirmRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}

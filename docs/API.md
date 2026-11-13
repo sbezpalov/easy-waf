@@ -39,11 +39,22 @@ HAProxy edge:
 Paths below are relative to that origin, e.g. `https://<appliance>:8443/api/v1/status`.
 Request and response bodies are JSON unless stated otherwise.
 
+Endpoints that parse JSON require one complete value followed only by whitespace.
+Extra values, malformed suffixes and errors while reading the remainder are
+rejected before the handler performs the requested action. Endpoints documented
+with an optional body still accept an empty body.
+
 **Every request passes, in order:** security headers → a 4 MiB request-body
 cap → trusted-proxy client-IP resolution → the management source-address ACL →
 the `X-Requested-With` check → for `/api/v1` (except the three public auth
 routes) session authentication, the audit of mutating calls and the
 password-change gate.
+
+A declared `Content-Length` above the 4 MiB cap is rejected with **413** before
+dispatch; requests without a known length are capped while reading. Enrollment,
+login, password change and password confirmation also enforce a smaller 16 KiB
+limit. The GeoIP database upload is exempt from the global cap and enforces its
+own binary upload limit.
 
 ### Management ACL
 

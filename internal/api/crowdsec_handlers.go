@@ -4,7 +4,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -41,7 +40,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 	var body crowdsec.AddDecisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

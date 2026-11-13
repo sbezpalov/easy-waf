@@ -4,7 +4,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -23,7 +22,7 @@ type maintenanceBody struct {
 func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var body maintenanceBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

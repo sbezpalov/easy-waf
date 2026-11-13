@@ -138,7 +138,7 @@ type securityModeBody struct {
 func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var body securityModeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}

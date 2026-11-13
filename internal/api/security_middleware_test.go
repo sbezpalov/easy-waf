@@ -52,7 +52,9 @@ func TestLimitRequestBody(t *testing.T) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("12345")))
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("12345"))
+	req.ContentLength = -1
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("got %d", rec.Code)
 	}

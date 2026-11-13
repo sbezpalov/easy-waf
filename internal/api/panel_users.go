@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -60,7 +59,7 @@ type panelUserBody struct {
 
 func (s *Server) createPanelUser(w http.ResponseWriter, r *http.Request) {
 	var body panelUserBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -104,7 +103,7 @@ func (s *Server) patchPanelUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Role string `json:"role"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

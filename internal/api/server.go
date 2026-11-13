@@ -511,7 +511,7 @@ type certificateUpsertRequest struct {
 
 func (s *Server) upsertCert(w http.ResponseWriter, r *http.Request) {
 	var body certificateUpsertRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -567,7 +567,7 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Label string `json:"label"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONRequest(r, &body); err != nil && !errors.Is(err, io.EOF) {
 		writeClientError(w, http.StatusBadRequest, "invalid json", err)
 		return
 	}
@@ -671,7 +671,7 @@ func (s *Server) putManagementTLS(w http.ResponseWriter, r *http.Request) {
 		CertificatePEM string `json:"certificate_pem"`
 		PrivateKeyPEM  string `json:"private_key_pem"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -782,7 +782,7 @@ func (s *Server) listIPBLLocal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) upsertIPBLLocal(w http.ResponseWriter, r *http.Request) {
 	e := config.IPBLLocalEntry{Enabled: true} // an omitted "enabled" means on
-	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+	if err := decodeJSONRequest(r, &e); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -836,7 +836,7 @@ func (s *Server) listIPBLSources(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) upsertIPBLSource(w http.ResponseWriter, r *http.Request) {
 	e := config.IPBLExternalSource{Enabled: true} // an omitted "enabled" means on
-	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+	if err := decodeJSONRequest(r, &e); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -938,7 +938,7 @@ func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) upsertIPWLLocal(w http.ResponseWriter, r *http.Request) {
 	var e config.IPWLLocalEntry
-	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+	if err := decodeJSONRequest(r, &e); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -990,7 +990,7 @@ func (s *Server) listBlockedUA(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) addBlockedUA(w http.ResponseWriter, r *http.Request) {
 	var e config.BlockedUserAgent
-	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+	if err := decodeJSONRequest(r, &e); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1084,7 +1084,7 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	// An empty body keeps the stored settings (the UI's Issue and Renew
 	// buttons rely on that); a malformed one is an error, not "use defaults".
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONRequest(r, &body); err != nil && !errors.Is(err, io.EOF) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

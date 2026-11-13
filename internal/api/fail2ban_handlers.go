@@ -4,7 +4,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -48,7 +47,7 @@ func (s *Server) fail2banUnban(w http.ResponseWriter, r *http.Request) {
 		Jail string `json:"jail"`
 		IP   string `json:"ip"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

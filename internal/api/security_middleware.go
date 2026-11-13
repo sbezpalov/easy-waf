@@ -43,6 +43,10 @@ func limitRequestBody(maxBytes int64, exemptPaths ...string) func(http.Handler) 
 				next.ServeHTTP(w, r)
 				return
 			}
+			if r.ContentLength > maxBytes {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			if r.Body != nil {
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			}
