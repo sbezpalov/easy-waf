@@ -45,6 +45,10 @@ stays open is closed and reported as incomplete capture, so it cannot leave the
 completed transaction permanently active. Cancellation/deadline errors retain
 their cause; Linux/macOS terminate the command group on cancellation or failure.
 Successful scripts may leave services running once they release output pipes.
+Command output and heartbeat callbacks are serialized. The executor stops and
+joins its heartbeat before returning, so no heartbeat writes can follow the
+final exit event or access the action log after the caller closes it. Queued
+heartbeats are discarded after cancellation or completion.
 These limits cover commands and pipe waits, not blocking filesystem I/O or a
 blocked output callback.
 

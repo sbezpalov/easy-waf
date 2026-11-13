@@ -34,9 +34,7 @@ func aptActionLogPath() string {
 
 // aptActionHeartbeatIntervalNanos is the heartbeat period, overridable in tests.
 //
-// Stored atomically: the heartbeat goroutine outlives the request that started
-// it by a moment, so a test restoring the default while that goroutine still
-// reads the value is a genuine data race (caught by `go test -race`).
+// Stored atomically so test configuration can be read by an active worker.
 var aptActionHeartbeatIntervalNanos atomic.Int64
 
 func init() { aptActionHeartbeatIntervalNanos.Store(int64(15 * time.Second)) }
@@ -427,16 +425,27 @@ func dispatchAptUpgradeLog() Response {
 
 func runAptActionStream(ctx context.Context, action string, emit func(string) error) (int, error) {
 	done := make(chan struct{})
-	defer close(done)
-	var lastLineMu sync.Mutex
+	heartbeatDone := make(chan struct{})
+	var emitMu sync.Mutex
 	lastLineAt := time.Now()
 	started := time.Now()
-	go aptActionHeartbeat(ctx, done, started, &lastLineMu, &lastLineAt, emit)
+	go func() {
+		defer close(heartbeatDone)
+		aptActionHeartbeat(ctx, done, started, &emitMu, &lastLineAt, emit)
+	}()
+	defer func() {
+		close(done)
+		// The caller may now emit the final exit and close its log/socket.
+		// No callback can remain in flight once we return.
+		<-heartbeatDone
+	}()
 
 	wrapEmit := func(line string) error {
-		lastLineMu.Lock()
-		lastLineAt = time.Now()
-		lastLineMu.Unlock()
+		emitMu.Lock()
+		defer func() {
+			lastLineAt = time.Now()
+			emitMu.Unlock()
+		}()
 		return emit(line)
 	}
 
@@ -563,9 +572,28 @@ func execAptCommand(ctx context.Context, cmd *exec.Cmd, emit func(string) error)
 	return code, resultErr
 }
 
-func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, lastLineMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
+func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.Time, emitMu *sync.Mutex, lastLineAt *time.Time, emit func(string) error) {
 	ticker := time.NewTicker(aptActionHeartbeatInterval())
 	defer ticker.Stop()
+	emitHeartbeat := func() {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		// Output may have held the mutex while the command finished or was
+		// canceled. Do not emit a queued heartbeat after shutdown began.
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		default:
+		}
+		if time.Since(*lastLineAt) < aptActionHeartbeatInterval() {
+			return
+		}
+		elapsed := time.Since(started).Round(time.Second)
+		_ = emit(fmt.Sprintf("... still working (elapsed %s) ...", elapsed))
+		*lastLineAt = time.Now()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -573,17 +601,7 @@ func aptActionHeartbeat(ctx context.Context, done <-chan struct{}, started time.
 		case <-done:
 			return
 		case <-ticker.C:
-			lastLineMu.Lock()
-			silent := time.Since(*lastLineAt)
-			lastLineMu.Unlock()
-			if silent < aptActionHeartbeatInterval() {
-				continue
-			}
-			elapsed := time.Since(started).Round(time.Second)
-			_ = emit(fmt.Sprintf("... still working (elapsed %s) ...", elapsed))
-			lastLineMu.Lock()
-			*lastLineAt = time.Now()
-			lastLineMu.Unlock()
+			emitHeartbeat()
 		}
 	}
 }
