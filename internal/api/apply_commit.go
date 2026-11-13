@@ -44,8 +44,8 @@ func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(contex
 	return fmt.Errorf("change not saved, edge apply failed: %w", err)
 }
 
-// applyTimeout bounds an apply started by a request, the wait for the apply
-// lock included.
+// applyTimeout bounds the normal work of an apply started by a request,
+// including the lock wait. Recovery after a failed reload has its own budget.
 const applyTimeout = 2 * time.Minute
 
 // undoTimeout bounds the compensating database write after a failed apply.

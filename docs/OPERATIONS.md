@@ -40,6 +40,14 @@ Its recovery snapshot covers both current and historical artifact paths, so
 a failed rollback restores overwritten files and removes files it created
 at previously absent historical paths.
 
+HAProxy validation and systemctl reload honor the apply caller's context,
+including the API's two-minute and the ACME worker's five-minute budgets.
+Recovery reload uses a fresh context with a 30-second limit so an expired
+apply deadline does not suppress recovery or leave the apply lock held by
+a hung systemctl client. A recovery reload that times out retains its
+snapshot as described above; inspect the unit state before retrying because
+terminating the systemctl client does not cancel a queued systemd job.
+
 ## Manual check before reload
 
 The apply pipeline already runs:

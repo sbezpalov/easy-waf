@@ -129,7 +129,7 @@ func TestRenderedConfigPassesHaproxyCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := apply.Validate(hx, cfgPath); err != nil {
+	if err := apply.Validate(t.Context(), hx, cfgPath); err != nil {
 		t.Fatal(err)
 	}
 }

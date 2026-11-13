@@ -31,6 +31,9 @@ import (
 
 const settingsKeyGlobal = "global_settings_json"
 
+// Recovery must remain possible after the caller's apply deadline expires.
+const recoveryReloadTimeout = 30 * time.Second
+
 // haproxyApplyAdvisoryLockKey serializes artifact promotion across
 // easy-waf-api and easy-waf-acmed sessions.
 const haproxyApplyAdvisoryLockKey int64 = 0x455741464150504c // "EWAFAPPL"
@@ -61,8 +64,7 @@ type Engine struct {
 	// applySem serializes Apply, Rollback and WithApplyLock inside one
 	// process; the PostgreSQL advisory lock does the same across processes.
 	// It is a one-slot channel rather than a sync.Mutex so that waiting for
-	// it honors the caller's context (an apply started by a request promises
-	// to finish, lock wait included, within its deadline).
+	// it honors the caller's context while waiting for another apply.
 	applySem     chan struct{}
 	applySemOnce sync.Once
 	// settingsMu serializes read-modify-write of the stored settings.
@@ -533,7 +535,9 @@ func (e *Engine) finishFailedArtifactTransaction(
 			e.saveLoadedCerts(certs)
 			return
 		}
-		reloadErr := apply.ReloadHAProxy()
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), recoveryReloadTimeout)
+		defer cancel()
+		reloadErr := apply.ReloadHAProxy(recoveryCtx)
 		if reloadErr != nil {
 			tx.retainRecovery = true
 			appendFailure(retErr, fmt.Sprintf("reload restored HAProxy configuration (recovery manifest retained at %s)", tx.snapshot.ManifestPath), reloadErr)
@@ -693,7 +697,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		}
 	}
 	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
-		if err := apply.Validate(cfg.HAProxyBinary, staging); err != nil {
+		if err := apply.Validate(ctx, cfg.HAProxyBinary, staging); err != nil {
 			return false, fmt.Errorf("validation failed: %w", err)
 		}
 	}
@@ -713,7 +717,7 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	}
 	certs := e.certsBeforeLoad()
 	if !skipReload {
-		if err := apply.ReloadHAProxy(); err != nil {
+		if err := apply.ReloadHAProxy(ctx); err != nil {
 			return false, err
 		}
 		runtimeChanged = true
@@ -838,7 +842,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 			return err
 		}
 		if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
-			if err := apply.Validate(cfg.HAProxyBinary, staging); err != nil {
+			if err := apply.Validate(ctx, cfg.HAProxyBinary, staging); err != nil {
 				return fmt.Errorf("validation failed: %w", err)
 			}
 		}
@@ -856,7 +860,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		return fmt.Errorf("restored revision config checksum mismatch")
 	}
 	if !envflag.Enabled("EASY_WAF_SKIP_VALIDATE") {
-		if err := apply.Validate(cfg.HAProxyBinary, cfgPath); err != nil {
+		if err := apply.Validate(ctx, cfg.HAProxyBinary, cfgPath); err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
@@ -870,7 +874,7 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 	}
 	certs := e.certsBeforeLoad()
 	if !skipReload {
-		if err := apply.ReloadHAProxy(); err != nil {
+		if err := apply.ReloadHAProxy(ctx); err != nil {
 			return err
 		}
 		runtimeChanged = true

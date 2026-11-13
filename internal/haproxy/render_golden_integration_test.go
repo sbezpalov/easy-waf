@@ -50,7 +50,7 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			if err := os.WriteFile(tmp, cfgBody, 0o640); err != nil {
 				t.Fatal(err)
 			}
-			if err := apply.Validate(hx, tmp); err != nil {
+			if err := apply.Validate(t.Context(), hx, tmp); err != nil {
 				t.Fatal(err)
 			}
 		})
