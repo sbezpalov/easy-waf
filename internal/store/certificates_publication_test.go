@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -19,6 +20,54 @@ import (
 	"github.com/easy-waf/easy-waf/internal/testcert"
 	"github.com/go-acme/lego/v4/certificate"
 )
+
+func TestACMERequestCannotOverwriteCompletionOrResurrectDeletion(t *testing.T) {
+	st := openFresh(t, freshSchemaDSN(t))
+	ctx := t.Context()
+	c := newACMECert(t, st, "pending", nil)
+	stale := certByID(t, st, c.ID)
+	now := time.Now().UTC()
+	claimed := claimOnly(t, st, ACMEClaimWindow{Now: now, RenewBefore: now, StaleIssuing: time.Hour}, c.ID)
+	if claimed == nil {
+		t.Fatal("not claimed")
+	}
+	var result ACMEResult
+	if err := st.CompleteCertificateACME(ctx, claimed, func() (ACMEResult, error) { result = publicationWrite(t, t.TempDir(), c.ID); return result, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RequestCertificateACME(ctx, &stale); !errors.Is(err, ErrCertificateChanged) {
+		t.Fatalf("stale request: %v", err)
+	}
+	row := certByID(t, st, c.ID)
+	if row.ACMEStatus != "ready" || row.FullchainPath != result.FullchainPath || row.PEMKeyPath != result.KeyPath || len(publicationTokens(t, st)) != 1 {
+		t.Fatal("stale request damaged completion")
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE certificates SET acme_status='failed', acme_attempts=3, last_error='old failure', acme_next_attempt_at=now()+interval '1 hour' WHERE id=$1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	fresh := certByID(t, st, c.ID)
+	fresh.Mode = "dns-01"
+	fresh.DNSProvider = "cloudflare"
+	fresh.DNSCredentialsEnvFile = "/fixture/dns.env"
+	fresh.PrimaryDomain = "stale-snapshot.example.test"
+	fresh.FullchainPath = "must-not-be-written"
+	if err := st.RequestCertificateACME(ctx, &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fresh.ACMEStatus != "pending" || fresh.ACMEAttempts != 0 || fresh.ACMENextAttemptAt != nil || fresh.LastError != "" || fresh.PrimaryDomain != row.PrimaryDomain || fresh.FullchainPath != row.FullchainPath || fresh.PEMKeyPath != row.PEMKeyPath || fresh.Mode != "dns-01" || fresh.DNSProvider != "cloudflare" {
+		t.Fatal("request changed unrelated columns or returned stale metadata")
+	}
+	if err := st.DeleteCertificate(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RequestCertificateACME(ctx, &fresh); !errors.Is(err, ErrCertificateChanged) {
+		t.Fatalf("deleted request: %v", err)
+	}
+	rows, err := st.ListCertificates(ctx)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("request resurrected deleted certificate")
+	}
+}
 
 func publicationResource(t *testing.T) *certificate.Resource {
 	t.Helper()

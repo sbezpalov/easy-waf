@@ -32,6 +32,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/profiles"
+	"github.com/easy-waf/easy-waf/internal/store"
 )
 
 // Server exposes REST API for the UI and automation.
@@ -1116,7 +1117,11 @@ func (s *Server) requestCertIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.Eng.Store.UpsertCertificate(r.Context(), found); err != nil {
+	if err := s.Eng.Store.RequestCertificateACME(r.Context(), found); err != nil {
+		if errors.Is(err, store.ErrCertificateChanged) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		writeInternalError(w, err)
 		return
 	}

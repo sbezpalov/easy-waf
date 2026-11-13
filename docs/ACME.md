@@ -96,6 +96,11 @@ entry durability after power loss; keep the account key in state backups.
 
 ## Certificate publication and recovery
 
+An explicit issue/renew request updates only issuance options and resets retry
+state. It cannot overwrite generated PEM paths or restore a deleted certificate.
+If the certificate changes after request validation, the API returns HTTP 409;
+reload the certificate and retry using its current settings.
+
 Migration 027 adds `acme_apply_pending`, with one current publication token per
 certificate and cascading deletion. A process dying before the ready transaction
 commits leaves the previous paths intact; after commit, both new PEM files and

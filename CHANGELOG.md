@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Concurrent certificate requests.** Issue/renew requests now update only issuance options and retry state with a row-version check. Concurrent completion/deletion returns HTTP 409 instead of overwriting generated PEM metadata or recreating a deleted certificate.
 - **ACME queue admission.** A synchronous worker claims only the certificate it can start now, preventing long issuance from stranding preclaimed rows until the stale-claim window expires.
 - **Visible legacy ACME recovery errors.** Marker inspection and cleanup failures now keep reconciliation in its retry path; invalid file types and symlinks cannot masquerade as absent or completed work.
 - **Isolated ACME recovery results.** Lost-claim certificate/key pairs use unique private directories and matching-pair validation, preventing simultaneous attempts from overwriting each other's recovery material.

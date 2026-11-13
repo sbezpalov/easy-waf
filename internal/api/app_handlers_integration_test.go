@@ -26,6 +26,28 @@ func withURLParam(r *http.Request, key, val string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
+func TestRequestIssueReturnsStoredPendingStateWithoutReplacingPEMPaths(t *testing.T) {
+	s := applyFailingServer(t)
+	c := &config.Certificate{PrimaryDomain: "request-cas.example.test", Mode: "http-01", ACMEStatus: "failed", LastError: "previous failure", FullchainPath: "/fixture/fullchain.pem", PEMKeyPath: "/fixture/key.pem"}
+	if err := s.Eng.Store.UpsertCertificate(t.Context(), c); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteCertificate(context.Background(), c.ID) })
+	r := withURLParam(httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`)), "id", c.ID)
+	w := httptest.NewRecorder()
+	s.requestCertIssue(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("request failed: %d", w.Code)
+	}
+	var got config.Certificate
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ACMEStatus != "pending" || got.LastError != "" || got.FullchainPath != c.FullchainPath || got.PEMKeyPath != c.PEMKeyPath {
+		t.Fatal("response does not describe the preserved stored certificate")
+	}
+}
+
 func TestDeleteUnknownApplicationIs404WithoutApply(t *testing.T) {
 	s := applyFailingServer(t) // any apply would fail, so a 404 proves none ran
 	req := withURLParam(httptest.NewRequest(http.MethodDelete, "/api/v1/applications/x", nil), "id", "00000000-0000-0000-0000-000000000000")

@@ -19,6 +19,34 @@ import (
 // worker's result no longer describes the row and must be discarded.
 var ErrACMEClaimLost = errors.New("certificate row changed since it was claimed for ACME")
 
+// ErrCertificateChanged rejects a request based on a stale certificate snapshot.
+var ErrCertificateChanged = errors.New("certificate changed; reload before requesting issuance")
+
+// RequestCertificateACME updates only issuance options/state, never generated
+// material or operator metadata. UPDATE-only CAS cannot resurrect a deleted row
+// or overwrite a worker completion that happened after API validation.
+func (s *Store) RequestCertificateACME(ctx context.Context, c *config.Certificate) error {
+	rows, err := s.db.QueryContext(ctx, `UPDATE certificates SET
+		mode = $3, dns_provider = $4, dns_credentials_env_file = $5,
+		acme_status = 'pending', acme_attempts = 0, acme_next_attempt_at = NULL,
+		last_error = NULL, updated_at = $6
+		WHERE id = $1 AND updated_at = $2 RETURNING `+certificateColumns,
+		c.ID, c.UpdatedAt, c.Mode, nullStrPtr(c.DNSProvider), nullStrPtr(c.DNSCredentialsEnvFile), time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	updated, err := scanCertificates(rows)
+	if err != nil {
+		return err
+	}
+	if len(updated) == 0 {
+		return ErrCertificateChanged
+	}
+	*c = updated[0]
+	return nil
+}
+
 // ACMEClaimWindow selects which certificate rows easy-waf-acmed should work on.
 type ACMEClaimWindow struct {
 	Now time.Time
