@@ -346,6 +346,7 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	defer cancel()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- Serve(ctx, sock) }()
+	joinTestBroker(t, cancel, serveErr)
 
 	deadline := time.Now().Add(3 * time.Second)
 	var conn net.Conn
@@ -368,7 +369,7 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-upgrade-stream"}}); err != nil {
 		t.Fatal(err)
 	}
-	events := readStreamEvents(t, conn)
+	events := readSocketStreamEvents(t, conn)
 	if len(events) < 2 {
 		t.Fatalf("events: %+v", events)
 	}
@@ -392,6 +393,7 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	defer cancel()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- Serve(ctx, sock) }()
+	joinTestBroker(t, cancel, serveErr)
 
 	deadline := time.Now().Add(3 * time.Second)
 	var conn net.Conn
@@ -414,7 +416,7 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-autoremove-stream"}}); err != nil {
 		t.Fatal(err)
 	}
-	events := readStreamEvents(t, conn)
+	events := readSocketStreamEvents(t, conn)
 	if events[len(events)-1].Type != "exit" || events[len(events)-1].Code != 0 {
 		t.Fatalf("exit: %+v", events[len(events)-1])
 	}

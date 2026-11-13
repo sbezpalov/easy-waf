@@ -179,7 +179,7 @@ func TestSocketRoundTripAptObservationOnly(t *testing.T) {
 			_ = conn.Close()
 			t.Fatal(err)
 		}
-		events := readStreamEvents(t, conn)
+		events := readSocketStreamEvents(t, conn)
 		_ = conn.Close()
 		<-done
 		if len(events) == 0 {

@@ -20,6 +20,7 @@ func TestSocketRoundTrip_nftList(t *testing.T) {
 	go func() {
 		serveErr <- Serve(ctx, sock)
 	}()
+	joinTestBroker(t, cancel, serveErr)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if st, err := os.Stat(sock); err == nil && st.Mode()&os.ModeSocket != 0 {
@@ -36,6 +37,9 @@ func TestSocketRoundTrip_nftList(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"nft-list"}}); err != nil {
 		t.Fatal(err)
 	}
