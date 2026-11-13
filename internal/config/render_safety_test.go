@@ -4,9 +4,22 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDefaultSettingsAcceptsNativeStateDirectory(t *testing.T) {
+	stateDir := t.TempDir()
+	settings := DefaultSettings(stateDir)
+	if err := ValidateSettingsRenderSafety(&settings); err != nil {
+		t.Fatalf("native state directory produced unsafe defaults: %v", err)
+	}
+	want := filepath.ToSlash(filepath.Join(stateDir, "haproxy", "haproxy.cfg"))
+	if settings.HAProxyConfigPath != want {
+		t.Fatalf("HAProxy config path = %q, want %q", settings.HAProxyConfigPath, want)
+	}
+}
 
 func safeApp() *Application {
 	return &Application{

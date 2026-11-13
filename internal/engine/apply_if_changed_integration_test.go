@@ -109,8 +109,8 @@ func TestApplyIfChangedAppliesRenewedCertificate(t *testing.T) {
 	useStoredSettingsForTest(t, st, e)
 
 	pemDir := t.TempDir()
-	fullchain := filepath.Join(pemDir, "fullchain.pem")
-	key := filepath.Join(pemDir, "privkey.pem")
+	fullchain := filepath.ToSlash(filepath.Join(pemDir, "fullchain.pem"))
+	key := filepath.ToSlash(filepath.Join(pemDir, "privkey.pem"))
 	for path, body := range map[string]string{fullchain: "CERT v1\n", key: "KEY v1\n"} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)

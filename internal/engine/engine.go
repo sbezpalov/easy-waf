@@ -416,7 +416,7 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 					bundle := filepath.Join(certDir, c.ID, "bundle.pem")
 					_ = os.MkdirAll(filepath.Dir(bundle), 0o750)
 					if err := pemutil.WriteBundle(bundle, c.FullchainPath, c.PEMKeyPath, 0o640); err == nil {
-						c.BundlePath = bundle
+						c.BundlePath = filepath.ToSlash(bundle)
 					}
 				}
 			}
@@ -443,7 +443,7 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 		Settings:                 renderSettings,
 		Applications:             apps,
 		Certificates:             cm,
-		CRTListPath:              crtListPath,
+		CRTListPath:              filepath.ToSlash(crtListPath),
 		IPBlacklistMapPath:       cfg.IPBlacklistMapPath,
 		IPAllowlistMapPath:       wlPath,
 		UseIPBlacklist:           useBL,

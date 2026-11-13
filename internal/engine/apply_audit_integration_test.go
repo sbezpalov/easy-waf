@@ -65,13 +65,13 @@ func TestApplyWritesAuditLogEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	t.Cleanup(func() { _ = st.Close() })
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 
 	stateDir := t.TempDir()
 	e := &engine.Engine{StateDir: stateDir, Store: st}
@@ -79,7 +79,7 @@ func TestApplyWritesAuditLogEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bundlePath := filepath.Join(stateDir, "bundle.pem")
+	bundlePath := filepath.ToSlash(filepath.Join(stateDir, "bundle.pem"))
 	if err := writeTestBundlePEM(bundlePath); err != nil {
 		t.Fatal(err)
 	}

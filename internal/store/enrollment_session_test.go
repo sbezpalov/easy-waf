@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func TestEnrollmentFreshInstallRestartAndConsume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stInfo.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && stInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", stInfo.Mode().Perm())
 	}
 	secret, err := enroll.ReadFile(dir)

@@ -5,6 +5,7 @@ package config
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -367,6 +368,8 @@ func DefaultManagementCIDRs() []string {
 
 // DefaultSettings returns safe defaults for development and docs.
 func DefaultSettings(stateDir string) GlobalSettings {
+	// Generated HAProxy paths use forward slashes on every development host.
+	stateDir = filepath.ToSlash(stateDir)
 	return GlobalSettings{
 		ACMEStaging:              true,
 		SPOEConfigPath:           "/etc/haproxy/crowdsec.cfg",
