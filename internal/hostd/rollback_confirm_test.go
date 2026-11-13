@@ -101,6 +101,8 @@ func TestRevertReportsCleanupFailureAndCanRetry(t *testing.T) {
 			if err := stateWriteFile(backup, data, 0o600); err != nil {
 				t.Fatal(err)
 			}
+			// Recovery claims the backup before invoking any host command.
+			backup = rollbackRevertingPath(kind, testToken)
 			m.onRun = func(string, []string) {
 				m.onRun = nil
 				replaceBackupWithNonemptyDirectory(t, backup)
@@ -145,7 +147,7 @@ func TestNetplanRevertReportsLiveFileRemovalFailure(t *testing.T) {
 	if len(m.calls) != 0 {
 		t.Fatalf("netplan applied despite failed removal: %v", m.calls)
 	}
-	if _, err := os.Stat(backup); err != nil {
+	if _, err := os.Stat(rollbackRevertingPath("netplan", testToken)); err != nil {
 		t.Fatalf("pending recovery backup lost: %v", err)
 	}
 }

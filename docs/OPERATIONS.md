@@ -114,6 +114,11 @@ The legacy `EASY_WAF_ADMIN_TOKEN` remains sufficient for authenticated read chec
 
 ## Package lifecycle: what `remove` and `purge` actually do
 
+Before downgrading, finish any network/firewall recovery recorded as
+`/var/lib/easy-waf-hostd/rollback/*.reverting` with the current broker. Older
+binaries discover only `.bak` files and cannot resume a claimed rollback. See
+[host recovery](HOST-API.md) for the retry procedure; keep the saved backup.
+
 Easy Home WAF ships as a Debian package ([ADR 0001](adr/0001-packaging-and-installer.md)),
 so `dpkg -l easy-waf` answers "which version is on this appliance" and removal is
 a defined operation rather than a hunt for files.

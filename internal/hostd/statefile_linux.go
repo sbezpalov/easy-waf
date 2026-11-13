@@ -175,6 +175,35 @@ func stateFileSize(path string) (size int64, exists bool, err error) {
 	return st.Size(), true, nil
 }
 
+// stateRenameFile moves a regular state file within one anchored directory.
+// No-replace is essential: a recovery claim must not overwrite another backup.
+func stateRenameFile(src, dst string) error {
+	srcRel, err := stateRel(src)
+	if err != nil {
+		return err
+	}
+	dstRel, err := stateRel(dst)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(srcRel) != filepath.Dir(dstRel) {
+		return fmt.Errorf("state rename requires the same directory")
+	}
+	dirFD, err := stateSubdirFD(filepath.Dir(srcRel), false, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dirFD)
+	var st unix.Stat_t
+	if err := unix.Fstatat(dirFD, filepath.Base(srcRel), &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("state rename source is not a regular file")
+	}
+	return unix.Renameat2(dirFD, filepath.Base(srcRel), dirFD, filepath.Base(dstRel), unix.RENAME_NOREPLACE)
+}
+
 // stateRemoveFile deletes a file under the state directory. Unlinkat does not
 // follow symlinks, so a planted link is removed rather than its target.
 func stateRemoveFile(path string) error {

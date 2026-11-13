@@ -79,6 +79,13 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 	if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != changed {
 		t.Fatalf("failed rollback changed the live file: %q, %v", got, err)
 	}
+	// Repair the claimed backup and finish recovery before a new lifecycle.
+	if err := stateWriteFile(rollbackRevertingPath("nft", testToken), []byte(baseline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunRevert("nft", testToken); err != nil {
+		t.Fatalf("recovery after backup repair: %v", err)
+	}
 	for cycle := 0; cycle < 2; cycle++ {
 		var emptyBaseline []byte
 		if cycle > 0 {

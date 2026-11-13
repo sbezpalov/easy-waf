@@ -204,16 +204,12 @@ func reloadNftGuard(ctx context.Context, r CommandRunner) error {
 }
 
 func revertNft(token string) error {
-	bak := rollbackBackupPath("nft", token)
-	data, ok, err := readRollbackBackup(bak)
+	bak, data, ok, err := claimRollbackBackup("nft", token)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil
-	}
-	if err := invalidateRollbackReceipt("nft"); err != nil {
-		return err
 	}
 	ctx := context.Background()
 	if len(data) == 0 || string(data) == nftEmptyRuleset {
@@ -335,16 +331,12 @@ func runNftScript(ctx context.Context, script string) error {
 }
 
 func revertNetplan(token string) error {
-	bak := rollbackBackupPath("netplan", token)
-	data, ok, err := readRollbackBackup(bak)
+	bak, data, ok, err := claimRollbackBackup("netplan", token)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil
-	}
-	if err := invalidateRollbackReceipt("netplan"); err != nil {
-		return err
 	}
 	if len(data) > 0 {
 		if err := validateNetplanYAML(data); err != nil {
@@ -424,6 +416,9 @@ func rejectPendingChange(kind string) error {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
+			if strings.HasPrefix(name, kind+"-") && strings.HasSuffix(name, ".reverting") {
+				return fmt.Errorf("%s rollback is incomplete; retry recovery before applying another change", kind)
+			}
 			if strings.HasPrefix(name, kind+"-") && strings.HasSuffix(name, ".bak") {
 				return fmt.Errorf("%s already has a pending change; confirm it or wait for rollback", kind)
 			}
@@ -443,6 +438,11 @@ func abortConfirmedChange(ctx context.Context, r CommandRunner, kind, token stri
 }
 
 func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token string) error {
+	if _, exists, err := stateFileSize(rollbackRevertingPath(kind, token)); err != nil {
+		return fmt.Errorf("inspect rollback recovery: %w", err)
+	} else if exists {
+		return fmt.Errorf("rollback has started; confirmation is no longer available; check current configuration")
+	}
 	backup := rollbackBackupPath(kind, token)
 	if _, exists, err := stateFileSize(backup); err != nil {
 		return fmt.Errorf("inspect pending rollback: %w", err)
@@ -604,10 +604,14 @@ func RevertPendingChanges() {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".bak") {
+		base, pending := strings.CutSuffix(name, ".bak")
+		if !pending {
+			base, pending = strings.CutSuffix(name, ".reverting")
+		}
+		if e.IsDir() || !pending {
 			continue
 		}
-		kind, token, ok := strings.Cut(strings.TrimSuffix(name, ".bak"), "-")
+		kind, token, ok := strings.Cut(base, "-")
 		if !ok || (kind != "nft" && kind != "netplan") || !hostspec.ValidToken(token) {
 			continue
 		}

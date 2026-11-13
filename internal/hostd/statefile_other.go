@@ -157,6 +157,40 @@ func stateFileSize(path string) (size int64, exists bool, err error) {
 	return st.Size(), true, nil
 }
 
+// Development fallback: the rollback lock and root-owned directory serialize
+// the existence check and rename. Linux uses an anchored no-replace syscall.
+func stateRenameFile(src, dst string) error {
+	srcRel, err := stateRel(src)
+	if err != nil {
+		return err
+	}
+	dstRel, err := stateRel(dst)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(srcRel) != filepath.Dir(dstRel) {
+		return fmt.Errorf("state rename requires the same directory")
+	}
+	dir, err := stateResolveDir(filepath.Dir(srcRel), false, 0)
+	if err != nil {
+		return err
+	}
+	source, target := filepath.Join(dir, filepath.Base(srcRel)), filepath.Join(dir, filepath.Base(dstRel))
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("state rename source is not a regular file")
+	}
+	if _, err := os.Lstat(target); err == nil {
+		return os.ErrExist
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(source, target)
+}
+
 func stateRemoveFile(path string) error {
 	rel, err := stateRel(path)
 	if err != nil {
