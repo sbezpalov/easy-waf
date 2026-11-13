@@ -56,7 +56,7 @@ function feed() {
   return {body: {getReader: () => ({read: () => {
     if (queue.length) return Promise.resolve(queue.shift());
     const next = deferred(); readers.push(next); return next.promise;
-  }})}, line: text => put({value: new TextEncoder().encode(JSON.stringify({type: 'line', data: text}) + '\n'), done: false}),
+  }, cancel: async () => {}, releaseLock: () => {}})}, line: text => put({value: new TextEncoder().encode(JSON.stringify({type: 'line', data: text}) + '\n'), done: false}),
     end: () => {
       put({value: new TextEncoder().encode('{"type":"exit","code":0}\n'), done: false});
       put({done: true});
@@ -157,7 +157,8 @@ const cases = {
       request = async () => {
         if (mode === 'network' || mode === 'check' || mode === 'clean') throw new Error('fixture disconnect');
         if (mode === 'http') return {ok: false};
-        return {ok: true, body: {getReader: () => ({read: async () => {throw new Error('fixture reader')}})}};
+        return {ok: true, body: {getReader: () => ({read: async () => {throw new Error('fixture reader')},
+          cancel: async () => {}, releaseLock: () => {}})}};
       };
       if (mode === 'check' || mode === 'clean') {
         await assert.rejects(() => element(mode === 'check' ? ids[0] : ids[3]).onclick());

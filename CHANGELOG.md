@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Verified browser package streams.** The panel rejects malformed, oversized or incomplete NDJSON instead of displaying success, completes on a verified exit without waiting for EOF, and releases its reader on all paths. Nonzero reconnect outcomes stay visible without an error string; live output keeps a bounded tail with an explicit truncation notice.
 - **Single package interaction in the panel.** Update checks, cache cleanup and live/reconnected package streams share control ownership through completion and error handling. Reopening System avoids duplicate observation; disk/list replies cannot re-enable busy cleanup or overwrite a newer operation's log.
 - **Faithful package status.** Invalid or ambiguous broker status now fails explicitly instead of becoming an inactive operation. The panel warns on unavailable status, shows fresh failed/unknown outcomes and ignores stale polls after newer requests/actions; valid older status replies remain supported, without mutation fallback or numeric precision loss.
 - **Bounded saved-log downloads.** The API fetches saved APT logs in bounded read-only chunks, validates completion in private temporary storage and serves plain text with a declared length. Two-download admission, size/time limits and cleanup replace whole-log JSON allocation; partial worker failures remain HTTP 500. Legacy broker JSON aliases remain available.

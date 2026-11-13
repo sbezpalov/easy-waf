@@ -4406,7 +4406,16 @@
     out.style.display = 'block';
     const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
     if (!atBottom) aptLogStickBottom = false;
-    out.textContent += (out.textContent ? '\n' : '') + line;
+    const text = out.textContent + (out.textContent ? '\n' : '') + line;
+    const limit = 2 * 1024 * 1024; // UTF-16 code units, including the notice.
+    if (text.length > limit) {
+      const notice = '[Earlier live log output omitted. Check the saved package log.]\n';
+      let tail = text.slice(-(limit - notice.length));
+      if (/^[\uDC00-\uDFFF]/.test(tail)) tail = tail.slice(1);
+      out.textContent = notice + tail;
+    } else {
+      out.textContent = text;
+    }
     if (aptLogStickBottom || atBottom) {
       out.scrollTop = out.scrollHeight;
       aptLogStickBottom = true;
@@ -4454,52 +4463,65 @@
   async function consumeAptStream(resp, opts) {
     const o = opts || {};
     const msg = document.getElementById('sys-apt-msg');
-    let exitCode = -1;
-    let exitErr = '';
     const reader = resp.body.getReader();
-    const dec = new TextDecoder();
+    const dec = new TextDecoder('utf-8', { fatal: true });
+    const recordLimit = 8 * 1024 * 1024; // Original UTF-8 bytes, excluding LF.
     let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        if (!line.trim()) continue;
-        let ev;
-        try {
-          ev = JSON.parse(line);
-        } catch (_) {
-          continue;
-        }
-        if (ev.type === 'line' && ev.data != null) {
-          const s = String(ev.data);
-          if (s.includes('attaching to apt action already in progress') && msg) {
-            msg.textContent = 'Reconnected to running apt action…';
-            msg.className = 'warn';
+    let recordBytes = 0;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error('Package log ended without a complete exit event.');
+        let start = 0;
+        while (start < value.length) {
+          const nl = value.indexOf(10, start);
+          const end = nl < 0 ? value.length : nl;
+          recordBytes += end - start;
+          if (recordBytes > recordLimit) throw new Error('Package log event exceeds its size limit.');
+          buf += dec.decode(value.subarray(start, end), { stream: nl < 0 });
+          start = end + 1;
+          if (nl < 0) continue;
+          const line = buf.trim();
+          buf = '';
+          recordBytes = 0;
+          if (!line) continue;
+          let ev;
+          try {
+            ev = JSON.parse(line);
+          } catch (_) {
+            throw new Error('Invalid package log JSON event.');
           }
-          appendAptLog(s);
-        } else if (ev.type === 'exit') {
-          exitCode = typeof ev.code === 'number' ? ev.code : -1;
-          if (ev.error) exitErr = String(ev.error);
+          if (!ev || typeof ev !== 'object' || Array.isArray(ev) ||
+              !['line', 'exit'].includes(ev.type) ||
+              (ev.data !== undefined && typeof ev.data !== 'string') ||
+              (ev.error !== undefined && typeof ev.error !== 'string') ||
+              (ev.code !== undefined && !Number.isSafeInteger(ev.code))) {
+            throw new Error('Invalid package log event fields.');
+          }
+          if (ev.type === 'line') {
+            if (ev.data !== undefined) {
+              if (ev.data.includes('attaching to apt action already in progress') && msg) {
+                msg.textContent = 'Reconnected to running apt action…';
+                msg.className = 'warn';
+              }
+              appendAptLog(ev.data);
+            }
+          } else {
+            if (!Number.isSafeInteger(ev.code) || (ev.code === 0 && ev.error)) {
+              throw new Error('Invalid package log exit event.');
+            }
+            const exitErr = ev.error || '';
+            if (!o.reconnect) finishAptStream(ev.code, exitErr, o);
+            else finishAptStreamReconnect(ev.code, exitErr, o);
+            return { exitCode: ev.code, exitErr };
+          }
         }
       }
+    } finally {
+      // Cancel observation only; host package execution is independently owned.
+      try { await reader.cancel(); } catch (_) { /* already errored/closed */ }
+      reader.releaseLock();
     }
-    if (buf.trim()) {
-      try {
-        const ev = JSON.parse(buf.trim());
-        if (ev.type === 'line' && ev.data != null) appendAptLog(String(ev.data));
-        else if (ev.type === 'exit') {
-          exitCode = typeof ev.code === 'number' ? ev.code : -1;
-          if (ev.error) exitErr = String(ev.error);
-        }
-      } catch (_) { /* trailing partial */ }
-    }
-    if (!o.reconnect) finishAptStream(exitCode, exitErr, o);
-    else finishAptStreamReconnect(exitCode, exitErr, o);
-    return { exitCode, exitErr };
   }
 
   function finishAptStream(exitCode, exitErr, opts) {
@@ -4541,9 +4563,15 @@
         msg.className = 'ok';
       }
       toast(successToast, 'ok');
-    } else if (exitErr) {
-      if (msg) msg.textContent = exitErr;
-      toast(exitErr, exitCode === -1 ? 'warn' : 'err', 8000);
+    } else {
+      const detail = exitErr || (exitCode === -1
+        ? 'Package outcome is unavailable. Check the saved package log.'
+        : 'apt exit code ' + exitCode);
+      if (msg) {
+        msg.textContent = detail;
+        msg.className = 'warn';
+      }
+      toast(detail, exitCode === -1 ? 'warn' : 'err', 8000);
     }
     void refreshAptPackageList();
   }
