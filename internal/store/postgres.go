@@ -369,14 +369,34 @@ func (s *Store) AppendAudit(ctx context.Context, action string, detail any) erro
 
 // AcquireAdvisoryLock holds a PostgreSQL session advisory lock until the returned
 // release function is called. A dedicated sql.Conn keeps the lock on one session.
+// Contended attempts return their connection to the pool before waiting, so the
+// lock owner can still borrow connections for the work needed to release it.
 func (s *Store) AcquireAdvisoryLock(ctx context.Context, key int64) (func() error, error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, key); err != nil {
-		discardAdvisoryLockConn(conn)
-		return nil, err
+	var conn *sql.Conn
+	for {
+		candidate, err := s.db.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var acquired bool
+		if err := candidate.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&acquired); err != nil {
+			discardAdvisoryLockConn(candidate)
+			return nil, err
+		}
+		if acquired {
+			conn = candidate
+			break
+		}
+		if err := candidate.Close(); err != nil {
+			return nil, err
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 
 	var once sync.Once

@@ -74,7 +74,14 @@ func (c *advisorySessionConn) ExecContext(_ context.Context, query string, _ []d
 	return driver.RowsAffected(1), nil
 }
 
-func (c *advisorySessionConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+func (c *advisorySessionConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "pg_try_advisory_lock") {
+		c.held = true
+		if c.owner.failure == "acquire" {
+			return nil, errAdvisorySessionTest
+		}
+		return &advisorySessionRows{value: true}, nil
+	}
 	c.owner.mu.Lock()
 	c.owner.unlocked++
 	c.owner.mu.Unlock()

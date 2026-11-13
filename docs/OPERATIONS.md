@@ -28,6 +28,8 @@ and leaves the newly loaded edge in place.
 A failed advisory-lock acquisition or release closes the physical PostgreSQL
 session. An uncertain session lock therefore cannot remain attached to a
 connection reused by the pool.
+Contended lock requests retry without holding a pooled connection between
+attempts, leaving capacity for the lock owner to finish its database work.
 
 The API keeps saved changes when a failure occurs after a successful reload.
 It responds with `500` and `configuration applied; check status before retrying`,
