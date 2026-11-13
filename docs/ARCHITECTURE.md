@@ -221,6 +221,11 @@ hashes only; PEMs are not part of revisions, so a rollback never brings back an
 old key). A certificate renewed in place whose apply failed or was interrupted
 therefore still counts as a difference. `easy-waf-acmed` runs the same check
 after its own issuances until the renewal is live.
+ACME publications use private immutable PEM generations. The ready row and its
+pending apply token commit together in PostgreSQL; reconciliation acknowledges
+only the exact generations it read before apply. This closes the DB/file/apply
+process-crash gaps without overwriting a previously referenced key pair. See
+[ADR 0010](adr/0010-acme-publication.md) for retention and upgrade limits.
 `EASY_WAF_NO_AUTO_APPLY=1` disables it along with auto-apply. New rollback revisions
 restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 

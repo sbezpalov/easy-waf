@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/google/uuid"
 )
 
 // ErrACMEClaimLost means the certificate row changed after easy-waf-acmed claimed
@@ -98,31 +99,21 @@ type ACMEResult struct {
 	Mode                   string
 }
 
-// CompleteCertificateACME locks the claimed row, runs write (which stages new
-// PEM sidecars), commits the ready row, then promotes sidecars into the live
-// paths. write runs only while the claim still holds. promote may be nil when
-// tests stub the write without files.
-func (s *Store) CompleteCertificateACME(ctx context.Context, c *config.Certificate, write func() (ACMEResult, error)) (retErr error) {
-	return s.CompleteCertificateACMEPromote(ctx, c, write, nil)
-}
-
-// CompleteCertificateACMEPromote is CompleteCertificateACME with an optional
-// post-commit promote hook (rename *.pem.new → live PEMs).
-func (s *Store) CompleteCertificateACMEPromote(
+// CompleteCertificateACME locks the claim and writes a complete immutable PEM
+// generation before committing its paths, metadata and pending apply token in
+// one transaction. A failed/ambiguous commit must never delete the generation:
+// the old row still has its old paths, or the committed new row owns these files.
+func (s *Store) CompleteCertificateACME(
 	ctx context.Context,
 	c *config.Certificate,
 	write func() (ACMEResult, error),
-	promote func(ACMEResult) error,
-) (retErr error) {
+) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	var staged ACMEResult
 	defer func() {
-		if retErr != nil {
-			_ = tx.Rollback()
-		}
+		_ = tx.Rollback()
 	}()
 	var id string
 	err = tx.QueryRowContext(ctx, `
@@ -139,7 +130,6 @@ func (s *Store) CompleteCertificateACMEPromote(
 	if err != nil {
 		return fmt.Errorf("write certificate files: %w", err)
 	}
-	staged = r
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE certificates
 		SET acme_status = 'ready', last_error = NULL, acme_attempts = 0, acme_next_attempt_at = NULL,
@@ -148,12 +138,45 @@ func (s *Store) CompleteCertificateACMEPromote(
 		c.ID, r.FullchainPath, r.KeyPath, r.NotBefore.UTC(), r.NotAfter.UTC(), r.Mode, time.Now().UTC()); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO acme_apply_pending (certificate_id, generation) VALUES ($1, $2)
+		ON CONFLICT (certificate_id) DO UPDATE SET generation = EXCLUDED.generation`, c.ID, uuid.NewString()); err != nil {
 		return err
 	}
-	if promote != nil {
-		if err := promote(staged); err != nil {
-			return fmt.Errorf("promote certificate files: %w", err)
+	return tx.Commit()
+}
+
+// ACMEApplyToken identifies one committed publication awaiting edge reconciliation.
+// A newer publication replaces the token, so an older apply cannot clear its work.
+type ACMEApplyToken struct {
+	CertificateID string
+	Generation    string
+}
+
+// PendingCertificateACMEApplies snapshots a bounded batch before rendering.
+func (s *Store) PendingCertificateACMEApplies(ctx context.Context) ([]ACMEApplyToken, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT certificate_id, generation FROM acme_apply_pending ORDER BY certificate_id LIMIT 256`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tokens []ACMEApplyToken
+	for rows.Next() {
+		var token ACMEApplyToken
+		if err := rows.Scan(&token.CertificateID, &token.Generation); err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens, rows.Err()
+}
+
+// AcknowledgeCertificateACMEApplies clears only the exact pre-apply snapshot.
+// Partial acknowledgement on a query failure is safe: remaining tokens retry.
+func (s *Store) AcknowledgeCertificateACMEApplies(ctx context.Context, tokens []ACMEApplyToken) error {
+	for _, token := range tokens {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM acme_apply_pending WHERE certificate_id = $1 AND generation = $2`, token.CertificateID, token.Generation); err != nil {
+			return err
 		}
 	}
 	return nil

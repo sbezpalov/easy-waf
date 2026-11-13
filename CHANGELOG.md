@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Crash-consistent ACME publication.** Validated PEM pairs use immutable private generations, and ready metadata commits with a PostgreSQL apply token. Restart/failure retries acknowledge only the generations seen before apply; concurrent renewals and failed acknowledgements cannot lose work. Migration 027 retains existing paths and legacy-marker recovery; old/unreferenced generations are preserved for recovery.
 - **Stable ACME account identity.** First issuance publishes a complete private account key without replacing an existing file. Concurrent workers use the same winning key; interrupted staging cannot expose a partial canonical PEM, and corrupt existing keys fail explicitly without automatic rotation.
 - **Owned ACME attempts.** Each issuance runs in a bounded child of the existing worker, so deadline/cancellation cannot abandon an active Lego request or restore DNS variables while issuance still runs. The parent joins and validates its private result; child self-deadline and first/second service-signal handling preserve shutdown policy. Forced termination reports possible incomplete CA/DNS cleanup rather than claiming a rolled-back attempt.
 - **ACME heartbeat finalization.** The worker now joins an in-flight claim heartbeat before finalizing issuance, preventing concurrent claim-stamp updates from causing a valid result to be discarded. Stop is idempotent, and running database touches settle within their existing query budget.

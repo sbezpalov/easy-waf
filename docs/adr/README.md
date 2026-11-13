@@ -19,6 +19,7 @@ rather than editing it, so the history of *why* stays readable.
 | [0007](0007-offline-bundle.md) | Production offline distribution | accepted |
 | [0008](0008-apt-execution-service.md) | APT ownership outside the management broker | accepted |
 | [0009](0009-acme-attempt-process.md) | Own each ACME attempt in a bounded process | accepted |
+| [0010](0010-acme-publication.md) | Commit immutable ACME generations with apply intent | accepted |
 
 Earlier architectural context that predates this directory:
 

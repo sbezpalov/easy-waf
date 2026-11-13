@@ -214,24 +214,11 @@ func startACMEClaimHeartbeat(ctx context.Context, st *store.Store, c *config.Cer
 	})
 }
 
-// applyPendingPath marks a certificate acmed stored whose HAProxy apply has
-// not succeeded yet. It is a file so it survives a stop or crash between the
-// two; only acmed's own issuances set it, so acmed does not reconcile the edge
-// on every start for changes it did not make.
+// applyPendingPath is the legacy pre-migration-027 marker. New publications
+// record apply intent transactionally in PostgreSQL; keep reading the old marker
+// until a successful reconcile so an upgrade does not discard pending work.
 func applyPendingPath(stateDir string) string {
 	return filepath.Join(stateDir, "acme", "apply-pending")
-}
-
-func markApplyPending(stateDir, certID string) {
-	path := applyPendingPath(stateDir)
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		log.Printf("acmed: mark apply pending: %v", err)
-		return
-	}
-	body := certID + " " + time.Now().UTC().Format(time.RFC3339) + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		log.Printf("acmed: mark apply pending: %v", err)
-	}
 }
 
 func applyPending(stateDir string) bool {
@@ -250,29 +237,53 @@ func clearApplyPending(stateDir string) {
 // the process died in between. After a failed attempt it waits
 // reconcileRetry, unless a new issuance resets the wait.
 func (w *worker) reconcile(ctx context.Context) {
-	stateDir := w.eng.StateDir
-	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") || !applyPending(stateDir) {
+	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
 		return
 	}
 	if !w.lastTry.IsZero() && time.Since(w.lastTry) < reconcileRetry {
 		return
 	}
-	actx, cancel := context.WithTimeout(ctx, applyTimeout)
-	defer cancel()
-	// ApplyIfChanged compares the certificate files with what HAProxy last
-	// loaded, so it applies a renewal that is not live and does nothing (no
-	// reload) when another apply, the API's for example, already loaded it.
-	applied, err := w.eng.ApplyIfChanged(actx, "acme-reconcile")
+	applied, err := reconcileCertificateApplies(ctx, w.eng, "acme-reconcile")
 	if err != nil {
 		w.lastTry = time.Now()
 		log.Printf("acmed: a stored certificate may not be live; apply failed, retrying in %s: %v", reconcileRetry, err)
 		return
 	}
 	w.lastTry = time.Time{}
-	clearApplyPending(stateDir)
 	if applied {
 		log.Printf("acmed: applied a stored certificate that was not live yet")
 	}
+}
+
+// Snapshot before render and acknowledge only those exact publication tokens.
+// A publication committed during/after apply keeps its newer token for retry.
+// Failure, stop or a crash before acknowledgement leaves committed work intact.
+func reconcileCertificateApplies(ctx context.Context, eng *engine.Engine, label string) (bool, error) {
+	qctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	tokens, err := eng.Store.PendingCertificateACMEApplies(qctx)
+	cancel()
+	if err != nil {
+		return false, fmt.Errorf("read pending certificate applies: %w", err)
+	}
+	legacy := applyPending(eng.StateDir)
+	if len(tokens) == 0 && !legacy {
+		return false, nil
+	}
+	actx, acancel := context.WithTimeout(ctx, applyTimeout)
+	defer acancel()
+	applied, err := eng.ApplyIfChanged(actx, label)
+	if err != nil {
+		return applied, err
+	}
+	ackctx, ackcancel := context.WithTimeout(ctx, dbTimeout)
+	defer ackcancel()
+	if err := eng.Store.AcknowledgeCertificateACMEApplies(ackctx, tokens); err != nil {
+		return applied, fmt.Errorf("acknowledge certificate applies: %w", err)
+	}
+	if legacy {
+		clearApplyPending(eng.StateDir)
+	}
+	return applied, nil
 }
 
 // runOnce takes stored certificates live if needed, loads settings, claims
@@ -333,7 +344,7 @@ func (w *worker) runOnce(ctx context.Context, st *store.Store) {
 
 // issueOne issues c under ctx. stop is the process lifecycle context: it
 // cancels the HAProxy apply that follows a successful issuance; if that
-// apply does not succeed, the apply-pending mark makes the worker's
+// apply does not succeed, the transactional apply token makes the worker's
 // reconcile take the certificate live. It reports whether the certificate
 // was stored but its apply did not succeed.
 func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c *config.Certificate) (pending bool) {
@@ -383,19 +394,11 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 		// look like a dead worker to reclaim.
 		_ = st.TouchCertificateACMEClaim(ctx, c)
 		err = eng.WithApplyLock(ctx, func() error {
-			return st.CompleteCertificateACMEPromote(ctx, c, func() (store.ACMEResult, error) {
+			return st.CompleteCertificateACME(ctx, c, func() (store.ACMEResult, error) {
 				full, key, nb, na, werr := acme.WriteCertificateResource(eng.StateDir, c.ID, res)
 				return store.ACMEResult{FullchainPath: full, KeyPath: key, NotBefore: nb, NotAfter: na, Mode: mode}, werr
-			}, func(r store.ACMEResult) error {
-				return acme.PromoteCertificateFiles(r.FullchainPath, r.KeyPath)
 			})
 		})
-		if err != nil {
-			acme.DiscardCertificateStaging(
-				filepath.Join(eng.StateDir, "certs", c.ID, "fullchain.pem"),
-				filepath.Join(eng.StateDir, "certs", c.ID, "privkey.pem"),
-			)
-		}
 	}
 	if errors.Is(err, store.ErrACMEClaimLost) {
 		if res != nil {
@@ -423,20 +426,16 @@ func issueOne(ctx, stop context.Context, eng *engine.Engine, st *store.Store, c 
 		log.Printf("acme issue failed id=%s mode=%s attempt=%d next=%s: %v", c.ID, mode, c.ACMEAttempts+1, next.UTC().Format(time.RFC3339), err)
 		return
 	}
-	// Mark before anything else that can fail: PEMs are ready and the edge
-	// must reconcile even if audit/apply die next.
-	markApplyPending(eng.StateDir, c.ID)
+	// Ready paths and their apply token were committed together. Audit/apply
+	// failure or process death cannot lose the pending publication.
 	_ = st.AppendAudit(ctx, "acme.issued", map[string]string{"id": c.ID, "domains": strings.Join(domains, ","), "mode": mode})
 
 	if envflag.Enabled("EASY_WAF_ACME_SKIP_APPLY") {
 		return true
 	}
-	actx, acancel := context.WithTimeout(stop, applyTimeout)
-	defer acancel()
-	if err := eng.Apply(actx, "acme"); err != nil {
+	if _, err := reconcileCertificateApplies(stop, eng, "acme"); err != nil {
 		log.Printf("apply after acme failed; the edge is reconciled on a later tick or start: %v", err)
 		return true
 	}
-	clearApplyPending(eng.StateDir)
 	return false
 }

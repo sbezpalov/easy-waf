@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,12 +35,23 @@ func TestChildEntryDoesNotStartTheDatabaseWorker(t *testing.T) {
 	}
 }
 
-func TestApplyPendingMark(t *testing.T) {
+func writeLegacyApplyPending(t *testing.T, state string) {
+	t.Helper()
+	path := applyPendingPath(state)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("legacy cert-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLegacyApplyPendingMark(t *testing.T) {
 	state := t.TempDir()
 	if applyPending(state) {
 		t.Fatal("pending before anything was stored")
 	}
-	markApplyPending(state, "cert-1")
+	writeLegacyApplyPending(t, state)
 	if !applyPending(state) {
 		t.Fatal("mark not visible")
 	}
@@ -54,7 +66,7 @@ func TestApplyPendingMark(t *testing.T) {
 	clearApplyPending(state) // clearing twice is fine
 }
 
-// reconcile must not apply when nothing is pending, while backing off, or
+// reconcile must not query/apply while backing off or
 // with applies disabled. The engine has no store, so an Apply would panic.
 func TestReconcileOnlyWhenPending(t *testing.T) {
 	state := t.TempDir()
@@ -71,9 +83,7 @@ func TestReconcileOnlyWhenPending(t *testing.T) {
 		w.reconcile(ctx)
 	}
 
-	mustNotApply("nothing pending")
-
-	markApplyPending(state, "cert-1")
+	writeLegacyApplyPending(t, state)
 	w.lastTry = time.Now()
 	mustNotApply("within the retry backoff")
 

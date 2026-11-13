@@ -351,6 +351,7 @@ func TestIssueChildSelfDeadlineAndSignalGrace(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, executable, IssueChildArg)
 			commandprocess.Prepare(cmd)
+			cmd.Env = issueChildEnvironment(os.Environ())
 			input, owner, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
