@@ -17,6 +17,7 @@ rather than editing it, so the history of *why* stays readable.
 | [0005](0005-forward-auth.md) | Forward authentication in front of a published application | accepted |
 | [0006](0006-coraza-crs.md) | What kind of WAF this project is | proposed |
 | [0007](0007-offline-bundle.md) | Production offline distribution | accepted |
+| [0008](0008-apt-execution-service.md) | APT ownership outside the management broker | accepted |
 
 Earlier architectural context that predates this directory:
 

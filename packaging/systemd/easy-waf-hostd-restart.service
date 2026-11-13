@@ -1,7 +1,7 @@
 [Unit]
-Description=Easy Home WAF broker restart after package transactions
-# No dependency/ordering on hostd: ExecStart waits for a synchronous restart job.
-# This service must run in its own cgroup, outside the broker's APT children.
+Description=Easy Home WAF APT owner and broker restart after package transactions
+# No dependency/ordering on either: ExecStart waits for synchronous restart jobs.
+# This service has its own cgroup, outside the APT owner and broker.
 
 [Service]
 Type=oneshot
@@ -20,6 +20,6 @@ ProtectHome=true
 ProtectSystem=strict
 # Keep name replacements visible for the helper's final inode check. Per-file
 # bind mounts would pin an old lock inode even after its host path is replaced.
-ReadWritePaths=/var/lib/dpkg
+ReadWritePaths=/var/lib/dpkg /var/lib/easy-waf-hostd
 ProtectControlGroups=true
 NoNewPrivileges=true

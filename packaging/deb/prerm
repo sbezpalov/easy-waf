@@ -1,8 +1,9 @@
 #!/bin/sh
 # easy-waf — pre-removal.
 #
-# Stop the services before the binaries disappear. On an upgrade dpkg calls this
-# with "upgrade": leave everything running, postinst restarts what was active.
+# Stop ordinary services before binaries disappear; queue the APT owner's and
+# ACME's graceful stops without holding dpkg. On upgrade leave services running;
+# postinst schedules active-only restarts outside the package transaction.
 
 set -e
 
@@ -13,8 +14,16 @@ remove | deconfigure)
 	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 		# A queued maintenance helper must not restart a removed package later.
 		systemctl stop easy-waf-hostd-restart.service >/dev/null 2>&1 || true
+		# APT may be removing its own worker package. Queue its graceful stop;
+		# waiting here would deadlock dpkg against the worker's in-flight APT.
+		systemctl stop --no-block easy-waf-apt.service >/dev/null 2>&1 || true
 		for u in $UNITS; do
-			systemctl stop "$u" >/dev/null 2>&1 || true
+			if [ "$u" = easy-waf-acmed.service ]; then
+				# The 50-minute ACME drain must not consume APT's 30-minute budget.
+				systemctl stop --no-block "$u" >/dev/null 2>&1 || true
+			else
+				systemctl stop "$u" >/dev/null 2>&1 || true
+			fi
 		done
 		# shellcheck disable=SC2086  # UNITS is a deliberate word list
 		systemctl disable $UNITS >/dev/null 2>&1 || true

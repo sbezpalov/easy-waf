@@ -7,14 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/easy-waf/easy-waf/internal/hostd"
 )
 
 func shortTempSock(t *testing.T) string {
@@ -34,31 +33,10 @@ func shortTempSock(t *testing.T) string {
 }
 
 func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
-	hostd.SetBypassPeerCheckForTest(true)
-	hostd.SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
-	t.Cleanup(func() { hostd.ResetAptActionStateForTest(); hostd.SetAptActionLogPathOverrideForTest("") })
-	sock := shortTempSock(t)
-
-	hostd.ResetAptUpgradeStateForTest()
-	hostd.SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
-		_ = emit("alpha")
-		_ = emit("beta")
-		return 2, nil
+	result := streamWireFixture(t, func(conn net.Conn) error {
+		_, err := io.WriteString(conn, "{\"type\":\"line\",\"data\":\"alpha\"}\n{\"type\":\"line\",\"data\":\"beta\"}\n{\"type\":\"exit\",\"code\":2}\n")
+		return err
 	})
-	defer hostd.ResetAptUpgradeStateForTest()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = hostd.Serve(ctx, sock) }()
-
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(30 * time.Millisecond)
-		if BrokerAvailableWithSocket(sock) {
-			break
-		}
-	}
-	t.Setenv("EASY_WAF_HOSTD_SOCKET", sock)
 
 	var lines [][]byte
 	err := PrivilegedStream(context.Background(), func(line []byte) error {
@@ -78,64 +56,90 @@ func TestPrivilegedStream_readsNDJSONLines(t *testing.T) {
 	if json.Unmarshal(lines[len(lines)-1], &ev) != nil || ev.Type != "exit" || ev.Code != 2 {
 		t.Fatalf("exit line: %s", lines[len(lines)-1])
 	}
+	if err := result(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPrivilegedStream_stopsRelayOnWriteError(t *testing.T) {
-	hostd.SetBypassPeerCheckForTest(true)
-	hostd.SetAptActionLogPathOverrideForTest(filepath.Join(t.TempDir(), "apt-action.log"))
-	t.Cleanup(func() { hostd.ResetAptActionStateForTest(); hostd.SetAptActionLogPathOverrideForTest("") })
-	sock := shortTempSock(t)
-
-	hostd.ResetAptUpgradeStateForTest()
-	hostd.SetAptUpgradeStreamHookForTest(func(_ context.Context, emit func(string) error) (int, error) {
-		_ = emit("one")
-		_ = emit("two")
-		return 0, nil
+	result := streamWireFixture(t, func(conn net.Conn) error {
+		if _, err := io.WriteString(conn, "{\"type\":\"line\",\"data\":\"one\"}\n{\"type\":\"line\",\"data\":\"two\"}\n{\"type\":\"exit\",\"code\":0}\n"); err != nil {
+			return err
+		}
+		var data [1]byte
+		if _, err := conn.Read(data[:]); !errors.Is(err, io.EOF) {
+			return fmt.Errorf("relay retained its socket after callback failure: %v", err)
+		}
+		return nil
 	})
-	defer hostd.ResetAptUpgradeStateForTest()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = hostd.Serve(ctx, sock) }()
-	time.Sleep(100 * time.Millisecond)
-	t.Setenv("EASY_WAF_HOSTD_SOCKET", sock)
-
+	calls := 0
 	err := PrivilegedStream(context.Background(), func(_ []byte) error {
+		calls++
 		return io.ErrClosedPipe
 	}, "apt-upgrade-stream")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The relay returns before the broker finishes. Wait for its result before
-	// resetting globals/removing the log fixture; cancellation must not cancel APT.
-	waitCtx, cancelWait := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancelWait()
-	for {
-		payload, err := Privileged(waitCtx, "apt-action-status")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var status struct {
-			Active bool `json:"active"`
-		}
-		if err := json.Unmarshal(payload, &status); err != nil {
-			t.Fatal(err)
-		}
-		if !status.Active {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if calls != 1 {
+		t.Fatalf("relay called failed subscriber again: %d callbacks", calls)
+	}
+	if err := result(); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func BrokerAvailableWithSocket(sock string) bool {
-	// local helper for test
-	c, err := net.Dial("unix", sock)
+// Relay tests own their wire peer; actual broker/worker package ownership is
+// exercised by hostd's real systemd integration fixture.
+func streamWireFixture(t *testing.T, body func(net.Conn) error) func() error {
+	t.Helper()
+	socket := shortTempSock(t)
+	listener, err := net.Listen("unix", socket)
 	if err != nil {
-		return false
+		t.Fatal(err)
 	}
-	_ = c.Close()
-	return true
+	t.Setenv("EASY_WAF_HOSTD_SOCKET", socket)
+	done := make(chan struct{})
+	var result error
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			result = err
+			return
+		}
+		defer conn.Close()
+		if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+			result = err
+			return
+		}
+		var request brokerRequest
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			result = err
+			return
+		}
+		if len(request.Argv) != 1 || request.Argv[0] != "apt-upgrade-stream" {
+			result = fmt.Errorf("unexpected relay request: %v", request.Argv)
+			return
+		}
+		result = body(conn)
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		select {
+		case <-done:
+		case <-time.After(4 * time.Second):
+			t.Error("relay wire fixture did not stop")
+		}
+	})
+	return func() error {
+		select {
+		case <-done:
+			return result
+		case <-time.After(4 * time.Second):
+			return errors.New("relay wire fixture did not complete")
+		}
+	}
 }
 
 func TestPrivilegedStreamRejectsEOFWithoutExit(t *testing.T) {

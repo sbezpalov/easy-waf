@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Real broker -> APT -> dpkg -> postinst -> systemd restart, in a disposable OS.
-# Needs a Linux Docker engine capable of private cgroup delegation and SYS_ADMIN
-# for nested service mount namespaces. No privileged mode, host cgroup bind,
+# Needs a Linux Docker engine capable of private cgroup delegation, SYS_ADMIN
+# for nested service mounts and SYS_PTRACE for the real API-identity probe.
+# No privileged mode, host cgroup bind,
 # host PID/network or Docker socket is used. Runtime network is disabled.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -60,7 +61,7 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 export MSYS_NO_PATHCONV=1
 CID="$("$DOCKER_BIN" run --pull=never --detach --no-healthcheck --network none --cgroupns private \
-  --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+  --cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt apparmor=unconfined \
   --label easy-waf.fixture=package-systemd --memory 512m --pids-limit 256 \
   --tmpfs /run:rw,nosuid,size=32m --tmpfs /run/lock:rw,nosuid,size=16m \
   --mount "type=bind,source=${docker_root},target=/repo,readonly" \

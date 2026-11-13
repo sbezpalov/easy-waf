@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **APT survives broker restarts.** A private root `easy-waf-apt.service` owns package execution, logs and results independently of the management broker. Self-upgrade refreshes both services after reserving execution and package locks; removal drains the APT owner without blocking its own dpkg. Existing HTTP routes are unchanged; unavailable worker fails explicitly. The real systemd E2E covers broker stop/SIGKILL, API identity isolation and own-package removal.
 - **VERSION** is `1.6.1` on `main` so clone/install scripts no longer advertise a stale `1.6.0` package while Unreleased changes accumulate.
 
 ### Security

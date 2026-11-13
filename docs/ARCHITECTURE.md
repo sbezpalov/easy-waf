@@ -30,6 +30,8 @@ flowchart TB
     API[easy-waf-api: API + UI + config gen]
     AC[easy-waf-acmed: ACME Lego worker]
     HD[easy-waf-hostd: root broker]
+    AW[easy-waf-apt: private root APT service]
+    PK[APT / dpkg]
     ST[(PostgreSQL)]
     FS[Config + cert files under /var/lib/easy-waf]
     NG[NGINX optional: ACME webroot or admin split]
@@ -47,10 +49,18 @@ flowchart TB
   AC --> FS
   API -->|reload| HA
   API -->|unix socket| HD
-  HD -->|nftables, netplan, apt, users| FW
+  HD -->|nftables / netplan| FW
+  HD -->|root-only Unix socket| AW
+  AW --> PK
   HA --> B1
   F2 -.->|SSH jails| FW
 ```
+
+APT runs outside the broker cgroup, retaining its operation ID, log and result
+when the broker restarts. `easy-waf-apt.service` uses the same installed hostd
+binary in a dedicated CLI mode; broker calls its narrow APT protocol over a
+root-only socket. See [ADR 0008](adr/0008-apt-execution-service.md) for lifecycle,
+self-upgrade coordination and failure limits.
 
 ## Reference topology: NGFW → WAF → web backends
 

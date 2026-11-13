@@ -145,22 +145,20 @@ systemd_available() {
 	command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
 
-# The installing APT/dpkg may be a child of hostd. Restarting it here would
-# terminate this very transaction. The separate, asynchronous service takes
-# both real package locks before restarting hostd; never fall back to an
-# immediate restart if scheduling fails. Keep intentionally stopped units off.
+# APT belongs to the worker (legacy brokers own it directly). Restarting its
+# owner here would terminate this transaction. Queue maintenance if either is
+# active, even when broker is intentionally stopped; active-only restart keeps
+# public services off. Never fall back to an immediate owner restart.
 restart_active_units() {
+	if systemctl is-active --quiet easy-waf-apt.service || systemctl is-active --quiet easy-waf-hostd.service; then
+		# Requeue even if an earlier helper is finishing; dpkg still owns its lock.
+		systemctl restart --no-block easy-waf-hostd-restart.service || info "WARNING: broker restart was not queued — after package work finishes, check: systemctl status easy-waf-hostd-restart.service"
+	fi
 	for u in $UNITS; do
+		[ "$u" != easy-waf-hostd.service ] || continue
 		if systemctl is-active --quiet "$u"; then
-			if [ "$u" = easy-waf-hostd.service ]; then
-				# Requeue even if a previous helper is finishing. While dpkg owns
-				# its lock, that helper cannot be inside the protected restart.
-				systemctl restart --no-block easy-waf-hostd-restart.service || info "WARNING: broker restart was not queued — after package work finishes, check: systemctl status easy-waf-hostd-restart.service"
-			else
-				# ACME can drain an issuance for up to 50 minutes; do not hold
-				# dpkg/its parent APT (30-minute budget) waiting for that job.
-				systemctl try-restart --no-block "$u" || info "WARNING: failed to queue restart of ${u} — check: journalctl -u ${u} -n 40"
-			fi
+			# ACME can drain for 50 minutes; do not hold dpkg/its 30-minute APT.
+			systemctl try-restart --no-block "$u" || info "WARNING: failed to queue restart of ${u} — check: journalctl -u ${u} -n 40"
 		fi
 	done
 }
@@ -170,7 +168,7 @@ restart_active_units() {
 # is exactly the failure that makes an upgrade look applied when it is not.
 warn_shadowing_units() {
 	shadowed=""
-	for u in $UNITS easy-waf-hostd-restart.service; do
+	for u in $UNITS easy-waf-apt.service easy-waf-hostd-restart.service; do
 		if [ -f "/etc/systemd/system/${u}" ]; then
 			shadowed="${shadowed} ${u}"
 		fi

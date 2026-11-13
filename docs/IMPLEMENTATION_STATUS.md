@@ -17,6 +17,12 @@ It is a status record, not a guide. How the system works is
 [OPERATIONS.md](OPERATIONS.md). The capability tables below are a compact index
 and point at the feature sections (`see 7.*`) and at the acceptance criteria.
 
+APT now belongs to internal `easy-waf-apt.service`, outside the management
+broker cgroup. Real systemd/APT tests cover broker stop/SIGKILL with stable
+operation/result, root-only worker access, self-upgrade, stopped public services
+and removal of the owner's package. See [ADR 0008](adr/0008-apt-execution-service.md).
+Full appliance installation and external ACME/WAN acceptance remain manual.
+
 ## Security hardening (audit follow-up)
 
 | Item | Status | Where |

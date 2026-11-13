@@ -96,6 +96,9 @@ contents:
   - src: packaging/systemd/easy-waf-hostd.service
     dst: /lib/systemd/system/easy-waf-hostd.service
     file_info: { mode: 0644 }
+  - src: packaging/systemd/easy-waf-apt.service
+    dst: /lib/systemd/system/easy-waf-apt.service
+    file_info: { mode: 0644 }
   - src: packaging/systemd/easy-waf-hostd-restart.service
     dst: /lib/systemd/system/easy-waf-hostd-restart.service
     file_info: { mode: 0644 }

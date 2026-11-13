@@ -9,20 +9,44 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
 // DefaultSocket is the unix socket path (root:easy-waf 0660).
 const DefaultSocket = "/run/easy-waf/hostd.sock"
 
+type socketRole uint8
+
+const (
+	localSocket socketRole = iota
+	brokerSocket
+	aptWorkerSocket
+)
+
 // Serve listens on sockPath until ctx is cancelled.
 func Serve(ctx context.Context, sockPath string) error {
+	return serveSocket(ctx, sockPath, brokerSocket)
+}
+
+func serveSocket(ctx context.Context, sockPath string, role socketRole) error {
 	if sockPath == "" {
 		sockPath = DefaultSocket
 	}
+	dirMode := os.FileMode(0o750)
+	if role == aptWorkerSocket {
+		dirMode = 0o700
+	}
+	if err := os.MkdirAll(filepath.Dir(sockPath), dirMode); err != nil {
+		return err
+	}
+	if role == aptWorkerSocket {
+		if err := validateAPTWorkerDirectory(filepath.Dir(sockPath)); err != nil {
+			return err
+		}
+	}
 	_ = os.Remove(sockPath)
-	dir := "/run/easy-waf"
-	_ = os.MkdirAll(dir, 0o750)
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
 		return err
@@ -31,11 +55,31 @@ func Serve(ctx context.Context, sockPath string) error {
 	if err := setSocketPermissions(sockPath); err != nil {
 		return err
 	}
+	if role == aptWorkerSocket {
+		if err := os.Chmod(sockPath, 0o600); err != nil {
+			return err
+		}
+	}
 	logOp("listening on %s", sockPath)
+	if role == aptWorkerSocket {
+		if err := notifyAPTReady(); err != nil {
+			return err
+		}
+	}
+	var handlers sync.WaitGroup
+	var connectionsMu sync.Mutex
+	connections := make(map[net.Conn]struct{})
 
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
+		if role == aptWorkerSocket {
+			connectionsMu.Lock()
+			for c := range connections {
+				_ = c.Close()
+			}
+			connectionsMu.Unlock()
+		}
 	}()
 
 	d := &Dispatcher{Runner: DefaultRunner}
@@ -44,16 +88,38 @@ func Serve(ctx context.Context, sockPath string) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
+				if role == aptWorkerSocket {
+					handlers.Wait()
+				}
 				return nil
 			default:
 				return err
 			}
 		}
-		go handleConn(ctx, conn, d)
+		connectionsMu.Lock()
+		connections[conn] = struct{}{}
+		connectionsMu.Unlock()
+		if ctx.Err() != nil {
+			_ = conn.Close()
+		}
+		handlers.Add(1)
+		go func() {
+			defer handlers.Done()
+			defer func() {
+				connectionsMu.Lock()
+				delete(connections, conn)
+				connectionsMu.Unlock()
+			}()
+			handleConnRole(ctx, conn, d, role)
+		}()
 	}
 }
 
 func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
+	handleConnRole(ctx, c, d, localSocket)
+}
+
+func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketRole) {
 	defer c.Close()
 	// Fail closed: anything that is not a verifiable unix peer is rejected.
 	uc, ok := c.(*net.UnixConn)
@@ -62,7 +128,11 @@ func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 		_ = writeResponse(c, failResp("peer not allowed", 1))
 		return
 	}
-	if err := allowPeer(uc); err != nil {
+	checkPeer := allowPeer
+	if role == aptWorkerSocket {
+		checkPeer = allowRootPeer
+	}
+	if err := checkPeer(uc); err != nil {
 		logOp("reject peer: %v", err)
 		_ = writeResponse(c, failResp("peer not allowed", 1))
 		return
@@ -78,6 +148,17 @@ func handleConn(ctx context.Context, c net.Conn, d *Dispatcher) {
 	if len(req.Argv) == 0 {
 		_ = writeResponse(c, failResp("empty argv", 1))
 		return
+	}
+	if role == aptWorkerSocket && !isAPTWorkerOpcode(req.Argv[0]) {
+		_ = writeResponse(c, failResp("APT worker opcode not allowed", 1))
+		return
+	}
+	if role == brokerSocket && isAPTWorkerOpcode(req.Argv[0]) {
+		proxyAPTRequest(ctx, c, req, DefaultAPTWorkerSocket)
+		return
+	}
+	if role == aptWorkerSocket && isAPTMutationOpcode(req.Argv[0]) {
+		ctx = context.WithoutCancel(ctx)
 	}
 	switch req.Argv[0] {
 	case "apt-action-attach-stream":

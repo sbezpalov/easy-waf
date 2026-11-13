@@ -345,7 +345,7 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- Serve(ctx, sock) }()
+	go func() { serveErr <- serveSocket(ctx, sock, localSocket) }()
 	joinTestBroker(t, cancel, serveErr)
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -392,7 +392,7 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- Serve(ctx, sock) }()
+	go func() { serveErr <- serveSocket(ctx, sock, localSocket) }()
 	joinTestBroker(t, cancel, serveErr)
 
 	deadline := time.Now().Add(3 * time.Second)

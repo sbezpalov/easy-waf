@@ -20,6 +20,7 @@ systemctl() {
       case "$mode" in
         stopped) return 3 ;;
         api_only) [[ "$3" == easy-waf-api.service ]] ;;
+        worker_only) [[ "$3" == easy-waf-apt.service ]] ;;
         *) return 0 ;;
       esac
       ;;
@@ -42,7 +43,7 @@ reject_call() {
     exit 1
   fi
 }
-for mode in all stopped api_only failed_queue; do
+for mode in all stopped api_only worker_only failed_queue; do
   calls=()
   warnings=0
   restart_active_units
@@ -65,11 +66,16 @@ for mode in all stopped api_only failed_queue; do
       fi
       ;;
     stopped)
-      [[ "${#calls[@]}" == 3 ]]
+      [[ "${#calls[@]}" == 4 ]]
       ;;
     api_only)
       has_call 'try-restart --no-block easy-waf-api.service'
       reject_call 'restart --no-block easy-waf-hostd-restart.service'
+      reject_call 'try-restart --no-block easy-waf-acmed.service'
+      ;;
+    worker_only)
+      has_call 'restart --no-block easy-waf-hostd-restart.service'
+      reject_call 'try-restart --no-block easy-waf-api.service'
       reject_call 'try-restart --no-block easy-waf-acmed.service'
       ;;
   esac
@@ -93,6 +99,7 @@ calls=()
 install_systemd_units
 install_needrestart_policy
 has_call "install -m 0644 ${SYSTEMD_SRC}/easy-waf-hostd-restart.service /etc/systemd/system/easy-waf-hostd-restart.service"
+has_call "install -m 0644 ${SYSTEMD_SRC}/easy-waf-apt.service /etc/systemd/system/easy-waf-apt.service"
 has_call "install -m 0644 ${ROOT}/packaging/needrestart/easy-waf-hostd.conf /etc/needrestart/conf.d/easy-waf-hostd.conf"
 reject_call 'enable --now easy-waf-hostd-restart.service'
 calls=()
@@ -111,7 +118,7 @@ open my $file, '<', $path or die "open policy: $!";
 my $code = do { local $/; <$file> };
 eval $code;
 die "invalid policy: $@" if $@;
-for my $service ('easy-waf-hostd', 'easy-waf-hostd.service', 'easy-waf-api', 'easy-waf-api.service', 'easy-waf-acmed', 'easy-waf-acmed.service') {
+for my $service ('easy-waf-hostd', 'easy-waf-hostd.service', 'easy-waf-apt', 'easy-waf-apt.service', 'easy-waf-api', 'easy-waf-api.service', 'easy-waf-acmed', 'easy-waf-acmed.service') {
     my @rules = grep { $service =~ $_ } keys %{$nrconf{override_rc}};
     die "missing managed-service override" unless @rules == 1 && $nrconf{override_rc}{$rules[0]} == 0;
 }

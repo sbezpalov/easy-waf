@@ -48,7 +48,7 @@
 
 ## 4. Статус / текущий приоритет
 - **Версия:** `1.6.1` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
-- **Архитектура C (текущая):** PostgreSQL как единый source of truth; сервисы `easy-waf-api` (API + UI + HAProxy render/apply), `easy-waf-acmed` (ACME-воркер) и `easy-waf-hostd` (root-брокер привилегированных операций на unix-сокете).
+- **Architecture C:** PostgreSQL is the application source of truth; `easy-waf-api` (API/UI/render/apply), `easy-waf-acmed` (ACME), `easy-waf-hostd` (root broker), and internal `easy-waf-apt.service` (same hostd binary, root-only APT execution outside the broker cgroup). See `docs/adr/0008-apt-execution-service.md`.
 - Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 2.8 LTS, nftables, systemd.
 - Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.
 

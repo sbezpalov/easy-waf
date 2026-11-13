@@ -525,7 +525,7 @@ retire_script_installed_units() {
     return 0
   fi
   local u moved=0
-  for u in easy-waf-hostd.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
+  for u in easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
     if [[ -f "/etc/systemd/system/${u}" ]]; then
       mv -f "/etc/systemd/system/${u}" "/etc/systemd/system/${u}.replaced-by-package"
       log "Retired /etc/systemd/system/${u} (the package unit in /lib now applies)"
@@ -738,7 +738,7 @@ install_systemd_units() {
     return 0
   fi
   [[ -d "$SYSTEMD_SRC" ]] || die "missing systemd units: $SYSTEMD_SRC"
-  for u in easy-waf-hostd.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
+  for u in easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
     if [[ -f "${SYSTEMD_SRC}/${u}" ]]; then
       install -m 0644 "${SYSTEMD_SRC}/${u}" "/etc/systemd/system/${u}"
       log "Installed /etc/systemd/system/${u}"

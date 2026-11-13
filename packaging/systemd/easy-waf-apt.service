@@ -1,0 +1,24 @@
+[Unit]
+Description=Easy Home WAF independent APT execution service (root)
+# No PartOf/BindsTo relationship with broker: its restart must not stop APT.
+
+[Service]
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=30s
+User=root
+Group=easy-waf
+ExecStart=/usr/sbin/easy-waf-hostd apt-worker
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeDirectory=easy-waf-apt
+RuntimeDirectoryMode=0700
+StateDirectory=easy-waf-hostd
+StateDirectoryMode=0700
+PrivateTmp=true
+ProtectControlGroups=true
+NoNewPrivileges=false
+Restart=on-failure
+RestartSec=2
+# TERM closes observers and joins package work without signaling its children.
+KillMode=mixed
+TimeoutStopSec=32min

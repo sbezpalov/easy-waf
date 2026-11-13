@@ -130,9 +130,11 @@ the generated config). It restarts **only the units that were already running**,
 so a deliberately stopped service stays stopped. API/acmed restarts are queued
 with `try-restart --no-block`, so ACME's graceful stop (up to 50 minutes) cannot
 hold dpkg past the parent APT's 30-minute budget;
-broker restart is queued in `easy-waf-hostd-restart.service`, outside the
-broker's cgroup. That root helper waits for the real APT frontend and dpkg
-backend locks and holds both across `systemctl try-restart easy-waf-hostd.service`.
+APT-worker/broker restart is queued in `easy-waf-hostd-restart.service`, outside
+both owning cgroups. That root helper first reserves the private execution lease,
+then waits for the real APT frontend and dpkg backend locks. It holds all three
+across `systemctl try-restart easy-waf-apt.service easy-waf-hostd.service`, so a
+new worker transaction cannot enter during maintenance.
 It cannot kill the package transaction configuring Easy WAF, including when
 the running broker is an older binary. It never creates/deletes those lock files
 or weakens the broker's systemd kill policy. A scheduling/inspection/lock timeout
@@ -147,16 +149,24 @@ and a three-minute stop allowance for that wait; the broker's kill policy is
 unchanged.
 
 The packaged `/etc/needrestart/conf.d/easy-waf-hostd.conf` conffile excludes the
-three managed static Go daemons from automatic `needrestart` selection:
+four managed static Go processes from automatic `needrestart` selection:
 Ubuntu 24.04 runs that hook inside APT, so it must not bypass the package's
-broker coordination or wait on the queued ACME drain. All other services keep
+APT-owner coordination or wait on the queued ACME drain. All other services keep
 their existing restart policy. The source installer installs the
 same policy. The maintenance unit is not enabled at boot and has no ordering
-dependency on the broker (its command synchronously waits for the restart job).
+dependency on worker/broker (its command synchronously waits for their jobs).
 Each package configuration uses `restart --no-block` on that helper, refreshing
 an earlier request even if the previous oneshot is just finishing. This is safe
 inside dpkg: its lock prevents the earlier helper from concurrently owning both
-locks and running a protected broker restart.
+locks and running a protected restart.
+
+`easy-waf-apt.service` is an internal root daemon using the same hostd executable.
+Broker starts it through Wants/After and waits for socket readiness. Only root
+can use its private socket; the public API still calls broker and keeps the
+existing HTTP/JSON/NDJSON protocol. Broker stop/crash cannot kill its APT child
+or erase that worker's selected operation/result. If the worker is unavailable,
+APT requests fail explicitly; they never execute in the broker as fallback.
+See [ADR 0008](adr/0008-apt-execution-service.md).
 
 Database migrations still run
 when the API starts: only those not yet in `schema_migrations`, each in one
@@ -181,8 +191,10 @@ After resolving a failure and finishing package work, run
 `sudo systemctl start easy-waf-hostd-restart.service` and check its result again.
 Do not remove package lock files. When upgrading through the panel, API restart
 can interrupt its stream; reopen System to observe the current operation/log.
-After broker restart, the prior in-memory APT exit result may be unknown rather
-than fabricated as success. Package removal stops any queued maintenance job.
+After restarting the APT worker itself, its prior in-memory result can be lost;
+inspect the retained log and package state if the selected run is unavailable.
+Package removal stops queued maintenance and asynchronously drains the APT
+owner, allowing it to finish its own removal transaction before exiting.
 API/ACME restarts may still be pending; confirm their final service state before
 accepting the upgrade. A draining issuance is allowed to finish before the new
 ACME process starts.
@@ -191,24 +203,32 @@ The automated lifecycle check is `make test-package-restart-e2e` (or
 `bash scripts/test-package-restart-e2e.sh` in Git Bash on Windows or a macOS/Linux
 shell). It builds a disposable Ubuntu 24.04 systemd image and Linux Go binaries.
 Docker must support a private cgroup namespace, delegated writable container
-cgroups, and `SYS_ADMIN` for the units' mount namespaces. The fixture uses no
+cgroups, `SYS_ADMIN` for the units' mount namespaces and `SYS_PTRACE` for broker
+verification of the real test API UID/executable inside its private PID namespace.
+The fixture uses no
 privileged mode, writable host mounts or runtime network. Only its own container,
 temporary binaries and image tag are removed. Image construction can download
 Ubuntu packages; `EASY_WAF_PACKAGE_E2E_IMAGE` selects an already built fixture
 image, and `EASY_WAF_PACKAGE_E2E_BASE_IMAGE` selects its Ubuntu 24.04 base.
 `GO_BIN` and `DOCKER_BIN` can point to existing executables outside `PATH`.
 
-This test uses the production broker binary, broker/helper units, complete
-postinst and real APT/dpkg against a local fixture package repository. It proves
-the previous synchronous-restart failure, exclusion while backend/frontend
-locks are held, restart after their release, nonblocking ACME drain and
-preservation of stopped services. API/ACME workers are fixture processes;
+This test uses the production broker/worker binary and units, complete
+postinst/prerm and real APT/dpkg against a local fixture package repository. It
+proves an owner-cgroup negative control, exclusion while locks are held, restart
+after release, nonblocking ACME drain, stopped-service preservation, real API
+identity denial at the worker, broker stop/SIGKILL survival and removal of the
+running APT owner's own package. API/ACME workers are fixture processes;
 the minimal package intentionally omits appliance dependencies, database,
 certificates and network provisioning. Full appliance install/upgrade acceptance
 in [ACCEPTANCE.md](ACCEPTANCE.md) remains a separate check.
 
-**Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`;
-without the flag `apt` refuses. Below 1.5.0 the edge keeps serving its current
+**Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`.
+Without the flag `apt` refuses. When the older build has no independent APT
+service, first finish current
+package work and stop `easy-waf-apt.service` from a separate root/SSH shell.
+Run that downgrade through external APT, so removing the worker unit does not
+leave an unused running process. Its operation log/state is retained.
+Below 1.5.0 the edge keeps serving its current
 config, but every Apply then fails `haproxy -c` while an application has CrowdSec
 on, because those releases do not match the bouncer's SPOE config. Turn CrowdSec
 off on those applications to apply changes. The caveats that apply to any

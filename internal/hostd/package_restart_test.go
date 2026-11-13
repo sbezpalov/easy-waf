@@ -45,7 +45,7 @@ func TestPackageRestartRequiresLocksAndHoldsThemAcrossTheJob(t *testing.T) {
 			}
 			runner := packageRestartRunner(func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 				calls++
-				if !held || name != binSystemctl || !slices.Equal(args, []string{"try-restart", "easy-waf-hostd.service"}) {
+				if !held || name != binSystemctl || !slices.Equal(args, []string{"try-restart", "easy-waf-apt.service", "easy-waf-hostd.service"}) {
 					t.Errorf("unsafe restart boundary: held=%v command=%s %v", held, name, args)
 				}
 				deadline, ok := ctx.Deadline()

@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -48,6 +49,42 @@ func TestPackageSystemdServiceHelper(t *testing.T) {
 			_, err := os.Stat(filepath.Join(packageSystemdRoot, "release-acmed"))
 			return err == nil
 		})
+	}
+}
+
+// A read-only client used as the real easy-waf UID/executable in the private
+// fixture. It performs no filesystem mutation or package operation itself.
+func TestAPTWorkerPeerProbe(t *testing.T) {
+	target := os.Getenv("EASY_WAF_APT_PEER_PROBE")
+	if target == "" {
+		return
+	}
+	socket := DefaultAPTWorkerSocket
+	if target == "broker" {
+		socket = DefaultSocket
+	} else if target != "worker" {
+		t.Fatal("unknown peer probe target")
+	}
+	conn, err := net.DialTimeout("unix", socket, 3*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-action-status"}}); err != nil {
+		t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if target == "broker" && !response.OK {
+		t.Fatalf("genuine API peer could not use the broker: %+v", response)
+	}
+	if target == "worker" && (response.OK || response.Error != "peer not allowed") {
+		t.Fatalf("unprivileged API peer reached the root-only worker: %+v", response)
 	}
 }
 
@@ -92,15 +129,15 @@ func TestPackageRestartSystemdLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("old_synchronous_restart_kills_its_transaction", func(t *testing.T) {
+	t.Run("synchronous_owner_restart_kills_its_transaction", func(t *testing.T) {
 		f.t = t
 		f.reset(true)
 		f.startServices()
-		before := f.property("easy-waf-hostd.service", "MainPID")
+		before := f.property("easy-waf-apt.service", "MainPID")
 		done, closeClient := f.startAPT()
 		defer closeClient()
-		packageSystemdWait(t, "negative-control broker restart", func() bool {
-			pid := f.property("easy-waf-hostd.service", "MainPID")
+		packageSystemdWait(t, "negative-control owner restart", func() bool {
+			pid := f.property("easy-waf-apt.service", "MainPID")
 			return pid != "0" && pid != before
 		})
 		select {
@@ -115,7 +152,7 @@ func TestPackageRestartSystemdLifecycle(t *testing.T) {
 		if f.packageStatus() == "install ok installed" {
 			t.Fatal("negative control did not detect the broken package transaction")
 		}
-		t.Log("confirmed: synchronous broker restart kills dpkg in the broker cgroup")
+		t.Log("confirmed: synchronous control-group restart kills its owned dpkg")
 	})
 	if t.Failed() {
 		return
@@ -187,6 +224,167 @@ func TestPackageRestartSystemdLifecycle(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	t.Run("worker_rejects_the_public_api_identity", func(t *testing.T) {
+		f.t = t
+		f.reset(false)
+		f.startServices()
+		data, err := os.ReadFile("/inputs/hostd.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// #nosec G306 -- Executable fixture at the real trusted API path, root-owned.
+		if err := os.WriteFile("/usr/sbin/easy-waf-api", data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		identityDir := filepath.Join(packageSystemdRoot, "api-identity")
+		f.run("install", "-d", "-m", "0700", "-o", "easy-waf", "-g", "easy-waf", identityDir)
+		var identity unix.Stat_t
+		if err := unix.Stat(identityDir, &identity); err != nil {
+			t.Fatal(err)
+		}
+		// Remove the filesystem barrier only in this fixture: the worker must
+		// still reject an API peer that the public broker verifiably accepts.
+		if err := os.Chmod(filepath.Dir(DefaultAPTWorkerSocket), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(DefaultAPTWorkerSocket, 0o666); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			_ = os.Chmod(DefaultAPTWorkerSocket, 0o600)
+			_ = os.Chmod(filepath.Dir(DefaultAPTWorkerSocket), 0o700)
+		}()
+		for _, target := range []string{"broker", "worker"} {
+			cmd := exec.CommandContext(f.ctx, "/usr/sbin/easy-waf-api", "-test.run=^TestAPTWorkerPeerProbe$", "-test.v")
+			cmd.Env = append(os.Environ(), "EASY_WAF_APT_PEER_PROBE="+target)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: identity.Uid, Gid: identity.Gid}}
+			if data, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("real API identity at %s boundary: %v\n%s", target, err, data)
+			}
+		}
+	})
+	if t.Failed() {
+		return
+	}
+	t.Run("broker_restart_does_not_interrupt_apt", func(t *testing.T) {
+		f.t = t
+		f.reset(false)
+		// Generic package checkpoint, without self-upgrade scheduling: operation
+		// and result must survive both normal broker stop and SIGKILL.
+		packageSystemdWrite(t, "actual-postinst", "#!/bin/sh\nexit 0\n", 0o755)
+		f.startServices()
+		workerPID := f.property("easy-waf-apt.service", "MainPID")
+		done, closeClient := f.startAPT()
+		defer closeClient()
+		packageSystemdWait(t, "dpkg checkpoint before broker stop", func() bool { return f.exists("postinst-done") })
+		before := f.status()
+		if !before.Active || before.RunID == "" {
+			t.Fatalf("missing active operation: %+v", before)
+		}
+		f.run("systemctl", "stop", "easy-waf-hostd.service")
+		f.assertPackageLock("lock-frontend", true)
+		f.assertPackageLock("lock", true)
+		if workerPID == "0" || f.property("easy-waf-apt.service", "MainPID") != workerPID {
+			t.Fatal("APT owner did not survive stopping the broker")
+		}
+		f.run("systemctl", "start", "easy-waf-hostd.service")
+		f.waitBrokerSocket()
+		after := f.status()
+		if !after.Active || after.RunID != before.RunID {
+			t.Fatalf("broker restart lost the selected operation: before=%+v after=%+v", before, after)
+		}
+		brokerPID := f.property("easy-waf-hostd.service", "MainPID")
+		f.run("systemctl", "kill", "--kill-whom=main", "--signal=KILL", "easy-waf-hostd.service")
+		packageSystemdWait(t, "broker recovery after SIGKILL", func() bool {
+			pid := f.property("easy-waf-hostd.service", "MainPID")
+			return pid != "0" && pid != brokerPID
+		})
+		f.waitBrokerSocket()
+		f.assertPackageLock("lock-frontend", true)
+		after = f.status()
+		if !after.Active || after.RunID != before.RunID || f.property("easy-waf-apt.service", "MainPID") != workerPID {
+			t.Fatalf("broker SIGKILL lost or replaced active APT: %+v", after)
+		}
+		observer, err := net.DialTimeout("unix", DefaultSocket, 3*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer observer.Close()
+		if err := observer.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.NewEncoder(observer).Encode(Request{Argv: []string{"apt-action-attach-stream", before.RunID}}); err != nil {
+			t.Fatal(err)
+		}
+		decoder := json.NewDecoder(observer)
+		var event struct {
+			Type  string `json:"type"`
+			Data  string `json:"data"`
+			Code  *int   `json:"code"`
+			Error string `json:"error"`
+		}
+		if err := decoder.Decode(&event); err != nil || event.Type != "line" {
+			t.Fatalf("could not reattach to the still-active operation: %+v %v", event, err)
+		}
+		packageSystemdWrite(t, "release-dpkg", "release\n", 0o644)
+		packageSystemdWait(t, "frontend checkpoint after broker recovery", func() bool { return f.exists("apt-frontend-held") })
+		packageSystemdWrite(t, "release-apt", "release\n", 0o644)
+		packageSystemdWait(t, "real APT result after reconnect", func() bool { after = f.status(); return !after.Active })
+		if after.ExitCode != 0 || after.RunID != before.RunID {
+			t.Fatalf("completed operation result was lost: %+v", after)
+		}
+		var replay strings.Builder
+		for {
+			if err := decoder.Decode(&event); err != nil {
+				t.Fatalf("reattached stream ended without its original result: %v", err)
+			}
+			if event.Type == "exit" {
+				if event.Code == nil || *event.Code != 0 || event.Error != "" {
+					t.Fatalf("reattached operation lost its actual exit: %+v", event)
+				}
+				break
+			}
+			replay.WriteString(event.Data)
+		}
+		if !strings.Contains(replay.String(), "Setting up easy-waf") {
+			t.Fatalf("reattached stream lost saved package output: %s", replay.String())
+		}
+		if audit := f.run("dpkg", "--audit"); strings.TrimSpace(audit) != "" {
+			t.Fatalf("broker interruption damaged package state: %s", audit)
+		}
+		select {
+		case err := <-done:
+			t.Logf("closed original broker stream: %v", err)
+		case <-time.After(3 * time.Second):
+			t.Fatal("stopped broker retained its client connection")
+		}
+	})
+	if t.Failed() {
+		return
+	}
+	t.Run("active_worker_refreshes_without_starting_stopped_broker", func(t *testing.T) {
+		f.t = t
+		f.reset(false)
+		f.startServices()
+		packageSystemdWrite(t, "release-acmed", "release\n", 0o644)
+		f.run("systemctl", "stop", "easy-waf-hostd.service", "easy-waf-api.service", "easy-waf-acmed.service")
+		before := f.property("easy-waf-apt.service", "MainPID")
+		packageSystemdWrite(t, "release-dpkg", "release\n", 0o644)
+		packageSystemdWrite(t, "release-apt", "release\n", 0o644)
+		f.run("apt-get", "-y", "upgrade")
+		packageSystemdWait(t, "active APT owner refreshed without its broker", func() bool {
+			pid := f.property("easy-waf-apt.service", "MainPID")
+			return pid != "0" && pid != before
+		})
+		for _, name := range []string{"hostd", "api", "acmed"} {
+			if state := f.property("easy-waf-"+name+".service", "ActiveState"); state != "inactive" {
+				t.Fatalf("stopped %s was started while refreshing its worker: %s", name, state)
+			}
+		}
+	})
+	if t.Failed() {
+		return
+	}
 	t.Run("stopped_services_remain_stopped", func(t *testing.T) {
 		f.t = t
 		f.reset(false)
@@ -209,11 +407,98 @@ func TestPackageRestartSystemdLifecycle(t *testing.T) {
 			t.Fatalf("new package version was not installed: %s", version)
 		}
 	})
+	if t.Failed() {
+		return
+	}
+	t.Run("removing_own_worker_does_not_deadlock_dpkg", func(t *testing.T) {
+		f.t = t
+		f.reset(false)
+		f.startServices()
+		workerPID, err := strconv.Atoi(f.property("easy-waf-apt.service", "MainPID"))
+		if err != nil || workerPID <= 0 {
+			t.Fatalf("missing APT owner: %d %v", workerPID, err)
+		}
+		identity, err := captureAptProcessIdentity(workerPID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.run("apt-mark", "auto", "easy-waf")
+		done, closeClient := f.startAPTAction("apt-autoremove-stream")
+		defer closeClient()
+		packageSystemdWait(t, "prerm after asynchronous owner stop", func() bool { return f.exists("prerm-done") })
+		f.assertPackageLock("lock-frontend", true)
+		f.assertPackageLock("lock", true)
+		if state := f.property("easy-waf-apt.service", "SubState"); state != "stop-sigterm" {
+			t.Fatalf("APT owner was killed or did not drain: %s", state)
+		}
+		packageSystemdWrite(t, "release-prerm", "release\n", 0o644)
+		packageSystemdWait(t, "worker exit after its own package removal", func() bool {
+			process, err := resolveAptProcess(identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return process == nil
+		})
+		packageSystemdWrite(t, "release-acmed", "release\n", 0o644)
+		if audit := f.run("dpkg", "--audit"); strings.TrimSpace(audit) != "" {
+			t.Fatalf("own-package removal left incomplete dpkg state: %s", audit)
+		}
+		if data, err := exec.CommandContext(f.ctx, "dpkg-query", "-W", "easy-waf").CombinedOutput(); err == nil {
+			t.Fatalf("worker package was not removed: %s", data)
+		}
+		select {
+		case err := <-done:
+			t.Logf("closed removal observation: %v", err)
+		case <-time.After(3 * time.Second):
+			t.Fatal("removed broker kept its client connection")
+		}
+	})
 }
 
 type packageSystemdFixture struct {
 	t   *testing.T
 	ctx context.Context
+}
+
+type packageSystemdStatus struct {
+	Active   bool   `json:"active"`
+	RunID    string `json:"run_id"`
+	ExitCode int    `json:"exit_code"`
+}
+
+func (f *packageSystemdFixture) waitBrokerSocket() {
+	packageSystemdWait(f.t, "broker socket ready", func() bool {
+		conn, err := net.DialTimeout("unix", DefaultSocket, 100*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
+	})
+}
+
+func (f *packageSystemdFixture) status() packageSystemdStatus {
+	f.t.Helper()
+	conn, err := net.DialTimeout("unix", DefaultSocket, 3*time.Second)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-action-status"}}); err != nil {
+		f.t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(conn).Decode(&response); err != nil || !response.OK {
+		f.t.Fatalf("APT status: %+v error=%v", response, err)
+	}
+	var status packageSystemdStatus
+	if err := json.Unmarshal([]byte(response.Stdout), &status); err != nil {
+		f.t.Fatal(err)
+	}
+	return status
 }
 
 func packageSystemdWrite(t *testing.T, name, data string, mode os.FileMode) {
@@ -300,6 +585,7 @@ Dir::Etc::main "-";
 Dir::Etc::sourcelist "/opt/easy-waf-package-fixture/sources.list";
 Dir::Etc::sourceparts "-";
 Dir::State::lists "/opt/easy-waf-package-fixture/lists";
+Dir::State::extended_states "/opt/easy-waf-package-fixture/extended_states";
 DPkg::Post-Invoke {"/opt/easy-waf-package-fixture/after-dpkg";};
 `, 0o644)
 	f.t.Setenv("APT_CONFIG", filepath.Join(packageSystemdRoot, "apt.conf"))
@@ -337,6 +623,12 @@ StandardError=inherit
 	if err := os.WriteFile("/run/systemd/system/easy-waf-hostd.service.d/fixture.conf", []byte(dropin), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
+	if err := os.MkdirAll("/run/systemd/system/easy-waf-apt.service.d", 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile("/run/systemd/system/easy-waf-apt.service.d/fixture.conf", []byte(dropin), 0o600); err != nil {
+		f.t.Fatal(err)
+	}
 	f.buildPackage("old", "1.6.0", "#!/bin/sh\nexit 0\n")
 	f.run("dpkg", "--install", filepath.Join(packageSystemdRoot, "old.deb"))
 	f.run("systemctl", "daemon-reload")
@@ -350,6 +642,7 @@ func (f *packageSystemdFixture) buildPackage(stage, version, postinst string) st
 		}
 	}
 	files := map[string]string{
+		"/repo/packaging/systemd/easy-waf-apt.service":           "/lib/systemd/system/easy-waf-apt.service",
 		"/inputs/easy-waf-hostd":                                 "/usr/sbin/easy-waf-hostd",
 		"/repo/packaging/systemd/easy-waf-hostd.service":         "/lib/systemd/system/easy-waf-hostd.service",
 		"/repo/packaging/systemd/easy-waf-hostd-restart.service": "/lib/systemd/system/easy-waf-hostd-restart.service",
@@ -376,6 +669,24 @@ func (f *packageSystemdFixture) buildPackage(stage, version, postinst string) st
 	if err := os.WriteFile(filepath.Join(root, "DEBIAN/postinst"), []byte(postinst), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
+	actualPrerm, err := os.ReadFile("/repo/packaging/deb/prerm")
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	packageSystemdWrite(f.t, "actual-prerm", string(actualPrerm), 0o600)
+	prerm := `#!/bin/sh
+set -eu
+/bin/sh /opt/easy-waf-package-fixture/actual-prerm "$@"
+if [ "$1" = remove ]; then
+  cd /opt/easy-waf-package-fixture
+  : >prerm-done
+  while [ ! -e release-prerm ]; do sleep 0.05; done
+fi
+`
+	// #nosec G306 -- dpkg must execute this fixture maintainer script.
+	if err := os.WriteFile(filepath.Join(root, "DEBIAN/prerm"), []byte(prerm), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
 	path := filepath.Join(packageSystemdRoot, stage+".deb")
 	f.run("dpkg-deb", "--build", "--root-owner-group", root, path)
 	return path
@@ -383,8 +694,16 @@ func (f *packageSystemdFixture) buildPackage(stage, version, postinst string) st
 
 func (f *packageSystemdFixture) reset(negative bool) {
 	packageSystemdWrite(f.t, "release-acmed", "release\n", 0o644)
-	f.run("systemctl", "stop", "easy-waf-hostd-restart.service", "easy-waf-hostd.service", "easy-waf-api.service", "easy-waf-acmed.service")
-	for _, name := range []string{"postinst-done", "postinst-returning", "apt-frontend-held", "release-dpkg", "release-apt", "release-acmed", "api.started", "acmed.started", "acmed.draining"} {
+	f.run("systemctl", "stop", "easy-waf-hostd-restart.service", "easy-waf-hostd.service", "easy-waf-apt.service", "easy-waf-api.service", "easy-waf-acmed.service")
+	negativeDropin := "/run/systemd/system/easy-waf-apt.service.d/negative.conf"
+	if negative {
+		if err := os.WriteFile(negativeDropin, []byte("[Service]\nKillMode=control-group\n"), 0o600); err != nil {
+			f.t.Fatal(err)
+		}
+	} else if err := os.Remove(negativeDropin); err != nil && !os.IsNotExist(err) {
+		f.t.Fatal(err)
+	}
+	for _, name := range []string{"postinst-done", "postinst-returning", "apt-frontend-held", "release-dpkg", "release-apt", "release-acmed", "api.started", "acmed.started", "acmed.draining", "prerm-done", "release-prerm"} {
 		if err := os.Remove(filepath.Join(packageSystemdRoot, name)); err != nil && !os.IsNotExist(err) {
 			f.t.Fatal(err)
 		}
@@ -399,7 +718,7 @@ func (f *packageSystemdFixture) reset(negative bool) {
 		if strings.Count(string(actual), before) != 1 {
 			f.t.Fatal("negative control no longer matches the actual scheduler")
 		}
-		actual = []byte(strings.Replace(string(actual), before, "systemctl restart easy-waf-hostd.service", 1))
+		actual = []byte(strings.Replace(string(actual), before, "systemctl restart easy-waf-apt.service", 1))
 	}
 	// The wrapper adds an observable backend-lock checkpoint after executing the
 	// complete production postinst. No command or lock in that postinst is mocked.
@@ -433,6 +752,10 @@ func (f *packageSystemdFixture) startServices() {
 }
 
 func (f *packageSystemdFixture) startAPT() (<-chan error, func()) {
+	return f.startAPTAction("apt-upgrade-stream")
+}
+
+func (f *packageSystemdFixture) startAPTAction(opcode string) (<-chan error, func()) {
 	f.t.Helper()
 	conn, err := net.DialTimeout("unix", DefaultSocket, 3*time.Second)
 	if err != nil {
@@ -441,7 +764,7 @@ func (f *packageSystemdFixture) startAPT() (<-chan error, func()) {
 	if err := conn.SetDeadline(time.Now().Add(90 * time.Second)); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-upgrade-stream"}}); err != nil {
+	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{opcode}}); err != nil {
 		f.t.Fatal(err)
 	}
 	done := make(chan error, 1)

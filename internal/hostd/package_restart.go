@@ -27,7 +27,19 @@ func RunPostUpgradeRestart() error {
 	ctx, cancel := packageRestartWaitContext()
 	defer cancel()
 	logOp("waiting for APT/dpkg locks before post-upgrade broker restart")
-	return restartBrokerAfterPackages(ctx, DefaultRunner, acquireDpkgLocks)
+	return restartBrokerAfterPackages(ctx, DefaultRunner, acquireRestartLeases)
+}
+
+func acquireRestartLeases(ctx context.Context) (func() error, error) {
+	releaseWorker, err := acquireAPTExecutionLease(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	releasePackages, err := acquireDpkgLocks(ctx)
+	if err != nil {
+		return nil, errors.Join(err, releaseWorker())
+	}
+	return func() error { return errors.Join(releasePackages(), releaseWorker()) }, nil
 }
 
 func packageRestartWaitContext() (context.Context, context.CancelFunc) {
@@ -50,7 +62,7 @@ func restartBrokerAfterPackages(ctx context.Context, runner CommandRunner, acqui
 	// The acquisition deadline must not expire just after submitting a job:
 	// killing its systemctl client does not cancel the manager's restart job.
 	// Give this phase its own complete bounded wait before releasing the lease.
-	_, stderr, code, runErr := runCmd(context.WithoutCancel(ctx), runner, binSystemctl, "try-restart", "easy-waf-hostd.service")
+	_, stderr, code, runErr := runCmd(context.WithoutCancel(ctx), runner, binSystemctl, "try-restart", "easy-waf-apt.service", "easy-waf-hostd.service")
 	if runErr != nil || code != 0 {
 		return fmt.Errorf("post-upgrade broker restart: %w", commandFailure(stderr, code, runErr))
 	}

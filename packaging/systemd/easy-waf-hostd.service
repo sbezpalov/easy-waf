@@ -1,6 +1,7 @@
 [Unit]
 Description=Easy Home WAF privileged host broker (root)
-After=network.target
+Wants=easy-waf-apt.service
+After=network.target easy-waf-apt.service
 Before=easy-waf-api.service
 
 [Service]
