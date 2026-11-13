@@ -78,6 +78,22 @@ Empty list = system resolver (`/etc/resolv.conf`). See [DNS.md](DNS.md).
 - On success: PEM files under `/var/lib/easy-waf/certs/<id>/`, DB updated, then `engine.Apply` reloads HAProxy — skipped when `EASY_WAF_ACME_SKIP_APPLY` is set to a true value (`1`, `true`, `yes`, `on`). `0`, `false` and `off` mean "do not skip"; an unparseable value is treated as off and logged.
 - Account private key is stored at `${EASY_WAF_STATE_DIR}/acme/account.pem` (Lego HTTP-01 webroot: `${ACMEWebrootPath}` / default `.../acme/webroot`).
 
+On first use, the worker writes the account key to a private temporary file in
+the same directory, syncs and closes it, then publishes it with a hard link that
+cannot replace an existing destination. Concurrent issuers use the winning key;
+an existing unreadable or malformed key fails issuance instead of being replaced.
+The account directory must support regular-file hard links (the normal Ubuntu
+local filesystems do); unsupported storage fails explicitly without a direct-write
+fallback. Existing readable keys do not require a new publication.
+
+Process termination before publication leaves the canonical path absent; after
+publication it contains a complete key. A forced stop can leave a private
+`.account.pem.tmp-*` staging file. It is never loaded as the account key and is
+not removed automatically, since another issuer may still own it. Inspect and
+remove abandoned stages only with issuance stopped; do not delete `account.pem`
+to retry a failed issuance. This publication policy does not guarantee directory
+entry durability after power loss; keep the account key in state backups.
+
 ## Multiple hostnames / one public IP
 
 Each **certificate** is a separate row (DNS names in `primary_domain` / `san`). Each **application** sets `certificate_id` to the cert that covers its `public_host`. HAProxy uses a **single `crt-list`** on **:443** so **SNI** selects the right PEM while **Host** routes to the backend — see **TLS, SNI, and per-application certificates** in [ARCHITECTURE.md](ARCHITECTURE.md).

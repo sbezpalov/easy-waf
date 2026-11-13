@@ -172,8 +172,43 @@ func loadOrCreatePrivateKey(path string) (crypto.PrivateKey, error) {
 		return nil, err
 	}
 	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
-	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
-		return nil, err
+	if err := writeAccountKeyExclusive(path, pem.EncodeToMemory(block)); err != nil {
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("publish ACME account key: %w", err)
+		}
+		// Another issuer published first. Use its complete key, never replace it
+		// with our candidate, even when the existing file cannot be parsed.
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return certcrypto.ParsePEMPrivateKey(b)
 	}
 	return key, nil
+}
+
+// writeAccountKeyExclusive publishes only a fully written, synced and closed
+// private file. A same-directory hard link is atomic and cannot replace an
+// existing key, including across processes. Rename would replace it on Unix;
+// creating the destination directly would expose partial PEM to other issuers.
+// Unsupported filesystems fail rather than fall back to an unsafe write.
+func writeAccountKeyExclusive(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Link(f.Name(), path)
 }
