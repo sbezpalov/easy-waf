@@ -491,17 +491,16 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 }
 
 func (s *Server) hostAptUpgradeStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	out, err := runner.Privileged(r.Context(), "apt-upgrade-status")
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
-	var st map[string]any
-	if len(out) > 0 {
-		_ = json.Unmarshal(out, &st)
-	}
-	if st == nil {
-		st = map[string]any{"active": false}
+	st, err := decodeAPTStatus(out)
+	if err != nil {
+		writeClientError(w, http.StatusBadGateway, "package status unavailable", err)
+		return
 	}
 	writeJSON(w, http.StatusOK, st)
 }

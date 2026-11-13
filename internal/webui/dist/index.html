@@ -4219,36 +4219,66 @@
     }
   }
 
+  let aptStatusRevision = 0;
+
+  function invalidateAptStatus() {
+    aptStatusRevision++;
+  }
+
   async function tryAttachRunningAptUpgrade() {
     if (!getTok()) return;
-    const st = await fetch('/api/v1/host/updates/upgrade/status', { headers: hdr() });
-    if (!st.ok) return;
-    const j = await st.json().catch(() => ({}));
+    const revision = ++aptStatusRevision;
     const msg = document.getElementById('sys-apt-msg');
+    const initialText = msg && msg.textContent;
+    const isCurrent = () => revision === aptStatusRevision && (!msg || msg.textContent === initialText);
+    const statusNotice = (text) => {
+      if (msg && isCurrent()) {
+        msg.textContent = text;
+        msg.className = 'warn';
+        msg.dataset.aptStatusText = text;
+      }
+    };
+    let j;
+    try {
+      const st = await fetch('/api/v1/host/updates/upgrade/status', { headers: hdr(), cache: 'no-store' });
+      if (!st.ok) throw new Error('Status request failed');
+      j = await st.json();
+      if (!j || typeof j !== 'object' || Array.isArray(j) ||
+          !Object.prototype.hasOwnProperty.call(j, 'active') || typeof j.active !== 'boolean' ||
+          ['error', 'action', 'run_id'].some(key => j[key] !== undefined && typeof j[key] !== 'string') ||
+          (j.stream !== undefined && typeof j.stream !== 'boolean') ||
+          (j.exit_code !== undefined && !Number.isSafeInteger(j.exit_code))) {
+        throw new Error('Invalid package status');
+      }
+    } catch (_) {
+      statusNotice('Cannot verify package status. Refresh status or check the saved package log.');
+      return;
+    }
+    // A delayed poll must not replace a message from a newer user action.
+    if (!isCurrent()) return;
     if (!j.active) {
-      if (msg && msg.dataset.aptStatusText !== undefined) {
-        if (msg.textContent === msg.dataset.aptStatusText) {
-          msg.textContent = j.error || '';
-          msg.className = j.error ? 'warn' : '';
-        }
+      const outcome = j.error || (j.exit_code === -1
+        ? 'Previous package outcome is unavailable. Check the saved package log.'
+        : (j.exit_code !== undefined && j.exit_code !== 0
+          ? 'Previous package operation exited with code ' + j.exit_code + '. Check the saved package log.'
+          : ''));
+      const ownsNotice = msg && msg.dataset.aptStatusText !== undefined && msg.textContent === msg.dataset.aptStatusText;
+      if (msg && (ownsNotice || (!msg.textContent && outcome))) {
+        msg.textContent = outcome;
+        msg.className = outcome ? 'warn' : '';
+        if (outcome) msg.dataset.aptStatusText = outcome;
+        else delete msg.dataset.aptStatusText;
+      } else if (msg) {
         delete msg.dataset.aptStatusText;
       }
       return;
     }
     if (j.error) {
-      if (msg) {
-        msg.textContent = j.error;
-        msg.className = 'warn';
-        msg.dataset.aptStatusText = msg.textContent;
-      }
+      statusNotice(j.error);
       return;
     }
     if (typeof j.run_id !== 'string' || !/^[a-f0-9]{32}$/.test(j.run_id)) {
-      if (msg) {
-        msg.textContent = 'Automatic reconnect is unavailable. Check the saved package log.';
-        msg.className = 'warn';
-        msg.dataset.aptStatusText = msg.textContent;
-      }
+      statusNotice('Automatic reconnect is unavailable. Check the saved package log.');
       return;
     }
     if (msg) {
@@ -4321,6 +4351,7 @@
   document.getElementById('btn-sys-services-refresh').onclick = () => loadSystemServicesTable();
 
   document.getElementById('btn-sys-apt-check').onclick = async () => {
+    invalidateAptStatus();
     const msg = document.getElementById('sys-apt-msg');
     const out = document.getElementById('sys-apt-output');
     if (msg) msg.textContent = '';
@@ -4361,6 +4392,7 @@
   }
 
   function setAptButtonsDisabled(disabled) {
+    if (disabled) invalidateAptStatus();
     ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove', 'btn-sys-apt-clean'].forEach((id) => {
       const b = document.getElementById(id);
       if (b) b.disabled = !!disabled;

@@ -33,15 +33,23 @@ const aptReconnectTest = `
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const page = require('node:fs').readFileSync(0, 'utf8');
-const start = page.indexOf('  async function tryAttachRunningAptUpgrade()');
+const start = page.indexOf('  let aptStatusRevision = 0;');
 const end = page.indexOf('  async function loadSystemServicesTable()', start);
 assert.ok(start >= 0 && end > start, 'APT reconnect function not found');
 const runID = '0123456789abcdef0123456789abcdef';
-let status, calls = [], token = true, backendRun, mutations = 0;
+let status, calls = [], token = true, backendRun, mutations = 0, statusMode = 'ok';
+let statusRequests = [];
 const msg = {textContent: '', className: '', dataset: {}};
 const context = {getTok: () => token, hdr: () => ({}),
   document: {getElementById: () => msg},
-  fetch: async () => ({ok: true, json: async () => status}),
+  fetch: async (path, options) => {
+    statusRequests.push([path, options.method || 'GET']);
+    if (statusMode === 'network') throw new Error('fixture status disconnect');
+    return {ok: statusMode !== 'http', json: async () => {
+      if (statusMode === 'json') throw new SyntaxError('fixture invalid JSON');
+      return status;
+    }};
+  },
   encodeURIComponent,
   runAptStream: async (...args) => {
     calls.push(args);
@@ -99,6 +107,86 @@ vm.runInContext(page.slice(start, end), context);
   status = {active: false, error: 'previous outcome unknown'};
   await context.tryAttachRunningAptUpgrade();
   assert.equal(msg.textContent, status.error, 'resolved verification error hid the unknown result');
+
+  for (const value of [null, [], {}, {Active: false}, {active: null}, {active: 'false'}, {active: 0},
+      {active: false, error: {}}, {active: true, exit_code: '0'},
+      {active: true, stream: 1}, {active: true, run_id: null}]) {
+    calls = []; statusRequests = []; status = value; msg.textContent = ''; msg.dataset = {};
+    await context.tryAttachRunningAptUpgrade();
+    assert.equal(calls.length, 0, 'invalid status started observation/mutation');
+    assert.equal(msg.className, 'warn');
+    assert.match(msg.textContent, /package status.*saved.*log/i);
+    assert.deepEqual(statusRequests, [['/api/v1/host/updates/upgrade/status', 'GET']]);
+  }
+  for (const mode of ['http', 'json', 'network']) {
+    statusMode = mode; calls = []; statusRequests = []; status = {active: true, run_id: runID};
+    msg.textContent = ''; msg.dataset = {};
+    await assert.doesNotReject(() => context.tryAttachRunningAptUpgrade());
+    assert.equal(calls.length, 0, mode + ' failure triggered a fallback');
+    assert.match(msg.textContent, /package status.*saved.*log/i);
+    assert.equal(msg.className, 'warn');
+    assert.deepEqual(statusRequests, [['/api/v1/host/updates/upgrade/status', 'GET']]);
+  }
+  statusMode = 'ok';
+  for (const result of [
+      {active: false, exit_code: -1, error: 'previous outcome unknown'},
+      {active: false, exit_code: 100, error: ''}]) {
+    calls = []; status = result; msg.textContent = ''; msg.dataset = {};
+    await context.tryAttachRunningAptUpgrade();
+    assert.equal(calls.length, 0);
+    assert.equal(msg.className, 'warn', 'fresh failed/unknown result was hidden');
+    assert.match(msg.textContent, result.error ? /previous outcome unknown/ : /100.*saved.*log/i);
+  }
+  status = {active: false};
+  await context.tryAttachRunningAptUpgrade();
+  assert.equal(msg.textContent, '', 'verified idle state retained a status-owned warning');
+  for (const healthy of [false, true]) {
+    let finishStatus;
+    context.fetch = () => new Promise(resolve => {finishStatus = resolve});
+    msg.textContent = ''; msg.dataset = {}; calls = [];
+    const pendingStatus = context.tryAttachRunningAptUpgrade();
+    msg.textContent = 'Newer operation result';
+    finishStatus({ok: healthy, json: async () => ({active: true, run_id: runID})});
+    await pendingStatus;
+    assert.equal(msg.textContent, 'Newer operation result', 'late status erased a newer user result');
+    assert.equal(calls.length, 0);
+  }
+  assert.equal(mutations, 0);
+
+  // Latest status request wins even when both start/end with identical text.
+  const replies = [];
+  context.fetch = () => new Promise(resolve => replies.push(resolve));
+  msg.textContent = ''; msg.dataset = {}; calls = [];
+  const olderPoll = context.tryAttachRunningAptUpgrade();
+  const newerPoll = context.tryAttachRunningAptUpgrade();
+  replies[1]({ok: true, json: async () => ({active: false})});
+  await newerPoll;
+  replies[0]({ok: false});
+  await olderPoll;
+  assert.equal(msg.textContent, '', 'old failed poll replaced a newer verified idle result');
+  assert.equal(calls.length, 0);
+
+  const buttonStart = page.indexOf('  function setAptButtonsDisabled(');
+  const buttonEnd = page.indexOf('  async function refreshAptPackageList()', buttonStart);
+  vm.runInContext(page.slice(buttonStart, buttonEnd), context);
+  const checkStart = page.indexOf("  document.getElementById('btn-sys-apt-check').onclick");
+  const checkEnd = page.indexOf('\n  };', checkStart);
+  assert.ok(buttonStart >= 0 && buttonEnd > buttonStart && checkStart >= 0 && checkEnd > checkStart);
+  vm.runInContext(page.slice(checkStart, checkEnd + 6), context);
+  const checkClick = msg.onclick;
+  context.withBusy = async () => {}; // Exercise click ownership without issuing update.
+  for (const begin of [() => context.setAptButtonsDisabled(true), () => checkClick()]) {
+    let reply;
+    context.fetch = () => new Promise(resolve => {reply = resolve});
+    msg.textContent = ''; msg.dataset = {}; calls = [];
+    const pending = context.tryAttachRunningAptUpgrade();
+    await begin();
+    msg.textContent = ''; // A newer action may finish with the very same text.
+    reply({ok: true, json: async () => ({active: true, run_id: runID})});
+    await pending;
+    assert.equal(calls.length, 0, 'pre-action status started a stale observation');
+    assert.equal(msg.textContent, '');
+  }
 
   // Exercise the real stream request/error path too, without a browser or a
   // package executor. No reconnect error may trigger another endpoint.
