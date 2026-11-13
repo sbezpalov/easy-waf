@@ -134,7 +134,7 @@ Verified against code and scripts (iterations A–D).
 5. ~~**Diagnostics bundle**~~ — done (`scripts/diagnostics.sh`, API bundle, `docs/DIAGNOSTICS.md`).
 6. **OVA/OVF appliance template** for fast VM deployment. Signature WAF (Coraza/CRS) is a proposed ADR only: [docs/adr/0006-coraza-crs.md](adr/0006-coraza-crs.md).
 7. **Smoke test checklist** — partly done: `scripts/smoke-appliance.sh` runs after installs and upgrades.
-8. **Tests:** broader e2e — partly done: container runs for CrowdSec and the body policy in `.github/workflows/e2e.yml`; install, upgrade and ACME are still checked by hand.
+8. **Tests:** broader e2e — partly done: container runs for CrowdSec, the body policy and the real systemd/APT package-restart lifecycle in `.github/workflows/e2e.yml`; full appliance install/upgrade and real ACME are still checked by hand. The package lifecycle fixture uses a minimal package and fixture API/ACME workers (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 9. **UI:** optional separate frontend framework instead of a single `index.html`.
 
 Update this file when closing MVP items and when `VERSION` changes.

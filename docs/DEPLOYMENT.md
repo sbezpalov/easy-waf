@@ -187,6 +187,26 @@ API/ACME restarts may still be pending; confirm their final service state before
 accepting the upgrade. A draining issuance is allowed to finish before the new
 ACME process starts.
 
+The automated lifecycle check is `make test-package-restart-e2e` (or
+`bash scripts/test-package-restart-e2e.sh` in Git Bash on Windows or a macOS/Linux
+shell). It builds a disposable Ubuntu 24.04 systemd image and Linux Go binaries.
+Docker must support a private cgroup namespace, delegated writable container
+cgroups, and `SYS_ADMIN` for the units' mount namespaces. The fixture uses no
+privileged mode, writable host mounts or runtime network. Only its own container,
+temporary binaries and image tag are removed. Image construction can download
+Ubuntu packages; `EASY_WAF_PACKAGE_E2E_IMAGE` selects an already built fixture
+image, and `EASY_WAF_PACKAGE_E2E_BASE_IMAGE` selects its Ubuntu 24.04 base.
+`GO_BIN` and `DOCKER_BIN` can point to existing executables outside `PATH`.
+
+This test uses the production broker binary, broker/helper units, complete
+postinst and real APT/dpkg against a local fixture package repository. It proves
+the previous synchronous-restart failure, exclusion while backend/frontend
+locks are held, restart after their release, nonblocking ACME drain and
+preservation of stopped services. API/ACME workers are fixture processes;
+the minimal package intentionally omits appliance dependencies, database,
+certificates and network provisioning. Full appliance install/upgrade acceptance
+in [ACCEPTANCE.md](ACCEPTANCE.md) remains a separate check.
+
 **Rollback** is `apt install --allow-downgrades ./easy-waf_<previous>_amd64.deb`;
 without the flag `apt` refuses. Below 1.5.0 the edge keeps serving its current
 config, but every Apply then fails `haproxy -c` while an application has CrowdSec
