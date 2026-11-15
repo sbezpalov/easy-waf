@@ -1,4 +1,4 @@
-.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help dev-up clean clean-artifacts golden-update
+.PHONY: build deb offline-bundle test test-integration lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help dev-up clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
@@ -124,6 +124,19 @@ test-backup-restore-e2e:
 # Integration packages share DATABASE_URL; match CI's package serialization.
 test:
 	go test -p 1 ./...
+
+# The PostgreSQL tests CI runs. Uses DATABASE_URL when it is set; otherwise
+# starts the Compose database from `make dev-up` and uses that.
+test-integration:
+	@set -e; \
+	if [ -n "$$DATABASE_URL" ]; then \
+	  dsn="$$DATABASE_URL"; \
+	else \
+	  $(MAKE) dev-up; \
+	  dsn='postgres://easywaf:easywaf@127.0.0.1:5432/easywaf?sslmode=disable'; \
+	fi; \
+	DATABASE_URL="$$dsn" go test -p 1 -count=1 \
+	  ./internal/api/ ./internal/auth/ ./internal/store/ ./internal/engine/ ./cmd/easy-waf-acmed/ ./internal/admin/
 
 # Regenerate internal/haproxy/testdata/golden/*.cfg and companion .crt-list.txt from Render().
 golden-update:

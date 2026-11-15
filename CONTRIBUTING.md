@@ -67,6 +67,11 @@ make build
 repository. It needs Docker, not a machine-specific checkout or a GitHub
 organization. The Go version is the `go` line in [`go.mod`](go.mod).
 
+`make test` skips every test that needs PostgreSQL when `DATABASE_URL` is
+unset. `make test-integration` runs those packages against `DATABASE_URL`, or
+starts the Compose database first when the variable is empty. That is the
+same database CI uses for the race job, without the race detector.
+
 Print the one-time enrollment secret to log in — there is no default password:
 
 ```bash
