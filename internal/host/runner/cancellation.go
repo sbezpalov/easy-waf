@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
+	"time"
 )
 
 // DialContext bounds connection establishment only. Closing on cancellation
@@ -18,5 +20,23 @@ func closeOnCancel(ctx context.Context, conn net.Conn) func() bool {
 // Preserve the transport error as well as the cancellation reason so callers
 // can use errors.Is for context.Canceled and context.DeadlineExceeded.
 func brokerIOError(ctx context.Context, err error) error {
-	return errors.Join(err, ctx.Err())
+	return brokerIOErrorAt(ctx, err, time.Now())
+}
+
+// A conn.SetDeadline copied from the context can fire before ctx.Err is
+// visible. That read is still the context deadline, not a separate timeout.
+func brokerIOErrorAt(ctx context.Context, err error, now time.Time) error {
+	if err == nil {
+		return nil
+	}
+	ctxErr := ctx.Err()
+	if ctxErr == nil && errors.Is(err, os.ErrDeadlineExceeded) {
+		if deadline, ok := ctx.Deadline(); ok && !now.Before(deadline) {
+			ctxErr = context.DeadlineExceeded
+		}
+	}
+	if ctxErr == nil {
+		return err
+	}
+	return errors.Join(err, ctxErr)
 }

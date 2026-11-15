@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -117,5 +118,19 @@ func TestContextCancellationUnblocksBrokerWrite(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("canceled request remained blocked writing to broker")
+	}
+}
+
+func TestBrokerIOErrorAttributesSocketDeadlineToContext(t *testing.T) {
+	deadline := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	err := brokerIOErrorAt(ctx, os.ErrDeadlineExceeded, deadline)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("socket deadline was not the context deadline: %v", err)
+	}
+	early := brokerIOErrorAt(ctx, os.ErrDeadlineExceeded, deadline.Add(-time.Second))
+	if errors.Is(early, context.DeadlineExceeded) {
+		t.Fatal("an earlier socket timeout was reported as the context deadline")
 	}
 }
