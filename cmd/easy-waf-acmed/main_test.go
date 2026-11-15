@@ -114,24 +114,32 @@ func TestLegacyMarkerPermissionAndSymlinkErrors(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permissions and unprivileged symlinks")
 	}
+	// Root bypasses mode 000, so a container CI job cannot observe this failure.
+	// The dangling-symlink case below still runs there.
+	if os.Geteuid() != 0 {
+		state := t.TempDir()
+		writeLegacyApplyPending(t, state)
+		dir := filepath.Dir(applyPendingPath(state))
+		if err := os.Chmod(dir, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		if pending, err := applyPending(state); pending || err == nil {
+			t.Fatal("unreadable marker hidden as absent")
+		}
+		eng := engine.New(state, nil, config.DefaultSettings(state))
+		if applied, err := reconcileCertificateApplies(t.Context(), eng, "acme-test"); applied || err == nil {
+			t.Fatal("unreadable marker allowed reconciliation")
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := clearApplyPending(state); err != nil {
+			t.Fatal(err)
+		}
+	}
 	state := t.TempDir()
-	writeLegacyApplyPending(t, state)
-	dir := filepath.Dir(applyPendingPath(state))
-	if err := os.Chmod(dir, 0); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if pending, err := applyPending(state); pending || err == nil {
-		t.Fatal("unreadable marker hidden as absent")
-	}
-	eng := engine.New(state, nil, config.DefaultSettings(state))
-	if applied, err := reconcileCertificateApplies(t.Context(), eng, "acme-test"); applied || err == nil {
-		t.Fatal("unreadable marker allowed reconciliation")
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := clearApplyPending(state); err != nil {
+	if err := os.MkdirAll(filepath.Dir(applyPendingPath(state)), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(state, "missing-target"), applyPendingPath(state)); err != nil {
