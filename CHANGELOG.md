@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Bearer scheme is case-insensitive.** Session and metrics authentication accept `bearer` as well as `Bearer`, per RFC 6750. A header with no scheme still works.
+- **TOTP enrollment is rate-limited.** `POST /api/v1/auth/totp/enable` uses the same per-IP window as login, so a stolen session cannot walk the 6-digit space while a setup secret is pending.
+- **Management API sandbox matches the ACME worker.** `easy-waf-api.service` now drops devices, kernel, clock and hostname privileges and limits address families to UNIX, IPv4 and IPv6. `/run` stays writable for D-Bus.
 - **Bounded subprocess output.** Root broker and local API commands share a 4 MiB combined stdout/stderr capture policy. Excess output is drained to let commands finish, then reported as incomplete; nonzero child exits and execution/cancellation errors remain visible. Tracked APT mutation output keeps its separate live/log policies.
 - **Bounded host-management requests.** Broker and APT worker cap admitted connections at 32 and privileged request JSON at 64 KiB. Saved APT logs stream through bounded JSON chunks instead of whole-log allocation in the package owner, retaining the existing response and Unicode semantics.
 - **TLS hardening on :443.** The generated config sets TLS 1.2 as the minimum, ECDHE AEAD ciphers only (Mozilla "intermediate" without DHE) and disables session tickets. Clients from before roughly 2014 can no longer connect.
@@ -37,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`make dev-up`.** Starts the development PostgreSQL from `docker-compose.yml` and prints `DATABASE_URL`. Docker Compose v2 is the only extra tool; nothing reads a private machine path or an `easy-waf` GitHub organization.
+- **`make lint` and `make vuln` build their tools with the Go version in `go.mod`.** `go run` of golangci-lint v2.15.0 otherwise compiles it with Go 1.26, and that binary refuses a Go 1.27 module.
 - **HTTP/3.** `http3` adds QUIC listeners on UDP 443 and an `Alt-Svc` header (Security → Edge network). The default nftables ruleset now also allows UDP 443; an existing managed ruleset needs that rule added by hand.
 - **TLS passthrough on :443.** `tls_passthrough` sends TLS connections for listed SNI names (exact or `*.domain`) to their own TLS servers without decrypting them, optionally with PROXY protocol v2 and a source allowlist; all other HTTPS keeps going through the WAF with the real client address (Security → Edge network → TLS passthrough).
 - **Forward auth in front of applications.** Per-application `forward_auth_url` (e.g. Authelia `/api/authz/forward-auth`): every request is checked before it reaches the servers, fail closed, sign-in redirects passed through, `Remote-User`/`Remote-Groups`/`Remote-Email`/`Remote-Name` forwarded, optional bypass sources. ADR 0005 accepted (option C). Migration `025_forward_auth.sql`; ships `/usr/share/easy-waf/haproxy/forward-auth.lua`.
@@ -62,12 +67,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **arm64 release artifacts.** A `v*` tag builds `linux/arm64` and `linux/amd64` tarballs and `.deb` packages. `install.sh` downloads the architecture of the machine. One `SHA256SUMS` is signed, as before.
 - **VM image notes.** `packaging/ovf` states the GPL source for the Ubuntu HAProxy and Fail2Ban packages, forbids baking GeoLite2, and `check-image-contents.sh` checks a tree you mount. The disk image is still built on a hypervisor.
 - **ADR 0003** proposes an edge-only container and does not add one.
-- **ADR 0004** (proposed): optional TOTP for the panel, with hashed recovery codes. Not implemented. Host step-up stays a password confirmation.
-- **ADR 0005** (proposed): per-application forward auth, fail closed, panel excluded. Not implemented.
+- **ADR 0004** is accepted and shipped: optional TOTP, hashed recovery codes, admin reset and `easy-waf-admin disable-totp`. Host step-up stays a password confirmation.
+- **ADR 0005** is accepted and shipped: per-application forward auth, fail closed, panel excluded.
 - **ADR 0006** (proposed): Easy Home WAF stays an edge and a reverse proxy. Optional Coraza/CRS through coraza-spoa is described, including fail-open when the sidecar is down and fail-closed on a rule match, and is not implemented.
 
 ### Fixed
 
+- **Factory reset reads `DATABASE_URL` from `-env-file`.** `factory-reset` and `reset-appliance` no longer ignore the env file they document and demand a process environment variable.
+- **Bootstrap writes the credentials report before wiping.** If the report path cannot be created, configuration tables and the state directory are left in place. The new database password is already in the env file.
+- **`doctor` reports a certificate directory with no readable chain.** A missing or non-PEM `fullchain.pem` is a warning instead of a silent skip.
+- **APT stream tests do not read the host dpkg lock.** The pipe-drain test forced the advisory lock hint off. Opening `/var/lib/dpkg/lock-frontend` requires root, so a normal development user was told apt was locked and the event count failed.
 - **Bounded host commands.** Synchronous broker commands now have execution budgets (two minutes normally, 30 minutes for APT), bounded output-pipe waits and Linux/macOS process-group cleanup. Cancellation/deadline causes survive rollback wrappers and stderr warnings. Non-Linux broker peers are rejected by default, and development builds no longer look up the Linux service account at startup.
 - **Streaming APT completion.** Reap apt-get concurrently with output capture and bound post-exit pipe draining, so inherited stdout/stderr cannot keep a finished transaction permanently active. Preserve cancellation/deadline causes and clean up failed Linux/macOS process groups while retaining successful service startup.
 - **APT heartbeat ownership.** Serialize heartbeat and command output callbacks, and wait for the heartbeat to stop before completing the stream. This prevents races in disconnect handling and heartbeat writes after the final exit event or action-log closure.
