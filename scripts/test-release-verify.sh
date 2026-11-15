@@ -100,8 +100,19 @@ PATH="$EMPTY_PATH" EASY_WAF_ALLOW_UNSIGNED_SUMS=1 \
   fail "EASY_WAF_ALLOW_UNSIGNED_SUMS=1 did not allow checksum-only verification"
 PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null \
   || fail "valid signature rejected"
-grep -qF '^https://github\.com/acme/easy-waf/\.github/workflows/release\.yml@refs/tags/v' "$FAKE_ARGS" \
-  || fail "signature not tied to this repository's release workflow"
+grep -qxF -- '--certificate-identity' "$FAKE_ARGS" \
+  || fail "signature must use exact identity rather than an unbounded tag regexp"
+grep -qxF 'https://github.com/acme/easy-waf/.github/workflows/release.yml@refs/tags/v9.9.9' "$FAKE_ARGS" \
+  || fail "signature not tied to the requested release tag"
+PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature \
+  "$SUMS" 'https://github.com/acme/easy-waf/releases/download/v9.9.8/SHA256SUMS' >/dev/null \
+  || fail "second valid versioned signature rejected"
+grep -qxF 'https://github.com/acme/easy-waf/.github/workflows/release.yml@refs/tags/v9.9.8' "$FAKE_ARGS" \
+  || fail "different release did not change the expected signing identity"
+if PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature \
+  "$SUMS" 'https://github.com/acme/easy-waf/releases/latest/download/SHA256SUMS' >/dev/null; then
+  fail "unversioned URL accepted without an explicit unsigned override"
+fi
 if PATH="${TMPD}/bin:$PATH" FAKE_RC=1 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null; then
   fail "invalid signature accepted"
 fi

@@ -61,20 +61,21 @@ easy_waf_verify_sha256() {
 # GitHub release or EASY_WAF_ALLOW_UNSIGNED_SUMS=1 explicitly permits the
 # downgrade.
 easy_waf_verify_sums_signature() {
-  local sums="${1:?}" sums_url="${2:?}" bundle repo rc=0
+  local sums="${1:?}" sums_url="${2:?}" bundle repo tag rc=0
   if [[ "$sums_url" == /* ]]; then
     log_relv "local SHA256SUMS — signature not checked"
     return 0
   fi
-  if [[ ! "$sums_url" =~ ^https://github\.com/([^/]+/[^/]+)/releases/ ]]; then
+  if [[ ! "$sums_url" =~ ^https://github\.com/([^/?#]+/[^/?#]+)/releases/download/(v[^/?#]+)/SHA256SUMS$ ]]; then
     if [[ "${EASY_WAF_ALLOW_UNSIGNED_SUMS:-}" == "1" ]]; then
-      log_relv "non-GitHub SHA256SUMS — signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
+      log_relv "unversioned or non-GitHub SHA256SUMS — signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
       return 0
     fi
-    log_relv "refusing unsigned SHA256SUMS from a non-GitHub URL (set EASY_WAF_ALLOW_UNSIGNED_SUMS=1 to override)"
+    log_relv "SHA256SUMS must use a versioned GitHub release URL (set EASY_WAF_ALLOW_UNSIGNED_SUMS=1 for checksum-only verification)"
     return 1
   fi
   repo="${BASH_REMATCH[1]}"
+  tag="${BASH_REMATCH[2]}"
   if ! command -v cosign &>/dev/null; then
     if [[ "${EASY_WAF_ALLOW_UNSIGNED_SUMS:-}" == "1" ]]; then
       log_relv "cosign not installed — SHA256SUMS signature skipped (EASY_WAF_ALLOW_UNSIGNED_SUMS=1)"
@@ -89,7 +90,7 @@ easy_waf_verify_sums_signature() {
     rc=1
   elif ! cosign verify-blob --bundle "$bundle" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity-regexp "^https://github\.com/${repo//./\\.}/\.github/workflows/release\.yml@refs/tags/v" \
+    --certificate-identity "https://github.com/${repo}/.github/workflows/release.yml@refs/tags/${tag}" \
     "$sums" >/dev/null 2>&1; then
     log_relv "SHA256SUMS signature INVALID for ${repo}"
     rc=1
