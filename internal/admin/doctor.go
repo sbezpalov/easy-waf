@@ -606,15 +606,33 @@ func checkCertificates(stateDir string) []CheckResult {
 		fullchain := filepath.Join(certsDir, entry.Name(), "fullchain.pem")
 		raw, err := os.ReadFile(fullchain)
 		if err != nil {
+			checks = append(checks, CheckResult{
+				Category: "Certificates",
+				Name:     entry.Name(),
+				Status:   StatusWarn,
+				Message:  "certificate directory has no readable fullchain.pem",
+			})
 			continue
 		}
 
 		block, _ := pem.Decode(raw)
 		if block == nil || block.Type != "CERTIFICATE" {
+			checks = append(checks, CheckResult{
+				Category: "Certificates",
+				Name:     entry.Name(),
+				Status:   StatusWarn,
+				Message:  "fullchain.pem is not a PEM certificate",
+			})
 			continue
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
+			checks = append(checks, CheckResult{
+				Category: "Certificates",
+				Name:     entry.Name(),
+				Status:   StatusWarn,
+				Message:  "fullchain.pem could not be parsed",
+			})
 			continue
 		}
 
