@@ -82,6 +82,18 @@ if [[ ! -d "$CFG" ]]; then
   echo "ERROR: config dir missing: $CFG" >&2
   exit 1
 fi
+if ! command -v flock &>/dev/null; then
+  echo "ERROR: flock not found (install util-linux)" >&2
+  exit 1
+fi
+# All outputs/state paths share these writer services. Lock the fixed config
+# directory inode, without a writable lockfile or stale marker to remove.
+# Keep this descriptor open through rotation and EXIT's writer restart.
+exec {BACKUP_LOCK_FD}<"$CFG"
+if ! flock -n "$BACKUP_LOCK_FD"; then
+  echo "ERROR: cannot acquire backup lock; another backup may be running" >&2
+  exit 1
+fi
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: env file missing: $ENV_FILE (set EASY_WAF_ENV_FILE?)" >&2
   exit 1

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Exclusive backup quiescence.** Manual and timer backups now share a nonblocking lock until writer restart and cleanup. An overlapping run fails before service or database access, preventing one backup from resuming writers while another still captures the database and files.
+
 - **Complete diagnostic key masking.** Root support archives now mask exact/prefix secret marker keys and whitespace around assignments consistently with the API collector, closing leaks such as `TOKEN`, `PASSWORD_HINT` and spaced CrowdSec credentials.
 - **Data-only backup E2E input.** The opt-in backup/reset/restore driver imports only its literal database DSN. Appliance env entries cannot execute shell code, export unrelated credentials or change its selected state and recovery variables; mocked success/failure regressions cover this behavior.
 - **Bounded installer configuration import.** Settings sync and nftables repair read only their required environment keys as data, preserving literal credentials and explicit empty values. Sync cannot change the installer's own variables; repair also accepts `EASY_WAF_ENV_FILE` for an explicitly selected configuration.

@@ -7,7 +7,15 @@ awk '$2 == "/etc/easy-waf" && $3 == "tmpfs" { found=1 } END { exit !found }' /pr
   echo 'Refusing backup fixture without private config tmpfs' >&2; exit 1;
 }
 ROOT="$(mktemp -d)"
-trap 'rm -rf "$ROOT"' EXIT
+FIRST_PID=""
+SECOND_PID=""
+cleanup() {
+  touch "$ROOT/release-first" "$ROOT/release-second"
+  if [[ -n "$FIRST_PID" ]]; then wait "$FIRST_PID" || true; fi
+  if [[ -n "$SECOND_PID" ]]; then wait "$SECOND_PID" || true; fi
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir -p "$ROOT/bin" "$ROOT/state" "$ROOT/output"
 printf 'fixture-state\n' >"$ROOT/state/data"
@@ -18,12 +26,36 @@ export BACKUP_TEST_REAL_TAR
 export EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_ENV_FILE=/etc/easy-waf/easy-waf.env
 cat >"$ROOT/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash
+if [[ -n "${BACKUP_TEST_RUN:-}" ]]; then
+  printf '%s %s\n' "$BACKUP_TEST_RUN" "$*" >>"$BACKUP_TEST_ROOT/concurrent-services"
+  case "$1" in
+    is-active) [[ ! -f "$BACKUP_TEST_ROOT/inactive-${@: -1}" ]]; exit $? ;;
+    stop) touch "$BACKUP_TEST_ROOT/inactive-$2" ;;
+    start)
+      if [[ -f "$BACKUP_TEST_ROOT/entered-second" && ! -f "$BACKUP_TEST_ROOT/release-second" ]]; then
+        touch "$BACKUP_TEST_ROOT/resumed-during-dump"
+      fi
+      rm -f "$BACKUP_TEST_ROOT/inactive-$2"
+      ;;
+  esac
+  exit 0
+fi
 printf '%s\n' "$*" >>"$BACKUP_TEST_ROOT/services"
 MOCK
 cat >"$ROOT/bin/pg_dump" <<'MOCK'
 #!/usr/bin/env bash
+touch "$BACKUP_TEST_ROOT/dump-called"
 [[ "$1" == postgres://fixture.invalid/never-connected ]] || exit 90
 [[ "$BACKUP_TEST_MODE" != dump-fail ]] || exit 21
+if [[ -n "${BACKUP_TEST_RUN:-}" ]]; then
+  touch "$BACKUP_TEST_ROOT/entered-$BACKUP_TEST_RUN"
+  ready=0
+  for ((i=0; i<1500; i++)); do
+    if [[ -f "$BACKUP_TEST_ROOT/release-$BACKUP_TEST_RUN" ]]; then ready=1; break; fi
+    sleep 0.02
+  done
+  ((ready)) || exit 92
+fi
 for arg in "$@"; do
   if [[ "$arg" == --file=* ]]; then printf 'fixture-dump\n' >"${arg#--file=}"; exit 0; fi
 done
@@ -106,4 +138,62 @@ backup pass --dir "$ROOT/rotated" --keep 1
 [[ ! -e "$ROOT/rotated/easy-waf-backup-20200101-000000.tar.gz" ]] || fail 'old backup not rotated'
 [[ "$(find "$ROOT/rotated" -name '*.tar.gz' | wc -l)" == 1 ]] || fail 'rotation count changed'
 [[ -z "$(find "$ROOT/output" "$ROOT/rotated" -name '.easy-waf-backup.*' -print)" ]] || fail 'owned staging left behind'
+
+# No locking capability must fail before service/dump access, not run unlocked.
+mkdir "$ROOT/no-flock-bin"
+for tool in bash date dirname readlink id; do
+  ln -s "$(type -P "$tool")" "$ROOT/no-flock-bin/$tool"
+done
+: >"$ROOT/services"
+rm "$ROOT/dump-called"
+if PATH="$ROOT/no-flock-bin" bash "$BACKUP_SCRIPT" "$ROOT/output/no-lock.tar.gz" >"$ROOT/no-lock-log" 2>&1; then
+  fail 'backup continued without flock'
+fi
+grep -qF 'flock not found' "$ROOT/no-lock-log" || fail 'missing flock was not diagnosed'
+[[ ! -s "$ROOT/services" && ! -e "$ROOT/dump-called" ]] || fail 'missing lock capability touched writers or dump'
+
+# Separate invocations share writer services even when their output paths differ.
+export BACKUP_TEST_MODE=ok
+wait_for() {
+  local path="$1" i
+  for ((i=0; i<500; i++)); do
+    [[ ! -e "$path" ]] || return 0
+    sleep 0.02
+  done
+  fail 'backup barrier timed out'
+}
+(
+  status=0
+  BACKUP_TEST_RUN=first bash "$BACKUP_SCRIPT" "$ROOT/output/first.tar.gz" >"$ROOT/first-log" 2>&1 || status=$?
+  printf '%s\n' "$status" >"$ROOT/status-first"
+) &
+FIRST_PID=$!
+wait_for "$ROOT/entered-first"
+for unit in easy-waf-api.service easy-waf-acmed.service; do
+  [[ -f "$ROOT/inactive-$unit" ]] || fail 'first backup did not quiesce writer'
+done
+(
+  status=0
+  BACKUP_TEST_RUN=second bash "$BACKUP_SCRIPT" "$ROOT/output/second.tar.gz" >"$ROOT/second-log" 2>&1 || status=$?
+  printf '%s\n' "$status" >"$ROOT/status-second"
+) &
+SECOND_PID=$!
+for ((i=0; i<500; i++)); do
+  if [[ -e "$ROOT/entered-second" || -e "$ROOT/status-second" ]]; then break; fi
+  sleep 0.02
+done
+[[ -e "$ROOT/entered-second" || -e "$ROOT/status-second" ]] || fail 'second invocation timed out'
+touch "$ROOT/release-first"
+wait "$FIRST_PID"
+FIRST_PID=""
+[[ ! -e "$ROOT/resumed-during-dump" ]] || fail 'writers resumed while another backup was dumping'
+[[ ! -e "$ROOT/entered-second" ]] || fail 'overlapping backup reached dump'
+wait "$SECOND_PID"
+SECOND_PID=""
+[[ "$(cat "$ROOT/status-first")" == 0 && "$(cat "$ROOT/status-second")" != 0 ]] || fail 'backup overlap status incorrect'
+if grep -q '^second ' "$ROOT/concurrent-services"; then fail 'rejected backup touched services'; fi
+[[ ! -e "$ROOT/output/second.tar.gz" ]] || fail 'rejected backup published output'
+"$BACKUP_TEST_REAL_TAR" -tzf "$ROOT/output/first.tar.gz" >/dev/null
+backup pass "$ROOT/output/retry.tar.gz"
+echo 'OK: overlapping backup rejected before writer or dump access; retry succeeds'
 echo 'OK: real backup preserves targets, previous archives and writer restarts'

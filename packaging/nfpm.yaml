@@ -30,6 +30,8 @@ depends:
   - nftables
   - ca-certificates
   - curl
+  # flock: manual and timer backups share one writer-quiescence lock.
+  - util-linux
   # adduser: the maintainer scripts create the easy-waf system account.
   - adduser
   # polkitd: the rule that lets easy-waf reload haproxy.service needs the daemon.

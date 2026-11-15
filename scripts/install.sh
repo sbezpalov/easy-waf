@@ -890,6 +890,7 @@ install_os_packages() {
         nftables
         ca-certificates
         curl
+        util-linux
         iproute2
         netplan.io
         iputils-ping

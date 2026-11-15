@@ -28,6 +28,14 @@ run's temporary directories; existing `<output>.partial` files are left alone.
 
 The script **stops `easy-waf-api` and `easy-waf-acmed`** for the dump/archive window so PostgreSQL and on-disk secrets/certs stay consistent, then starts them again (including on failure). HAProxy keeps serving the last applied edge config during the pause.
 
+Only one backup invocation can own that pause. A nonblocking `flock` on the
+existing `/etc/easy-waf` directory is held until cleanup restarts the writers,
+including packing and rotation. An overlapping manual or timer run fails before
+touching services or invoking `pg_dump`; retry after the active backup finishes.
+The lock is shared across output/state paths and systemd's private `/tmp`.
+It does not coordinate manual service starts, restore or factory reset; avoid
+running those operations during a backup.
+
 Custom output path:
 
 ```bash
@@ -41,11 +49,13 @@ Environment:
 | `EASY_WAF_STATE_DIR` | `/var/lib/easy-waf` | State tree to archive |
 | `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Source of `DATABASE_URL` for `pg_dump` |
 
-Requires **`pg_dump`** on `PATH` (PostgreSQL client packages).
+Requires **`pg_dump`** (PostgreSQL client packages) and **`flock`** (`util-linux`)
+on `PATH`. Missing or unavailable locking fails before any writer is stopped.
 
 For development, `make test-backup-publication` exercises the real backup with
 dummy data and fake database/service commands in a disposable Linux Docker
-container. Prepare `ubuntu:24.04` with `docker pull ubuntu:24.04`, or select an
+container, including overlapping invocations and safe archive publication.
+Prepare `ubuntu:24.04` with `docker pull ubuntu:24.04`, or select an
 existing Ubuntu image using `EASY_WAF_BACKUP_TEST_IMAGE`. The test runs offline,
 with a read-only source mount and private config tmpfs; it does not back up or
 stop services on the host. The nightly E2E workflow runs this regression.
