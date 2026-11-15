@@ -56,6 +56,17 @@ for key in TOKEN PASSWORD_HINT CROWDSEC_LAPI_KEY EASY_WAF_JWT_SECRET token DATAB
 done
 grep -qxF 'FOO=public-value' "$ROOT/masked"
 grep -qxF '# TOKEN=comment-example' "$ROOT/masked"
+fixture="$SCRIPT_DIR/../internal/diagnostics/testdata/environment-multiline"
+cp "$fixture.env.example" "$EASY_WAF_ENV_FILE"
+unset DATABASE_URL
+bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
+tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
+masked_member="$(grep '/config/easy-waf.env.masked$' "$ROOT/members")"
+tar -xOzf "$ROOT/bundle.tar.gz" "$masked_member" >"$ROOT/masked"
+if grep -qF 'fixture-sensitive' "$ROOT/masked"; then
+  echo 'FAIL: multiline secret appears in support archive' >&2; exit 1
+fi
+cmp "$fixture.masked.example" "$ROOT/masked" || { echo 'FAIL: multiline secret masking differs' >&2; exit 1; }
 export DATABASE_URL='postgres://process-fixture/db'
 printf 'DATABASE_URL=\n' >"$EASY_WAF_ENV_FILE"
 rm "$DIAG_TEST_ARGS"

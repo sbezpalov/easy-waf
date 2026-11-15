@@ -93,16 +93,43 @@ mask_env_to() {
   # Match the API masker: inspect the trimmed key, including exact/prefix
   # markers and whitespace around assignments. Mask the complete DSN too.
   awk '
-    /^[[:space:]]*#/ { print; next }
+    # State follows value boundaries only while redacting a sensitive entry.
+    # 0=start, 1=unquoted, 2=single quote, 3=double quote, 4/5=escapes.
+    function continues(value, i, c) {
+      for (i = 1; i <= length(value); i++) {
+        c = substr(value, i, 1)
+        if (mode == 0) {
+          if (c == "\047") mode = 2
+          else if (c == "\"") mode = 3
+          else if (c == "\\") mode = 4
+          else if (c != " " && c != "\t" && c != "\r") mode = 1
+        } else if (mode == 1) {
+          if (c == "\\") mode = 4
+        } else if (mode == 2) {
+          if (c == "\047") mode = 0
+        } else if (mode == 3) {
+          if (c == "\\") mode = 5
+          else if (c == "\"") mode = 0
+        } else if (mode == 4) mode = 1
+        else if (mode == 5) mode = 3
+      }
+      if (mode == 4) { mode = 1; return 1 }
+      if (mode == 5) { mode = 3; return 1 }
+      return mode == 2 || mode == 3
+    }
+    continuing { continuing = continues($0); next }
+    /^[[:space:]]*[#;]/ { print; next }
     {
       pos = index($0, "=")
       if (!pos) { print; next }
       key = substr($0, 1, pos - 1)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
       upper = toupper(key)
-      if (key == "DATABASE_URL" || upper ~ /PASSWORD|SECRET|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|ACCESS_KEY|LICENSE_KEY/)
+      if (key == "DATABASE_URL" || upper ~ /PASSWORD|SECRET|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|ACCESS_KEY|LICENSE_KEY/) {
         print key "=***MASKED***"
-      else
+        mode = 0
+        continuing = continues(substr($0, pos + 1))
+      } else
         print
     }
   ' "$src" >"$dst"

@@ -4,9 +4,58 @@
 package diagnostics
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func FuzzMaskQuotedSecretValue(f *testing.F) {
+	for _, seed := range []string{"plain", "first\nFAKE_SETTING=tail", "\\\"\r\n'next", "\x00\xff"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		if len(value) > 1<<16 {
+			t.Skip()
+		}
+		escaped := strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(value)
+		raw := "TOKEN=\"fixture-sensitive-head\n" + escaped + "\nfixture-sensitive-tail\"\nPUBLIC=visible\n"
+		if string(MaskEasyWAFEnvContent([]byte(raw))) != "TOKEN=***MASKED***\nPUBLIC=visible\n" {
+			t.Fatal("quoted secret was not fully replaced or damaged the following entry")
+		}
+	})
+}
+
+func TestMaskEasyWAFEnvContentMultiline(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "environment-multiline.env.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "environment-multiline.masked.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	masked := string(MaskEasyWAFEnvContent(raw))
+	if strings.Contains(masked, "fixture-sensitive") {
+		t.Error("multiline file secret leaked")
+	}
+	if masked != string(want) {
+		t.Fatal("multiline environment masking differs from the shared fixture")
+	}
+	for _, raw := range []string{
+		"TOKEN=\"head\r\nfixture-sensitive-tail\"\r\nPUBLIC=visible\r\n",
+		"TOKEN='head\nfixture-sensitive-tail",
+		"TOKEN=head\\\nfixture-sensitive-tail",
+	} {
+		got := string(MaskEasyWAFEnvContent([]byte(raw)))
+		if strings.Contains(got, "fixture-sensitive") {
+			t.Fatal("multiline secret suffix leaked")
+		}
+		if strings.Contains(raw, "PUBLIC=visible") && !strings.Contains(got, "PUBLIC=visible") {
+			t.Fatal("following public setting was discarded")
+		}
+	}
+}
 
 func TestMaskEasyWAFEnvLine_secrets(t *testing.T) {
 	cases := []struct{ in, want string }{

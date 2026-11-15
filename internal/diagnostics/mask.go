@@ -10,7 +10,7 @@ import (
 // MaskEasyWAFEnvLine returns a single line with known secrets replaced (for support bundles).
 func MaskEasyWAFEnvLine(line string) string {
 	trim := strings.TrimSpace(line)
-	if trim == "" || strings.HasPrefix(trim, "#") {
+	if trim == "" || strings.HasPrefix(trim, "#") || strings.HasPrefix(trim, ";") {
 		return line
 	}
 	key, _, ok := strings.Cut(trim, "=")
@@ -41,13 +41,98 @@ func secretEnvKey(key string) bool {
 	return false
 }
 
-// MaskEasyWAFEnvContent applies MaskEasyWAFEnvLine to every line.
+// MaskEasyWAFEnvContent masks complete sensitive EnvironmentFile values,
+// including quoted newlines and backslash continuations, without evaluating them.
 func MaskEasyWAFEnvContent(raw []byte) []byte {
-	lines := strings.Split(string(raw), "\n")
-	for i := range lines {
-		lines[i] = MaskEasyWAFEnvLine(lines[i])
+	var out strings.Builder
+	var state envValueState
+	continuing := false
+	for _, chunk := range strings.SplitAfter(string(raw), "\n") {
+		line, newline := strings.CutSuffix(chunk, "\n")
+		if continuing {
+			continuing = state.continues(line)
+			continue
+		}
+		masked := MaskEasyWAFEnvLine(line)
+		out.WriteString(masked)
+		if newline {
+			out.WriteByte('\n')
+		}
+		if masked != line {
+			_, value, ok := strings.Cut(line, "=")
+			if ok {
+				state = envValueStart
+				continuing = state.continues(value)
+			}
+		}
 	}
-	return []byte(strings.Join(lines, "\n"))
+	return []byte(out.String())
+}
+
+// Only value boundaries are needed for redaction, not decoded values. Quotes
+// start at a value boundary; quotes inside an unquoted word remain literal.
+type envValueState uint8
+
+const (
+	envValueStart envValueState = iota
+	envValueUnquoted
+	envValueSingleQuote
+	envValueDoubleQuote
+	envValueEscape
+	envValueDoubleEscape
+)
+
+func (s *envValueState) continues(line string) bool {
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch *s {
+		case envValueStart:
+			switch c {
+			case ' ', '\t', '\r':
+			case '\'':
+				*s = envValueSingleQuote
+			case '"':
+				*s = envValueDoubleQuote
+			case '\\':
+				*s = envValueEscape
+			default:
+				*s = envValueUnquoted
+			}
+		case envValueUnquoted:
+			if c == '\\' {
+				*s = envValueEscape
+			}
+		case envValueSingleQuote:
+			if c == '\'' {
+				*s = envValueStart
+			}
+		case envValueDoubleQuote:
+			switch c {
+			case '\\':
+				*s = envValueDoubleEscape
+			case '"':
+				*s = envValueStart
+			}
+		case envValueEscape:
+			*s = envValueUnquoted
+		case envValueDoubleEscape:
+			*s = envValueDoubleQuote
+		}
+	}
+	// A trailing escape consumes the physical newline. An open quote keeps it
+	// inside this value; an unterminated secret therefore stays masked to EOF.
+	switch *s {
+	case envValueEscape:
+		*s = envValueUnquoted
+		return true
+	case envValueDoubleEscape:
+		*s = envValueDoubleQuote
+		return true
+	case envValueSingleQuote, envValueDoubleQuote:
+		return true
+	default:
+		return false
+	}
 }
 
 // MaskHAProxyConfigContent removes forward-auth targets from a diagnostic copy

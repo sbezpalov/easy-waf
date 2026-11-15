@@ -296,8 +296,8 @@ func addTarBytes(tw *tar.Writer, name string, body []byte, mode int64) error {
 var envSnapshotPrefixes = []string{"EASY_WAF_", "DATABASE_URL", "CROWDSEC_", "ACME_", "GEOIP_", "MAXMIND_"}
 
 // processEnvSnapshot stands in for easy-waf.env, which is root-only: the API
-// cannot read it, but systemd handed it the same variables. The caller masks
-// the result like the file itself.
+// cannot read it, but systemd handed it the same variables. Mask each complete
+// entry before flattening; public LF/CR are escaped so they cannot fake entries.
 func processEnvSnapshot(envPath string, readErr error) []byte {
 	header := "# " + envPath + " could not be read (" + readErr.Error() + "; root-only by design).\n" +
 		"# Variables of the running API process instead. For the file: sudo easy-waf-diagnostics\n"
@@ -305,6 +305,9 @@ func processEnvSnapshot(envPath string, readErr error) []byte {
 	for _, kv := range os.Environ() {
 		for _, prefix := range envSnapshotPrefixes {
 			if strings.HasPrefix(kv, prefix) {
+				kv = MaskEasyWAFEnvLine(kv)
+				kv = strings.ReplaceAll(kv, "\r", "\\r")
+				kv = strings.ReplaceAll(kv, "\n", "\\n")
 				vars = append(vars, kv)
 				break
 			}

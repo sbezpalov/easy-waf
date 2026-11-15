@@ -15,3 +15,6 @@ packaging/deb/* text eol=lf
 
 # HAProxy golden fixtures + SPOE/IPBL snippets — LF only (Windows checkout + haproxy -c on Linux).
 internal/haproxy/testdata/golden/** text eol=lf
+
+# Physical LF carries continuation semantics in diagnostic env masking fixtures.
+internal/diagnostics/testdata/environment-multiline*.example text eol=lf

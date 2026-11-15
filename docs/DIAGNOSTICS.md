@@ -30,6 +30,10 @@ Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/
     exact marker names such as `TOKEN` and prefix names such as `PASSWORD_HINT`
     are masked consistently in root and API bundles. Secret markers are matched
     without case sensitivity; plain fields and comments remain unchanged.
+  - Multiline sensitive values (single/double quotes and backslash continuations)
+    are replaced as a whole, including continuation lines resembling settings or
+    comments. An unterminated sensitive value stays masked through EOF. Process
+    snapshots mask complete entries before joining them and escape public LF/CR.
   - **any** key whose name contains `PASSWORD`, `SECRET`, `TOKEN`, `CREDENTIAL`, `PRIVATE_KEY`, `API_KEY`, `ACCESS_KEY` or `LICENSE_KEY` — full value replaced with `***MASKED***`. That covers `CROWDSEC_LAPI_KEY`, `EASY_WAF_JWT_SECRET` and `EASY_WAF_ADMIN_TOKEN`, and any custom key you add that follows the same naming. A secret in a key named something else (`DB_DSN`, say) is **not** masked — check the bundle before sending it out.
 - **config/haproxy.cfg** — masked copy of the live HAProxy config. Every `lua.easywaf_auth` target is replaced with `***MASKED***` because its query string may contain credentials. The API bundle only reads the file when the configured path resolves **inside `${EASY_WAF_STATE_DIR}/haproxy`**; anything else is replaced with `(refused unsafe configured path: …)`. The root script does not read `haproxy_config_path` at all — it always reads `${EASY_WAF_STATE_DIR}/haproxy/haproxy.cfg`, or notes the file as missing. So on an appliance configured to render somewhere else, **neither** bundle contains the live config; collect it by hand and redact forward-auth targets before sharing it.
 - **config/crt-list-filenames.txt** — **only basenames** of paths from `crt-list.txt` (no PEM contents).

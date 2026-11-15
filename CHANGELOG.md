@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Multiline diagnostic secrets.** API process snapshots mask entries before flattening, and root/API file copies redact complete quoted or continued sensitive values. Continuation text no longer leaks into support archives; non-secret process newlines are escaped to preserve entry boundaries.
+
 - **Bearer scheme is case-insensitive.** Session and metrics authentication accept `bearer` as well as `Bearer`, per RFC 6750. A header with no scheme still works.
 - **Unparseable client addresses are rate-limited.** Login, enrollment, password change, password confirmation and TOTP enable no longer skip the limiter when `RemoteAddr` does not parse. Those requests share one bucket.
 - **Settings writes do not return database errors.** A failed persist is `500` with `internal error`. Validation errors stay `400` and still name the field.

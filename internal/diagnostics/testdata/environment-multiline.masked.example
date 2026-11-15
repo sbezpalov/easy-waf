@@ -1,0 +1,19 @@
+# Dummy multiline redaction inputs; no real credentials.
+; TOKEN=comment-example
+TOKEN=***MASKED***
+AFTER_SINGLE=visible
+MULTI_SECRET=***MASKED***
+AFTER_DOUBLE=visible
+ESCAPED_TOKEN=***MASKED***
+AFTER_BARE=visible
+TOKEN_PREFIX=***MASKED***
+AFTER_LITERAL_QUOTES=visible
+EVEN_TOKEN=***MASKED***
+AFTER_EVEN_ESCAPE=visible
+ODD_TOKEN=***MASKED***
+AFTER_ODD_ESCAPE=visible
+CHUNKS_TOKEN=***MASKED***
+AFTER_CHUNKS=visible
+LEADING_TOKEN=***MASKED***
+AFTER_LEADING=visible
+UNFINISHED_TOKEN=***MASKED***
