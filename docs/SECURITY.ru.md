@@ -56,7 +56,7 @@
 ## ACME / DNS-01
 
 - Храните учётные данные провайдера вне базы данных, в env-файлах, на которые ссылается `dns_credentials_env_file`. Сервис `easy-waf-acmed` открывает их как `User=easy-waf`, поэтому используйте владельца `easy-waf:easy-waf` и режим **0600**; `root:root 0600` не позволит выпустить сертификат.
-- **`easy-waf-acmed` работает в песочнице**, как и API (без capabilities, `NoNewPrivileges`, приватные `/tmp` и устройства, защита ядра и cgroup, только `AF_UNIX`/`AF_INET`/`AF_INET6`): он работает под той же учётной записью и разбирает ответы из интернета. Используется `ProtectSystem=full`, а не `strict`, чтобы выбранный оператором webroot для HTTP-01 оставался доступным на запись.
+- **`easy-waf-api` и `easy-waf-acmed` работают в песочнице** (без capabilities, `NoNewPrivileges`, приватные `/tmp` и устройства, защита ядра, cgroup, часов и hostname, только `AF_UNIX`/`AF_INET`/`AF_INET6`, только native-системные вызовы). У API `ProtectSystem=strict`. У acmed `ProtectSystem=full`, чтобы выбранный оператором webroot для HTTP-01 оставался доступным на запись. Юнит API оставляет `/run` доступным на запись для D-Bus (`systemctl show`) и не задаёт `SystemCallFilter`, потому что процесс по-прежнему запускает `systemctl`.
 - Предпочитайте **ограниченные API-токены** (Cloudflare — право редактировать DNS только в одной зоне; политика AWS IAM, ограниченная Route53 в нужных зонах).
 
 ## Аудит

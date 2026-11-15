@@ -17,12 +17,30 @@ EnvironmentFile=-/etc/easy-waf/easy-waf.env
 ExecStart=/usr/sbin/easy-waf-api
 Restart=on-failure
 RestartSec=5
+# run.go stops listeners within 20s. Leave a little room, then give up.
+TimeoutStopSec=30s
 AmbientCapabilities=
 CapabilityBoundingSet=
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# AF_UNIX is D-Bus (systemctl show) and the hostd socket. AF_INET/AF_INET6
+# are PostgreSQL and the management listeners. No SystemCallFilter: the
+# process still execs systemctl.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
 # /run covers D-Bus and systemd’s runtime dir so `systemctl show` from the dashboard can query other units.
 ReadWritePaths=/var/lib/easy-waf /run
 StateDirectory=easy-waf

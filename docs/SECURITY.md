@@ -69,7 +69,7 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 ## ACME / DNS-01
 
 - Store provider credentials outside the database in env files referenced by `dns_credentials_env_file`. The `easy-waf-acmed` service opens them as `User=easy-waf`, so use owner `easy-waf:easy-waf` and mode **0600**; `root:root 0600` prevents certificate issuance.
-- **`easy-waf-acmed` is sandboxed** like the API (no capabilities, `NoNewPrivileges`, private `/tmp` and devices, kernel/cgroup protections, `AF_UNIX`/`AF_INET`/`AF_INET6` only): it runs as the same account and parses responses from the internet. It uses `ProtectSystem=full` rather than `strict` so an operator-chosen HTTP-01 webroot stays writable.
+- **`easy-waf-api` and `easy-waf-acmed` are sandboxed** (no capabilities, `NoNewPrivileges`, private `/tmp` and devices, kernel/cgroup/clock/hostname protections, `AF_UNIX`/`AF_INET`/`AF_INET6` only, native syscalls). The API uses `ProtectSystem=strict`. acmed uses `ProtectSystem=full` so an operator-chosen HTTP-01 webroot stays writable. The API unit keeps `/run` writable for D-Bus (`systemctl show`) and does not set `SystemCallFilter`, because it still executes `systemctl`.
 - Prefer **restricted API tokens** (Cloudflare DNS edit on one zone only; AWS IAM policy scoped to Route53 on required zones).
 
 ## Audit
