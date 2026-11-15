@@ -99,6 +99,7 @@ if [[ -n "$DIR" && ! -d "$DIR" ]]; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
+OUTPUT_WORKDIR=""
 # Track which writers we stopped so cleanup can restart them even on failure.
 BACKUP_STOPPED_UNITS=()
 # A failed run leaves no truncated archive for rotation to count.
@@ -108,7 +109,9 @@ cleanup() {
     systemctl start "$u" 2>/dev/null || true
   done
   rm -rf "$WORKDIR"
-  rm -f "${OUT}.partial"
+  if [[ -n "$OUTPUT_WORKDIR" ]]; then
+    rm -rf "$OUTPUT_WORKDIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -152,9 +155,14 @@ tar -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
 
 mkdir -p "$(dirname "$OUT")"
 echo "[easy-waf-backup] packing → $OUT"
-tar -czf "${OUT}.partial" -C "$WORKDIR" "$TOP"
-chmod 0600 "${OUT}.partial"
-mv -f "${OUT}.partial" "$OUT"
+# Own the staging path, on the output filesystem; never follow a preexisting
+# .partial link or remove another run's files. Replace the final pathname only.
+OUTPUT_WORKDIR="$(mktemp -d "$(dirname "$OUT")/.easy-waf-backup.XXXXXX")"
+ARCHIVE="$OUTPUT_WORKDIR/bundle.tar.gz"
+: >"$ARCHIVE"
+tar -czf "$ARCHIVE" -C "$WORKDIR" "$TOP"
+chmod 0600 "$ARCHIVE"
+mv -fT -- "$ARCHIVE" "$OUT"
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
 echo "[easy-waf-backup] done: $OUT (size $SIZE)"
