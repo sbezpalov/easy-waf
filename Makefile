@@ -1,9 +1,12 @@
-.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help clean clean-artifacts golden-update
+.PHONY: build deb offline-bundle test lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help dev-up clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
 GOLANGCI_LINT_VER ?= v2.15.0
 GOVULNCHECK_VER ?= v1.9.0
+# go run pkg@version otherwise builds the tool with the tool's own go line.
+# golangci-lint refuses to lint a module newer than the Go that built it.
+GO_TOOLCHAIN := go$(shell awk '/^go /{print $$2; exit}' go.mod)
 # Debian package builder. Keep in sync with .github/workflows/release.yml.
 NFPM_VER ?= v2.41.1
 EASY_WAF_VERSION ?= $(shell head -1 VERSION | tr -d '[:space:]')
@@ -13,6 +16,12 @@ EASY_WAF_ARCH ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 # dpkg sorts 1.7.0~rc.1 before 1.7.0, but reads 1.7.0-rc.1 as a later revision of it,
 # so a final release could not replace a release candidate.
 EASY_WAF_DEB_VERSION ?= $(subst -,~,$(EASY_WAF_VERSION))
+
+# One-command dev database. Prints the DATABASE_URL the tests and the API expect.
+# Requires Docker Compose v2. Does not install HAProxy, nftables, or the appliance.
+dev-up:
+	docker compose up -d --wait
+	@echo "export DATABASE_URL='postgres://easywaf:easywaf@127.0.0.1:5432/easywaf?sslmode=disable'"
 
 install-help:
 	@echo "Production install (Ubuntu 24.04 LTS, as root) — plug-and-play:"
@@ -124,7 +133,7 @@ test-body-policy-e2e:
 	bash scripts/test-body-policy-e2e.sh
 
 vuln:
-	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VER) ./...
+	GOTOOLCHAIN=$(GO_TOOLCHAIN) go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VER) ./...
 
 lint:
 	go vet ./...
@@ -132,7 +141,7 @@ lint:
 		golangci-lint run ./... --timeout=5m; \
 	else \
 		echo >&2 "golangci-lint not in PATH; using go run $(GOLANGCI_LINT_VER) (optional install: https://golangci-lint.run/welcome/install/)"; \
-		go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VER) run ./... --timeout=5m; \
+		GOTOOLCHAIN=$(GO_TOOLCHAIN) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VER) run ./... --timeout=5m; \
 	fi
 
 # Same gates as .github/workflows/ci.yml

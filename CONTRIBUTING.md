@@ -57,11 +57,15 @@ touching the store.
 ```bash
 git clone https://github.com/sbezpalov/easy-waf.git
 cd easy-waf
-docker compose up -d          # dev PostgreSQL only
+make dev-up                   # dev PostgreSQL only; prints DATABASE_URL
 export DATABASE_URL='postgres://easywaf:easywaf@127.0.0.1:5432/easywaf?sslmode=disable'
 make build
 ./dist/easy-waf-api -state-dir ./data -listen-http 127.0.0.1:8000 -listen-https 127.0.0.1:8443
 ```
+
+`make dev-up` is `docker compose up -d --wait` against the Compose file in this
+repository. It needs Docker, not a machine-specific checkout or a GitHub
+organization. The Go version is the `go` line in [`go.mod`](go.mod).
 
 Print the one-time enrollment secret to log in — there is no default password:
 
