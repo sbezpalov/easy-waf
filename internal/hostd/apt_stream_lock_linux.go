@@ -15,6 +15,15 @@ import (
 // dpkgLockBusyHook overrides lock detection in tests (linux only).
 var dpkgLockBusyHook func() bool
 
+// setDpkgLockBusyForTest forces the advisory hint. The real probe opens
+// /var/lib/dpkg/lock-frontend for writing, which only root can do, so tests
+// that are not about that file must not consult the host.
+func setDpkgLockBusyForTest(busy bool) func() {
+	prev := dpkgLockBusyHook
+	dpkgLockBusyHook = func() bool { return busy }
+	return func() { dpkgLockBusyHook = prev }
+}
+
 func emitDpkgLockHint(emit func(string) error) {
 	if dpkgLockBusy() {
 		_ = emit("==> apt is locked by another process (apt-daily/unattended-upgrades); waiting up to 120s ...")

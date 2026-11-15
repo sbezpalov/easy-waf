@@ -110,6 +110,7 @@ func TestAptCommandCompletesWhileClientWriteIsBlocked(t *testing.T) {
 }
 
 func TestAptTrackedChildDrainsBothPipesBehindBlockedClient(t *testing.T) {
+	t.Cleanup(setDpkgLockBusyForTest(false))
 	overrideAptActionLogForTest(t)
 	resetAptUpgradeState()
 	executable, _ := commandProcessFixture(t, "burst")
