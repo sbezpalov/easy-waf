@@ -6,6 +6,7 @@ COLLECTOR="${1:-$SCRIPT_DIR/diagnostics.sh}"
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
 real_psql="$(type -P psql || true)"
+real_tar="$(type -P tar)"
 mkdir -p "$ROOT/bin" "$ROOT/state"
 export DIAG_TEST_ARGS="$ROOT/psql-args"
 export DIAG_TEST_PSQL_MODE=ok
@@ -114,4 +115,58 @@ bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
 : >"$EASY_WAF_ENV_FILE"
 bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
 [[ "$(head -n 1 "$DIAG_TEST_ARGS")" == "$DATABASE_URL" ]] || { echo 'FAIL: missing-key process fallback lost' >&2; exit 1; }
-echo 'OK: diagnostics env stays data'
+# Publishing replaces the chosen pathname, never the inode behind a link.
+printf 'private-target\n' >"$ROOT/protected"
+cp "$ROOT/protected" "$ROOT/protected.expected"
+ln "$ROOT/protected" "$ROOT/hardlink.tar.gz"
+bash "$COLLECTOR" "$ROOT/hardlink.tar.gz" >"$ROOT/output" 2>&1
+cmp -s "$ROOT/protected" "$ROOT/protected.expected" || { echo 'FAIL: archive overwrote hardlink target' >&2; exit 1; }
+tar -tzf "$ROOT/hardlink.tar.gz" >/dev/null
+ln -s "$ROOT/protected" "$ROOT/symlink.tar.gz"
+if [[ -L "$ROOT/symlink.tar.gz" ]]; then
+  bash "$COLLECTOR" "$ROOT/symlink.tar.gz" >"$ROOT/output" 2>&1
+  [[ ! -L "$ROOT/symlink.tar.gz" ]] || { echo 'FAIL: archive followed output symlink' >&2; exit 1; }
+  cmp -s "$ROOT/protected" "$ROOT/protected.expected" || { echo 'FAIL: archive changed symlink target' >&2; exit 1; }
+  tar -tzf "$ROOT/symlink.tar.gz" >/dev/null
+  ln -s "$ROOT/absent-target" "$ROOT/dangling.tar.gz"
+  bash "$COLLECTOR" "$ROOT/dangling.tar.gz" >"$ROOT/output" 2>&1
+  [[ ! -e "$ROOT/absent-target" && ! -L "$ROOT/dangling.tar.gz" ]] || { echo 'FAIL: archive followed dangling output symlink' >&2; exit 1; }
+  tar -tzf "$ROOT/dangling.tar.gz" >/dev/null
+else
+  echo 'SKIP: filesystem does not create symlinks'
+fi
+mkdir "$ROOT/output-directory"
+if bash "$COLLECTOR" "$ROOT/output-directory" >"$ROOT/output" 2>&1; then
+  echo 'FAIL: archive accepted a directory as output' >&2; exit 1
+fi
+[[ -z "$(find "$ROOT/output-directory" -mindepth 1 -print)" ]] || { echo 'FAIL: archive moved inside output directory' >&2; exit 1; }
+export DIAG_TEST_REAL_TAR="$real_tar" DIAG_TEST_TAR_MODE=fail
+cat >"$ROOT/bin/tar" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == -czf ]]; then
+  if [[ "$DIAG_TEST_TAR_MODE" == fail ]]; then
+    printf 'incomplete-archive' >"$2"
+    exit 23
+  fi
+  # NTFS Git Bash does not enforce POSIX creation modes. Check them on Linux.
+  if [[ "$(uname -s)" == Linux ]]; then
+    [[ -f "$2" && "$(stat -c %a "$2")" == 600 ]] || exit 24
+    [[ "$(stat -c %a "$(dirname "$2")")" == 700 ]] || exit 25
+  fi
+fi
+exec "$DIAG_TEST_REAL_TAR" "$@"
+MOCK
+chmod 0700 "$ROOT/bin/tar"
+printf 'previous-archive\n' >"$ROOT/bundle.tar.gz"
+if bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1; then
+  echo 'FAIL: tar failure reported success' >&2; exit 1
+fi
+[[ "$(cat "$ROOT/bundle.tar.gz")" == previous-archive ]] || { echo 'FAIL: tar failure damaged previous archive' >&2; exit 1; }
+export DIAG_TEST_TAR_MODE=inspect
+(umask 000; bash "$COLLECTOR" "$ROOT/new.tar.gz" >"$ROOT/output" 2>&1)
+"$real_tar" -tzf "$ROOT/new.tar.gz" >/dev/null
+if [[ "$(uname -s)" == Linux ]]; then
+  [[ "$(stat -c %a "$ROOT/new.tar.gz")" == 640 ]] || { echo 'FAIL: published archive permissions' >&2; exit 1; }
+fi
+[[ -z "$(find "$ROOT" -maxdepth 1 -name '.easy-waf-diag.*' -print)" ]] || { echo 'FAIL: publication staging left behind' >&2; exit 1; }
+echo 'OK: diagnostics env stays data; archive publication preserves targets'

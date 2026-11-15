@@ -8,6 +8,7 @@
 # Default output: /tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz
 
 set -euo pipefail
+umask 077
 
 # Resolve the installed operator symlink, as backup.sh does.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -29,7 +30,13 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-diag.XXXXXX")"
-cleanup() { rm -rf "$WORKDIR"; }
+OUTPUT_WORKDIR=""
+cleanup() {
+  rm -rf "$WORKDIR"
+  if [[ -n "$OUTPUT_WORKDIR" ]]; then
+    rm -rf "$OUTPUT_WORKDIR"
+  fi
+}
 trap cleanup EXIT
 
 TOP="easy-waf-diag-${STAMP}"
@@ -216,8 +223,14 @@ if [[ -f /etc/nftables/easy-waf.nft ]]; then
 fi
 
 mkdir -p "$(dirname "$OUT")"
-tar -czf "$OUT" -C "$WORKDIR" "$TOP"
-chmod 0640 "$OUT" 2>/dev/null || true
+# Build privately on the destination filesystem. Rename replaces the selected
+# pathname (including a symlink/hardlink) without truncating its old target.
+OUTPUT_WORKDIR="$(mktemp -d "$(dirname "$OUT")/.easy-waf-diag.XXXXXX")"
+ARCHIVE="$OUTPUT_WORKDIR/bundle.tar.gz"
+: >"$ARCHIVE"
+tar -czf "$ARCHIVE" -C "$WORKDIR" "$TOP"
+chmod 0640 "$ARCHIVE"
+mv -fT -- "$ARCHIVE" "$OUT"
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
 echo "[easy-waf-diagnostics] wrote $OUT (size $SIZE)"

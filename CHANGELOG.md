@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Private diagnostic archive publication.** The root collector constructs archives privately and sets permissions before publication. Replacing an output no longer follows its final symlink or truncates a hardlinked target; archive creation failures preserve the previous output.
+
 - **Credential-safe SQL diagnostics.** Root support collection discards raw libpq errors/warnings and failed partial output, which can expose password tokens from malformed DSNs. Failed revision probes retain only a static message and exit code and never prompt for a password.
 
 - **Multiline diagnostic secrets.** API process snapshots mask entries before flattening, and root/API file copies redact complete quoted or continued sensitive values. Continuation text no longer leaks into support archives; non-secret process newlines are escaped to preserve entry boundaries.

@@ -9,6 +9,13 @@ Two ways to collect a support bundle:
 
 Default tarball path for the **root** script: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz` (override with first argument).
 
+The root script builds the archive in a private temporary directory beside the
+output, sets mode `0640`, then publishes it by renaming. An existing output is
+replaced only after successful construction; a final symlink is replaced rather
+than followed, and hardlinked files retain their old contents through other
+names. Use an output directory you trust. Interrupted construction leaves the
+previous output intact; temporary staging is removed on normal exit or failure.
+
 The root collector reads `DATABASE_URL` from the selected environment file as
 data, preserving literal characters without executing shell statements or
 exporting unrelated entries. An explicitly empty value skips SQL collection; a
