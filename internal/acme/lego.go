@@ -69,6 +69,23 @@ func registerLegoClientTimeout(email, accountKeyPath string, staging bool, timeo
 	return user, client, nil
 }
 
+// legoCertificateTimeout is Lego's own wait. DNS-01 propagation checks need
+// about a minute, and Lego's Obtain does not take a context, so a shorter
+// remaining budget is raised to one minute inside the SDK. That value does
+// not move the issue child's exit timer: serveIssueChild still calls
+// os.Exit when the request deadline is reached.
+func legoCertificateTimeout(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return 0
+	}
+	timeout := time.Until(deadline)
+	if timeout < time.Minute {
+		return time.Minute
+	}
+	return timeout
+}
+
 // obtainWithContext runs synchronously inside the owned issue child. Lego has
 // no Obtain context; the parent and child's process deadline bound the entire
 // operation rather than abandoning a goroutine during a noncancelable SDK wait.
@@ -106,14 +123,7 @@ func IssueHTTP01Webroot(ctx context.Context, email string, domains []string, web
 		return nil, err
 	}
 
-	timeout := time.Duration(0)
-	if dl, ok := ctx.Deadline(); ok {
-		timeout = time.Until(dl)
-		if timeout < time.Minute {
-			timeout = time.Minute
-		}
-	}
-	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, timeout)
+	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, legoCertificateTimeout(ctx))
 	if err != nil {
 		return nil, err
 	}

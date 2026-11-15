@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge"
@@ -46,14 +45,7 @@ func IssueDNS01(ctx context.Context, email string, domains []string, staging boo
 		return nil, err
 	}
 
-	timeout := time.Duration(0)
-	if dl, ok := ctx.Deadline(); ok {
-		timeout = time.Until(dl)
-		if timeout < time.Minute {
-			timeout = time.Minute
-		}
-	}
-	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, timeout)
+	user, client, err := registerLegoClientTimeout(email, accountKeyPath, staging, legoCertificateTimeout(ctx))
 	if err != nil {
 		return nil, err
 	}
