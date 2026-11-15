@@ -29,6 +29,10 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh" || exit 1
+
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 ENV_FILE="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
 API_BASE="${EASY_WAF_API_BASE:-https://127.0.0.1:8443}"
@@ -76,12 +80,16 @@ command -v curl &>/dev/null || {
 SMOKE_TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_TMPDIR"' EXIT
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
-
+# The systemd EnvironmentFile is data, not shell code. Import only the token
+# needed here; CLI probes receive the chosen file explicitly. Keep test-control
+# flags in the invoking environment rather than importing arbitrary file keys.
 legacy_token="${EASY_WAF_ADMIN_TOKEN:-}"
+if grep -q '^EASY_WAF_ADMIN_TOKEN=' "$ENV_FILE"; then
+  legacy_token="$(easy_waf_read_env_value "$ENV_FILE" EASY_WAF_ADMIN_TOKEN)"
+elif [[ "$?" != 1 ]]; then
+  echo "ERROR: cannot read env file" >&2
+  exit 1
+fi
 api_token="$legacy_token"
 session_jwt=""
 step_up_jwt=""
@@ -204,7 +212,7 @@ fi
 
 section "appliance diagnostics (easy-waf-admin doctor)"
 if [[ -x "$ADMIN_BIN" ]]; then
-  if "$ADMIN_BIN" doctor >"${SMOKE_TMPDIR}/doctor" 2>&1; then
+  if "$ADMIN_BIN" doctor -env-file "$ENV_FILE" -state-dir "$STATE" >"${SMOKE_TMPDIR}/doctor" 2>&1; then
     pass "doctor reported no failures"
   else
     fail "doctor reported problems:"

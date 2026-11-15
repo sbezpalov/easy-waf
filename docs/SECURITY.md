@@ -112,6 +112,14 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Supply chain
 
+`smoke-appliance.sh` treats the appliance environment file as data, matching the
+backup/restore parser. It reads only the legacy API token, preserving literal
+characters and explicit empty values; the doctor CLI receives the selected
+env-file/state-dir directly. Smoke control flags and optional operator credentials
+must come from the invoking environment, not executable statements in that file.
+The offline `test-smoke-env.sh` regression uses stand-in probes and does not
+establish real appliance acceptance.
+
 Tarball downloads are authenticated before unpacking. The installer and download
 helper validate gzip/tar and stage all four required nonempty binaries (API,
 ACME, hostd and admin) before replacing destination files. Missing, duplicate or

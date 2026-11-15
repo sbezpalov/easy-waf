@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Data-only smoke configuration.** Appliance smoke checks no longer execute the environment file as shell code. Legacy tokens remain literal, and doctor receives the selected env/state paths explicitly; test-control flags come from the invoking environment.
 - **Explicit installer source-build permission.** A known release with missing `curl` now fails before touching build tools unless `EASY_WAF_BUILD_FROM_SOURCE=1` is set; missing download capability no longer silently enters the development-build path.
 - **Complete tarball staging.** Installer/download paths validate and stage all required binaries before promotion, reject corrupt or incomplete archives and no longer suppress extraction errors. Existing incomplete local distributions cannot silently satisfy acquisition.
 - **Unambiguous artifact checksums.** Verification requires one exact-case artifact entry with a valid SHA-256 digest; duplicate, conflicting and malformed records fail closed instead of selecting the first match.
