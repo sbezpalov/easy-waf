@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Data-only backup E2E input.** The opt-in backup/reset/restore driver imports only its literal database DSN. Appliance env entries cannot execute shell code, export unrelated credentials or change its selected state and recovery variables; mocked success/failure regressions cover this behavior.
 - **Bounded installer configuration import.** Settings sync and nftables repair read only their required environment keys as data, preserving literal credentials and explicit empty values. Sync cannot change the installer's own variables; repair also accepts `EASY_WAF_ENV_FILE` for an explicitly selected configuration.
 - **Data-only diagnostic configuration.** Root support collection reads the database DSN literally and no longer executes or exports arbitrary appliance environment entries. Package and source installations resolve the collector's shared parser through the operator symlink.
 - **Data-only smoke configuration.** Appliance smoke checks no longer execute the environment file as shell code. Legacy tokens remain literal, and doctor receives the selected env/state paths explicitly; test-control flags come from the invoking environment.

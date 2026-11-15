@@ -24,6 +24,8 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 ENV_FILE="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
@@ -76,10 +78,7 @@ json_escape() {
 command -v curl &>/dev/null || die "curl required"
 command -v psql &>/dev/null || die "psql required"
 [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE"
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+easy_waf_export_env_keys "$ENV_FILE" DATABASE_URL || die "cannot read DATABASE_URL from env file"
 [[ -n "${DATABASE_URL:-}" ]] || die "DATABASE_URL not set in $ENV_FILE"
 [[ ! -e "$BACKUP_PATH" && ! -L "$BACKUP_PATH" ]] \
   || die "refusing to overwrite existing backup path: $BACKUP_PATH"

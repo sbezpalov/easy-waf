@@ -9,7 +9,10 @@ TEST_ROOT="$(command mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 id() { printf '0\n'; }
-psql() { printf '0\n'; }
+psql() {
+  [[ "$1" == "$TEST_EXPECTED_DSN" && -z "${E2E_UNUSED_SECRET+x}" ]] || return 92
+  printf '0\n'
+}
 systemctl() { :; }
 chown() { :; }
 sleep() { :; }
@@ -96,7 +99,11 @@ for destination in default explicit; do
     export EASY_WAF_ENV_FILE="$TEST_CASE/appliance.env"
     export EASY_WAF_E2E_CERT_PEM="$TEST_CASE/source.pem"
     export EASY_WAF_ADMIN_BIN="$TEST_CASE/admin"
-    printf 'DATABASE_URL=test-only\n' >"$EASY_WAF_ENV_FILE"
+    export TEST_EXPECTED_DSN="postgres://fixture:literal-\$not_expanded@fixture.invalid/db"
+    export not_expanded='must-stay-literal'
+    unset E2E_UNUSED_SECRET
+    printf 'UNUSED=%s\nE2E_UNUSED_SECRET=fixture-only\nDATABASE_URL="%s"\nSTATE="%s"\n' \
+      "\$(touch \"$TEST_CASE/env-executed\")" "$TEST_EXPECTED_DSN" "$TEST_CASE/incorrect-state" >"$EASY_WAF_ENV_FILE"
     printf 'test certificate\n' >"$EASY_WAF_E2E_CERT_PEM"
     printf '#!/bin/bash\n# Mock executable; factory-reset is intercepted by env().\n' >"$EASY_WAF_ADMIN_BIN"
     chmod +x "$EASY_WAF_ADMIN_BIN"
@@ -107,6 +114,7 @@ for destination in default explicit; do
     export RUN_BACKUP_RESTORE_E2E=1 EASY_WAF_E2E_USERNAME=test EASY_WAF_E2E_PASSWORD=test
     status=0
     "$BASH" "$SCRIPT_DIR/test-backup-restore.sh" >"$TEST_CASE/output" 2>&1 || status=$?
+    [[ ! -e "$TEST_CASE/env-executed" ]] || { echo 'FAIL: backup driver executed env file'; exit 1; }
     backup="$(<"$TEST_CASE/backup-path")"
     temp_dir="$(<"$TEST_CASE/temp-dir")"
     if [[ "$FAIL_AT" == none ]]; then
