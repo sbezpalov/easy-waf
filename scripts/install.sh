@@ -564,6 +564,11 @@ acquire_dist_binaries() {
   local ver
   ver="$(easy_waf_target_version)"
 
+  if [[ -n "$ver" ]] && ! command -v curl &>/dev/null &&
+    [[ "${EASY_WAF_BUILD_FROM_SOURCE:-0}" != "1" ]]; then
+    die "curl is required to fetch release v${ver}; install curl or provide complete EASY_WAF_DIST_DIR binaries (source builds require EASY_WAF_BUILD_FROM_SOURCE=1)"
+  fi
+
   if [[ -n "$ver" ]] && command -v curl &>/dev/null; then
     # shellcheck source=lib/github-repo.sh
     source "${SCRIPT_DIR}/lib/github-repo.sh"
@@ -621,7 +626,11 @@ EOF
     fi
     log "EASY_WAF_BUILD_FROM_SOURCE=1 — building v${ver} from source on this host..."
   else
-    log "No public release version (see VERSION / EASY_WAF_RELEASE_VERSION) — building from source..."
+    if [[ -n "$ver" ]]; then
+      log "curl unavailable; EASY_WAF_BUILD_FROM_SOURCE=1 explicitly permits building v${ver} from source..."
+    else
+      log "No public release version (see VERSION / EASY_WAF_RELEASE_VERSION) — building from source..."
+    fi
   fi
 
   [[ -f "${REPO_ROOT}/Makefile" ]] || die "No Makefile in $REPO_ROOT — clone full repo or set EASY_WAF_DIST_DIR to pre-built binaries"

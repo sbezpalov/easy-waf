@@ -96,4 +96,25 @@ bash "$SCRIPT_DIR/download-release.sh" >/dev/null || fail 'versioned downloader 
 for binary in "${required[@]}"; do
   [[ "$(cat "$DIST_DIR/$binary")" == "new $binary" ]] || fail "downloader did not publish $binary"
 done
+
+# A missing download capability is not permission to install a compiler. Model
+# that host without removing tools from the developer's machine or real PATH.
+for binary in "${required[@]}"; do rm "$DIST_DIR/$binary"; done
+: >"$REPO_ROOT/Makefile"
+command() {
+  if [[ "${1:-}" == -v && "${2:-}" == curl ]]; then return 1; fi
+  builtin command "$@"
+}
+easy_waf_apt_get_update() { : >"$ROOT/toolchain-attempt"; }
+apt-get() { return 0; }
+easy_waf_go_version_meets() { return 0; }
+go() { return 0; }
+make() { return 1; }
+export EASY_WAF_INSTALL_BUILD_DEPS=1
+export EASY_WAF_PKG_MGR=apt
+if (acquire_dist_binaries) >/dev/null 2>&1; then fail 'missing curl unexpectedly succeeded'; fi
+[[ ! -e "$ROOT/toolchain-attempt" ]] || fail 'missing curl implicitly enabled source build'
+export EASY_WAF_BUILD_FROM_SOURCE=1
+(acquire_dist_binaries) >/dev/null 2>&1 || true # fixture make deliberately fails
+[[ -e "$ROOT/toolchain-attempt" ]] || fail 'explicit source build was not honored'
 echo 'OK: release unpack checks passed'
