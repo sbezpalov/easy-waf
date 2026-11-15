@@ -112,6 +112,11 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Supply chain
 
+`diagnostics.sh` also reads only its required DSN as data instead of sourcing
+the root environment file. It does not export other file entries to probes.
+The offline `test-diagnostics-env.sh` uses stand-in host/database commands;
+it does not establish live appliance or database acceptance.
+
 `smoke-appliance.sh` treats the appliance environment file as data, matching the
 backup/restore parser. It reads only the legacy API token, preserving literal
 characters and explicit empty values; the doctor CLI receives the selected

@@ -697,7 +697,10 @@ install_binaries() {
     found=1
   fi
   if [[ -f "${REPO_ROOT}/scripts/diagnostics.sh" ]]; then
-    install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" "/usr/sbin/easy-waf-diagnostics"
+    install -d -m 0755 /usr/share/easy-waf/scripts/lib
+    install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" /usr/share/easy-waf/scripts/diagnostics.sh
+    install -m 0644 "${REPO_ROOT}/scripts/lib/env-file.sh" /usr/share/easy-waf/scripts/lib/
+    ln -sfn /usr/share/easy-waf/scripts/diagnostics.sh /usr/sbin/easy-waf-diagnostics
     log "Installed /usr/sbin/easy-waf-diagnostics (support bundle — run as root, see docs/DIAGNOSTICS.md)"
   fi
   if [[ -f "${REPO_ROOT}/scripts/backup.sh" ]]; then

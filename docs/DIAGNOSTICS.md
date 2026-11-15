@@ -9,6 +9,13 @@ Two ways to collect a support bundle:
 
 Default tarball path for the **root** script: `/tmp/easy-waf-diag-YYYYMMDD-HHMMSS.tar.gz` (override with first argument).
 
+The root collector reads `DATABASE_URL` from the selected environment file as
+data, preserving literal characters without executing shell statements or
+exporting unrelated entries. An explicitly empty value skips SQL collection; a
+missing key keeps an existing process `DATABASE_URL`. Both package and source
+installation keep the script beside its shared parser under
+`/usr/share/easy-waf/scripts`, with `/usr/sbin/easy-waf-diagnostics` as a symlink.
+
 ## What is inside (both bundles, roughly)
 
 Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/`, `config/`, `validation/`, `sql/`, `firewall/`):

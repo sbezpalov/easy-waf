@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# Resolve the installed operator symlink, as backup.sh does.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck source=lib/env-file.sh
+source "${SCRIPT_DIR}/lib/env-file.sh"
+
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 ENV_FILE="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -140,16 +145,18 @@ fi
 
 # --- (f) SQL via psql ---
 if command -v psql &>/dev/null && [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  set -a
-  # shellcheck source=/dev/null
-  source "$ENV_FILE" || true
-  set +a
-  if [[ -n "${DATABASE_URL:-}" ]]; then
-    psql "$DATABASE_URL" -X -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
+  database_url="${DATABASE_URL:-}"
+  if grep -q '^DATABASE_URL=' "$ENV_FILE"; then
+    database_url="$(easy_waf_read_env_value "$ENV_FILE" DATABASE_URL)"
+  elif [[ "$?" != 1 ]]; then
+    echo "Cannot read env file" >"$ROOT/sql/config_revisions.err"
+    database_url=""
+  fi
+  if [[ -n "$database_url" ]]; then
+    psql "$database_url" -X -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
       >"$ROOT/sql/config_revisions.txt" 2>"$ROOT/sql/config_revisions.err" || true
   else
-    echo "DATABASE_URL not set after sourcing $ENV_FILE" >"$ROOT/sql/config_revisions.err"
+    echo "DATABASE_URL unavailable or empty" >>"$ROOT/sql/config_revisions.err"
   fi
 else
   echo "psql not installed or env file missing" >"$ROOT/sql/config_revisions.err"

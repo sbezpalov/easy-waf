@@ -60,8 +60,11 @@ contents:
     dst: /usr/sbin/easy-waf-admin
     file_info: { mode: 0755 }
   - src: scripts/diagnostics.sh
-    dst: /usr/sbin/easy-waf-diagnostics
+    dst: /usr/share/easy-waf/scripts/diagnostics.sh
     file_info: { mode: 0755 }
+  - src: /usr/share/easy-waf/scripts/diagnostics.sh
+    dst: /usr/sbin/easy-waf-diagnostics
+    type: symlink
   # backup.sh sources its libraries next to itself; easy-waf-backup.service
   # runs it from here, the link is for the operator.
   - src: scripts/backup.sh
