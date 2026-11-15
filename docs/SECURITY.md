@@ -112,6 +112,15 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Supply chain
 
+Tarball downloads are authenticated before unpacking. The installer and download
+helper validate gzip/tar and stage all four required nonempty binaries (API,
+ACME, hostd and admin) before replacing destination files. Missing, duplicate or
+corrupt components fail without promoting a partial archive. Both flat and
+`dist/` layouts are supported; other archive paths are not extracted into the
+checkout. This staging is not a crash-atomic upgrade of running services; use the
+normal Debian package path for appliance delivery. Prebuilt local distributions
+and `EASY_WAF_SKIP_BINARY_FETCH=1` also require the complete four-binary set.
+
 - Build binaries in **reproducible** CI; publish **SHA256** checksums with releases. `release.yml` uploads **`SHA256SUMS`** next to every release tarball.
 - **Downloads are verified, not just TLS-protected.** `scripts/install.sh` and `scripts/download-release.sh` fetch `SHA256SUMS` from the same release and refuse any artifact whose digest is missing or does not match — release binaries are installed to `/usr/sbin` as root, so a typosquatted `EASY_WAF_GITHUB_REPO`, a poisoned asset or a TLS-stripping proxy would otherwise mean root code execution. The manifest must contain exactly one two-field record for the exact, case-sensitive artifact name and a 64-digit hexadecimal SHA-256; duplicate or malformed matching entries are rejected. On failure the installer **stops** — since 1.4.0 it no longer falls back to compiling on the appliance, because an artifact that will not verify means the release is missing, the repository is wrong, or something other than GitHub answered, and none of those is a reason to install a Go toolchain on a machine that terminates TLS. `EASY_WAF_BUILD_FROM_SOURCE=1` opts back in.
   - **`SHA256SUMS` is signed.** It sits next to what it describes, so alone it catches corruption, not a replaced release. `release.yml` signs it with cosign, keyless, and publishes `SHA256SUMS.sigstore.json`; the signature must name this repository's release workflow at the exact tag in the versioned download URL. The installer requires a valid cosign signature when verifying GitHub releases. Ubuntu does not package `cosign`; install it or set `EASY_WAF_ALLOW_UNSIGNED_SUMS=1` to allow checksum-only verification of a remote sums file (logged). An explicit local `SHA256SUMS` path used by dev/offline installs is checksum-only; its authenticity depends on how those local files were obtained. To verify by hand: `cosign verify-blob --bundle SHA256SUMS.sigstore.json --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity 'https://github.com/<owner>/<repo>/.github/workflows/release.yml@refs/tags/v<version>' SHA256SUMS`.

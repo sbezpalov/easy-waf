@@ -549,14 +549,14 @@ acquire_dist_binaries() {
 
   mkdir -p "${REPO_ROOT}/dist"
 
-  if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
+  if [[ -f "${DIST_DIR}/easy-waf-api" && -f "${DIST_DIR}/easy-waf-acmed" &&
+        -f "${DIST_DIR}/easy-waf-hostd" && -f "${DIST_DIR}/easy-waf-admin" ]]; then
     log "Using existing binaries: $DIST_DIR/easy-waf-api"
     return 0
   fi
 
   if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
-    log "EASY_WAF_SKIP_BINARY_FETCH=1 — place easy-waf-api in EASY_WAF_DIST_DIR=$DIST_DIR"
-    return 0
+    die "EASY_WAF_SKIP_BINARY_FETCH=1 requires easy-waf-api, easy-waf-acmed, easy-waf-hostd and easy-waf-admin in EASY_WAF_DIST_DIR=$DIST_DIR"
   fi
 
   DIST_DIR="${REPO_ROOT}/dist"
@@ -578,26 +578,19 @@ acquire_dist_binaries() {
     local url="${base}/${name}"
     # shellcheck source=lib/release-verify.sh
     source "${SCRIPT_DIR}/lib/release-verify.sh"
+    # shellcheck source=lib/release-unpack.sh
+    source "${SCRIPT_DIR}/lib/release-unpack.sh"
     local tmpd tgz
     tmpd="$(mktemp -d)" || die "mktemp -d failed"
     tgz="${tmpd}/${name}"
     log "Trying GitHub release download: $url"
     # Binaries land in /usr/sbin as root: never unpack an artifact we could not verify.
     if easy_waf_curl_https -o "$tgz" "$url" 2>/dev/null &&
-      easy_waf_verify_release_artifact "$tgz" "$name" "${base}/SHA256SUMS"; then
-      tar -xzf "$tgz" -C "$DIST_DIR" 2>/dev/null || tar -xzf "$tgz" -C "$DIST_DIR" --strip-components=1 2>/dev/null || true
-      # GitHub release tarball layout: dist/<binaries> (see .github/workflows/release.yml)
-      if [[ -f "${DIST_DIR}/dist/easy-waf-api" ]]; then
-        for b in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
-          [[ -f "${DIST_DIR}/dist/${b}" ]] && mv -f "${DIST_DIR}/dist/${b}" "${DIST_DIR}/"
-        done
-        rmdir "${DIST_DIR}/dist" 2>/dev/null || true
-      fi
+      easy_waf_verify_release_artifact "$tgz" "$name" "${base}/SHA256SUMS" &&
+      easy_waf_unpack_release "$tgz" "$DIST_DIR"; then
       rm -rf "$tmpd"
-      if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
-        log "Downloaded and verified release v${ver} → $DIST_DIR"
-        return 0
-      fi
+      log "Downloaded and verified release v${ver} → $DIST_DIR"
+      return 0
     fi
     rm -rf "$tmpd"
     # A released version with no verified artifact is a supply-chain event, not a

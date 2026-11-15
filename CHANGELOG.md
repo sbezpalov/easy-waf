@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Complete tarball staging.** Installer/download paths validate and stage all required binaries before promotion, reject corrupt or incomplete archives and no longer suppress extraction errors. Existing incomplete local distributions cannot silently satisfy acquisition.
 - **Unambiguous artifact checksums.** Verification requires one exact-case artifact entry with a valid SHA-256 digest; duplicate, conflicting and malformed records fail closed instead of selecting the first match.
 - **Release-specific signature trust.** Download verification now requires the exact release-workflow identity for the requested version tag, rather than accepting any `v*` signing tag from that repository. Unversioned URLs require an explicit checksum-only override.
 - **Release validation gate.** Tag builds call same-commit CI with read-only permissions before building, signing or publishing artifacts. Offline bundles remain transitively gated; failed or skipped validation cannot publish through the normal workflow.

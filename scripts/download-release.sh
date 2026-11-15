@@ -5,7 +5,7 @@
 #   export GITHUB_REPOSITORY=org/easy-waf   # optional
 #   bash scripts/download-release.sh
 #
-# If EASY_WAF_RELEASE_URL is set, it is used directly (must point to a .tar.gz with dist/ or linux-amd64 binaries).
+# If EASY_WAF_RELEASE_URL is set, it must contain dist/ or flat release binaries.
 #
 # Integrity: the GitHub path authenticates the release workflow's Sigstore bundle,
 # then verifies the tarball against SHA256SUMS from the same release.
@@ -20,18 +20,11 @@ mkdir -p "$DIST"
 
 # shellcheck source=lib/release-verify.sh
 source "${SCRIPT_DIR}/lib/release-verify.sh"
+# shellcheck source=lib/release-unpack.sh
+source "${SCRIPT_DIR}/lib/release-unpack.sh"
 
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
-
-promote_binaries() {
-  if [[ -f "${DIST}/dist/easy-waf-api" ]]; then
-    for b in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
-      [[ -f "${DIST}/dist/${b}" ]] && mv -f "${DIST}/dist/${b}" "${DIST}/"
-    done
-    rmdir "${DIST}/dist" 2>/dev/null || true
-  fi
-}
 
 if [[ -n "${EASY_WAF_RELEASE_URL:-}" ]]; then
   echo "Downloading $EASY_WAF_RELEASE_URL"
@@ -45,8 +38,7 @@ if [[ -n "${EASY_WAF_RELEASE_URL:-}" ]]; then
     log_relv "refusing unverified artifact: set EASY_WAF_RELEASE_SHA256=<hex> (or EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1)"
     exit 1
   fi
-  tar -xzf "$TGZ" -C "$DIST" --strip-components=0 2>/dev/null || tar -xzf "$TGZ" -C "$DIST"
-  promote_binaries
+  easy_waf_unpack_release "$TGZ" "$DIST"
   echo "Extracted into $DIST"
   exit 0
 fi
@@ -69,6 +61,5 @@ easy_waf_curl_https -o "$TGZ" "$URL" || {
   exit 1
 }
 easy_waf_verify_release_artifact "$TGZ" "$NAME" "${BASE}/SHA256SUMS" || exit 1
-tar -xzf "$TGZ" -C "$DIST"
-promote_binaries
+easy_waf_unpack_release "$TGZ" "$DIST"
 echo "Binaries in $DIST"
