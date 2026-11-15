@@ -47,13 +47,31 @@ SUMS="${TMPD}/SHA256SUMS"
   printf '%s  other-artifact.tar.gz\n' "$(printf 'a%.0s' {1..64})"
   printf '%s *%s\n' "$DIGEST" "$NAME"
 } >"$SUMS"
-parsed="$(awk -v n="$NAME" '{ f=$NF; sub(/^\*/,"",f); if (tolower(f)==tolower(n)) { print tolower($1); exit } }' "$SUMS")"
-[[ "$parsed" == "$DIGEST" ]] || fail "SHA256SUMS parsing picked '$parsed' instead of '$DIGEST'"
-
 # 5a. local absolute SHA256SUMS path (dist/ offline / local .deb installs)
 if ! easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" >/dev/null 2>&1; then
   fail "local SHA256SUMS path rejected a matching artifact"
 fi
+
+# Exercise the real verifier, not a second copy of its manifest parser.
+for layout in text binary; do
+  marker=''
+  [[ "$layout" != binary ]] || marker='*'
+  printf '%s  %s%s\n' "$(printf '%s' "$DIGEST" | tr '[:lower:]' '[:upper:]')" "$marker" "$NAME" >"$SUMS"
+  easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" >/dev/null || fail "$layout manifest rejected"
+done
+for malformed in duplicate conflicting extra-field casefold short-digest; do
+  case "$malformed" in
+    duplicate) printf '%s  %s\n%s  %s\n' "$DIGEST" "$NAME" "$DIGEST" "$NAME" >"$SUMS" ;;
+    conflicting) printf '%s  %s\n%s  %s\n' "$DIGEST" "$NAME" "$(printf '0%.0s' {1..64})" "$NAME" >"$SUMS" ;;
+    extra-field) printf '%s extra %s\n' "$DIGEST" "$NAME" >"$SUMS" ;;
+    casefold) printf '%s  %s\n' "$DIGEST" "$(printf '%s' "$NAME" | tr '[:lower:]' '[:upper:]')" >"$SUMS" ;;
+    short-digest) printf 'abcd  %s\n' "$NAME" >"$SUMS" ;;
+  esac
+  if easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" >/dev/null 2>&1; then
+    fail "$malformed manifest accepted"
+  fi
+done
+printf '%s  %s\n' "$DIGEST" "$NAME" >"$SUMS"
 # 5b. fail-closed when SHA256SUMS cannot be fetched
 if easy_waf_verify_release_artifact "$ART" "$NAME" "https://127.0.0.1:1/SHA256SUMS" >/dev/null 2>&1; then
   fail "missing SHA256SUMS accepted (must fail closed)"

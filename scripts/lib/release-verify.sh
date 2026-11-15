@@ -124,9 +124,23 @@ easy_waf_verify_release_artifact() {
   fi
   if [[ "$rc" -eq 0 ]]; then
     # Accept both "<hash>  name" and "<hash> *name" (sha256sum binary mode).
-    expected="$(awk -v n="$name" '{ f=$NF; sub(/^\*/,"",f); if (tolower(f)==tolower(n)) { print tolower($1); exit } }' "$sums")"
-    if [[ -z "$expected" ]]; then
-      log_relv "no SHA256SUMS entry for $name"
+    # Linux artifact names are case-sensitive. Never choose a first match from
+    # an ambiguous manifest or treat extra fields as part of a valid record.
+    if ! expected="$(awk -v n="$name" '
+      {
+        f=$2; sub(/^\*/, "", f)
+        if (f == n) {
+          matches++
+          if (NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-fA-F]+$/) bad=1
+          digest=tolower($1)
+        }
+      }
+      END {
+        if (matches != 1 || bad) exit 1
+        print digest
+      }
+    ' "$sums")"; then
+      log_relv "SHA256SUMS must contain exactly one valid entry for $name"
       rc=1
     else
       easy_waf_verify_sha256 "$file" "$expected" || rc=1
