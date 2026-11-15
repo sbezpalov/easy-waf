@@ -32,7 +32,7 @@ var sandboxKeys = []string{
 }
 
 func TestUnprivilegedUnitsAreSandboxed(t *testing.T) {
-	for _, name := range []string{"easy-waf-api.service", "easy-waf-acmed.service"} {
+	for _, name := range []string{"easy-waf-api.service", "easy-waf-acmed.service", "easy-wafd.service"} {
 		body, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -42,6 +42,22 @@ func TestUnprivilegedUnitsAreSandboxed(t *testing.T) {
 			if !strings.Contains(text, key) {
 				t.Errorf("%s is missing %s", name, key)
 			}
+		}
+	}
+}
+
+func TestLegacyDaemonUnitIsNotPackaged(t *testing.T) {
+	body, err := os.ReadFile("../nfpm.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		trim := strings.TrimSpace(line)
+		if trim == "" || strings.HasPrefix(trim, "#") {
+			continue
+		}
+		if strings.Contains(trim, "easy-wafd") {
+			t.Fatalf("legacy control-plane copy is packaged: %s", trim)
 		}
 	}
 }

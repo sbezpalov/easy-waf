@@ -11,11 +11,30 @@ EnvironmentFile=-/etc/easy-waf/easy-waf.env
 # See easy-waf-api.service: avoid ${VAR:-default} in ExecStart; config via EnvironmentFile.
 ExecStart=/usr/sbin/easy-waf-api
 Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30s
 AmbientCapabilities=
+CapabilityBoundingSet=
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# Same sandbox as easy-waf-api.service. This unit is not installed by the
+# package; an old appliance that still has it enabled must not be the
+# weaker copy. /run stays writable for D-Bus.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
 ReadWritePaths=/var/lib/easy-waf /run
 StateDirectory=easy-waf
 
