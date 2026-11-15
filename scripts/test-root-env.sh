@@ -45,7 +45,8 @@ cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'sync changed literal value
 (
   rm "$ROOT_ENV_TEST_RESULT"
   # Called by the real sync function loaded through eval above.
-  # shellcheck disable=SC2329
+  # 0.9 flags the body; newer ShellCheck flags the definition.
+  # shellcheck disable=SC2317,SC2329
   easy_waf_export_env_keys() { return 1; }
   if easy_waf_sync_settings_to_db >"$ROOT/read-failure-log" 2>&1; then
     fail 'sync accepted failed env read'
