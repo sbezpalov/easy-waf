@@ -16,7 +16,15 @@ env:
   GOFLAGS: -buildvcs=false
 
 jobs:
+  # Local reusable workflow resolves at this tag's commit, not moving main.
+  # Validation does not need the publishing or signing permissions below.
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build-and-release:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

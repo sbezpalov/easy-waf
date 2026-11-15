@@ -4,6 +4,7 @@ name: CI
 # runs-on is the GitHub-hosted VM; job environment is container: ubuntu:24.04.
 
 on:
+  workflow_call:
   push:
     branches: [main, dev]
   pull_request:

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Release validation gate.** Tag builds call same-commit CI with read-only permissions before building, signing or publishing artifacts. Offline bundles remain transitively gated; failed or skipped validation cannot publish through the normal workflow.
 - **Expired certificate priority.** Eligible expired certificates are claimed before still-valid renewals and other due work, without bypassing retry backoff or active claims; remaining work retains FIFO ordering.
 - **Concurrent certificate requests.** Issue/renew requests now update only issuance options and retry state with a row-version check. Concurrent completion/deletion returns HTTP 409 instead of overwriting generated PEM metadata or recreating a deleted certificate.
 - **ACME queue admission.** A synchronous worker claims only the certificate it can start now, preventing long issuance from stranding preclaimed rows until the stale-claim window expires.
