@@ -203,7 +203,7 @@ func (s *Server) metricsHandler() http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "metrics token required"})
 			return
 		}
-		raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		raw := auth.AuthorizationCredential(r.Header.Get("Authorization"))
 		if !metricsToken.Matches(raw) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return

@@ -22,8 +22,7 @@ func Session(st *store.Store, jwtSecret []byte) func(http.Handler) http.Handler 
 	legacy := loadLegacyToken()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			raw = strings.TrimSpace(raw)
+			raw := AuthorizationCredential(r.Header.Get("Authorization"))
 			if raw == "" {
 				jsonErr(w, http.StatusUnauthorized, "unauthorized")
 				return
