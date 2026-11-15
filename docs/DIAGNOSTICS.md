@@ -39,6 +39,10 @@ Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/
 - **config/crt-list-filenames.txt** — **only basenames** of paths from `crt-list.txt` (no PEM contents).
 - **validation/** — `haproxy -vv` and `haproxy -c -f …` output.
 - **sql/config_revisions.txt** — last **5** revisions: `id`, `haproxy_sha256` (as `sha256`), `at` (as `created_at`). Root script uses `psql`; API uses the application DB pool (same data on a normal appliance).
+  The root probe is noninteractive. Raw `psql` errors/warnings are excluded
+  because libpq may echo credentials from a malformed connection string.
+  On failure, partial SQL output is discarded and `config_revisions.err`
+  contains a static message with the exit code; investigate details locally.
 - **firewall/** — `nft list ruleset` when available (includes `/etc/nftables/easy-waf.nft` when loaded).
 
 ## What is NOT included

@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Credential-safe SQL diagnostics.** Root support collection discards raw libpq errors/warnings and failed partial output, which can expose password tokens from malformed DSNs. Failed revision probes retain only a static message and exit code and never prompt for a password.
+
 - **Multiline diagnostic secrets.** API process snapshots mask entries before flattening, and root/API file copies redact complete quoted or continued sensitive values. Continuation text no longer leaks into support archives; non-secret process newlines are escaped to preserve entry boundaries.
 
 - **Bearer scheme is case-insensitive.** Session and metrics authentication accept `bearer` as well as `Bearer`, per RFC 6750. A header with no scheme still works.

@@ -5,8 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COLLECTOR="${1:-$SCRIPT_DIR/diagnostics.sh}"
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
+real_psql="$(type -P psql || true)"
 mkdir -p "$ROOT/bin" "$ROOT/state"
 export DIAG_TEST_ARGS="$ROOT/psql-args"
+export DIAG_TEST_PSQL_MODE=ok
 cat >"$ROOT/bin/id" <<'MOCK'
 #!/usr/bin/env bash
 printf '0\n'
@@ -15,6 +17,16 @@ cat >"$ROOT/bin/psql" <<'MOCK'
 #!/usr/bin/env bash
 [[ -z "${DIAG_UNUSED_SECRET+x}" ]] || exit 91
 printf '%s\n' "$@" >"$DIAG_TEST_ARGS"
+if [[ "$DIAG_TEST_PSQL_MODE" == real ]]; then
+  exec "$DIAG_TEST_REAL_PSQL" "$@"
+fi
+if [[ "$DIAG_TEST_PSQL_MODE" == fail ]]; then
+  printf 'fixture-sensitive-sql-stdout\n'
+  printf 'fixture-sensitive-sql-stderr\n' >&2
+  exit 2
+fi
+printf 'fixture-revision-output\n'
+printf 'fixture-sensitive-sql-warning\n' >&2
 MOCK
 for probe in hostnamectl free df uptime ss aa-status systemctl journalctl haproxy nft; do
   printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/$probe"
@@ -56,6 +68,33 @@ for key in TOKEN PASSWORD_HINT CROWDSEC_LAPI_KEY EASY_WAF_JWT_SECRET token DATAB
 done
 grep -qxF 'FOO=public-value' "$ROOT/masked"
 grep -qxF '# TOKEN=comment-example' "$ROOT/masked"
+sql_member="$(grep '/sql/config_revisions.txt$' "$ROOT/members")"
+sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
+tar -xOzf "$ROOT/bundle.tar.gz" "$sql_member" >"$ROOT/sql-output"
+tar -xOzf "$ROOT/bundle.tar.gz" "$sql_err_member" >"$ROOT/sql-error"
+grep -qxF 'fixture-revision-output' "$ROOT/sql-output"
+[[ ! -s "$ROOT/sql-error" ]] || { echo 'FAIL: SQL warning retained in support archive' >&2; exit 1; }
+export DIAG_TEST_PSQL_MODE=fail
+bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
+tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
+sql_member="$(grep '/sql/config_revisions.txt$' "$ROOT/members")"
+sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
+tar -xOzf "$ROOT/bundle.tar.gz" "$sql_member" >"$ROOT/sql-output"
+tar -xOzf "$ROOT/bundle.tar.gz" "$sql_err_member" >"$ROOT/sql-error"
+[[ ! -s "$ROOT/sql-output" ]] || { echo 'FAIL: failed SQL partial output retained' >&2; exit 1; }
+grep -qxF 'SQL revision query failed (psql exit 2); inspect the database connection locally.' "$ROOT/sql-error"
+if [[ -n "$real_psql" ]]; then
+  export DIAG_TEST_PSQL_MODE=real DIAG_TEST_REAL_PSQL="$real_psql"
+  printf 'DATABASE_URL=postgresql://fixture:fixture-sensitive-password%%ZZ@fixture.invalid/db\n' >"$EASY_WAF_ENV_FILE"
+  bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
+  tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
+  sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
+  tar -xOzf "$ROOT/bundle.tar.gz" "$sql_err_member" >"$ROOT/sql-error"
+  grep -qxF 'SQL revision query failed (psql exit 2); inspect the database connection locally.' "$ROOT/sql-error"
+  echo 'OK: real libpq credential error omitted'
+fi
+export DIAG_TEST_PSQL_MODE=ok
+unset DIAG_TEST_REAL_PSQL
 fixture="$SCRIPT_DIR/../internal/diagnostics/testdata/environment-multiline"
 cp "$fixture.env.example" "$EASY_WAF_ENV_FILE"
 unset DATABASE_URL

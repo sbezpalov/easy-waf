@@ -188,8 +188,16 @@ if command -v psql &>/dev/null && [[ -f "$ENV_FILE" ]]; then
     database_url=""
   fi
   if [[ -n "$database_url" ]]; then
-    psql "$database_url" -X -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
-      >"$ROOT/sql/config_revisions.txt" 2>"$ROOT/sql/config_revisions.err" || true
+    # libpq errors can echo credential-bearing URI tokens. Do not put raw
+    # errors/warnings or failed partial output into a support archive.
+    if psql "$database_url" -X -w -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
+      >"$ROOT/sql/config_revisions.txt" 2>/dev/null; then
+      : >"$ROOT/sql/config_revisions.err"
+    else
+      sql_status=$?
+      : >"$ROOT/sql/config_revisions.txt"
+      printf 'SQL revision query failed (psql exit %s); inspect the database connection locally.\n' "$sql_status" >"$ROOT/sql/config_revisions.err"
+    fi
   else
     echo "DATABASE_URL unavailable or empty" >>"$ROOT/sql/config_revisions.err"
   fi
