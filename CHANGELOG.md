@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Complete diagnostic key masking.** Root support archives now mask exact/prefix secret marker keys and whitespace around assignments consistently with the API collector, closing leaks such as `TOKEN`, `PASSWORD_HINT` and spaced CrowdSec credentials.
 - **Data-only backup E2E input.** The opt-in backup/reset/restore driver imports only its literal database DSN. Appliance env entries cannot execute shell code, export unrelated credentials or change its selected state and recovery variables; mocked success/failure regressions cover this behavior.
 - **Bounded installer configuration import.** Settings sync and nftables repair read only their required environment keys as data, preserving literal credentials and explicit empty values. Sync cannot change the installer's own variables; repair also accepts `EASY_WAF_ENV_FILE` for an explicitly selected configuration.
 - **Data-only diagnostic configuration.** Root support collection reads the database DSN literally and no longer executes or exports arbitrary appliance environment entries. Package and source installations resolve the collector's shared parser through the operator symlink.

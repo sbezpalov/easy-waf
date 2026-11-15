@@ -90,14 +90,22 @@ mask_env_to() {
     echo "(missing $src)" >"$dst"
     return
   fi
-  # Mask the whole DSN: URI query parameters and keyword DSNs may carry passwords too.
-  sed -E \
-    -e 's/^[[:space:]]*(DATABASE_URL)[[:space:]]*=.*/\1=***MASKED***/' \
-    -e 's/^(CROWDSEC_LAPI_KEY=).*/\1***MASKED***/' \
-    -e 's/^(EASY_WAF_JWT_SECRET=).*/\1***MASKED***/' \
-    -e 's/^(EASY_WAF_ADMIN_TOKEN=).*/\1***MASKED***/' \
-    -e 's/^([A-Za-z_][A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|ACCESS_KEY|LICENSE_KEY)[A-Za-z0-9_]*=).*/\1***MASKED***/I' \
-    "$src" >"$dst"
+  # Match the API masker: inspect the trimmed key, including exact/prefix
+  # markers and whitespace around assignments. Mask the complete DSN too.
+  awk '
+    /^[[:space:]]*#/ { print; next }
+    {
+      pos = index($0, "=")
+      if (!pos) { print; next }
+      key = substr($0, 1, pos - 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      upper = toupper(key)
+      if (key == "DATABASE_URL" || upper ~ /PASSWORD|SECRET|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|ACCESS_KEY|LICENSE_KEY/)
+        print key "=***MASKED***"
+      else
+        print
+    }
+  ' "$src" >"$dst"
 }
 
 mask_haproxy_stream() {

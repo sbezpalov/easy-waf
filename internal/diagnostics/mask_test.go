@@ -16,6 +16,13 @@ func TestMaskEasyWAFEnvLine_secrets(t *testing.T) {
 		{"GEOIP_IPINFO_TOKEN=geo", "GEOIP_IPINFO_TOKEN=***MASKED***"},
 		{"AWS_SECRET_ACCESS_KEY=aws", "AWS_SECRET_ACCESS_KEY=***MASKED***"},
 		{"CUSTOM_API_KEY=custom", "CUSTOM_API_KEY=***MASKED***"},
+		{"TOKEN=fixture-exact-token", "TOKEN=***MASKED***"},
+		{"PASSWORD_HINT=fixture-prefix-password", "PASSWORD_HINT=***MASKED***"},
+		{"  CROWDSEC_LAPI_KEY = fixture-spaced-crowdsec", "CROWDSEC_LAPI_KEY=***MASKED***"},
+		{"EASY_WAF_JWT_SECRET   =fixture-spaced-jwt", "EASY_WAF_JWT_SECRET=***MASKED***"},
+		{"token =fixture-lowercase-token", "token=***MASKED***"},
+		{"  DATABASE_URL =host=fixture password=fixture-spaced-dsn", "DATABASE_URL=***MASKED***"},
+		{"# TOKEN=comment-example", "# TOKEN=comment-example"},
 		{"FOO=bar", "FOO=bar"},
 		{"# comment", "# comment"},
 	}
