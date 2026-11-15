@@ -31,17 +31,30 @@ ssh waf-dev 'uname -a && test -d ~/easy-waf && echo repo-ok'
 
 ### After reinstalling the VM
 
-A fresh OS has a **different SSH host key**, so OpenSSH refuses to connect with
-`REMOTE HOST IDENTIFICATION HAS CHANGED`. That is expected here and not a
-man-in-the-middle — drop the stale entry and accept the new key deliberately:
+A fresh OS may have a **different SSH host key**, so OpenSSH can refuse to
+connect with `REMOTE HOST IDENTIFICATION HAS CHANGED`. The warning alone does
+not prove that the endpoint is the VM you rebuilt. Confirm the VM's identity
+through its trusted hypervisor console before replacing the saved key.
+
+On the VM console, record the public Ed25519 host key's SHA-256 fingerprint:
+
+```bash
+ssh-keygen -l -E sha256 -f /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+On your workstation, remove only that host's stale entry (use the actual
+address or host-key alias named in the warning), then request confirmation for
+the matching key type:
 
 ```bash
 ssh-keygen -R 192.0.2.10
-ssh -o StrictHostKeyChecking=accept-new waf-dev 'uname -a'
+ssh -o StrictHostKeyChecking=ask -o HostKeyAlgorithms=ssh-ed25519 waf-dev 'uname -a'
 ```
 
-Do not make `StrictHostKeyChecking=accept-new` permanent in the config: it is a
-one-off for a host you just rebuilt yourself.
+Compare the fingerprint in the SSH prompt with the one from the VM console
+before answering `yes`. If they differ, or the rebuild was unexpected, stop and
+investigate. Do not disable host-key checking or automatically accept a changed
+identity. See OpenSSH's [host-key verification guidance](https://manpages.ubuntu.com/manpages/noble/man1/ssh.1.html#VERIFYING_HOST_KEYS).
 
 ## 2. Cursor / VS Code — Remote SSH
 
