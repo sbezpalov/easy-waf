@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Bearer scheme is case-insensitive.** Session and metrics authentication accept `bearer` as well as `Bearer`, per RFC 6750. A header with no scheme still works.
+- **Unparseable client addresses are rate-limited.** Login, enrollment, password change, password confirmation and TOTP enable no longer skip the limiter when `RemoteAddr` does not parse. Those requests share one bucket.
+- **Settings writes do not return database errors.** A failed persist is `500` with `internal error`. Validation errors stay `400` and still name the field.
 - **TOTP enrollment is rate-limited.** `POST /api/v1/auth/totp/enable` uses the same per-IP window as login, so a stolen session cannot walk the 6-digit space while a setup secret is pending.
 - **Management API sandbox matches the ACME worker.** `easy-waf-api.service` now drops devices, kernel, clock and hostname privileges and limits address families to UNIX, IPv4 and IPv6. `/run` stays writable for D-Bus.
 - **Bounded subprocess output.** Root broker and local API commands share a 4 MiB combined stdout/stderr capture policy. Excess output is drained to let commands finish, then reported as incomplete; nonzero child exits and execution/cancellation errors remain visible. Tracked APT mutation output keeps its separate live/log policies.
@@ -41,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`make dev-up`.** Starts the development PostgreSQL from `docker-compose.yml` and prints `DATABASE_URL`. Docker Compose v2 is the only extra tool; nothing reads a private machine path or an `easy-waf` GitHub organization.
+- **`make test-integration`.** Runs the PostgreSQL-backed packages against `DATABASE_URL`, or starts the Compose database when that variable is empty.
 - **`make lint` and `make vuln` build their tools with the Go version in `go.mod`.** `go run` of golangci-lint v2.15.0 otherwise compiles it with Go 1.26, and that binary refuses a Go 1.27 module.
 - **HTTP/3.** `http3` adds QUIC listeners on UDP 443 and an `Alt-Svc` header (Security → Edge network). The default nftables ruleset now also allows UDP 443; an existing managed ruleset needs that rule added by hand.
 - **TLS passthrough on :443.** `tls_passthrough` sends TLS connections for listed SNI names (exact or `*.domain`) to their own TLS servers without decrypting them, optionally with PROXY protocol v2 and a source allowlist; all other HTTPS keeps going through the WAF with the real client address (Security → Edge network → TLS passthrough).

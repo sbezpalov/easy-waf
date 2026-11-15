@@ -176,7 +176,7 @@ switch to `--cacert` once you install your own (`PUT /api/v1/settings/management
 
 ## Authentication
 
-`status`, `login` and `enroll` need no session. `login`, `enroll`, `change-password` and `confirm` share one per-IP limiter (`LoginRateLimiter`, configured in `internal/bootstrap/run.go` as 10 attempts per 5-minute sliding window, then a 15-minute lockout). Every request that gets past the limiter counts as an attempt, whether it succeeds or not. The 10th attempt in the window is still processed, but it starts the lockout. While the lockout runs, requests are refused without being counted. A successful login, enrollment or password change clears the counter for that IP. When the client IP cannot be determined, no limit is applied. These four handlers cap their own request body at 16 KiB (`maxLoginRequestBodyBytes`).
+`status`, `login` and `enroll` need no session. `login`, `enroll`, `change-password` and `confirm` share one per-IP limiter (`LoginRateLimiter`, configured in `internal/bootstrap/run.go` as 10 attempts per 5-minute sliding window, then a 15-minute lockout). Every request that gets past the limiter counts as an attempt, whether it succeeds or not. The 10th attempt in the window is still processed, but it starts the lockout. While the lockout runs, requests are refused without being counted. A successful login, enrollment or password change clears the counter for that IP. A client address that does not parse shares one bucket named `unparsed`, so a missing `RemoteAddr` is not a way around the limit. These four handlers cap their own request body at 16 KiB (`maxLoginRequestBodyBytes`).
 
 ### `GET /api/v1/auth/status`
 Reports whether the appliance is still waiting for first-operator enrollment. Unauthenticated, read-only.
