@@ -77,18 +77,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 
-// openStoreFrom connects using url when non-empty; otherwise DATABASE_URL from the environment.
-func openStoreFrom(url string) (*store.Store, error) {
-	dsn := strings.TrimSpace(url)
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	}
-	if dsn == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required (export it or pass -database-url)")
-	}
-	return store.OpenPostgres(dsn)
-}
-
 func resolveDSNForWipe(envFile, databaseURL string) (string, error) {
 	if strings.TrimSpace(databaseURL) != "" {
 		return strings.TrimSpace(databaseURL), nil
@@ -149,7 +137,6 @@ func performBootstrapAndWipe(ctx context.Context, envFile, stateDir, credOut, da
 		return fmt.Errorf("connect with new DATABASE_URL: %w", err)
 	}
 	defer st.Close()
-	wipeApplianceData(ctx, st, stateDir)
 	report := fmt.Sprintf(`easy-waf automated bootstrap — %s
 
 DATABASE_URL=%s
@@ -160,9 +147,18 @@ Then POST /api/v1/auth/enroll with that secret and a new password. Do not log th
 
 Delete this file after copying secrets to your vault.
 `, time.Now().UTC().Format(time.RFC3339), newDSN, adminTok)
+	return finishBootstrap(ctx, st, stateDir, credOut, report)
+}
+
+// finishBootstrap writes the one-shot report before deleting appliance data.
+// A report that cannot be saved leaves the database and the state directory
+// alone. The new role password is already in the env file, so the operator
+// can retry without having lost the previous configuration.
+func finishBootstrap(ctx context.Context, st *store.Store, stateDir, credOut, report string) error {
 	if err := admin.WriteBootstrapReport(credOut, report); err != nil {
 		return fmt.Errorf("write credentials report: %w", err)
 	}
+	wipeApplianceData(ctx, st, stateDir)
 	return nil
 }
 
@@ -286,7 +282,7 @@ func resetAppliance() {
 		return
 	}
 
-	st, err := openStoreFrom(*databaseURL)
+	st, err := openStoreFromEnvFile(*envFile, *databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -319,7 +315,7 @@ func factoryReset() {
 		return
 	}
 
-	st, err := openStoreFrom(*databaseURL)
+	st, err := openStoreFromEnvFile(*envFile, *databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
