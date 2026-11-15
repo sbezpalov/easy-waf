@@ -24,6 +24,13 @@ substitute for the list below.
 [ ] AC-05 on this host, a CrowdSec decision makes HAProxy return 403, deleting it restores access, and stopping the bouncer fails open
 [ ] Clean install: sudo bash scripts/install.sh && sudo bash scripts/smoke-appliance.sh
 [ ] Upgrade from an appliance actually running 1.6.0: sudo bash scripts/upgrade.sh, smoke, one Apply
+[ ] AC-08 actual reboot: changed boot ID, services/readiness and published HTTPS recover; repeat with PostgreSQL starting late
+
+Record the exact candidate version/tag, commit, artifact checksum and sanitized
+evidence using docs/RELEASE_ACCEPTANCE_TEMPLATE.md. Results from another commit
+or a minimal package fixture do not approve this candidate.
+Renewal uses POST /api/v1/certificates/{id}/request-issue with {} and normal
+operator session/XHR/step-up authentication; reload and retry on HTTP 409.
 
 Management listener (not a change to perform): install.sh keeps
 EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443 and nftables limits that port to loopback

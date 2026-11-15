@@ -2,11 +2,16 @@
 
 **English** | [Русский](ACCEPTANCE.ru.md)
 
-AC-01, AC-02 and AC-06 … AC-10 are covered by the repository (see
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)). The three below are not,
-and neither is a clean install or an upgrade on hardware this repository can
-reach. `scripts/acceptance-checklist.sh` prints the same list. A successful run
-of that script is not a pass.
+Repository implementation and test coverage are indexed in
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md). They do not establish
+acceptance of a particular release candidate on an appliance. Public ACME, WAN,
+host CrowdSec, clean installation, upgrade and actual reboot still need the
+checks below. `scripts/acceptance-checklist.sh` prints the outstanding checks;
+a successful run only means the list was printed.
+
+Copy [the release evidence template](RELEASE_ACCEPTANCE_TEMPLATE.md) for each
+candidate. Record its exact tag/version, commit and package checksum; results
+from another commit or a minimal package fixture do not approve that candidate.
 
 Do not mark these done from a container, a mock DNS server, or a staging ACME
 directory.
@@ -16,14 +21,20 @@ directory.
 On an Ubuntu 24.04 appliance that is reachable on port 80 (HTTP-01) or whose
 DNS provider credentials are the ones in `dns_credentials_env_file` (DNS-01):
 
-1. Set `acme_staging` to false and an `acme_email` you can receive mail at.
+1. Set global `acme_staging` and each test certificate's `staging` to false,
+   and use an `acme_email` you can receive mail at. Either staging flag being
+   true selects the staging CA, which cannot satisfy browser trust acceptance.
 2. Issue one certificate with HTTP-01 and one with DNS-01 (Cloudflare, CloudNS,
    Route53, or the webhook provider you actually use).
 3. Confirm the browser trusts the public name, and that `not_after` in
    `GET /api/v1/certificates` matches the certificate HAProxy is serving.
-4. Force a renewal (`POST /api/v1/certificates/{id}/renew` or wait until the
-   worker's 30-day window) and confirm the new certificate is the one in
-   `crt-list` after apply.
+4. Request renewal with `POST /api/v1/certificates/{id}/request-issue` and `{}`
+   (or wait until the worker's 30-day window). Use an operator session, the
+   normal XHR header and password-confirmation step-up required for mutations.
+   An empty object preserves the stored challenge mode. On HTTP 409, reload
+   the row and retry. Confirm the certificate served on 443 matches the new
+   PEM referenced by the database and its recorded validity after apply; a changed
+   file alone is insufficient.
 5. Break the challenge once (close port 80, or revoke the DNS token) and
    confirm the row becomes `failed`, the dashboard shows attention, the
    `easy-waf-acmed` journal warns within a day, and — if `notify_webhook_url`
@@ -59,5 +70,14 @@ the bouncer is down. On the appliance itself:
   from the UI. Confirm PostgreSQL migrations reached the current set and
   HAProxy reloaded.
 
+## AC-08 — an actual reboot
+
+On the isolated test appliance, record the boot ID, reboot, reconnect and confirm
+the boot ID changed. Run the smoke script, check readiness and request a published
+HTTPS service. Confirm API, ACME and host-management services recover, including
+when PostgreSQL becomes available late. Enabled unit files and restarting a
+fixture service do not establish this criterion.
+
 Write the date, the host (not its secrets), and the result next to each item
-before calling 1.7.0 stable.
+before approving the candidate named in the report. A passing container or CI
+run does not fill the outstanding appliance rows automatically.

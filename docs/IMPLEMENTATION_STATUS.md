@@ -3,7 +3,7 @@
 **Last updated:** 2026-11-13
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **8**, Partial — **2** (AC-03, AC-04). AC-05 is Done in containers; a real host remains a manual check.
+**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **6**, Partial — **4** (AC-01, AC-03, AC-04, AC-08). AC-05 is Done in containers; a real host remains a manual check.
 
 This document records **what the appliance is required to do and where each
 requirement is implemented** — the original MVP scope, the security work that
@@ -114,18 +114,24 @@ Captured in `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render
 
 ## Acceptance criteria (AC-01 … AC-10)
 
-Verified against code and scripts (iterations A–D).
+The table distinguishes implementation coverage from appliance evidence.
+**Done** describes repository coverage at the stated scope, not approval of the
+current release candidate. AC-01 and AC-08 remain **Partial** until full install
+and real reboot observations exist; AC-05 is covered only in containers.
+Upgrade, public ACME and WAN checks remain open. Record candidate-specific
+results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
+and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | ID | Criterion | Status | Check in repository |
 |----|-----------|--------|---------------------|
-| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** | `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
+| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Partial** | Full clean-appliance install/upgrade evidence remains open; see [ACCEPTANCE.md](ACCEPTANCE.md). Implementation: `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
-| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success `eng.Apply(ctx,"acme")`; needs `ACME_EMAIL`, DNS/HTTP-01, worker running (`docs/ACME.md`). Real Let's Encrypt is a manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
+| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Real Let's Encrypt is a manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Partial** | Render `fe_http`/`fe_https`, SNI, Host backends — **Done** in code; WAN/NAT/port-forward routing — outside the repo. Manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real host is still a manual check ([ACCEPTANCE.md](ACCEPTANCE.md)) |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
-| **AC-08** | Survives reboot | **Done** | `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
+| **AC-08** | Survives reboot | **Partial** | Actual reboot and late-PostgreSQL recovery need appliance evidence ([ACCEPTANCE.md](ACCEPTANCE.md)). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
