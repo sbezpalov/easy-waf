@@ -75,8 +75,8 @@ func (s *Server) totpSetup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) totpEnable(w http.ResponseWriter, r *http.Request) {
 	// Same per-IP budget as login. A stolen session must not be able to walk
 	// the 6-digit space while a setup secret is sitting in pending.
-	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
-		if allowed, retryAfter := s.LoginRL.Allow(ip.String()); !allowed {
+	if s.LoginRL != nil {
+		if allowed, retryAfter := s.LoginRL.Allow(clientRateKey(r)); !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 			return
@@ -107,8 +107,8 @@ func (s *Server) totpEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong code; check that the phone's clock is correct", http.StatusBadRequest)
 		return
 	}
-	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
-		s.LoginRL.RecordSuccess(ip.String())
+	if s.LoginRL != nil {
+		s.LoginRL.RecordSuccess(clientRateKey(r))
 	}
 	codes, err := auth.GenerateRecoveryCodes(10)
 	if err != nil {

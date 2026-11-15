@@ -37,10 +37,9 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use local user session to confirm a password"})
 		return
 	}
-	ip, ipOK := clientIP(r)
-	limited := ipOK && ip.IsValid() && s.LoginRL != nil
+	limited := s.LoginRL != nil
 	if limited {
-		if allowed, retryAfter := s.LoginRL.Allow(ip.String()); !allowed {
+		if allowed, retryAfter := s.LoginRL.Allow(clientRateKey(r)); !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 			return
@@ -68,7 +67,7 @@ func (s *Server) handleConfirmPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if limited {
-		s.LoginRL.RecordSuccess(ip.String())
+		s.LoginRL.RecordSuccess(clientRateKey(r))
 	}
 	_ = s.Eng.Store.AppendAudit(r.Context(), "step_up_granted", map[string]any{"username": u.Username})
 	writeJSON(w, http.StatusOK, confirmResponse{

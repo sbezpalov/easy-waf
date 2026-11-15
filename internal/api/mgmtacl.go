@@ -55,6 +55,16 @@ func clientIP(r *http.Request) (netip.Addr, bool) {
 	return ip, true
 }
 
+// clientRateKey is the login-limiter bucket. A RemoteAddr that does not parse
+// still shares one bucket, so a missing or garbage address is not a bypass.
+func clientRateKey(r *http.Request) string {
+	ip, ok := clientIP(r)
+	if ok && ip.IsValid() {
+		return ip.String()
+	}
+	return "unparsed"
+}
+
 func ipAllowed(ip netip.Addr, cidrs []string) bool {
 	for _, c := range cidrs {
 		p, err := netip.ParsePrefix(strings.TrimSpace(c))

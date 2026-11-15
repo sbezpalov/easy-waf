@@ -736,11 +736,11 @@ func (s *Server) mergeAndPersistSettings(w http.ResponseWriter, r *http.Request)
 		return gs, err
 	})
 	if err != nil {
-		code := http.StatusInternalServerError
 		if badRequest {
-			code = http.StatusBadRequest
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		http.Error(w, err.Error(), code)
+		writeInternalError(w, err)
 		return
 	}
 	s.writeSettingsResponse(w, http.StatusOK, gs)

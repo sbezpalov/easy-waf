@@ -93,8 +93,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	if ipOK && ip.IsValid() {
 		ipStr = ip.String()
 	}
-	if s.LoginRL != nil && ipStr != "" {
-		allowed, retryAfter := s.LoginRL.Allow(ipStr)
+	if s.LoginRL != nil {
+		allowed, retryAfter := s.LoginRL.Allow(clientRateKey(r))
 		if !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			_ = s.Eng.Store.AppendAudit(r.Context(), "enrollment_rate_limited", map[string]any{
@@ -179,8 +179,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		"source_ip": ipStr,
 		"username":  user,
 	})
-	if s.LoginRL != nil && ipStr != "" {
-		s.LoginRL.RecordSuccess(ipStr)
+	if s.LoginRL != nil {
+		s.LoginRL.RecordSuccess(clientRateKey(r))
 	}
 
 	u, err := s.Eng.Store.GetUserByUsername(r.Context(), user)
@@ -207,8 +207,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if ipOK && ip.IsValid() {
 		ipStr = ip.String()
 	}
-	if s.LoginRL != nil && ipStr != "" {
-		allowed, retryAfter := s.LoginRL.Allow(ipStr)
+	if s.LoginRL != nil {
+		allowed, retryAfter := s.LoginRL.Allow(clientRateKey(r))
 		if !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			_ = s.Eng.Store.AppendAudit(r.Context(), "login_rate_limited", map[string]any{
@@ -283,8 +283,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if s.LoginRL != nil && ipStr != "" {
-		s.LoginRL.RecordSuccess(ipStr)
+	if s.LoginRL != nil {
+		s.LoginRL.RecordSuccess(clientRateKey(r))
 	}
 	writeJSON(w, http.StatusOK, loginResponse{
 		Token:              tok,
@@ -350,8 +350,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// current_password is checked here too, so this endpoint gets the same
 	// per-IP limiter as login instead of offering an unthrottled oracle.
-	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
-		if allowed, retryAfter := s.LoginRL.Allow(ip.String()); !allowed {
+	if s.LoginRL != nil {
+		if allowed, retryAfter := s.LoginRL.Allow(clientRateKey(r)); !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 			return
@@ -393,8 +393,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if ip, ipOK := clientIP(r); ipOK && ip.IsValid() && s.LoginRL != nil {
-		s.LoginRL.RecordSuccess(ip.String())
+	if s.LoginRL != nil {
+		s.LoginRL.RecordSuccess(clientRateKey(r))
 	}
 	tok, err := auth.SignJWT(s.JWTSecret, u2.Username, u2.SessionVersion, sessionTTL)
 	if err != nil {
