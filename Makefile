@@ -1,4 +1,4 @@
-.PHONY: build deb offline-bundle test test-integration lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help dev-up clean clean-artifacts golden-update
+.PHONY: build deb offline-bundle test test-integration lint check-linux check-version-docs verify verify. shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-root-env test-management-listen test-package-restart test-package-restart-e2e test-release-verify test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow test-backup-restore-e2e test-body-policy-e2e vuln ci install-help dev-up clean clean-artifacts golden-update
 
 DIST=dist
 # Keep in sync with .github/workflows/ci.yml. Release tarball: .github/workflows/release.yml.
@@ -66,7 +66,7 @@ check-version-docs:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		cd scripts && shellcheck -x install.sh upgrade.sh install-interactive.sh build-offline-bundle.sh install-offline-bundle.sh download-release.sh smoke-appliance.sh diagnostics.sh test-backup-restore.sh test-backup-restore-workflow.sh test-env-file.sh test-smoke-env.sh test-diagnostics-env.sh test-management-listen.sh test-package-restart.sh test-package-restart-e2e.sh testdata/package-restart/boot.sh test-release-verify.sh test-release-unpack.sh test-offline-bundle.sh backup.sh test-backup-rotate.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh lib/env-file.sh lib/backup-rotate.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/release-unpack.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
+		cd scripts && shellcheck -x install.sh upgrade.sh install-interactive.sh build-offline-bundle.sh install-offline-bundle.sh download-release.sh smoke-appliance.sh diagnostics.sh test-backup-restore.sh test-backup-restore-workflow.sh test-env-file.sh test-smoke-env.sh test-diagnostics-env.sh test-root-env.sh test-management-listen.sh test-package-restart.sh test-package-restart-e2e.sh testdata/package-restart/boot.sh test-release-verify.sh test-release-unpack.sh test-offline-bundle.sh backup.sh test-backup-rotate.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh fix-nftables-edge.sh lib/env-file.sh lib/backup-rotate.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/release-unpack.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. apt install shellcheck)"; \
 	fi
@@ -88,6 +88,9 @@ test-smoke-env:
 
 test-diagnostics-env:
 	bash scripts/test-diagnostics-env.sh
+
+test-root-env:
+	bash scripts/test-root-env.sh
 
 test-management-listen:
 	bash scripts/test-management-listen.sh
@@ -120,7 +123,7 @@ test-backup-restore-workflow:
 smoke-appliance:
 	bash scripts/smoke-appliance.sh
 
-verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-management-listen test-package-restart test-release-verify test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow
+verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-root-env test-management-listen test-package-restart test-release-verify test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow
 
 # Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
 verify.:

@@ -18,6 +18,13 @@ Setting up a Linux host for development and pre-release testing: see **[DEV_HOST
 
 ## What the installer does
 
+Installer settings sync reads only `DATABASE_URL`, `CROWDSEC_LAPI_URL`,
+`CROWDSEC_LAPI_KEY` and `CROWDSEC_LAPI_ALLOWED_ORIGINS` from the appliance env
+file as literal data, in a subshell. The selected installer state directory is
+not replaced by file entries. The nftables repair command likewise reads only
+firewall options and legacy aliases; `EASY_WAF_ENV_FILE` selects its input file.
+Neither path executes shell statements from that file.
+
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):
 
 1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).

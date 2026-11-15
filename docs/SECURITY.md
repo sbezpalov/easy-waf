@@ -112,6 +112,12 @@ See [DNS.md](DNS.md) for HAProxy backend DNS and ACME DNS-01 in split-DNS enviro
 
 ## Supply chain
 
+Installer settings sync and nftables repair import an explicit list of required
+environment keys as data. Sync runs in a subshell so file entries cannot change
+the installer state or subsequent commands. Only DSN and CrowdSec configuration
+reach settings sync; repair reads firewall options and their legacy aliases.
+Literal values, explicit empties and missing-key process fallbacks are retained.
+
 `diagnostics.sh` also reads only its required DSN as data instead of sourcing
 the root environment file. It does not export other file entries to probes.
 The offline `test-diagnostics-env.sh` uses stand-in host/database commands;

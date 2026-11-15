@@ -21,4 +21,20 @@ value="$(easy_waf_read_env_value "$ENV_FILE" DATABASE_URL)"
 [[ ! -e "$MARKER" ]]
 [[ -z "$(easy_waf_read_env_value "$ENV_FILE" MISSING)" ]]
 
+(
+  export ENV_TEST_KEEP=existing ENV_TEST_EMPTY=stale
+  unset DATABASE_URL MALICIOUS
+  printf 'ENV_TEST_EMPTY=\n' >>"$ENV_FILE"
+  easy_waf_export_env_keys "$ENV_FILE" DATABASE_URL ENV_TEST_KEEP ENV_TEST_EMPTY
+  [[ "$DATABASE_URL" == "$value" && "$ENV_TEST_KEEP" == existing && -z "$ENV_TEST_EMPTY" ]]
+  [[ -z "${MALICIOUS+x}" && ! -e "$MARKER" ]]
+  bash -c '[[ -n "$DATABASE_URL" && "$ENV_TEST_KEEP" == existing && -z "$ENV_TEST_EMPTY" ]]'
+  if easy_waf_export_env_keys "$ENV_FILE" 'BAD.*'; then
+    echo 'invalid env key accepted' >&2; exit 1
+  fi
+  if easy_waf_export_env_keys "$TMP/missing" DATABASE_URL; then
+    echo 'missing env file accepted' >&2; exit 1
+  fi
+)
+
 echo "env-file parser: OK"

@@ -373,20 +373,23 @@ easy_waf_bootstrap_crowdsec_lapi() {
 
 # Merge easy-waf.env (CrowdSec keys, etc.) into PostgreSQL before first systemctl start — UI works without Settings → Load.
 easy_waf_sync_settings_to_db() {
-  local api="$API_BIN"
-  [[ -x "$api" ]] || api="${DIST_DIR}/easy-waf-api"
-  [[ -x "$api" ]] || return 0
-  [[ -f "$CFG_DIR/easy-waf.env" ]] || return 0
-  grep -q '^DATABASE_URL=' "$CFG_DIR/easy-waf.env" 2>/dev/null || return 0
-  set -a
-  # shellcheck source=/dev/null
-  source "$CFG_DIR/easy-waf.env"
-  set +a
-  if DATABASE_URL="$DATABASE_URL" EASY_WAF_STATE_DIR="$STATE_DIR" timeout 25 "$api" -sync-settings-only; then
-    log "Synced settings from $CFG_DIR/easy-waf.env into PostgreSQL (UI ready without manual import)"
-  else
-    log "WARNING: settings DB sync failed — easy-waf-api will merge env on first start"
-  fi
+  (
+    local api="$API_BIN"
+    [[ -x "$api" ]] || api="${DIST_DIR}/easy-waf-api"
+    [[ -x "$api" ]] || return 0
+    [[ -f "$CFG_DIR/easy-waf.env" ]] || return 0
+    if ! easy_waf_export_env_keys "$CFG_DIR/easy-waf.env" DATABASE_URL \
+      CROWDSEC_LAPI_URL CROWDSEC_LAPI_KEY CROWDSEC_LAPI_ALLOWED_ORIGINS; then
+      log "WARNING: cannot read settings environment — skipping DB sync"
+      return 1
+    fi
+    grep -q '^DATABASE_URL=' "$CFG_DIR/easy-waf.env" 2>/dev/null || return 0
+    if DATABASE_URL="$DATABASE_URL" EASY_WAF_STATE_DIR="$STATE_DIR" timeout 25 "$api" -sync-settings-only; then
+      log "Synced settings from $CFG_DIR/easy-waf.env into PostgreSQL (UI ready without manual import)"
+    else
+      log "WARNING: settings DB sync failed — easy-waf-api will merge env on first start"
+    fi
+  )
 }
 
 # After local PostgreSQL is installed: wait for the daemon, create role/db (idempotent), rotate weak default password in DATABASE_URL.
