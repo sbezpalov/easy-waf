@@ -204,6 +204,11 @@ preserved, not reissued, and no test logout was performed.
 The same record confirms successful remote push CI for 8d3da16, including all
 three jobs; later notes/evidence commits and a fresh remote nightly E2E run
 remain outside that CI scope.
+The subsequent [PVE security/WAN follow-up](release-evidence/1.6.1-pve-c27-crowdsec-wan.md)
+passed six actual installed CrowdSec baseline/ban/isolation/unban/fail-open/cleanup
+checks and received operator-confirmed mobile-data access without TLS warnings
+on c27c77b. This supersedes the pending mobile observation above; current-client
+forwarded-IP correlation and external-client blocking are not established.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
