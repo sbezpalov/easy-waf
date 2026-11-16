@@ -2,7 +2,7 @@
 # End-to-end proof that a CrowdSec decision blocks traffic through the HAProxy
 # config easy-waf generates: real LAPI, real SPOA bouncer, HAProxy 2.8 (the
 # Ubuntu 24.04 series) and the http-only golden config, changed only to address
-# the containers. Needs Docker and network access for images; not part of CI.
+# the containers. Needs Docker and network access for images; runs in nightly E2E.
 #
 #   bash scripts/test-crowdsec-e2e.sh
 set -euo pipefail
@@ -16,6 +16,13 @@ HOST_HEADER="$(sed -n 's/.*acl http_app_ho1_host hdr(host) -i \([^ ]*\).*/\1/p' 
 [[ -n "$HOST_HEADER" ]] || { echo "could not read the published host from the golden config" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
+# Normalize only the host bind source; keep container arguments as Linux paths
+# when this launcher is invoked through Git Bash on Windows.
+docker_work="$WORK"
+if command -v cygpath >/dev/null 2>&1; then
+  docker_work="$(cygpath -m "$WORK")"
+fi
+export MSYS_NO_PATHCONV=1
 remove_stack() {
   docker rm -f "${NAMES[@]}" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
@@ -60,7 +67,7 @@ api_key: $BOUNCER_KEY
 listen_tcp: 0.0.0.0:9000
 EOF
 docker run -d --name cs-e2e-spoa --network "$NET" --ip 10.77.0.20 \
-  -v "$WORK/bouncer.yaml:/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml:ro" \
+  --mount "type=bind,source=${docker_work}/bouncer.yaml,target=/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml,readonly" \
   crowdsecurity/spoa-bouncer:latest >/dev/null
 
 docker run -d --name cs-e2e-app --network "$NET" --ip 10.77.0.30 traefik/whoami:v1.10 --port 80 >/dev/null
@@ -75,7 +82,8 @@ sed -E \
 cp "$GOLDEN/spoe/crowdsec-vendor.cfg" "$WORK/crowdsec.cfg"
 chmod -R a+rX "$WORK"
 
-docker run -d --name cs-e2e-haproxy --network "$NET" --ip 10.77.0.40 --ulimit nofile=200000:200000 -v "$WORK:/cfg:ro" \
+docker run -d --name cs-e2e-haproxy --network "$NET" --ip 10.77.0.40 --ulimit nofile=200000:200000 \
+  --mount "type=bind,source=${docker_work},target=/cfg,readonly" \
   haproxy:2.8 haproxy -f /cfg/haproxy.cfg >/dev/null
 sleep 3
 docker ps --format '{{.Names}}' | grep -q '^cs-e2e-haproxy$' || {
