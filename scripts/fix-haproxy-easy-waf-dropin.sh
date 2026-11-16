@@ -9,13 +9,21 @@ log() { echo "[easy-waf-haproxy-dropin] $*"; }
 STATE_DIR="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${EASY_WAF_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
-CFG="${STATE_DIR}/haproxy/haproxy.cfg"
-BOOT_SRC="${REPO_ROOT}/configs/defaults/haproxy-bootstrap.cfg"
+ENVF="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
 
 if [[ "$(id -u)" != "0" ]]; then
   echo "Run as root: sudo bash $0" >&2
   exit 1
 fi
+
+# HAProxy's UID/GID transition during validation must not inherit a private
+# operator cwd. Resolve caller-relative paths before moving to a neutral root.
+STATE_DIR="$(realpath -m -- "$STATE_DIR")"
+REPO_ROOT="$(realpath -m -- "$REPO_ROOT")"
+ENVF="$(realpath -m -- "$ENVF")"
+CFG="${STATE_DIR}/haproxy/haproxy.cfg"
+BOOT_SRC="${REPO_ROOT}/configs/defaults/haproxy-bootstrap.cfg"
+cd /
 
 mkdir -p "${STATE_DIR}/haproxy" "${STATE_DIR}/revisions" "${STATE_DIR}/certs"
 chown -R easy-waf:easy-waf "${STATE_DIR}" 2>/dev/null || true
@@ -124,7 +132,6 @@ fi
 systemctl daemon-reload
 log "systemd daemon-reload done"
 
-ENVF="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
 ADMIN=""
 for cand in /usr/sbin/easy-waf-admin /usr/bin/easy-waf-admin "${REPO_ROOT}/dist/easy-waf-admin"; do
   if [[ -x "$cand" ]]; then

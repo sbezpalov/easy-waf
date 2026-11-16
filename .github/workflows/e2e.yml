@@ -21,6 +21,8 @@ jobs:
         run: docker pull ubuntu:24.04
       - name: Preserve source-installed and packaged conffiles without a terminal
         run: bash scripts/test-installer-conffiles.sh
+      - name: Private operator directories keep HAProxy unprivileged
+        run: bash scripts/test-haproxy-working-dir.sh
 
   backup-publication:
     runs-on: ubuntu-24.04

@@ -14,7 +14,21 @@ import (
 
 // Validate runs `haproxy -c -f path` using haproxyBinary.
 func Validate(ctx context.Context, haproxyBinary, cfgPath string) error {
+	// HAProxy can change UID/GID while checking a configuration. Inheriting a
+	// private operator cwd then prevents it returning to that initial directory.
+	// Resolve caller-relative inputs before using a neutral, traversable cwd.
+	cfgPath, err := filepath.Abs(cfgPath)
+	if err != nil {
+		return fmt.Errorf("resolve HAProxy config path: %w", err)
+	}
 	cmd := exec.CommandContext(ctx, haproxyBinary, "-c", "-f", cfgPath)
+	if cmd.Err == nil && !filepath.IsAbs(cmd.Path) {
+		cmd.Path, err = filepath.Abs(cmd.Path)
+		if err != nil {
+			return fmt.Errorf("resolve HAProxy executable path: %w", err)
+		}
+	}
+	cmd.Dir = filepath.VolumeName(cfgPath) + string(filepath.Separator)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {

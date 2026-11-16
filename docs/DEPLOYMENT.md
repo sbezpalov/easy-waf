@@ -34,6 +34,12 @@ still receive the package defaults. `make test-installer-conffiles` exercises
 these decisions with real APT/dpkg and dummy private package state in Docker
 (prepare `ubuntu:24.04` first, or set `EASY_WAF_CONFFILE_TEST_IMAGE`).
 
+HAProxy validation uses a neutral working directory so private operator home or
+checkout permissions do not break its UID/GID transition. Relative configuration,
+binary, state, repository and environment paths are resolved before that change.
+Drop-in repair retains unprivileged mode when the only obstacle was the caller's
+working directory; it does not change permissions on the operator's directories.
+
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):
 
 1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).

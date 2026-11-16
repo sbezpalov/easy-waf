@@ -15,6 +15,16 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("EASY_WAF_APPLY_COMMAND_TEST") == "cwd" {
+		cwd, err := os.Getwd()
+		if err != nil || filepath.Clean(cwd) != os.Getenv("EASY_WAF_APPLY_EXPECTED_CWD") {
+			os.Exit(24)
+		}
+		if len(os.Args) != 4 || os.Args[1] != "-c" || os.Args[2] != "-f" || os.Args[3] != os.Getenv("EASY_WAF_APPLY_EXPECTED_CONFIG") {
+			os.Exit(25)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("EASY_WAF_APPLY_COMMAND_TEST") == "fail" {
 		os.Exit(23)
 	}
@@ -27,6 +37,36 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestValidateFromPrivateWorkingDirectory(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	name := "validator"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	program, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), program, 0o700); err != nil { // #nosec G306 -- owner-only executable fixture.
+		t.Fatal(err)
+	}
+	config := filepath.Join(dir, "fixture.cfg")
+	if err := os.WriteFile(config, []byte("fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("EASY_WAF_APPLY_COMMAND_TEST", "cwd")
+	t.Setenv("EASY_WAF_APPLY_EXPECTED_CWD", filepath.VolumeName(config)+string(filepath.Separator))
+	t.Setenv("EASY_WAF_APPLY_EXPECTED_CONFIG", config)
+	if err := Validate(t.Context(), "."+string(filepath.Separator)+name, "fixture.cfg"); err != nil {
+		t.Fatalf("validation from private cwd with relative inputs: %v", err)
+	}
 }
 
 func TestValidationPreservesProcessFailure(t *testing.T) {
