@@ -153,5 +153,5 @@ jobs:
       - name: go test internal/haproxy (includes haproxy -c validation)
         run: go test ./internal/haproxy/... -v -count=1
 
-      - name: go test internal/haproxy integration (golden haproxy -c)
-        run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy' -count=1
+      - name: go test internal/haproxy integration (goldens, WebSocket, SSE)
+        run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveHomeAssistantPublication' -count=1
