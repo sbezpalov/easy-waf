@@ -10,7 +10,10 @@ Running daemon/payload equality, existing-password authentication, broker RPC,
 stats and trusted HTTPS passed on PVE. Release approval remains open.
 The public certificate from the [cb2d0a7 production renewal](release-evidence/1.6.1-http01-renewal-cb2d0a7.md)
 and the [22ce6f0 reboot](release-evidence/1.6.1-reboot-22ce6f0.md) retain their scopes;
-no fresh renewal or reboot of the new dependency binaries is claimed.
+no fresh public renewal or PVE reboot of the new dependency binaries is claimed.
+An [actual VMware reboot of 9cfc841](release-evidence/1.6.1-reboot-9cfc841.md)
+passed automatic startup of ten units, exact persistent-state/payload checks,
+trusted test HTTPS, fresh HAProxy statistics and broker RPC without intervention.
 The same package passed a [matched backup and packaged restore on the independent
 VMware copy](release-evidence/1.6.1-restore-9cfc841.md), including an actual
 maintenance 503 to restored HTTPS 200 transition and exact persisted objects.
