@@ -160,6 +160,11 @@ That upgrade reused provisioned OS dependencies. A separate
 then passed the actual installer on a new authenticated Ubuntu 24.04 cloud image,
 fresh enrollment, authenticated smoke, Apply/stats and real reboot on b5fa4a4.
 This closes the scoped AC-01 install/upgrade gap; it does not approve all release gates.
+The actual backup/factory-reset/restore workflow subsequently passed on an
+[independent full VMware copy](release-evidence/1.6.1-restored-copy-b5fa4a4.md),
+with preserved data/certificate/env, independent HTTPS, smoke and reboot.
+Its restore script came from the exact source archive; a package-only restore
+entry point is not yet shipped.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
@@ -174,7 +179,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 | **AC-07** | UI: apps, certs, blocked | **Done** (scoped PVE views) | Authenticated native Edge views on [candidate e95ccb3](release-evidence/1.6.1-ui-csp.md) matched API application inventory, certificate validity and blocked-request count. Application creation/Apply subsequently passed on [candidate 2220fde](release-evidence/1.6.1-application-apply.md); other UI workflows remain separate checks. |
 | **AC-08** | Survives reboot | **Done** (scoped PVE) | Actual reboot with trusted published-HTTPS recovery passed in the [PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md); late-PostgreSQL startup recovery passed on the same binary [candidate](release-evidence/1.6.1-336b5e0.md). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
-| **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
+| **AC-10** | Backup + restore | **Done** (scoped VMware copy) | Actual backup/factory-reset/restore E2E, independent data/certificate/env/TLS/stats checks, authenticated smoke and reboot passed on [candidate b5fa4a4](release-evidence/1.6.1-restored-copy-b5fa4a4.md). Same-version amd64 copy; source restore script, not a packaged restore command. Implementation: `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh`. |
 
 **AppArmor:** Ubuntu uses AppArmor by default; a dedicated easy-waf profile is not required. HAProxy access to configs is via the **`easy-waf`** group. Status: **Done** on Ubuntu 24.04.
 
