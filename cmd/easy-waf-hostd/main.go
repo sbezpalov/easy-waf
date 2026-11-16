@@ -8,10 +8,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/easy-waf/easy-waf/internal/cli"
 	"github.com/easy-waf/easy-waf/internal/hostd"
 )
 
 func main() {
+	if cli.PrintVersion(os.Args[1:], os.Stdout, "easy-waf-hostd") {
+		return
+	}
+
 	if len(os.Args) == 2 && os.Args[1] == "apt-worker" {
 		if err := hostd.RunAPTWorker(); err != nil {
 			fmt.Fprintf(os.Stderr, "[easy-waf-hostd] APT worker: %v\n", err)

@@ -4,6 +4,26 @@ This complements [QUICKSTART.md](QUICKSTART.md) with day‑2 tasks: inspecting g
 
 **Version:** [`VERSION`](../VERSION) — **1.6.1**.
 
+## Running version
+
+The signed-in panel header shows the running version on every tab; Dashboard
+also has a Version card. Both use authenticated `GET /api/v1/status`.
+The number is embedded from root `VERSION` when Go builds the binary, including
+direct `go build`; setting `EASY_WAF_VERSION` at runtime does not change it.
+
+Each Go command accepts a standalone `--version` (or `-version`), prints its
+command name and version, and exits without database, network or service setup:
+
+```sh
+easy-waf-api --version
+easy-waf-acmed --version
+easy-waf-hostd --version
+easy-waf-admin --version
+```
+
+No root privileges are needed for these version queries. The legacy tarball
+command `easy-wafd` supports the same flag; it is not installed by the DEB.
+
 ## Layout (defaults)
 
 | Artifact | Path |

@@ -27,7 +27,7 @@ installation keep the script beside its shared parser under
 
 Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/`, `config/`, `validation/`, `sql/`, `firewall/`):
 
-- **MANIFEST.txt** — UTC time, hostname, version (`EASY_WAF_VERSION` when set), bundle source (`api` vs script).
+- **MANIFEST.txt** — UTC time, hostname, version (the running binary's embedded `VERSION` for API bundles), bundle source (`api` vs script).
 - **system/** — `uname`, `/etc/os-release`, `hostnamectl`, `free`, `df`, `uptime`, `ss -tlnp`, `aa-status` (best-effort from API).
 - **systemctl/** — `systemctl status` and `is-enabled` for: `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, `fail2ban`, `nftables`.
 - **logs/** — last 500 lines / 24h from `journalctl` for `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`. (The broker was added in 1.4.2; a bundle from an older appliance has no `journal-easy-waf-hostd.txt`, which is exactly the file a failed host update needed.)

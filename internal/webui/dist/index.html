@@ -233,6 +233,7 @@
   <header class="app-header">
     <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open menu">☰</button>
     <h1 class="app-title">◆ Easy Home WAF</h1>
+    <span class="dash-note" id="header-version" aria-label="Application version">Version unavailable</span>
     <span class="header-user hidden" id="header-user"></span>
     <button type="button" class="secondary header-logout" id="btn-logout">Sign out</button>
   </header>
@@ -1461,6 +1462,21 @@
     showTabFromHash();
   });
 
+  function renderApplicationVersion(value) {
+    const version = typeof value === 'string' ? value.trim() : '';
+    document.getElementById('header-version').textContent = version ? 'v' + version : 'Version unavailable';
+    document.getElementById('dash-version').textContent = version || '—';
+  }
+
+  async function loadApplicationVersion() {
+    try {
+      const response = await fetch('/api/v1/status', { headers: hdr() });
+      renderApplicationVersion(response.ok ? (await response.json()).version : '');
+    } catch (_) {
+      renderApplicationVersion('');
+    }
+  }
+
   async function refreshSession() {
     const t = getTok();
     if (!t) {
@@ -1492,6 +1508,7 @@
       }
       document.body.classList.toggle('role-viewer', me.role === 'viewer');
       renderTOTPStatus(!!me.totp_enabled);
+      void loadApplicationVersion();
       await loadSettingsPanel();
       loadProfileSelect();
       initRestrictedPathRows();
@@ -2792,7 +2809,7 @@
 
     let status = {};
     try { status = await stR.json(); } catch (_) {}
-    document.getElementById('dash-version').textContent = status.version && String(status.version).trim() ? String(status.version) : '—';
+    renderApplicationVersion(status.version);
     document.getElementById('dash-state-dir').textContent = status.state_dir ? `State: ${status.state_dir}` : '';
 
     let apps = [];

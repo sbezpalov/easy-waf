@@ -6,9 +6,9 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
+	"github.com/easy-waf/easy-waf"
 	"github.com/easy-waf/easy-waf/internal/diagnostics"
 )
 
@@ -25,7 +25,7 @@ func (s *Server) postDiagnosticsBundle(w http.ResponseWriter, r *http.Request) {
 		EnvPath:  "/etc/easy-waf/easy-waf.env",
 		Store:    s.Eng.Store,
 		Settings: s.Eng.Settings(),
-		Version:  os.Getenv("EASY_WAF_VERSION"),
+		Version:  easywaf.Version(),
 	})
 	if err != nil {
 		writeInternalError(w, err)

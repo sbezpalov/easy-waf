@@ -18,6 +18,7 @@ import (
 	"github.com/go-acme/lego/v4/certificate"
 
 	"github.com/easy-waf/easy-waf/internal/acme"
+	"github.com/easy-waf/easy-waf/internal/cli"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/envflag"
@@ -57,6 +58,10 @@ const (
 
 // ACME worker (architecture C): issues and renews certificates (HTTP-01 and DNS-01) using shared PostgreSQL state.
 func main() {
+	if cli.PrintVersion(os.Args[1:], os.Stdout, "easy-waf-acmed") {
+		return
+	}
+
 	if child, code := issueChildEntry(); child {
 		os.Exit(code)
 	}

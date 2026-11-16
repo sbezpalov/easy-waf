@@ -298,7 +298,7 @@ Optional per user (ADR 0004, option C). When it is on, `POST /api/v1/auth/login`
 
 ### `GET /api/v1/status`
 Minimal status for the control plane.
-- **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.4.0"}`. `version` is read from the `EASY_WAF_VERSION` environment variable and is an empty string when that variable is unset.
+- **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.6.1"}`. `version` comes from root `VERSION` embedded in the running binary. It does not require or accept an `EASY_WAF_VERSION` environment override. The panel header and Dashboard use this value.
 
 ### `GET /api/v1/system/services`
 Reports the systemd `ActiveState` of the appliance's core units. Each unit is queried in turn (`systemctl show -p ActiveState --value`, falling back to `systemctl is-active`) with a 5-second timeout per unit, covering all attempts for that unit. With eight units, a hung systemd can delay the response by up to about 40 seconds.

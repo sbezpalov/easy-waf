@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/easy-waf/easy-waf"
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
@@ -215,7 +216,7 @@ func (s *Server) metricsHandler() http.Handler {
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"state_dir": s.Eng.StateDir,
-		"version":   os.Getenv("EASY_WAF_VERSION"),
+		"version":   easywaf.Version(),
 	})
 }
 

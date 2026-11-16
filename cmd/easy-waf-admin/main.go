@@ -18,6 +18,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/admin"
 	"github.com/easy-waf/easy-waf/internal/auth"
+	"github.com/easy-waf/easy-waf/internal/cli"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/enroll"
@@ -25,6 +26,10 @@ import (
 )
 
 func main() {
+	if cli.PrintVersion(os.Args[1:], os.Stdout, "easy-waf-admin") {
+		return
+	}
+
 	log.SetFlags(0)
 	if len(os.Args) < 2 {
 		usage()
