@@ -134,6 +134,9 @@ Application creation/manual Apply passed on
 [candidate 2220fde](release-evidence/1.6.1-application-apply.md); its favicon and
 static guidance follow-ups were repaired and checked in native Edge on
 [candidate e48a746](release-evidence/1.6.1-ui-static.md).
+The user-reported missing version was repaired and checked in native Edge and
+actual CLI binaries on [candidate 6be4467](release-evidence/1.6.1-version.md),
+which also has inspected local amd64/arm64 artifacts (no arm64 boot or signatures).
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
