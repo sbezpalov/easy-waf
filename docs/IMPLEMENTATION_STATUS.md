@@ -116,15 +116,17 @@ Captured in `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render
 
 The table distinguishes implementation coverage from appliance evidence.
 **Done** describes repository coverage at the stated scope, not approval of the
-current release candidate. AC-01 and AC-08 remain **Partial** pending the full
-appliance procedure; AC-05 has container and scoped PVE loopback evidence.
-Upgrade and failed-challenge checks remain open; DNS-01 capability is untested.
+current release candidate. AC-01 remains **Partial** pending the full install/upgrade
+procedure; AC-08 has scoped PVE evidence, and AC-05 has container/PVE loopback evidence.
+Upgrade and other candidate checks remain open; DNS-01 capability is untested.
+Actual HTTPS reboot recovery and HTTP-01 failure/backoff passed in the
+[PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md).
 Public HTTP-01 issuance and renewal, plus independent mobile WAN access, passed
 on the [PVE candidate](release-evidence/1.6.1-public-http01.md).
 Scoped observations on a real
 PVE dev appliance (install/reinstall, smoke, reboot, delayed DB, edge/WebSocket
 and CrowdSec; restore follow-up at d33df09) are recorded for [candidate 336b5e0](release-evidence/1.6.1-336b5e0.md).
-They do not close the remaining pristine-install, post-reboot HTTPS or management-UI checks.
+They do not close the remaining pristine-install, restored-copy or management-UI checks.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
@@ -132,12 +134,12 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 |----|-----------|--------|---------------------|
 | **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Partial** | Full clean-appliance install/upgrade evidence remains open; see [ACCEPTANCE.md](ACCEPTANCE.md). Implementation: `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
-| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); DNS-01 capability and failed-challenge checks remain open ([ACCEPTANCE.md](ACCEPTANCE.md)) |
+| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); a real NXDOMAIN HTTP-01 failure/backoff passed in the [follow-up](release-evidence/1.6.1-https-reboot-failure.md). DNS-01, rendered UI and optional notification checks remain scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Done** (scoped PVE) | Operator-confirmed mobile-data HTTPS request without certificate warnings, with the external client IP matched between HAProxy and backend X-Forwarded-For on the [PVE candidate](release-evidence/1.6.1-public-http01.md). WAN/NAT routing remains deployment-specific; follow [ACCEPTANCE.md](ACCEPTANCE.md). |
 | **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers; scoped PVE) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real dev appliance also passed ban/unban/fail-open with a dedicated loopback client ([candidate evidence](release-evidence/1.6.1-336b5e0.md)); external-client acceptance remains scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
-| **AC-08** | Survives reboot | **Partial** | Actual reboot and late-PostgreSQL startup recovery passed on the [PVE candidate](release-evidence/1.6.1-336b5e0.md); a published HTTPS request after reboot remains open ([ACCEPTANCE.md](ACCEPTANCE.md)). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
+| **AC-08** | Survives reboot | **Done** (scoped PVE) | Actual reboot with trusted published-HTTPS recovery passed in the [PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md); late-PostgreSQL startup recovery passed on the same binary [candidate](release-evidence/1.6.1-336b5e0.md). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
