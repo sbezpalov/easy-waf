@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Complete packaged edge recovery.** APT upgrades queue a cold restart of active HAProxy when installing its managed drop-in, applying service policy and recreating stats listeners lost by older reload hooks. Stopped edges and unowned drop-ins are left alone.
+
 - **Portable Linux verification.** HAProxy golden validation resolves its certificate/SPOE/map fixtures independently of the validator's working directory. OVF shell scripts retain LF in Windows checkouts and source archives and join the shell line-ending gate.
 
 - **Stable profile selection.** Slow profile-catalog responses preserve the current application draft, and superseded responses cannot replace newer options or help text.

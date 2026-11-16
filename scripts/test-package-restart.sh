@@ -16,16 +16,21 @@ info() { warnings=$((warnings + 1)); }
 systemctl() {
   calls+=("$*")
   case "$1" in
+    cat) [[ "$mode" != no_haproxy ]] ;;
     is-active)
       case "$mode" in
         stopped) return 3 ;;
         api_only) [[ "$3" == easy-waf-api.service ]] ;;
         worker_only) [[ "$3" == easy-waf-apt.service ]] ;;
+        edge_only | failed_edge_queue) [[ "$3" == haproxy.service ]] ;;
         *) return 0 ;;
       esac
       ;;
     restart)
       [[ "${3:-}" != easy-waf-hostd-restart.service || "$mode" != failed_queue ]]
+      ;;
+    try-restart)
+      [[ "${3:-}" != haproxy.service || "$mode" != failed_edge_queue ]]
       ;;
     *) return 0 ;;
   esac
@@ -44,6 +49,7 @@ reject_call() {
   fi
 }
 for mode in all stopped api_only worker_only failed_queue; do
+  HAPROXY_DROPIN_MANAGED=0
   calls=()
   warnings=0
   restart_active_units
@@ -78,6 +84,84 @@ for mode in all stopped api_only worker_only failed_queue; do
       reject_call 'try-restart --no-block easy-waf-api.service'
       reject_call 'try-restart --no-block easy-waf-acmed.service'
       ;;
+  esac
+done
+
+# An upgraded drop-in must take effect and recover an inherited missing stats
+# listener. Only an active, managed edge is eligible; keep the operation queued.
+export HAPROXY_DROPIN_MANAGED
+for mode in all stopped edge_only failed_edge_queue; do
+  for HAPROXY_DROPIN_MANAGED in 0 1; do
+    calls=()
+    warnings=0
+    restart_active_units
+    reject_call 'restart haproxy.service'
+    reject_call 'try-restart haproxy.service'
+    if [[ "$HAPROXY_DROPIN_MANAGED" == 1 && "$mode" != stopped ]]; then
+      if ! has_call 'try-restart --no-block haproxy.service'; then
+        echo "missing queued managed HAProxy restart: $mode" >&2; exit 1
+      fi
+      if [[ "$mode" == failed_edge_queue ]]; then [[ "$warnings" == 1 ]]; fi
+      if [[ "$mode" == all ]]; then
+        edge_index=-1
+        api_index=-1
+        for index in "${!calls[@]}"; do
+          [[ "${calls[index]}" != 'try-restart --no-block haproxy.service' ]] || edge_index="$index"
+          [[ "${calls[index]}" != 'try-restart --no-block easy-waf-api.service' ]] || api_index="$index"
+        done
+        ((edge_index >= 0 && api_index > edge_index))
+      fi
+    else
+      reject_call 'try-restart --no-block haproxy.service'
+      [[ "$warnings" == 0 ]]
+    fi
+  done
+done
+
+# Exercise the real ownership decision with all fixed OS paths redirected into
+# an owned temporary tree. Only the install/systemctl leaves are replaced.
+test_base="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+test_root="$(mktemp -d "${test_base}/easy-waf-package-haproxy.XXXXXX")"
+cleanup() {
+  [[ "$(dirname "$test_root")" == "$test_base" && "$(basename "$test_root")" == easy-waf-package-haproxy.* ]] || return 1
+  rm -rf -- "$test_root"
+}
+trap cleanup EXIT
+# Keep the replacement variable literal until the extracted function executes.
+# shellcheck disable=SC2016
+function_source="$(sed -n '/^install_haproxy_dropin() {$/,/^}$/p' "${ROOT}/packaging/deb/postinst" |
+  sed 's|/usr/share/easy-waf|${TEST_PACKAGE_ROOT}/share|g; s|/etc/systemd/system|${TEST_PACKAGE_ROOT}/units|g')"
+[[ -n "$function_source" ]] || { echo 'missing maintainer drop-in function' >&2; exit 1; }
+eval "$function_source"
+# Called by the extracted maintainer function.
+# shellcheck disable=SC2317,SC2329
+install() { cp -- "${@: -2:1}" "${@: -1}"; }
+export TEST_PACKAGE_ROOT STATE_DIR
+for fixture in missing_source no_haproxy custom owned fresh; do
+  TEST_PACKAGE_ROOT="$test_root/$fixture"
+  STATE_DIR="$TEST_PACKAGE_ROOT/state"
+  mode="$fixture"
+  HAPROXY_DROPIN_MANAGED=0
+  mkdir -p "$TEST_PACKAGE_ROOT/share" "$TEST_PACKAGE_ROOT/units/haproxy.service.d" "$STATE_DIR/haproxy"
+  printf 'existing config\n' >"$STATE_DIR/haproxy/haproxy.cfg"
+  if [[ "$fixture" != missing_source ]]; then
+    printf '# easy-waf fixture\nState=__EASY_WAF_STATE__\n' >"$TEST_PACKAGE_ROOT/share/haproxy-easy-waf-dropin.conf"
+  fi
+  dropin="$TEST_PACKAGE_ROOT/units/haproxy.service.d/easy-waf.conf"
+  case "$fixture" in
+    custom) printf 'operator-owned policy\n' >"$dropin" ;;
+    owned) printf '# easy-waf old policy\n' >"$dropin" ;;
+  esac
+  install_haproxy_dropin
+  case "$fixture" in
+    owned | fresh)
+      [[ "$HAPROXY_DROPIN_MANAGED" == 1 ]]
+      grep -Fq "State=$STATE_DIR" "$dropin"
+      ;;
+    custom)
+      [[ "$HAPROXY_DROPIN_MANAGED" == 0 && "$(cat "$dropin")" == 'operator-owned policy' ]]
+      ;;
+    *) [[ "$HAPROXY_DROPIN_MANAGED" == 0 && ! -e "$dropin" ]] ;;
   esac
 done
 

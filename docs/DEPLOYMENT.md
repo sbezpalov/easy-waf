@@ -161,6 +161,10 @@ the generated config). It restarts **only the units that were already running**,
 so a deliberately stopped service stays stopped. API/acmed restarts are queued
 with `try-restart --no-block`, so ACME's graceful stop (up to 50 minutes) cannot
 hold dpkg past the parent APT's 30-minute budget;
+on upgrades, active HAProxy also gets a queued cold restart when the package
+installed its managed drop-in. This applies its service policy and recovers
+stats listeners unlinked by older reload hooks; connected clients may need to
+reconnect. A stopped edge or unowned drop-in does not get this restart.
 APT-worker/broker restart is queued in `easy-waf-hostd-restart.service`, outside
 both owning cgroups. That root helper first reserves the private execution lease,
 then waits for the real APT frontend and dpkg backend locks. It holds all three
@@ -295,7 +299,8 @@ problem. A successful API login alone does not verify that the browser UI runs.
 
 HAProxy reload must retain the live stats socket pathname: deleting it before
 SIGUSR2 can leave the inherited listener unreachable. Stale socket removal belongs
-to cold start only. After upgrading an affected appliance, reinstall the updated
+to cold start only. Package upgrades queue that cold restart for an active
+managed edge. If queueing fails or a custom drop-in was left alone, reinstall the updated
 drop-in and restart HAProxy once to recreate an already missing socket; subsequent
 Apply/reload operations preserve it. Appliance smoke checks runtime stats through
 the authenticated API after Apply, including collector errors returned with HTTP 200.

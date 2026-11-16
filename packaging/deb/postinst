@@ -15,6 +15,7 @@ set -e
 STATE_DIR=/var/lib/easy-waf
 CFG_DIR=/etc/easy-waf
 UNITS="easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service"
+HAPROXY_DROPIN_MANAGED=0
 
 info() { echo "[easy-waf] $*"; }
 
@@ -106,6 +107,7 @@ install_haproxy_dropin() {
 	sed "s|__EASY_WAF_STATE__|${STATE_DIR}|g" "$src" >"${dropin}.tmp"
 	install -m 0644 "${dropin}.tmp" "$dropin"
 	rm -f "${dropin}.tmp"
+	HAPROXY_DROPIN_MANAGED=1
 	info "Installed ${dropin} (HAProxy uses ${STATE_DIR}/haproxy/haproxy.cfg)"
 }
 
@@ -153,6 +155,12 @@ restart_active_units() {
 	if systemctl is-active --quiet easy-waf-apt.service || systemctl is-active --quiet easy-waf-hostd.service; then
 		# Requeue even if an earlier helper is finishing; dpkg still owns its lock.
 		systemctl restart --no-block easy-waf-hostd-restart.service || info "WARNING: broker restart was not queued — after package work finishes, check: systemctl status easy-waf-hostd-restart.service"
+	fi
+	# A reload retains inherited listeners, including a stats socket unlinked by
+	# an older drop-in. A cold restart also applies the new service identity and
+	# working directory. Queue only the active edge whose drop-in we installed.
+	if [ "${HAPROXY_DROPIN_MANAGED:-0}" = 1 ] && systemctl is-active --quiet haproxy.service; then
+		systemctl try-restart --no-block haproxy.service || info "WARNING: HAProxy restart was not queued — after package work finishes, check: systemctl status haproxy.service"
 	fi
 	for u in $UNITS; do
 		[ "$u" != easy-waf-hostd.service ] || continue
