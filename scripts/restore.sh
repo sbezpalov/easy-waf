@@ -58,7 +58,11 @@ if grep -qE '^/|(^|/)\.\.(/|$)' <<<"$archive_members"; then
   exit 1
 fi
 unset archive_members
-tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$WORKDIR"
+# WORKDIR stays 0700. Preserve archived group read/traverse for HAProxy inside
+# that private parent, while removing group write and all access for others.
+# An extraction-wide 077 mask would permanently strip 0750/0640 edge modes;
+# private archived 0700/0600 secrets must remain private as well.
+(umask 027; tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$WORKDIR")
 
 ROOT="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
 if [[ -z "$ROOT" ]] || [[ ! -d "$ROOT" ]]; then

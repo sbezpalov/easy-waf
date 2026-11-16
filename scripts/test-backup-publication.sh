@@ -15,4 +15,4 @@ export MSYS_NO_PATHCONV=1
   --security-opt no-new-privileges --memory 128m --pids-limit 128 \
   --tmpfs /tmp:rw,exec,mode=1777 --tmpfs /etc/easy-waf:rw,mode=0700 \
   --mount "type=bind,source=${docker_root},target=/repo,readonly" \
-  --entrypoint /bin/bash "$image" /repo/scripts/testdata/backup-publication.sh
+  --entrypoint /bin/bash "$image" -c 'bash /repo/scripts/testdata/backup-publication.sh && bash /repo/scripts/testdata/restore-permissions.sh'

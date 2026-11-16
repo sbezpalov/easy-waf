@@ -169,3 +169,8 @@ Older one-off `tar` layouts (only `/var/lib/easy-waf` without `easywaf.dump` / `
 - Take backups **while** services are running only if your PostgreSQL workload tolerates a concurrent `pg_dump` (default custom format is consistent for restore).
 - After restore on a **new** host, check **`DATABASE_URL`**, TLS paths, and **`CROWDSEC_*`** in `easy-waf.env` before going to production.
 - See also [ARCHITECTURE.md](ARCHITECTURE.md) (revisions, apply pipeline) and [OPERATIONS.md](OPERATIONS.md).
+
+Restoration extracts into a private "0700" temporary directory. Within that
+parent it preserves archived group read/traverse permissions for HAProxy while
+masking group write and access for others. Archived "0700" directories and
+"0600" secret files remain private; ownership is assigned by the appliance.

@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Restore preserves HAProxy access.** Archive extraction retains safe group read/traverse permissions inside its private staging directory. Restore no longer strips edge permissions that the unprivileged HAProxy process needs to reload; archived private secret modes stay private.
+
 - **HAProxy validation from private directories.** Apply and drop-in repair now validate from a neutral working directory while preserving relative input paths. Running from a private operator checkout no longer breaks HAProxy's identity transition or falsely falls back to a root master.
 
 - **Unattended conffile adoption.** Installer and CrowdSec APT/dpkg paths now preserve existing operator conffiles explicitly, including files created by older script installations. Upgrades no longer stop at a conffile prompt despite `DEBIAN_FRONTEND=noninteractive`; real offline APT regressions cover adoption, packaged upgrades, fresh defaults and SPOA configuration.
