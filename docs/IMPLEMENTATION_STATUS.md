@@ -190,6 +190,10 @@ passed the remaining three root-fixture launchers and confirmed actual GitHub CI
 success for c27c77b. Runtime/package inputs remain identical through c5c322f;
 newer E2E changes, final release notes/signatures and external acceptance remain
 separate gates. No release is approved by these aggregate coverage counts.
+Named [1.6.1 candidate notes](../CHANGELOG.md#161---unreleased) are now prepared
+with an explicit Unreleased status and upgrade/recovery guidance. This closes the
+missing-section preparation gap; final acceptance, release date, tag/signatures
+and newer remote runs remain open. Notes preparation does not approve publication.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 

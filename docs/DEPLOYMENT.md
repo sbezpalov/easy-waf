@@ -98,7 +98,10 @@ Automated GitHub Release build and publish: workflow **[`.github/workflows/relea
 
 Before tagging, prepare exactly one nonempty changelog section for the version
 in `VERSION`. Preview it with `bash scripts/release-notes.sh 1.6.1 CHANGELOG.md`
-for the current candidate. The extractor does not fall back to `[Unreleased]`;
+for the current candidate. The named `[1.6.1] - Unreleased` section is prepared
+for review; set its release date only when final acceptance is approved, before
+creating the release tag. Preparing notes does not publish a release.
+The extractor does not fall back to `[Unreleased]`;
 missing, blank or duplicate sections fail. The release job checks the tag/version
 and prepares this same notes file before Go setup, package builds or signing.
 

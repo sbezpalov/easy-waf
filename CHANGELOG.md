@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Changes after the prepared 1.6.1 candidate will be recorded here.
+
+## [1.6.1] - Unreleased
+
+### Upgrade notes
+
+- Take a matched database/state/config backup before upgrading and retain the
+  previous package. Use APT for a package-managed appliance; use the script
+  upgrade path only for an installation without a package. See
+  [the upgrade procedure](docs/ACCEPTANCE.md#install-and-upgrade).
+- API startup applies the current migrations through 027. A binary downgrade
+  does not rewind PostgreSQL or certificate state. Recover with the matching
+  package and [matched backup/restore](docs/BACKUP_RESTORE.md), tested on a copy.
+  Revision rollback changes edge artifacts, not saved applications/settings;
+  a later Apply or API startup reconciliation can replace that runtime rollback.
+- Review existing publication restrictions before exposing Home Assistant. One
+  normal HA publication serves UI, Companion and API; use `ha-mcp` only when
+  deliberately restricting exposure to MCP. Configure HA to trust the actual
+  proxy address; see [Home Assistant](docs/HOME_ASSISTANT.md).
+
 ### Changed
 
 - **Release metadata preflight.** Tag/version and exact, unique, nonempty changelog notes are checked before Go setup, package builds and signing. Version punctuation is matched literally; missing notes never fall back to Unreleased. Portable extractor and workflow regressions run in `make verify`.
@@ -76,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Features previously previewed in 1.7.0-rc.1.** This stable candidate includes profile/application body-size and multipart controls, `php-app`, certificate-attention status and the nightly body/CrowdSec scenarios described in that prerelease. Body controls use headers; they do not inspect bodies or replace backend patching.
 - **`make dev-up`.** Starts the development PostgreSQL from `docker-compose.yml` and prints `DATABASE_URL`. Docker Compose v2 is the only extra tool; nothing reads a private machine path or an `easy-waf` GitHub organization.
 - **`make test-integration`.** Runs the PostgreSQL-backed packages against `DATABASE_URL`, or starts the Compose database when that variable is empty.
 - **`make lint` and `make vuln` build their tools with the Go version in `go.mod`.** `go run` of golangci-lint v2.15.0 otherwise compiles it with Go 1.26, and that binary refuses a Go 1.27 module.
@@ -88,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Maintenance mode.** Per application, `maintenance` returns a 503 maintenance page (`Retry-After: 600`) without reaching the servers, except from `maintenance_bypass_cidrs`. Applications → **Maintenance** toggles it (`POST /api/v1/applications/{id}/maintenance`, audited). Migration `022_maintenance.sql`.
 - **Error pages.** Responses HAProxy makes itself (403, 404, 429, 502, 503, 504 and others) get short neutral HTML pages instead of HAProxy's built-in bodies, which named the proxy.
 - **Several backend servers per application.** `backend_servers` adds servers next to `backend_host` (load balanced with `backend_balance`: round robin, least connections or source IP), and `backup: true` makes one a failover target used only while the others are down. Applications → More backend servers. Migration `021_backend_servers.sql`.
-- **Scheduled backups.** `easy-waf-backup.timer` runs `backup.sh --dir /var/backups/easy-waf --keep 7` daily and keeps the 7 newest archives (`EASY_WAF_BACKUP_DIR`, `EASY_WAF_BACKUP_KEEP` in `easy-waf.env`). The package enables it once; `easy-waf-backup` is now on `PATH`. `backup.sh` writes through a `.partial` file, so a failed run leaves no truncated archive.
+- **Scheduled backups.** `easy-waf-backup.timer` runs `backup.sh --dir /var/backups/easy-waf --keep 7` daily and keeps the 7 newest archives (`EASY_WAF_BACKUP_DIR`, `EASY_WAF_BACKUP_KEEP` in `easy-waf.env`). The package enables it once; `easy-waf-backup` is now on `PATH`. `backup.sh` packs privately and publishes only after success; a failed run preserves the previous archive.
 - **Notifications.** Telegram next to the webhook, and new events: failed HAProxy apply, backend server down/up, and a spike of blocked requests (`notify_blocked_spike_threshold` per 5 minutes). Settings → Notifications, with **Send test** (`POST /api/v1/notify/test`). The Telegram token is never returned by the API.
 - **CrowdSec block page.** A CrowdSec decision now returns a short HTML 403 page that names CrowdSec and shows the visitor's address, instead of a bare 403. Captcha decisions still get this page; there is no captcha challenge.
 - **Blocked requests view.** Logs / Audit shows what the edge refused over the last hour, day or week: counts by rule, top clients (with country and a one-click blacklist) and hosts, and the latest requests. `GET /api/v1/security/blocked` reads the HAProxy journal through `easy-waf-hostd`; the frontends now log `{host|rule}` in httplog so each refusal names its rule.
@@ -151,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Offline bundle build.** The package closure comes from APT's solver on an empty package status. Virtual names such as `dbus-system-bus` and `libgnutls30` are downloaded as the concrete provider APT selects.
 - **Offline bundle checksums.** `SHA256SUMS` is written outside the ISO tree and then moved in, so the list no longer names a `SHA256SUMS.tmp` that is gone after the rename and makes `install.sh --verify-only` fail.
 
-### Changed
+### Documentation
 
 - **Docs match the tree.** Release notes list amd64 and arm64 (the published 1.6.0 release stays amd64-only). Acceptance counts match the AC table. The product name in the CrowdSec, Fail2Ban, GeoIP and monitoring pages is Easy Home WAF. English remains the canonical documentation language.
 - **Test certificates are generated, not stored.** `go test ./internal/haproxy` writes throwaway bundles for the golden configs. The private keys are gitignored.
