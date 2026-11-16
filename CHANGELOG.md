@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Keyboard-safe confirmations.** Confirmation dialogs support Escape cancellation, keep Tab navigation inside their actions and restore focus to the invoking control. Destructive confirmations initially focus Cancel.
+
 - **Exclusive backup quiescence.** Manual and timer backups now share a nonblocking lock until writer restart and cleanup. An overlapping run fails before service or database access, preventing one backup from resuming writers while another still captures the database and files.
 
 - **Complete diagnostic key masking.** Root support archives now mask exact/prefix secret marker keys and whitespace around assignments consistently with the API collector, closing leaks such as `TOKEN`, `PASSWORD_HINT` and spaced CrowdSec credentials.

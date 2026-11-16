@@ -1,0 +1,94 @@
+// Copyright 2026 Sergey Bezpalov
+// SPDX-License-Identifier: Apache-2.0
+
+package webui
+
+import (
+	"bytes"
+	"context"
+	"os/exec"
+	"testing"
+	"time"
+)
+
+func TestConfirmationDialogKeyboard(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js is required for UI interaction tests")
+	}
+	page, err := Assets.ReadFile("dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "-e", confirmationDialogTest)
+	cmd.Stdin = bytes.NewReader(page)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("confirmation dialog: %v\n%s", err, output)
+	}
+}
+
+const confirmationDialogTest = `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const start = page.indexOf('  function confirmDialog(');
+const end = page.indexOf('  async function withBusy(', start);
+assert.ok(start >= 0 && end > start, 'missing confirmation handler');
+async function scenario(action, danger = true) {
+  const document = {activeElement: null};
+  class Element {
+    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = {}; this.isConnected = true; }
+    appendChild(child) { this.children.push(child); }
+    setAttribute(key, value) { this.attributes[key] = value; }
+    addEventListener(key, fn) { this.events[key] = fn; }
+    focus() { document.activeElement = this; }
+    remove() { this.isConnected = false; }
+  }
+  document.createElement = tag => new Element(tag);
+  document.body = new Element('body');
+  const trigger = new Element('button'); trigger.focus();
+  const context = vm.createContext({document});
+  vm.runInContext(page.slice(start, end), context);
+  let settled = false;
+  const promise = context.confirmDialog('Delete <fixture> & publication?', {danger, okLabel: 'Delete'})
+    .then(result => {settled = true; return result;});
+  const overlay = document.body.children[0], box = overlay.children[0];
+  const [cancel, ok] = box.children[1].children;
+  assert.equal(document.activeElement, danger ? cancel : ok, 'initial focus');
+  assert.equal(box.attributes.role, 'dialog');
+  assert.equal(box.attributes['aria-modal'], 'true');
+  assert.equal(box.attributes['aria-label'], 'Delete <fixture> & publication?');
+  assert.equal(box.children[0].textContent, 'Delete <fixture> & publication?');
+  function key(name, shiftKey = false) {
+    const event = {key: name, shiftKey, prevented: false, stopped: false,
+      preventDefault() {this.prevented = true}, stopPropagation() {this.stopped = true}};
+    overlay.events.keydown(event); return event;
+  }
+  if (action === 'escape') {
+    const event = key('Escape'); assert.ok(event.prevented && event.stopped);
+  } else if (action === 'tab') {
+    ok.focus(); assert.ok(key('Tab').prevented); assert.equal(document.activeElement, cancel);
+    assert.ok(key('Tab', true).prevented); assert.equal(document.activeElement, ok);
+    cancel.focus(); assert.equal(key('Tab').prevented, false);
+    ok.focus(); assert.equal(key('Tab', true).prevented, false);
+    assert.equal(key('x').prevented, false);
+    await Promise.resolve(); assert.equal(settled, false, 'navigation must not submit');
+    key('Escape');
+  } else if (action === 'inside') {
+    overlay.onclick({target: box}); await Promise.resolve(); assert.equal(settled, false);
+    cancel.onclick();
+  } else if (action === 'backdrop') { overlay.onclick({target: overlay});
+  } else if (action === 'confirm') { ok.onclick(); cancel.onclick();
+  } else if (action === 'detached') { trigger.isConnected = false; cancel.onclick();
+  } else { cancel.onclick(); }
+  assert.equal(await promise, action === 'confirm');
+  assert.equal(overlay.isConnected, false);
+  if (action === 'detached') assert.notEqual(document.activeElement, trigger);
+  else assert.equal(document.activeElement, trigger, 'restore invoking control');
+}
+(async () => {
+  for (const action of ['escape', 'tab', 'inside', 'backdrop', 'confirm', 'cancel', 'detached']) await scenario(action);
+  await scenario('escape', false);
+})().catch(error => {console.error(error); process.exitCode = 1});
+`

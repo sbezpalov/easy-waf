@@ -1133,10 +1133,14 @@
   function confirmDialog(message, opts) {
     const o = opts || {};
     return new Promise((resolve) => {
+      const previousFocus = document.activeElement;
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       const box = document.createElement('div');
       box.className = 'modal-box';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      box.setAttribute('aria-label', String(message));
       const p = document.createElement('p');
       p.className = 'modal-message';
       p.textContent = String(message);
@@ -1150,10 +1154,29 @@
       ok.type = 'button';
       if (o.danger) ok.className = 'modal-ok-danger';
       ok.textContent = o.okLabel || 'OK';
+      let closed = false;
       const close = (val) => {
+        if (closed) return;
+        closed = true;
         overlay.remove();
+        if (previousFocus && previousFocus.isConnected) previousFocus.focus();
         resolve(val);
       };
+      overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          close(false);
+        } else if (e.key === 'Tab') {
+          if (e.shiftKey && document.activeElement === cancel) {
+            e.preventDefault();
+            ok.focus();
+          } else if (!e.shiftKey && document.activeElement === ok) {
+            e.preventDefault();
+            cancel.focus();
+          }
+        }
+      });
       cancel.onclick = () => close(false);
       ok.onclick = () => close(true);
       overlay.onclick = (e) => { if (e.target === overlay) close(false); };
@@ -1163,7 +1186,7 @@
       box.appendChild(actions);
       overlay.appendChild(box);
       document.body.appendChild(overlay);
-      ok.focus();
+      (o.danger ? cancel : ok).focus();
     });
   }
 
