@@ -116,10 +116,13 @@ Captured in `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render
 
 The table distinguishes implementation coverage from appliance evidence.
 **Done** describes repository coverage at the stated scope, not approval of the
-current release candidate. AC-01 and AC-08 remain **Partial** until full install
-and real reboot observations exist; AC-05 is covered only in containers.
-Upgrade, public ACME and WAN checks remain open. Record candidate-specific
-results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
+current release candidate. AC-01 and AC-08 remain **Partial** pending the full
+appliance procedure; AC-05 has container and scoped PVE loopback evidence.
+Upgrade, public ACME and WAN checks remain open. Scoped observations on a real
+PVE dev appliance (install/reinstall, smoke, reboot, delayed DB, edge/WebSocket
+and CrowdSec; restore follow-up at d33df09) are recorded for [candidate 336b5e0](release-evidence/1.6.1-336b5e0.md).
+They do not close the remaining pristine-install, published-HTTPS or UI checks.
+Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | ID | Criterion | Status | Check in repository |
@@ -128,10 +131,10 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Real Let's Encrypt is a manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Partial** | Render `fe_http`/`fe_https`, SNI, Host backends — **Done** in code; WAN/NAT/port-forward routing — outside the repo. Manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
-| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real host is still a manual check ([ACCEPTANCE.md](ACCEPTANCE.md)) |
+| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers; scoped PVE) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real dev appliance also passed ban/unban/fail-open with a dedicated loopback client ([candidate evidence](release-evidence/1.6.1-336b5e0.md)); external-client acceptance remains scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
 | **AC-07** | UI: apps, certs, blocked | **Done** | Applications, Certificates (incl. summary/actions), Security (IPBL, blocked UA), Dashboard tabs |
-| **AC-08** | Survives reboot | **Partial** | Actual reboot and late-PostgreSQL recovery need appliance evidence ([ACCEPTANCE.md](ACCEPTANCE.md)). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
+| **AC-08** | Survives reboot | **Partial** | Actual reboot and late-PostgreSQL startup recovery passed on the [PVE candidate](release-evidence/1.6.1-336b5e0.md); a published HTTPS request after reboot remains open ([ACCEPTANCE.md](ACCEPTANCE.md)). Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
 | **AC-09** | WebSocket (e.g. Home Assistant) | **Done** | `timeout tunnel` in defaults and for `websocket` in `internal/haproxy/render.go` |
 | **AC-10** | Backup + restore | **Done** | `scripts/backup.sh`, `scripts/restore.sh`, `docs/BACKUP_RESTORE.md`, `scripts/test-backup-restore.sh` |
 
