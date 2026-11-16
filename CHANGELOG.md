@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Stable profile selection.** Slow profile-catalog responses preserve the current application draft, and superseded responses cannot replace newer options or help text.
+
 - **Keyboard-safe confirmations.** Confirmation dialogs support Escape cancellation, keep Tab navigation inside their actions and restore focus to the invoking control. Destructive confirmations initially focus Cancel.
 
 - **Exclusive backup quiescence.** Manual and timer backups now share a nonblocking lock until writer restart and cleanup. An overlapping run fails before service or database access, preventing one backup from resuming writers while another still captures the database and files.

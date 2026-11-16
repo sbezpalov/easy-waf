@@ -113,6 +113,50 @@ async function run() {
       assert.match(help.textContent, /unavailable/i);
     }
   }
+  for (const scenario of ['delayed_fetch', 'delayed_json', 'stale_success', 'stale_failure', 'stale_json', 'stale_json_failure']) {
+    let resolveFetch, resolveJSON, rejectJSON, jsonStarted;
+    const fetchGate = new Promise(resolve => {resolveFetch = resolve});
+    const jsonGate = new Promise((resolve, reject) => {resolveJSON = resolve; rejectJSON = reject});
+    const jsonStartGate = new Promise(resolve => {jsonStarted = resolve});
+    const catalog = {balanced: {description: 'Balanced'}, 'home-assistant': {description: 'HA'},
+      'ha-mcp': {description: 'MCP', path_policy: {allow: ['/api/mcp']}}};
+    let value = 'balanced', html = '';
+    const select = {get value() {return value}, set value(v) {value = v},
+      get innerHTML() {return html}, set innerHTML(v) {
+        html = v; value = /value="([^"]*)"/.exec(v)?.[1] || '';
+      }};
+    const help = {textContent: ''};
+    let requests = 0;
+    const delayed = {document: {getElementById: id => {
+      if (id === 'profile') return select;
+      if (id === 'profile-help') return help;
+      throw Error('profile loading touched another field: ' + id);
+    }}, hdr: () => ({}), fetch: async () => ++requests === 1 ? fetchGate :
+      {ok: true, json: async () => catalog}};
+    vm.createContext(delayed);
+    include(delayed, '  let appProfilesCatalog =', '  async function loadProfilesDoc(');
+    const first = delayed.loadProfileSelect();
+    if (scenario.includes('json')) {
+      resolveFetch({ok: true, json: () => {jsonStarted(); return jsonGate}});
+      await jsonStartGate;
+    }
+    select.value = 'home-assistant';
+    if (scenario.startsWith('stale_')) {
+      await delayed.loadProfileSelect();
+      select.value = 'ha-mcp'; select.onchange();
+      if (scenario === 'stale_json_failure') rejectJSON(Error('outdated response body failed'));
+      else if (scenario === 'stale_json') resolveJSON({balanced: {description: 'Outdated'}});
+      else resolveFetch(scenario === 'stale_failure' ? {ok: false, status: 503} :
+        {ok: true, json: async () => ({balanced: {description: 'Outdated'}})});
+    } else {
+      resolveFetch({ok: true, json: () => jsonGate}); resolveJSON(catalog);
+    }
+    await first;
+    assert.equal(select.value, scenario.startsWith('stale_') ? 'ha-mcp' : 'home-assistant',
+      scenario + ': metadata must not replace a draft selection');
+    assert.match(help.textContent, scenario.startsWith('stale_') ? /MCP/ : /Companion/);
+    assert.doesNotMatch(help.textContent, /unavailable|Outdated/);
+  }
 }
 run().catch(error => {console.error(error); process.exitCode = 1});
 `

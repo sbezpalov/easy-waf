@@ -1851,6 +1851,7 @@
   document.getElementById('btn-rp-add').onclick = () => addRestrictedPathRow('', '');
 
   let appProfilesCatalog = {};
+  let profileSelectRequest = 0;
 
   function renderProfileHelp() {
     const name = document.getElementById('profile').value;
@@ -1880,15 +1881,18 @@
   async function loadProfileSelect() {
     const sel = document.getElementById('profile');
     sel.onchange = renderProfileHelp;
-    const prev = sel.value;
+    const request = ++profileSelectRequest;
     try {
       const r = await fetch('/api/v1/profiles', { headers: hdr() });
+      if (request !== profileSelectRequest) return;
       if (r.status === 403) { refreshSession(); return; }
       if (!r.ok) throw new Error('profile catalogue unavailable');
       const j = await r.json();
+      if (request !== profileSelectRequest) return;
       if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('invalid profile catalogue');
       appProfilesCatalog = j;
       const keys = Object.keys(j).sort();
+      const prev = sel.value;
       const escLocal = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
       sel.innerHTML = keys.map((k) => {
         const d = (j[k] && (j[k].Description || j[k].description)) || '';
@@ -1897,6 +1901,7 @@
       if (keys.includes(prev)) sel.value = prev;
       renderProfileHelp();
     } catch (_) {
+      if (request !== profileSelectRequest) return;
       const help = document.getElementById('profile-help');
       if (help) help.textContent = 'Profile details unavailable. Refresh the page to retry.';
     }
