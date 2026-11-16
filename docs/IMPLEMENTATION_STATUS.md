@@ -137,6 +137,10 @@ static guidance follow-ups were repaired and checked in native Edge on
 The user-reported missing version was repaired and checked in native Edge and
 actual CLI binaries on [candidate 6be4467](release-evidence/1.6.1-version.md),
 which also has inspected local amd64/arm64 artifacts (no arm64 boot or signatures).
+Application deletion controls, profile explanations and Home Assistant route
+repairs passed scoped tests and dev-appliance observation on
+[candidate d5588ce](release-evidence/1.6.1-application-controls.md). Actual user
+publication deletion and end-to-end HA client acceptance were not performed.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
