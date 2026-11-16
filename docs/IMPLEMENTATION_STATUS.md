@@ -143,6 +143,9 @@ repairs passed scoped tests and dev-appliance observation on
 publication deletion and end-to-end HA client acceptance were not performed.
 Confirmation keyboard handling subsequently passed native Edge acceptance on
 [candidate 93eab9f](release-evidence/1.6.1-confirmation-dialog.md).
+The published 1.6.0 signature and real-binary PostgreSQL transition from
+migrations 019 to 027 passed in an [isolated fixture](release-evidence/1.6.1-release160-migrations.md).
+This preparation does not close the actual appliance install/upgrade gate.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
