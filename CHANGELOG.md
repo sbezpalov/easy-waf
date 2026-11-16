@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel static assets and guidance.** The embedded panel now serves a favicon, avoiding a browser console 404. Applications guidance distinguishes automatic Apply from changes awaiting manual Apply.
+
 - **Application Apply feedback.** Save, security-mode and maintenance actions now report whether automatic Apply completed or the saved change needs manual Apply. Successful application mutation responses carry the outcome without changing their JSON; the panel updates pending indicators accordingly and remains conservative with older servers.
 
 - **HAProxy runtime stats survive reload.** Reload no longer unlinks the live stats socket before HAProxy reuses its listener. Dashboard metrics remain reachable after Apply; appliance smoke now rejects HTTP 200 responses containing collector errors.

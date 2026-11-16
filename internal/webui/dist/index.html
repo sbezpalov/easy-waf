@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Easy Home WAF</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="16x16 32x32" />
   <style>
     :root {
       font-family: system-ui, sans-serif;
@@ -311,7 +312,7 @@
 
       <div id="tab-apps" class="tab-panel">
         <h2>◇ Applications</h2>
-        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Use <a href="#config">Config</a> → <strong>Apply HAProxy</strong> after changes.</small></p>
+        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Application changes apply automatically by default. For pending changes, use <a href="#config">Config</a> → <strong>Apply HAProxy</strong>.</small></p>
         <div id="apps-pending-banner" class="apps-pending-banner hidden" role="status">
           You have unapplied changes. <a href="#config">Go to Config → Apply HAProxy</a>
         </div>
