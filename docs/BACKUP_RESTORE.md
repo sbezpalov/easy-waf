@@ -185,3 +185,6 @@ Restoration extracts into a private "0700" temporary directory. Within that
 parent it preserves archived group read/traverse permissions for HAProxy while
 masking group write and access for others. Archived "0700" directories and
 "0600" secret files remain private; ownership is assigned by the appliance.
+
+Candidate-specific installed-command serialization and recovery checks are recorded
+in [the 74b0df7 acceptance report](release-evidence/1.6.1-restore-lock-74b0df7.md).
