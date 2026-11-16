@@ -3,6 +3,11 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest full local candidate / VMware delivery:** [6e1fb75](release-evidence/1.6.1-local-gates-6e1fb75.md):
+eight Linux gates, 821 race passes, fresh clean govulncheck, both-architecture
+release-artifact checks, successful GitHub CI and an actual APT installation on
+the independent clone. Strict preserved-state/runtime checks and smoke 19/0/2
+passed; fresh restore/reboot and final release approval for this commit remain open.
 **Latest PVE dev delivery:** [9cfc841 crypto dependency update](release-evidence/1.6.1-crypto-9cfc841.md),
 installed through APT with a new matched backup. All eight local Linux gates,
 817 race passes, fresh clean govulncheck and both-arch artifact inspection passed.
