@@ -3,7 +3,7 @@
 # Authentication belongs to the caller; extraction is not an integrity check.
 
 easy_waf_unpack_release() (
-  local archive="${1:?}" destination="${2:?}" stage members member binary
+  local archive="${1:?}" destination="${2:?}" prefix="${3:-}" stage members member binary
   local required=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin)
   local optional=(easy-wafd)
   gzip -t "$archive" || return 1
@@ -12,8 +12,13 @@ easy_waf_unpack_release() (
   stage="$(mktemp -d "${destination}/.release-stage.XXXXXX")" || return 1
   trap 'rm -rf "$stage"' EXIT
   for binary in "${required[@]}" "${optional[@]}"; do
-    if ! member="$(printf '%s\n' "$members" | awk -v b="$binary" '
+    if ! member="$(printf '%s\n' "$members" | EASY_WAF_RELEASE_MEMBER_PREFIX="$prefix" awk -v b="$binary" '
       { normalized=$0; sub(/^\.\//,"",normalized)
+        prefix=ENVIRON["EASY_WAF_RELEASE_MEMBER_PREFIX"]
+        if (prefix!="") {
+          if (index(normalized,prefix)!=1) next
+          normalized=substr(normalized,length(prefix)+1)
+        }
         if (normalized==b || normalized=="dist/" b) { count++; member=$0 } }
       END { if (count>1) exit 1; if (count==1) print member }
     ')"; then

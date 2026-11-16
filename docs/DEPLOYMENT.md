@@ -276,8 +276,12 @@ PostgreSQL database, or the nftables policy — `postrm` prints how to remove th
 state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
 
 **Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
-directory or `.tar.gz` of new binaries; it flattens a nested `dist/` from the
-release tarball (and fails if `easy-waf-api` is still missing), reuses
+directory or `.tar.gz` of new binaries. Authenticate the local input before
+running it; staging is not signature verification. Flat, nested `dist/` and
+single-wrapper archive layouts are supported. It stages all four required
+binaries privately (`easy-wafd` is optional), rejects incomplete or ambiguous
+archives before installation, preserves the input directory, and removes its
+temporary files on success or failure. It reuses
 `install.sh`, waits through the same lock-protected broker helper after its own
 package work finishes, and queues active **api** and **acmed** restarts. It does not cancel an
 already running maintenance helper to restart the broker.

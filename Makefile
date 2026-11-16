@@ -110,6 +110,7 @@ test-release-verify:
 
 test-release-unpack:
 	bash scripts/test-release-unpack.sh
+	bash scripts/test-upgrade-staging.sh
 
 test-offline-bundle:
 	bash scripts/test-offline-bundle.sh
