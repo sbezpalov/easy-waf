@@ -3,12 +3,12 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Latest PVE dev delivery:** [cb2d0a7 ACME UI feedback](release-evidence/1.6.1-acme-ui-cb2d0a7.md),
-installed through APT with a new matched backup; exact payload/UI/CSP, preserved
-production ACME settings and trusted HTTPS passed. Release approval remains open.
-A [fresh production HTTP-01 renewal](release-evidence/1.6.1-http01-renewal-cb2d0a7.md)
-also passed on that payload: new immutable generation/served leaf, DB/expiry
-agreement, Windows trust and native UI date, with a new post-renewal private backup.
+**Latest PVE dev delivery:** [22ce6f0 ACME contact validation](release-evidence/1.6.1-acme-contact-22ce6f0.md),
+installed through APT with a new matched backup. Exact payload/UI/CSP, installed
+API rejection without settings changes, native form validation and trusted HTTPS
+passed. Release approval remains open.
+The public certificate from the [cb2d0a7 production HTTP-01 renewal](release-evidence/1.6.1-http01-renewal-cb2d0a7.md)
+was preserved during this upgrade; no new renewal on 22ce6f0 is claimed.
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
