@@ -1,16 +1,21 @@
 # Security profiles (MVP)
 
-| Profile | Rate (RPS / burst) | Server timeout | Path blocks | Notes |
+| Profile | Default threshold (requests / 10 s per client IP) | Server timeout | Path blocks | Notes |
 |---------|-------------------|----------------|-------------|--------|
-| `balanced` | 50 / 100 | 50s | default probes | General home apps |
-| `strict` | 20 / 40 | 30s | extended | Hardened |
-| `trusted-lan` | 200 / 400 | 120s | minimal | High trust / LAN-heavy |
-| `public-app` | 30 / 60 | 60s | default | Internet-exposed generic |
-| `php-app` | 50 / 100 | 50s | default | PHP apps: blocks multipart, 32 MiB body limit |
-| `home-assistant` | 40 / 80 | 3600s | default | Long-lived WS/SSE |
-| `ha-mcp` | 20 / 40 | 3600s | default | Home Assistant MCP allowlist, bearer check, SSE server timeout. See [HA-MCP.md](HA-MCP.md) |
-| `none` | 500 / 1000 | 300s | *(none)* | High limits; combine with per-app toggles |
-| `custom` | 50 / 100 | 50s | default | Alias of balanced numerics; tuning via toggles |
+| `balanced` | 100 | 50s | default probes | General home apps |
+| `strict` | 40 | 30s | extended | Hardened |
+| `trusted-lan` | 400 | 120s | minimal | High trust / LAN-heavy |
+| `public-app` | 60 | 60s | default | Internet-exposed generic |
+| `php-app` | 100 | 50s | default | PHP apps: blocks multipart, 32 MiB body limit |
+| `home-assistant` | 80 | 3600s | default except `/config` | Full HA UI, Companion and API; authenticated HA settings use `/config` |
+| `ha-mcp` | 40 | 3600s | default | Home Assistant MCP allowlist, bearer check, SSE server timeout. See [HA-MCP.md](HA-MCP.md) |
+| `none` | 1000 | 300s | *(none)* | High limits; combine with per-app toggles |
+| `custom` | 100 | 50s | default | Alias of balanced numerics; tuning via toggles |
+
+The threshold column describes the generated HAProxy `http_req_rate(10s)` check
+against `RateLimitBurst`, not requests per second. It applies when the layer is
+enabled and can be replaced by per-application overrides. The API also exposes
+the historical `rate_limit_rps` metadata field; it is not the enforced threshold.
 
 Implementation: profile metadata lives in `internal/profiles`. The HAProxy template (`internal/haproxy/render.go`) applies **per published application**:
 

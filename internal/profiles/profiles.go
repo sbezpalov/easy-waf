@@ -119,19 +119,19 @@ func All() map[ProfileName]Profile {
 		},
 		HomeAssistant: {
 			Name:                HomeAssistant,
-			Description:         "WebSocket-friendly timeouts and HA-specific path allowances",
+			Description:         "Home Assistant web UI, Companion and API with long-lived connections",
 			RateLimitRPS:        40,
 			RateLimitBurst:      80,
 			ConnectTimeout:      5 * time.Second,
 			ServerTimeout:       3600 * time.Second,
 			HTTPKeepAlive:       true,
-			BlockPaths:          defaultBlockedPaths(),
+			BlockPaths:          homeAssistantBlockedPaths(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 			Notes:               "Long server timeout for SSE/WebSocket; still block obvious probes",
 		},
 		HAMCP: {
 			Name:                HAMCP,
-			Description:         "Home Assistant MCP: long SSE timeouts and a moderate request budget",
+			Description:         "MCP-only path preset by default; not for the Home Assistant web UI or Companion",
 			RateLimitRPS:        20,
 			RateLimitBurst:      40,
 			ConnectTimeout:      5 * time.Second,
@@ -174,6 +174,17 @@ func defaultBlockedPaths() []string {
 		"/vendor/phpunit",
 		"/config", "/backup.sql",
 	}
+}
+
+func homeAssistantBlockedPaths() []string {
+	var paths []string
+	for _, path := range defaultBlockedPaths() {
+		// /config is the authenticated HA settings frontend, not a probe.
+		if path != "/config" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func minimalBlockedPaths() []string {

@@ -21,6 +21,7 @@
     th, td { border-bottom: 1px solid var(--border); padding: 0.5rem; text-align: left; font-size: 0.9rem; }
     button { background: var(--accent); color: #fff; border: 0; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; }
     button.secondary { background: #21262d; color: #e6edf3; }
+    button.btn-app-delete { color: #ff7b72; border: 1px solid #f85149; }
     input, select, textarea { background: #0d1117; color: #e6edf3; border: 1px solid var(--border); padding: 0.35rem 0.5rem; border-radius: 4px; }
     .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
     .panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--panel); max-width: 52rem; }
@@ -335,15 +336,17 @@
           <input id="backend" placeholder="192.168.1.10" value="" />
           <input id="port" placeholder="8123" value="" type="number" />
           <label class="row" style="margin:0"><input id="behttps" type="checkbox" /> Backend HTTPS</label>
-          <select id="profile">
+          <label>Profile <select id="profile">
             <option value="home-assistant">home-assistant</option>
             <option value="balanced">balanced</option>
             <option value="strict">strict</option>
             <option value="php-app">php-app</option>
-          </select>
+          </select></label>
           <label><input id="ws" type="checkbox" checked /> WebSocket</label>
           <button id="save">Save application</button>
         </div>
+        <p id="profile-help" class="dash-note" aria-live="polite" style="white-space:pre-line">Select a profile to see its defaults.</p>
+        <p class="dash-note">Profiles set defaults. Security mode, WebSocket, HTTPS and path restrictions are separate settings; changing the profile does not reset them.</p>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>More backend servers <span class="dash-note">(one per line: <code>host:port</code>; add <code>backup</code> for failover only)</span>
             <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="min-width:22rem"></textarea>
@@ -406,7 +409,7 @@
         <div id="path-rules"></div>
         <div class="row"><button type="button" class="secondary" id="btn-path-rule-add">Add path rule</button></div>
         <h4>Restricted paths</h4>
-        <p><small>Limit a URL prefix to LAN CIDRs only (e.g. Home Assistant <code>/api</code>). One CIDR per line.</small></p>
+        <p><small>Optionally limit a URL prefix to specific IPs/CIDRs. Restricting Home Assistant <code>/api</code> also restricts <code>/api/websocket</code> and can block the web UI, Companion and external API clients. New applications have no automatic LAN restriction. One CIDR per line.</small></p>
         <div id="restricted-rows"></div>
         <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
         <h4>Request bodies</h4>
@@ -1348,6 +1351,7 @@
     document.getElementById('behttps').checked = false;
     document.getElementById('ws').checked = false;
     document.getElementById('profile').value = 'balanced';
+    renderProfileHelp();
     document.getElementById('app-cert').value = '';
     fillBodyPolicy({});
     fillPathPolicy(null);
@@ -1523,7 +1527,7 @@
     const box = document.getElementById('restricted-rows');
     if (!box) return;
     box.innerHTML = '';
-    addRestrictedPathRow('/api', '192.168.0.0/16\n10.0.0.0/8');
+    addRestrictedPathRow('', '');
   }
 
   function clearRestrictedPathRows() {
@@ -1823,20 +1827,56 @@
 
   document.getElementById('btn-rp-add').onclick = () => addRestrictedPathRow('', '');
 
+  let appProfilesCatalog = {};
+
+  function renderProfileHelp() {
+    const name = document.getElementById('profile').value;
+    const p = appProfilesCatalog[name];
+    const help = document.getElementById('profile-help');
+    if (!help) return;
+    if (!p) { help.textContent = 'Profile details unavailable. Refresh the page to retry.'; return; }
+    const lines = [p.description || p.Description || name];
+    if (Number.isFinite(p.server_timeout_ms) && Number.isFinite(p.connect_timeout_ms)) {
+      lines.push('Server timeout: ' + p.server_timeout_ms / 1000 + ' s. Connect timeout: ' + p.connect_timeout_ms / 1000 + ' s.');
+    }
+    if (Number.isFinite(p.rate_limit_burst)) {
+      lines.push('Profile rate threshold: ' + p.rate_limit_burst + ' requests / 10 s per client IP when rate limiting is enabled. Overrides still apply.');
+    }
+    if (Array.isArray(p.block_paths)) lines.push('Probe paths blocked when Path ACL is enabled: ' + (p.block_paths.join(', ') || 'none') + '.');
+    if (Array.isArray(p.extra_blocked_methods)) lines.push('Methods blocked when method filtering is enabled: ' + (p.extra_blocked_methods.join(', ') || 'none') + '.');
+    if (Number.isFinite(p.max_body_bytes)) {
+      lines.push('Default body limit: ' + (p.max_body_bytes ? p.max_body_bytes / 1048576 + ' MiB' : 'none') + '. Multipart: ' + (p.block_multipart ? 'blocked outside allowed paths' : 'allowed') + '.');
+    }
+    if (name === 'home-assistant') lines.push('One publication can serve the Home Assistant web UI, Companion and API. Enable WebSocket; configure trusted proxies in Home Assistant.');
+    if (p.path_policy && Array.isArray(p.path_policy.allow)) {
+      lines.push('Default allowed paths for a new, unset path policy: ' + p.path_policy.allow.join(', ') + '. Other paths return 404; this is not a full Home Assistant publication. Existing path rules stay in effect.');
+    }
+    help.textContent = lines.join('\n');
+  }
+
   async function loadProfileSelect() {
     const sel = document.getElementById('profile');
+    sel.onchange = renderProfileHelp;
     const prev = sel.value;
-    const r = await fetch('/api/v1/profiles', { headers: hdr() });
-    if (r.status === 403) { refreshSession(); return; }
-    if (!r.ok) return;
-    const j = await r.json();
-    const keys = Object.keys(j).sort();
-    const escLocal = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    sel.innerHTML = keys.map((k) => {
-      const d = (j[k] && (j[k].Description || j[k].description)) || '';
-      return `<option value="${escLocal(k)}" title="${escLocal(d)}">${escLocal(k)}</option>`;
-    }).join('');
-    if (keys.includes(prev)) sel.value = prev;
+    try {
+      const r = await fetch('/api/v1/profiles', { headers: hdr() });
+      if (r.status === 403) { refreshSession(); return; }
+      if (!r.ok) throw new Error('profile catalogue unavailable');
+      const j = await r.json();
+      if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('invalid profile catalogue');
+      appProfilesCatalog = j;
+      const keys = Object.keys(j).sort();
+      const escLocal = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      sel.innerHTML = keys.map((k) => {
+        const d = (j[k] && (j[k].Description || j[k].description)) || '';
+        return `<option value="${escLocal(k)}" title="${escLocal(d)}">${escLocal(k)}</option>`;
+      }).join('');
+      if (keys.includes(prev)) sel.value = prev;
+      renderProfileHelp();
+    } catch (_) {
+      const help = document.getElementById('profile-help');
+      if (help) help.textContent = 'Profile details unavailable. Refresh the page to retry.';
+    }
   }
 
   async function loadProfilesDoc() {
@@ -1931,6 +1971,24 @@
       : '<span class="app-badge">(layers off)</span>';
   }
 
+  async function deleteApplication(id, btn) {
+    const app = appsListCache.find((item) => item.id === id);
+    if (!app) return;
+    if (!(await confirmDialog('Delete publication "' + (app.name || app.public_host) + '" (' + app.public_host + ')?\n\nThe backend service and certificates are kept. This removes the publication from Easy Home WAF.', { danger: true, okLabel: 'Delete publication' }))) return;
+    await withBusy(btn, async () => {
+      const response = await fetch('/api/v1/applications/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
+      if (!response.ok) { toast(await apiMessage(response), 'err'); return; }
+      const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
+      markPendingApply(!applied);
+      toast(applied ? 'Application deleted and removal applied.' : 'Application deleted. Apply on Config tab to activate removal.', 'ok');
+      if (document.getElementById('app-edit-id').value === id) {
+        clearAppFormFields();
+        setAppFormCollapsed(true);
+      }
+      await loadApps();
+    });
+  }
+
   async function setAppMaintenance(id, enabled, btn) {
     if (enabled && !(await confirmDialog('Put this application into maintenance?\n\nVisitors get a 503 maintenance page until you end it; the bypass sources set in the form still reach the app.', { okLabel: 'Start maintenance' }))) return;
     await withBusy(btn, async () => {
@@ -1985,6 +2043,7 @@
     document.getElementById('behttps').checked = !!a.backend_https;
     document.getElementById('ws').checked = !!a.websocket;
     document.getElementById('profile').value = a.profile || 'balanced';
+    renderProfileHelp();
     const lmSel = document.getElementById('listen-mode');
     if (lmSel) {
       const lm = (a.listen_mode || 'https_only').toLowerCase();
@@ -2044,10 +2103,11 @@
     <div class="row" style="margin:0;gap:0.35rem">
       <button type="button" class="secondary btn-app-maint" data-id="${esc(a.id)}" data-on="${a.maintenance ? '1' : ''}">${a.maintenance ? 'End maintenance' : 'Maintenance'}</button>
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
+      <button type="button" class="secondary btn-app-delete admin-only" data-id="${esc(a.id)}">Delete</button>
     </div>
   </div>
   <div class="row" style="margin:0;align-items:center;gap:0.5rem">
-    <label style="font-size:0.82rem;color:var(--muted)">Mode
+    <label style="font-size:0.82rem;color:var(--muted)">Security mode
       <select class="app-mode-sel" data-id="${esc(a.id)}" style="font-size:0.85rem">
         <option value="full" ${mode === 'full' ? 'selected' : ''}>Full</option>
         <option value="balanced" ${mode === 'balanced' ? 'selected' : ''}>Balanced</option>
@@ -2066,6 +2126,9 @@
     });
     box.querySelectorAll('.btn-app-maint').forEach((btn) => {
       btn.onclick = () => setAppMaintenance(btn.getAttribute('data-id'), !btn.getAttribute('data-on'), btn);
+    });
+    box.querySelectorAll('.btn-app-delete').forEach((btn) => {
+      btn.onclick = () => deleteApplication(btn.getAttribute('data-id'), btn);
     });
     box.querySelectorAll('.app-mode-sel').forEach((sel) => {
       sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));

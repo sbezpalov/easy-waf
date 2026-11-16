@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Publication controls and Home Assistant guidance.** Application cards now offer confirmed deletion through the existing atomic API. The form explains selected profile defaults and MCP-only exposure. New forms no longer silently add a LAN-only `/api` rule, which blocked external HA clients; existing restrictions are preserved. The Home Assistant profile permits its `/config` settings route while other profiles retain the probe block.
+
 - **Complete, temporary upgrade staging.** Script upgrades now stage all required binaries before invoking the installer, preserve caller directories, and remove temporary data on success or failure. Release archives use fixed-filename streaming instead of extracting arbitrary archive entries; flat, nested and single-wrapper layouts remain supported.
 
 - **Visible running version.** The panel header and Dashboard report the version embedded from root `VERSION`, without requiring an environment override. Every Go command supports `--version` (also `-version`) without starting services or connecting to PostgreSQL; API diagnostics use the same built version.
