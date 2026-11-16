@@ -141,6 +141,8 @@ Application deletion controls, profile explanations and Home Assistant route
 repairs passed scoped tests and dev-appliance observation on
 [candidate d5588ce](release-evidence/1.6.1-application-controls.md). Actual user
 publication deletion and end-to-end HA client acceptance were not performed.
+Confirmation keyboard handling subsequently passed native Edge acceptance on
+[candidate 93eab9f](release-evidence/1.6.1-confirmation-dialog.md).
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
