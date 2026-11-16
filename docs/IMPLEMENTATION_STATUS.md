@@ -118,10 +118,12 @@ The table distinguishes implementation coverage from appliance evidence.
 **Done** describes repository coverage at the stated scope, not approval of the
 current release candidate. AC-01 and AC-08 remain **Partial** pending the full
 appliance procedure; AC-05 has container and scoped PVE loopback evidence.
-Upgrade, public ACME and WAN checks remain open. Scoped observations on a real
+Upgrade, DNS-01/failure and independent WAN checks remain open. Public HTTP-01
+and a real renewal passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md).
+Scoped observations on a real
 PVE dev appliance (install/reinstall, smoke, reboot, delayed DB, edge/WebSocket
 and CrowdSec; restore follow-up at d33df09) are recorded for [candidate 336b5e0](release-evidence/1.6.1-336b5e0.md).
-They do not close the remaining pristine-install, published-HTTPS or UI checks.
+They do not close the remaining pristine-install, independent WAN/browser or UI checks.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
@@ -129,7 +131,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 |----|-----------|--------|---------------------|
 | **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Partial** | Full clean-appliance install/upgrade evidence remains open; see [ACCEPTANCE.md](ACCEPTANCE.md). Implementation: `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
 | **AC-02** | Add app via UI + Apply | **Done** | UI `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
-| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Real Let's Encrypt is a manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
+| **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); DNS-01, failure and independent client checks remain open ([ACCEPTANCE.md](ACCEPTANCE.md)) |
 | **AC-04** | External access to published application | **Partial** | Render `fe_http`/`fe_https`, SNI, Host backends — **Done** in code; WAN/NAT/port-forward routing — outside the repo. Manual check: [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers; scoped PVE) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real dev appliance also passed ban/unban/fail-open with a dedicated loopback client ([candidate evidence](release-evidence/1.6.1-336b5e0.md)); external-client acceptance remains scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-06** | Apply + rollback | **Done** | `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button) |
