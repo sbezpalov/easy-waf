@@ -23,7 +23,7 @@ substitute for the list below.
 [ ] AC-04 a client outside the LAN reaches a published name (WAN forward + DNS)
 [ ] AC-05 on this host, a CrowdSec decision makes HAProxy return 403, deleting it restores access, and stopping the bouncer fails open
 [ ] Clean install: sudo bash scripts/install.sh && sudo bash scripts/smoke-appliance.sh
-[ ] Upgrade from an appliance actually running 1.6.0: sudo bash scripts/upgrade.sh, smoke, one Apply
+[ ] Upgrade from actually running 1.6.0 using its install method: verified DEB via APT (dpkg/API target version), or upgrade.sh with explicit input for unpackaged installs; smoke and one UI Apply
 [ ] AC-08 actual reboot: changed boot ID, services/readiness and published HTTPS recover; repeat with PostgreSQL starting late
 
 Record the exact candidate version/tag, commit, artifact checksum and sanitized

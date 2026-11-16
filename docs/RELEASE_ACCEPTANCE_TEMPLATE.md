@@ -37,7 +37,7 @@ state. Stop on a failure and record recovery, rather than marking later rows pas
 | Criterion | Result | Required evidence |
 |-----------|--------|-------------------|
 | AC-01 clean installation | Not run | Actual installer output, service/readiness/smoke results on clean Ubuntu |
-| Upgrade from deployed 1.6.0 | Not run | Starting version, actual upgrade, current migration set, preserved config/certs, smoke and UI Apply |
+| Upgrade from deployed 1.6.0 | Not run | Starting API/binary/package versions and schema, install method, matching actual upgrade, target dpkg/API versions for packages, current migration set, preserved config/certs, smoke and UI Apply |
 | AC-02 UI application creation and Apply | Not run | Saved app and successful request through the resulting edge |
 | AC-03 public HTTP-01 | Not run | Trusted served certificate, names/fingerprint/validity matched to DB |
 | AC-03 public DNS-01 | Not run | Actual configured provider; trusted served certificate matched to DB |

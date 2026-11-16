@@ -146,6 +146,11 @@ Confirmation keyboard handling subsequently passed native Edge acceptance on
 The published 1.6.0 signature and real-binary PostgreSQL transition from
 migrations 019 to 027 passed in an [isolated fixture](release-evidence/1.6.1-release160-migrations.md).
 This preparation does not close the actual appliance install/upgrade gate.
+An actual signed-1.6.0 baseline, script/tarball transition, preserved HTTPS/data,
+smoke and native UI Apply subsequently passed on
+[candidate d0eabdf](release-evidence/1.6.1-script-upgrade-d0eabdf.md).
+The package was then aligned with APT; a direct package migration from the old
+schema and pristine installation remain open, so AC-01 stays Partial.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 

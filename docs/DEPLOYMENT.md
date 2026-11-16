@@ -277,7 +277,9 @@ state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
 
 **Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
 directory or `.tar.gz` of new binaries. Authenticate the local input before
-running it; staging is not signature verification. Flat, nested `dist/` and
+running it; staging is not signature verification. It does not update dpkg's
+installed version or payload inventory. Use the APT procedure above for a
+package-managed appliance. Flat, nested `dist/` and
 single-wrapper archive layouts are supported. It stages all four required
 binaries privately (`easy-wafd` is optional), rejects incomplete or ambiguous
 archives before installation, preserves the input directory, and removes its

@@ -65,10 +65,25 @@ the bouncer is down. On the appliance itself:
 
 - Clean Ubuntu 24.04: `sudo bash scripts/install.sh`, then
   `sudo bash scripts/smoke-appliance.sh`.
-- Upgrade an appliance that is actually running 1.6.0:
-  `sudo bash scripts/upgrade.sh`, then the same smoke script, then one Apply
-  from the UI. Confirm PostgreSQL migrations reached the current set and
-  HAProxy reloaded.
+- Upgrade an appliance that is actually running 1.6.0. Record its API version,
+  installed binary hashes and, for package installations, dpkg version before
+  starting. Authenticate the candidate input and retain a matched backup.
+  Use the method matching that installation:
+
+  - Package-managed appliance: install the verified candidate DEB with APT,
+    for example `sudo apt-get -o Dpkg::Options::=--force-confold install ./easy-waf_1.6.1_amd64.deb`
+    for the amd64 1.6.1 candidate. Select the actual candidate version and host
+    architecture. Confirm both dpkg and API report the target version.
+  - Installation without a package: run
+    `sudo bash scripts/upgrade.sh /path/to/verified-binaries-or.tar.gz`.
+    This path replaces binaries and does not update dpkg metadata; it is not
+    the package-upgrade procedure.
+
+  Run the same smoke script and one Apply from the UI. Confirm PostgreSQL
+  migrations reached the current set, configuration/certificate files were
+  preserved, and HAProxy reloaded with healthy runtime stats and a working
+  published service. A tarball overwrite followed by package alignment does
+  not prove the package's migration path from the original 1.6.0 schema.
 
 ## AC-08 — an actual reboot
 
