@@ -209,6 +209,12 @@ passed six actual installed CrowdSec baseline/ban/isolation/unban/fail-open/clea
 checks and received operator-confirmed mobile-data access without TLS warnings
 on c27c77b. This supersedes the pending mobile observation above; current-client
 forwarded-IP correlation and external-client blocking are not established.
+The [native Edge/ACME follow-up](release-evidence/1.6.1-pve-c27-ui-acme.md)
+confirmed current version, application/Delete control visibility, valid public
+certificate, runtime backend health and rollback guidance after browser reload.
+It also found and repaired empty global ACME contact/staging defaults through the
+normal API; only those two settings changed, and the worker and trusted HTTPS
+remained healthy. Actual renewal and privileged UI mutation flows were not rerun.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
