@@ -160,6 +160,7 @@ func httptestServer(t *testing.T) *testBackend {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/websocket", webSocketEchoHandler(t))
 	mux.HandleFunc("/api/mcp", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")

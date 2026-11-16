@@ -35,6 +35,19 @@ Current HA exposes these controls under Settings → System → Network → HTTP
 server. Older versions use `http.use_x_forwarded_for` and `http.trusted_proxies`
 in `configuration.yaml`. The WAF does not configure HA or replace HA sign-in.
 
+If direct HA access works but a request with `X-Forwarded-For` returns HTTP 400,
+inspect HA's HTTP logs and reverse-proxy settings before changing edge rules.
+Check the address HA actually sees: a WAF running behind VM/container NAT can
+appear with the host's address rather than the guest address. Trust that specific
+proxy address. Keep client-address forwarding enabled so HA can distinguish
+clients correctly; a WAF profile cannot configure HA's proxy trust.
+
+A normal GET to `/api/websocket` is not a WebSocket transport check. A real
+client must complete HTTP 101 Upgrade and exchange framed messages. HA initially
+sends [`auth_required`](https://contributors.home-assistant.io/core/internals/websocket-api/);
+that proves the unauthenticated channel is reachable, while sign-in and actual
+Companion/API operations still need their own checks.
+
 ## MCP-only publication
 
 `ha-mcp` installs a path allowlist on a new, unset path policy. It publishes MCP

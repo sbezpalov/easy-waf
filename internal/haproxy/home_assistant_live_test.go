@@ -6,12 +6,17 @@
 package haproxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +66,10 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 	cfg := strings.ReplaceAll(rendered.HAProxyConfig, "bind *:80", fmt.Sprintf("bind 127.0.0.1:%d", port))
 	cfg = strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200")
 	cfg = stripPrivilegeDrop(cfg)
+	// Keep HTTP inactivity short so the later idle WebSocket exchange proves
+	// HAProxy switched to its unchanged tunnel timeout after the 101 response.
+	httpTimeout := regexp.MustCompile(`(?m)^([\t ]*timeout (client|server))[\t ]+\S+$`)
+	cfg = httpTimeout.ReplaceAllString(cfg, "${1} 1s")
 	path := filepath.Join(dir, "haproxy.cfg")
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
@@ -85,4 +94,110 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 	mustStatus(t, client, base+"/", "ha-mcp.example.test", "", http.StatusNotFound)
 	mustStatus(t, client, base+"/api/mcp/assist", "ha-mcp.example.test", "Bearer fixture", http.StatusOK)
 	mustStatus(t, client, base+"/api/", "ha-mcp.example.test", "Bearer fixture", http.StatusNotFound)
+	mustWebSocketExchange(t, port, "home-assistant.example.test", http.StatusSwitchingProtocols)
+	mustWebSocketExchange(t, port, "ha-mcp.example.test", http.StatusNotFound)
+}
+
+// RFC 6455 sections 1.3 and 5.7 supply the fixed handshake and masked Hello
+// vectors. This fixture checks transport without a new WebSocket dependency.
+const webSocketTestKey = "dGhlIHNhbXBsZSBub25jZQ=="
+const webSocketTestAccept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+
+var webSocketMaskedHello = []byte{0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58}
+var webSocketHello = []byte{0x81, 0x05, 'H', 'e', 'l', 'l', 'o'}
+
+func webSocketEchoHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if !strings.EqualFold(r.Header.Get("Connection"), "upgrade") ||
+			r.Header.Get("Sec-WebSocket-Version") != "13" || r.Header.Get("Sec-WebSocket-Key") != webSocketTestKey {
+			http.Error(w, "invalid test handshake", http.StatusBadRequest)
+			return
+		}
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("test backend does not support HTTP hijacking")
+			http.Error(w, "test backend cannot upgrade", http.StatusInternalServerError)
+			return
+		}
+		connection, stream, err := hijacker.Hijack()
+		if err != nil {
+			t.Errorf("hijack test WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Errorf("WebSocket backend deadline: %v", err)
+			return
+		}
+		if _, err := fmt.Fprintf(stream, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", webSocketTestAccept); err != nil {
+			t.Errorf("WebSocket handshake: %v", err)
+			return
+		}
+		if err := stream.Flush(); err != nil {
+			t.Errorf("flush WebSocket handshake: %v", err)
+			return
+		}
+		frame := make([]byte, len(webSocketMaskedHello))
+		if _, err := io.ReadFull(stream, frame); err != nil {
+			t.Errorf("read masked frame: %v", err)
+			return
+		}
+		if !bytes.Equal(frame, webSocketMaskedHello) {
+			t.Errorf("masked frame changed: %x", frame)
+			return
+		}
+		if _, err := connection.Write(webSocketHello); err != nil {
+			t.Errorf("echo WebSocket frame: %v", err)
+		}
+	}
+}
+
+func mustWebSocketExchange(t *testing.T, port int, host string, want int) {
+	t.Helper()
+	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(connection, "GET /api/websocket HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n\r\n", host, webSocketTestKey); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(connection)
+	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != want {
+		t.Fatalf("WebSocket %s: HTTP %d, want %d", host, response.StatusCode, want)
+	}
+	if want != http.StatusSwitchingProtocols {
+		return
+	}
+	if response.Header.Get("Sec-WebSocket-Accept") != webSocketTestAccept ||
+		!strings.EqualFold(response.Header.Get("Upgrade"), "websocket") ||
+		!strings.EqualFold(response.Header.Get("Connection"), "upgrade") {
+		t.Fatalf("invalid WebSocket upgrade headers: %v", response.Header)
+	}
+	// The ordinary HTTP client/server timeout above is 1s; the tunnel must
+	// still carry frames in both directions after a longer quiet interval.
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := connection.Write(webSocketMaskedHello); err != nil {
+		t.Fatal(err)
+	}
+	frame := make([]byte, len(webSocketHello))
+	if _, err := io.ReadFull(reader, frame); err != nil {
+		t.Fatalf("WebSocket did not survive HTTP idle timeout: %v", err)
+	}
+	if !bytes.Equal(frame, webSocketHello) {
+		t.Fatalf("WebSocket echo changed: %x", frame)
+	}
 }
