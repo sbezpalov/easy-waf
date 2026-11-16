@@ -149,8 +149,12 @@ This preparation does not close the actual appliance install/upgrade gate.
 An actual signed-1.6.0 baseline, script/tarball transition, preserved HTTPS/data,
 smoke and native UI Apply subsequently passed on
 [candidate d0eabdf](release-evidence/1.6.1-script-upgrade-d0eabdf.md).
-The package was then aligned with APT; a direct package migration from the old
-schema and pristine installation remain open, so AC-01 stays Partial.
+The package was then aligned with APT. A separate direct APT transition from an
+actual signed-1.6.0/schema-019 checkpoint subsequently exposed and repaired missing
+HAProxy stats recovery; preservation, two API Apply cycles, native UI Apply and
+smoke passed on [candidate b5fa4a4](release-evidence/1.6.1-package-upgrade-b5fa4a4.md).
+This reused provisioned OS dependencies: pristine installation remains open,
+so AC-01 stays Partial.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
