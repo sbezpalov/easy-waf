@@ -3,7 +3,7 @@
 **Last updated:** 2026-11-16
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **8**, Partial — **2** (AC-01, AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
+**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
 requirement is implemented** — the original MVP scope, the security work that
@@ -116,9 +116,10 @@ Captured in `docs/ARCHITECTURE.md`, `docs/CROWDSEC.md`, `internal/haproxy/render
 
 The table distinguishes implementation coverage from appliance evidence.
 **Done** describes repository coverage at the stated scope, not approval of the
-current release candidate. AC-01 remains **Partial** pending the full install/upgrade
-procedure; AC-08 has scoped PVE evidence, and AC-05 has container/PVE loopback evidence.
-Upgrade and other candidate checks remain open; DNS-01 capability is untested.
+current release candidate. AC-01 has separate scoped clean-install and direct
+package-upgrade evidence; AC-08 has scoped PVE/VMware evidence, and AC-05 has
+container/PVE loopback evidence. Other candidate checks remain open;
+DNS-01 capability is untested.
 Actual HTTPS reboot recovery and HTTP-01 failure/backoff passed in the
 [PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md).
 Public HTTP-01 issuance and renewal, plus independent mobile WAN access, passed
@@ -126,7 +127,8 @@ on the [PVE candidate](release-evidence/1.6.1-public-http01.md).
 Scoped observations on a real
 PVE dev appliance (install/reinstall, smoke, reboot, delayed DB, edge/WebSocket
 and CrowdSec; restore follow-up at d33df09) are recorded for [candidate 336b5e0](release-evidence/1.6.1-336b5e0.md).
-They do not close the remaining pristine-install, restored-copy or management-UI checks.
+Those observations alone do not establish pristine installation or all
+restored-copy and management-UI checks; later candidate-specific follow-ups are below.
 The HAProxy runtime stats socket defect found during browser acceptance was fixed
 and checked through actual reloads, Apply, smoke and reboot on
 [candidate de84ebb](release-evidence/1.6.1-haproxy-stats.md).
@@ -153,14 +155,17 @@ The package was then aligned with APT. A separate direct APT transition from an
 actual signed-1.6.0/schema-019 checkpoint subsequently exposed and repaired missing
 HAProxy stats recovery; preservation, two API Apply cycles, native UI Apply and
 smoke passed on [candidate b5fa4a4](release-evidence/1.6.1-package-upgrade-b5fa4a4.md).
-This reused provisioned OS dependencies: pristine installation remains open,
-so AC-01 stays Partial.
+That upgrade reused provisioned OS dependencies. A separate
+[pristine VMware installation](release-evidence/1.6.1-pristine-vmware-b5fa4a4.md)
+then passed the actual installer on a new authenticated Ubuntu 24.04 cloud image,
+fresh enrollment, authenticated smoke, Apply/stats and real reboot on b5fa4a4.
+This closes the scoped AC-01 install/upgrade gap; it does not approve all release gates.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | ID | Criterion | Status | Check in repository |
 |----|-----------|--------|---------------------|
-| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Partial** | Full clean-appliance install/upgrade evidence remains open; see [ACCEPTANCE.md](ACCEPTANCE.md). Implementation: `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap** (bouncers, `CROWDSEC_LAPI_*`, `-sync-settings-only`), `create_user_and_layout`, `install_env_file`, `systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service` (`EASY_WAF_ENABLE_SYSTEMD_UNITS`), units `packaging/systemd/*.service`, `WantedBy=multi-user.target` |
+| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** (scoped VMware/PVE) | Actual default installer, fresh enrollment, authenticated smoke and reboot passed on a [pristine Ubuntu cloud-image VM](release-evidence/1.6.1-pristine-vmware-b5fa4a4.md); direct signed-1.6.0/schema-019 APT transition passed separately on [PVE](release-evidence/1.6.1-package-upgrade-b5fa4a4.md). Both use local b5fa4a4 candidate artifacts; final signed-release acceptance remains open. Implementation: `scripts/install.sh` — `apt`, nftables, CrowdSec+SPOA packages, **LAPI bootstrap**, local PostgreSQL, layout/env/binaries and packaged systemd units. Follow [ACCEPTANCE.md](ACCEPTANCE.md). |
 | **AC-02** | Add app via UI + Apply | **Done** (scoped PVE) | Native Edge form creation and Config → Apply HAProxy passed on [candidate 2220fde](release-evidence/1.6.1-application-apply.md), with an independent backend HTTP 200 marker before and after manual Apply and cleanup of the owned test application. Implementation: `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); a real NXDOMAIN HTTP-01 failure/backoff passed in the [follow-up](release-evidence/1.6.1-https-reboot-failure.md). DNS-01, rendered UI and optional notification checks remain scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Done** (scoped PVE) | Operator-confirmed mobile-data HTTPS request without certificate warnings, with the external client IP matched between HAProxy and backend X-Forwarded-For on the [PVE candidate](release-evidence/1.6.1-public-http01.md). WAN/NAT routing remains deployment-specific; follow [ACCEPTANCE.md](ACCEPTANCE.md). |
