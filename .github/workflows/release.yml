@@ -30,15 +30,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
       # The tag is what release artifacts are named after, so it has to agree
       # with VERSION — otherwise install.sh looks for a file that is not there.
-      - name: Check VERSION matches the tag
+      - name: Validate release metadata and prepare notes
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
@@ -47,6 +41,13 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match VERSION (${FILE_VERSION})" >&2
             exit 1
           fi
+          bash scripts/release-notes.sh "$VERSION" CHANGELOG.md > release_notes.md
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
@@ -90,20 +91,6 @@ jobs:
       # scripts/lib/release-verify.sh and in docs/SECURITY.md.
       - name: Sign SHA256SUMS
         run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
-
-      - name: Release notes from CHANGELOG
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          awk -v ver="$VERSION" '
-            $0 ~ "^## \\[" ver "\\]" {flag=1; next}
-            /^## \[/ && flag {exit}
-            flag
-          ' CHANGELOG.md > release_notes.md
-          if ! [[ -s release_notes.md ]]; then
-            echo "CHANGELOG.md: no section ## [${VERSION}]" >&2
-            exit 1
-          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3

@@ -96,6 +96,12 @@ See [packaging/ovf/README.md](../packaging/ovf/README.md) for a minimal checklis
 
 Automated GitHub Release build and publish: workflow **[`.github/workflows/release.yml`](../.github/workflows/release.yml)** (trigger — push of tag `v*`: `make build`, `make deb`, tarball, `SHA256SUMS` signed with cosign, release notes from the matching [`CHANGELOG.md`](../CHANGELOG.md) section).
 
+Before tagging, prepare exactly one nonempty changelog section for the version
+in `VERSION`. Preview it with `bash scripts/release-notes.sh 1.6.1 CHANGELOG.md`
+for the current candidate. The extractor does not fall back to `[Unreleased]`;
+missing, blank or duplicate sections fail. The release job checks the tag/version
+and prepares this same notes file before Go setup, package builds or signing.
+
 Tag releases first call the reusable CI workflow from the same commit with
 read-only permissions. All CI jobs (lint/vulnerability checks, PostgreSQL race
 tests, repository verification and real HAProxy validation) must succeed before
