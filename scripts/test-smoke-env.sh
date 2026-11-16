@@ -10,8 +10,15 @@ export SMOKE_TEST_ADMIN_ARGS="$ROOT/admin-args"
 cat >"$ROOT/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >>"$SMOKE_TEST_ARGS"
+body='{}'
+for arg in "$@"; do
+  if [[ "$arg" == */api/v1/stats/haproxy ]]; then
+    body="${SMOKE_TEST_STATS:-}"
+    if [[ -z "$body" ]]; then body='{"frontends":[],"backends":[]}'; fi
+  fi
+done
 while [[ $# -gt 0 ]]; do
-  if [[ "$1" == -o ]]; then shift; printf '{}\n' >"$1"; fi
+  if [[ "$1" == -o ]]; then shift; printf '%s\n' "$body" >"$1"; fi
   shift
 done
 printf '200'
@@ -53,4 +60,8 @@ fi
 : >"$SMOKE_TEST_ARGS"
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 grep -qxF "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" "$SMOKE_TEST_ARGS" || { echo 'FAIL: missing-key fallback lost' >&2; exit 1; }
+grep -qF 'PASS  HAProxy runtime stats available after reload' "$ROOT/output" || { echo 'FAIL: valid runtime stats rejected' >&2; exit 1; }
+export SMOKE_TEST_STATS='{"frontends":[],"backends":[],"error":"fixture socket missing"}'
+bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+grep -qF 'FAIL  HAProxy runtime stats unavailable after reload' "$ROOT/output" || { echo 'FAIL: HTTP 200 collector error accepted' >&2; exit 1; }
 echo 'OK: smoke env stays data'

@@ -315,6 +315,29 @@ if unit_installed haproxy; then
   esac
 fi
 
+if [[ -n "$api_token" ]]; then
+  stats_ok=0
+  for ((attempt=0; attempt<6; attempt++)); do
+    r="$(api GET /api/v1/stats/haproxy)"
+    # HTTP 200 can still contain a collector error. Allow the five-second
+    # stats cache to expire after reload before declaring runtime failure.
+    if [[ "$(status_of "$r")" == 200 ]] &&
+      grep -qE '"frontends"[[:space:]]*:[[:space:]]*\[' <<<"$(body_of "$r")" &&
+      ! grep -qE '"error"[[:space:]]*:[[:space:]]*"[^"]' <<<"$(body_of "$r")"; then
+      stats_ok=1
+      break
+    fi
+    if ((attempt < 5)); then sleep 1; fi
+  done
+  if [[ "$stats_ok" == 1 ]]; then
+    pass "HAProxy runtime stats available after reload"
+  else
+    fail "HAProxy runtime stats unavailable after reload"
+  fi
+else
+  skip "HAProxy runtime stats need an authenticated session"
+fi
+
 # 1.3.0 keeps '-' in generated identifiers, so backend names change for hosts
 # containing a dash. Dashboards keyed on the old names need updating.
 if [[ -f "$CFG" ]] && grep -qE '^backend bk_[A-Za-z0-9_]*-' "$CFG"; then

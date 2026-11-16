@@ -55,4 +55,7 @@ grep -qxF 'User=haproxy' /etc/systemd/system/haproxy.service.d/easy-waf.conf || 
 }
 [[ -f "$ROOT/admin-called" ]] || { echo 'FAIL: relative repo/env paths lost' >&2; exit 1; }
 grep -qxF 'restart haproxy.service' "$ROOT/systemctl"
+if grep -qE '^ExecReload=.*rm .*easy-waf-admin\.sock' /etc/systemd/system/haproxy.service.d/easy-waf.conf; then
+  echo 'FAIL: reload unlinks the live HAProxy stats socket' >&2; exit 1;
+fi
 echo 'OK: private cwd and relative paths preserve unprivileged HAProxy repair'

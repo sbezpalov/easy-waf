@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HAProxy runtime stats survive reload.** Reload no longer unlinks the live stats socket before HAProxy reuses its listener. Dashboard metrics remain reachable after Apply; appliance smoke now rejects HTTP 200 responses containing collector errors.
+
 - **UI CSP across line endings.** Inline script hashes now follow browser HTML newline normalization. CRLF assets from Windows builds no longer block the UI script and leave the sign-in form unresponsive; embedded HTML is also pinned to LF in Git.
 
 - **Restore preserves HAProxy access.** Archive extraction retains safe group read/traverse permissions inside its private staging directory. Restore no longer strips edge permissions that the unprivileged HAProxy process needs to reload; archived private secret modes stay private.

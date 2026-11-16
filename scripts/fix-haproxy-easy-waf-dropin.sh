@@ -95,7 +95,7 @@ ExecStartPre=/usr/sbin/haproxy -f ${CFG} -c
 ExecStart=
 ExecStart=/usr/sbin/haproxy -Ws -f ${CFG} -p /run/haproxy/haproxy.pid
 ExecReload=
-ExecReload=+/bin/rm -f /run/haproxy/easy-waf-admin.sock
+# Keep the live pathname: HAProxy reuses its stats listener across reloads.
 ExecReload=/usr/sbin/haproxy -f ${CFG} -c
 ExecReload=/bin/kill -USR2 \$MAINPID
 DROPIN

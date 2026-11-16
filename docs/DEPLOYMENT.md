@@ -286,3 +286,10 @@ If the sign-in button does nothing, check the browser console for a CSP violatio
 The script hash must use HTML-normalized LF text even for CRLF-encoded assets.
 Updated packages handle both line endings; keep CSP enabled when diagnosing this
 problem. A successful API login alone does not verify that the browser UI runs.
+
+HAProxy reload must retain the live stats socket pathname: deleting it before
+SIGUSR2 can leave the inherited listener unreachable. Stale socket removal belongs
+to cold start only. After upgrading an affected appliance, reinstall the updated
+drop-in and restart HAProxy once to recreate an already missing socket; subsequent
+Apply/reload operations preserve it. Appliance smoke checks runtime stats through
+the authenticated API after Apply, including collector errors returned with HTTP 200.
