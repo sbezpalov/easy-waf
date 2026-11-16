@@ -1,9 +1,9 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-13
+**Last updated:** 2026-11-16
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **6**, Partial — **4** (AC-01, AC-03, AC-04, AC-08). AC-05 is Done in containers; a real host remains a manual check.
+**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **8**, Partial — **2** (AC-01, AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
 requirement is implemented** — the original MVP scope, the security work that
@@ -127,6 +127,9 @@ Scoped observations on a real
 PVE dev appliance (install/reinstall, smoke, reboot, delayed DB, edge/WebSocket
 and CrowdSec; restore follow-up at d33df09) are recorded for [candidate 336b5e0](release-evidence/1.6.1-336b5e0.md).
 They do not close the remaining pristine-install, restored-copy or management-UI checks.
+The HAProxy runtime stats socket defect found during browser acceptance was fixed
+and checked through actual reloads, Apply, smoke and reboot on
+[candidate de84ebb](release-evidence/1.6.1-haproxy-stats.md).
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
