@@ -830,6 +830,7 @@
         <div class="panel" style="max-width:100%">
           <h3>Config revisions</h3>
           <p><small>Successful <strong>Apply</strong> and <strong>Rollback</strong>; live file hash = <strong>current</strong>.</small></p>
+          <p><small>Rollback restores a previous edge configuration. Saved applications and settings stay unchanged; a later Apply or restart can replace this configuration.</small></p>
           <div class="row">
             <button type="button" class="secondary" id="btn-revisions-refresh">Refresh list</button>
           </div>
@@ -2231,11 +2232,11 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   }
 
-  async function loadRevisions() {
+  async function loadRevisions(preserveMessage = false) {
     const msg = document.getElementById('revisions-msg');
     const box = document.getElementById('revisions-table');
     if (!msg || !box) return;
-    msg.textContent = '';
+    if (!preserveMessage) msg.textContent = '';
     tableState(box, 'loading');
     const r = await fetch('/api/v1/revisions?limit=50', { headers: hdr() });
     if (r.status === 403) { refreshSession(); return; }
@@ -2262,20 +2263,20 @@
       btn.onclick = async () => {
         const id = btn.getAttribute('data-id');
         const sha = btn.getAttribute('data-sha');
-        const okRb = await confirmDialog('Rollback to revision ' + shortSha(sha) + '?', { danger: true, okLabel: 'Rollback' });
+        const okRb = await confirmDialog('Restore edge revision ' + shortSha(sha) + '?\n\nSaved applications and settings are unchanged. A later Apply or restart can replace this configuration. Review saved settings after rollback.', { danger: true, okLabel: 'Rollback' });
         if (!okRb) return;
         msg.textContent = '';
         const rr = await fetch(`/api/v1/revisions/${encodeURIComponent(id)}/rollback`, { method: 'POST', headers: hdr() });
         if (rr.ok) {
-          toast('Rollback succeeded.', 'ok');
+          toast('Previous edge configuration restored.', 'ok');
           markPendingApply(true);
-          msg.textContent = 'Rollback succeeded.';
-          msg.className = '';
+          msg.textContent = 'Previous edge configuration restored. Saved applications and settings are unchanged. Review them before the next Apply; Apply or a restart can replace this configuration.';
+          msg.className = 'warn';
         } else {
           { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; }
           msg.className = 'warn';
         }
-        loadRevisions();
+        await loadRevisions(true);
       };
     });
   }
