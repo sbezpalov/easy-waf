@@ -130,6 +130,10 @@ They do not close the remaining pristine-install, restored-copy or management-UI
 The HAProxy runtime stats socket defect found during browser acceptance was fixed
 and checked through actual reloads, Apply, smoke and reboot on
 [candidate de84ebb](release-evidence/1.6.1-haproxy-stats.md).
+Application creation/manual Apply passed on
+[candidate 2220fde](release-evidence/1.6.1-application-apply.md); its favicon and
+static guidance follow-ups were repaired and checked in native Edge on
+[candidate e48a746](release-evidence/1.6.1-ui-static.md).
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
