@@ -82,8 +82,14 @@ Run one now with `sudo systemctl start easy-waf-backup.service` (or `sudo easy-w
 Run as **root**. Pass the path to a backup produced by `scripts/backup.sh` (v1).
 
 ```bash
-sudo bash scripts/restore.sh /var/backups/easy-waf-20260415-180000.tar.gz
+sudo easy-waf-restore /var/backups/easy-waf-20260415-180000.tar.gz
 ```
+
+The Debian package includes this command and its shared parser; no source checkout
+or script download is needed. Install the matching appliance
+package and PostgreSQL prerequisites before restoring on a new OS. For a source
+installation or an older package without the command, use
+`sudo bash scripts/restore.sh /path/to/backup.tar.gz` from the matching checkout.
 
 Steps:
 

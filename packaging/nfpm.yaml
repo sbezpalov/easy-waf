@@ -72,6 +72,9 @@ contents:
   - src: scripts/backup.sh
     dst: /usr/share/easy-waf/scripts/backup.sh
     file_info: { mode: 0755 }
+  - src: scripts/restore.sh
+    dst: /usr/share/easy-waf/scripts/restore.sh
+    file_info: { mode: 0755 }
   - src: scripts/lib/env-file.sh
     dst: /usr/share/easy-waf/scripts/lib/env-file.sh
     file_info: { mode: 0644 }
@@ -83,6 +86,9 @@ contents:
     file_info: { mode: 0644 }
   - src: /usr/share/easy-waf/scripts/backup.sh
     dst: /usr/sbin/easy-waf-backup
+    type: symlink
+  - src: /usr/share/easy-waf/scripts/restore.sh
+    dst: /usr/sbin/easy-waf-restore
     type: symlink
 
   - src: LICENSE

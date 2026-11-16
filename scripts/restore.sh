@@ -4,6 +4,7 @@
 # the edge from the console, then starts services.
 #
 # Usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
+#        sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
 # Env: EASY_WAF_STATE_DIR, EASY_WAF_ENV_FILE (defaults as in backup.sh)
 #      EASY_WAF_ADMIN_BIN — default /usr/sbin/easy-waf-admin
 #      EASY_WAF_SKIP_APPLY=1 — do not run easy-waf-admin apply-edge
@@ -11,11 +12,13 @@
 set -euo pipefail
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The package exposes this script through /usr/sbin/easy-waf-restore.
+# Resolve that link before locating the adjacent shared environment parser.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=lib/env-file.sh
 source "${SCRIPT_DIR}/lib/env-file.sh"
 
-ARCHIVE="${1:?usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-*.tar.gz}"
+ARCHIVE="${1:?usage: sudo $0 /path/to/easy-waf-backup-*.tar.gz}"
 if [[ "$ARCHIVE" != /* ]]; then
   ARCHIVE="$(cd "$(dirname "$ARCHIVE")" && pwd)/$(basename "$ARCHIVE")"
 fi
