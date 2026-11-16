@@ -2,7 +2,7 @@
 # End-to-end proof of the multipart block and body limit, evasions included, on
 # the config easy-waf generates: HAProxy 2.8 (the Ubuntu 24.04 series) and the
 # app-body-policy golden, changed only to address the containers. Needs Docker
-# and network access for images; not part of CI.
+# and network access for images; runs in the nightly E2E workflow.
 #
 #   bash scripts/test-body-policy-e2e.sh
 set -euo pipefail
@@ -14,6 +14,13 @@ NAMES=(body-e2e-app body-e2e-haproxy)
 CURL_IMAGE=curlimages/curl:8.10.1
 
 WORK="$(mktemp -d)"
+# Docker needs a native host bind path, while /cfg and executable arguments
+# must remain Linux paths when launched from Git Bash on Windows.
+docker_work="$WORK"
+if command -v cygpath >/dev/null 2>&1; then
+  docker_work="$(cygpath -m "$WORK")"
+fi
+export MSYS_NO_PATHCONV=1
 remove_stack() {
   docker rm -f "${NAMES[@]}" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
@@ -34,7 +41,8 @@ sed -E \
 cp "$GOLDEN/spoe/crowdsec-vendor.cfg" "$WORK/crowdsec.cfg"
 chmod -R a+rX "$WORK"
 
-docker run -d --name body-e2e-haproxy --network "$NET" --ip 10.78.0.40 --ulimit nofile=200000:200000 -v "$WORK:/cfg:ro" \
+docker run -d --name body-e2e-haproxy --network "$NET" --ip 10.78.0.40 --ulimit nofile=200000:200000 \
+  --mount "type=bind,source=${docker_work},target=/cfg,readonly" \
   haproxy:2.8 haproxy -f /cfg/haproxy.cfg >/dev/null
 sleep 3
 docker ps --format '{{.Names}}' | grep -q '^body-e2e-haproxy$' || {
@@ -86,15 +94,30 @@ check 411 "chunked and Content-Length" $up -H 'Transfer-Encoding: chunked' -H 'C
 check 411 "HTTP/2, no length" $up --http2-prior-knowledge -T - -X POST http://10.78.0.40:81/ </tmp/big
 EOF
 
+# Process substitution would hide a failed Docker client/container and let an
+# empty or truncated suite report success. Collect only a completed runner's
+# output, then require one result for every check in the generated case script.
+if ! docker run --rm -i --network "$NET" --entrypoint sh "$CURL_IMAGE" -s <"$WORK/cases.sh" >"$WORK/results"; then
+  echo 'FAIL: body policy case runner did not complete' >&2
+  exit 1
+fi
+expected_cases="$(grep -c '^check ' "$WORK/cases.sh")"
+cases=0
 failures=0
 while read -r want got desc; do
+  cases=$((cases + 1))
   if [[ "$want" == "$got" ]]; then
     echo "PASS: $desc ($got)"
   else
     echo "FAIL: $desc: want $want, got $got"
     failures=$((failures + 1))
   fi
-done < <(docker run --rm -i --network "$NET" --entrypoint sh "$CURL_IMAGE" -s <"$WORK/cases.sh")
+done <"$WORK/results"
+
+if ((cases != expected_cases)); then
+  echo "FAIL: incomplete body policy results: got $cases, expected $expected_cases" >&2
+  exit 1
+fi
 
 if ((failures)); then
   echo "---- haproxy log"

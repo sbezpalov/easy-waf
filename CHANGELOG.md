@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reliable body-policy E2E.** A failed case container or empty/truncated result stream now fails the nightly check instead of reporting success. Git Bash keeps container paths intact and normalizes the host bind path. A Docker-free regression matrix runs in `make verify`.
 - **Clear rollback feedback.** Revision rollback explains that saved applications/settings are unchanged and a later Apply or restart can replace the restored edge configuration. Success and error messages remain visible while the revision list refreshes.
 - **Serialized backup and restore.** Restore shares backup's nonblocking directory lock through service startup, preventing timer/manual backup races and overlapping restores. Missing or empty backup env is rejected before stopping the control plane.
 - **Packaged restore command.** Debian appliances include `easy-waf-restore` and its shared parser, so matched backups can be restored without a source checkout. The operator symlink resolves the script's libraries from any working directory.
