@@ -281,3 +281,8 @@ release tarball (and fails if `easy-waf-api` is still missing), reuses
 `install.sh`, waits through the same lock-protected broker helper after its own
 package work finishes, and queues active **api** and **acmed** restarts. It does not cancel an
 already running maintenance helper to restart the broker.
+
+If the sign-in button does nothing, check the browser console for a CSP violation.
+The script hash must use HTML-normalized LF text even for CRLF-encoded assets.
+Updated packages handle both line endings; keep CSP enabled when diagnosing this
+problem. A successful API login alone does not verify that the browser UI runs.

@@ -41,6 +41,12 @@ func inlineScriptHash(html []byte) (string, error) {
 	if start < 0 || end < start {
 		return "", fmt.Errorf("webui: no plain %s block", open)
 	}
-	sum := sha256.Sum256(html[start+len(open) : end])
+	// HTML input preprocessing turns CRLF and lone CR into LF before the
+	// browser computes an inline script's CSP hash. Match that script text,
+	// including when a Windows checkout supplies CRLF-encoded embedded assets.
+	script := html[start+len(open) : end]
+	script = bytes.ReplaceAll(script, []byte("\r\n"), []byte("\n"))
+	script = bytes.ReplaceAll(script, []byte("\r"), []byte("\n"))
+	sum := sha256.Sum256(script)
 	return "sha256-" + base64.StdEncoding.EncodeToString(sum[:]), nil
 }

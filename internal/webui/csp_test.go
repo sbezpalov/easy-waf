@@ -23,6 +23,23 @@ func TestInlineScriptHash(t *testing.T) {
 	}
 }
 
+func TestInlineScriptHashUsesHTMLNewlineNormalization(t *testing.T) {
+	// Browsers normalize CRLF and lone CR before hashing an inline script.
+	// SHA-256 of the resulting script text, "\nalert(1)\n".
+	const want = "sha256-J8+4/wmqNoqVGih0Xof49bzVEIwR8aHhR5HvZK1wlzY="
+	for _, script := range []string{"\nalert(1)\n", "\r\nalert(1)\r\n", "\ralert(1)\r", "\r\nalert(1)\r"} {
+		t.Run(strings.ReplaceAll(strings.ReplaceAll(script, "\r", "CR"), "\n", "LF"), func(t *testing.T) {
+			got, err := inlineScriptHash([]byte("<script>" + script + "</script>"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("policy blocks the browser-normalized script: got %s, want %s", got, want)
+			}
+		})
+	}
+}
+
 // Inline event handlers are not covered by a script hash: one in the page
 // would silently stop working under the policy.
 func TestPageHasNoInlineEventHandlers(t *testing.T) {

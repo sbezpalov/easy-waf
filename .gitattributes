@@ -11,6 +11,8 @@ packaging/deb/* text eol=lf
 
 # Go sources — LF for gofmt / CI verify on Linux.
 *.go text eol=lf
+# Embedded UI CSP hashes use browser-normalized script text on every OS.
+internal/webui/dist/*.html text eol=lf
 .cursor/rules/*.mdc text eol=lf
 
 # HAProxy golden fixtures + SPOE/IPBL snippets — LF only (Windows checkout + haproxy -c on Linux).

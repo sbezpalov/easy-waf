@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **UI CSP across line endings.** Inline script hashes now follow browser HTML newline normalization. CRLF assets from Windows builds no longer block the UI script and leave the sign-in form unresponsive; embedded HTML is also pinned to LF in Git.
+
 - **Restore preserves HAProxy access.** Archive extraction retains safe group read/traverse permissions inside its private staging directory. Restore no longer strips edge permissions that the unprivileged HAProxy process needs to reload; archived private secret modes stay private.
 
 - **HAProxy validation from private directories.** Apply and drop-in repair now validate from a neutral working directory while preserving relative input paths. Running from a private operator checkout no longer breaks HAProxy's identity transition or falsely falls back to a root master.
