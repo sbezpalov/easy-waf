@@ -169,6 +169,12 @@ recovery on [candidate 677a499](release-evidence/1.6.1-packaged-restore-677a499.
 Shared backup/restore locking and early archived-env validation subsequently
 passed source/extracted/installed regressions and actual recovery on
 [candidate 74b0df7](release-evidence/1.6.1-restore-lock-74b0df7.md).
+The latest [local candidate follow-up](release-evidence/1.6.1-local-gates-c27c77b.md)
+passed all-package Linux race tests with real PostgreSQL, lint/vet/verify,
+HAProxy integration, actual isolated nftables rollback and package/CLI checks.
+The same c27c77b package is installed on the VMware dev clone with matching
+served UI/CSP, preserved baseline state and passing smoke/HTTPS. These are local
+equivalents; remote required CI and the remaining appliance/release rows stay open.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
