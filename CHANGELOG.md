@@ -17,6 +17,10 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   Provider errors, authentication failures and network failures are no longer
   silently reported as skipped coverage; optional MMDB upload remains optional.
 
+- IPinfo rate-limit waits now respect request cancellation and deadlines.
+  Canceled lookups leave promptly without delaying live requests or reserving
+  later request slots; the configured minimum interval still applies.
+
 - Take a matched database/state/config backup before upgrading and retain the
   previous package. Use APT for a package-managed appliance; use the script
   upgrade path only for an installation without a package. See

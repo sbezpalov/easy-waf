@@ -21,7 +21,7 @@ const ipinfoBaseURL = "https://ipinfo.io"
 
 // IPInfoProvider calls ipinfo.io JSON API (optional token via GEOIP_IPINFO_TOKEN).
 // BaseURL overrides the API root (default https://ipinfo.io); used in tests.
-// Outbound requests are limited to at most one per second (simple mutex + sleep).
+// Outbound requests are limited to at most one per second; waiting is cancelable.
 type IPInfoProvider struct {
 	BaseURL string
 	HTTP    *http.Client
@@ -46,17 +46,39 @@ func NewIPInfoProvider(token string) *IPInfoProvider {
 	}
 }
 
-func (p *IPInfoProvider) waitRate() {
-	if p.MinInterval <= 0 {
-		return
+func (p *IPInfoProvider) waitRate(ctx context.Context) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if p.MinInterval <= 0 {
+			return nil
+		}
+		p.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			p.mu.Unlock()
+			return err
+		}
+		now := time.Now()
+		delay := p.MinInterval - now.Sub(p.lastCall)
+		if delay <= 0 {
+			p.lastCall = now
+			p.mu.Unlock()
+			return nil
+		}
+		p.mu.Unlock()
+
+		// Do not hold the mutex while waiting or reserve future slots: canceled
+		// clients must neither queue behind other waiters nor delay live ones.
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+		// Other waiters may have taken the slot. Recheck under the mutex.
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := time.Now()
-	if d := p.MinInterval - now.Sub(p.lastCall); d > 0 {
-		time.Sleep(d)
-	}
-	p.lastCall = time.Now()
 }
 
 type ipinfoResponse struct {
@@ -77,7 +99,9 @@ func (p *IPInfoProvider) Lookup(ctx context.Context, ip string) (string, error) 
 		return "", fmt.Errorf("geoip: invalid ip %q", ip)
 	}
 
-	p.waitRate()
+	if err := p.waitRate(ctx); err != nil {
+		return "", err
+	}
 
 	base := strings.TrimSuffix(strings.TrimSpace(p.BaseURL), "/")
 	if base == "" {
