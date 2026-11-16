@@ -1197,6 +1197,12 @@
     if (banner) banner.classList.toggle('hidden', !on);
   }
 
+  function reportApplicationSaved(response, subject) {
+    const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
+    markPendingApply(!applied);
+    toast(subject + (applied ? ' applied.' : ' saved. Apply on Config tab to activate.'), 'ok');
+  }
+
   function copyBtn(value) {
     return '<button type="button" class="secondary copy-btn" data-copy="' + esc(value) + '" title="Copy to clipboard">⧉</button>';
   }
@@ -1914,7 +1920,7 @@
         method: 'POST', headers: hdr(), body: JSON.stringify({ enabled })
       });
       if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
-      toast(enabled ? 'Maintenance page is live.' : 'Maintenance ended.', 'ok');
+      reportApplicationSaved(r, enabled ? 'Maintenance enabled' : 'Maintenance disabled');
       await loadApps();
     });
   }
@@ -1937,7 +1943,7 @@
       selEl.value = prevMode;
       return;
     }
-    markPendingApply(true);
+    reportApplicationSaved(r, 'Security mode');
     await loadApps();
   }
 
@@ -3830,8 +3836,7 @@
       body.security = withBodyPolicy(body.security || {});
       const r = await fetch('/api/v1/applications', { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
       if (r.ok) {
-        toast('Application saved. Apply on Config tab to activate.', 'ok');
-        markPendingApply(true);
+        reportApplicationSaved(r, 'Application');
         clearAppFormFields();
         setAppFormCollapsed(true);
         loadApps();

@@ -82,7 +82,7 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application-security", s.restoreApplication(before)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}
@@ -124,7 +124,7 @@ func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application-security", s.restoreApplication(before)); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application-security", s.restoreApplication(before)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}
@@ -171,7 +171,7 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application-security-mode", s.restoreApplication(before)); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application-security-mode", s.restoreApplication(before)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}

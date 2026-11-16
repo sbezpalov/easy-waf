@@ -346,7 +346,17 @@ Mutating endpoints in this section and the next require a password step-up no ol
 
 With `EASY_WAF_NO_AUTO_APPLY=1`, the apply step is skipped and changes go live only after `POST /api/v1/apply`.
 
+Successful application mutations (save, delete, maintenance, security updates
+and mode changes) include `X-Easy-Waf-Applied: true` when automatic Apply
+completed. With `EASY_WAF_NO_AUTO_APPLY=1`, they instead return
+`X-Easy-Waf-Applied: false`: the change is saved and needs an explicit
+`POST /api/v1/apply`. Response JSON shapes are unchanged. Failed mutations do
+not carry this success header; their error response describes the failure.
+Clients talking to an older server without the header should treat the Apply
+outcome as unconfirmed rather than claim the change is active.
+
 ### `GET /api/v1/applications`
+
 Lists all applications, ordered by `public_host`.
 - **Response:** `200`, an array of `config.Application`; `[]` when there are none.
 - **Errors:** `500` (text/plain) on a database error.

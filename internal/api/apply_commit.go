@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
@@ -26,9 +27,15 @@ import (
 // aligned with the edge; AppliedError instead means the new configuration
 // is already live and its saved state must remain in place. The caller holds
 // the application mutation lease from before its preimage read until undo ends.
-func (s *Server) applyOrUndo(ctx context.Context, label string, undo func(context.Context) error) error {
-	err := s.maybeAutoApply(ctx, label)
-	return undoRejectedApply(ctx, err, undo)
+// On success the response header distinguishes completed auto-apply from a
+// saved mutation awaiting manual Apply, without changing response JSON shapes.
+func (s *Server) applyOrUndo(ctx context.Context, w http.ResponseWriter, label string, undo func(context.Context) error) error {
+	applied, err := s.maybeAutoApply(ctx, label)
+	if err := undoRejectedApply(ctx, err, undo); err != nil {
+		return err
+	}
+	w.Header().Set("X-Easy-Waf-Applied", strconv.FormatBool(applied))
+	return nil
 }
 
 func undoRejectedApply(ctx context.Context, err error, undo func(context.Context) error) error {

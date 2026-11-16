@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Application Apply feedback.** Save, security-mode and maintenance actions now report whether automatic Apply completed or the saved change needs manual Apply. Successful application mutation responses carry the outcome without changing their JSON; the panel updates pending indicators accordingly and remains conservative with older servers.
+
 - **HAProxy runtime stats survive reload.** Reload no longer unlinks the live stats socket before HAProxy reuses its listener. Dashboard metrics remain reachable after Apply; appliance smoke now rejects HTTP 200 responses containing collector errors.
 
 - **UI CSP across line endings.** Inline script hashes now follow browser HTML newline normalization. CRLF assets from Windows builds no longer block the UI script and leave the sign-in form unresponsive; embedded HTML is also pinned to LF in Git.

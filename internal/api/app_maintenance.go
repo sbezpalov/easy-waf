@@ -52,7 +52,7 @@ func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application-maintenance", s.restoreApplication(before)); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application-maintenance", s.restoreApplication(before)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}

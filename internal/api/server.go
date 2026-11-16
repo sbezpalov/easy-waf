@@ -393,7 +393,7 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		}
 		return restoreTokens()
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application", undo); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application", undo); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}
@@ -444,7 +444,7 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.applyOrUndo(r.Context(), "api-application-delete", s.restoreApplication(old)); err != nil {
+	if err := s.applyOrUndo(r.Context(), w, "api-application-delete", s.restoreApplication(old)); err != nil {
 		writeApplyRejected(w, err)
 		return
 	}
@@ -754,9 +754,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 // maybeAutoApply renders and reloads HAProxy after API mutations so the edge matches the database.
 // Set EASY_WAF_NO_AUTO_APPLY=1 to skip (e.g. DB-only tooling); use POST /api/v1/apply manually instead.
-func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
+func (s *Server) maybeAutoApply(ctx context.Context, label string) (bool, error) {
 	if envflag.Enabled("EASY_WAF_NO_AUTO_APPLY") {
-		return nil
+		return false, nil
 	}
 	ctx, cancel := applyContext(ctx)
 	defer cancel()
@@ -764,12 +764,12 @@ func (s *Server) maybeAutoApply(ctx context.Context, label string) error {
 		if s.Prom != nil {
 			s.Prom.IncApplyError()
 		}
-		return err
+		return false, err
 	}
 	if s.Prom != nil {
 		s.Prom.IncApply()
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Server) listIPBLLocal(w http.ResponseWriter, r *http.Request) {
