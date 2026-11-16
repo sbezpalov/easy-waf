@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Serialized backup and restore.** Restore shares backup's nonblocking directory lock through service startup, preventing timer/manual backup races and overlapping restores. Missing or empty backup env is rejected before stopping the control plane.
 - **Packaged restore command.** Debian appliances include `easy-waf-restore` and its shared parser, so matched backups can be restored without a source checkout. The operator symlink resolves the script's libraries from any working directory.
 - **Complete packaged edge recovery.** APT upgrades queue a cold restart of active HAProxy when installing its managed drop-in, applying service policy and recreating stats listeners lost by older reload hooks. Stopped edges and unowned drop-ins are left alone.
 

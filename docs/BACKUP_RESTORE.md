@@ -28,13 +28,16 @@ run's temporary directories; existing `<output>.partial` files are left alone.
 
 The script **stops `easy-waf-api` and `easy-waf-acmed`** for the dump/archive window so PostgreSQL and on-disk secrets/certs stay consistent, then starts them again (including on failure). HAProxy keeps serving the last applied edge config during the pause.
 
-Only one backup invocation can own that pause. A nonblocking `flock` on the
+Only one backup or restore invocation can own that pause. A nonblocking `flock` on the
 existing `/etc/easy-waf` directory is held until cleanup restarts the writers,
 including packing and rotation. An overlapping manual or timer run fails before
 touching services or invoking `pg_dump`; retry after the active backup finishes.
 The lock is shared across output/state paths and systemd's private `/tmp`.
-It does not coordinate manual service starts, restore or factory reset; avoid
-running those operations during a backup.
+Restore takes the same lock before archive extraction and retains it through
+replacement and service startup. A competing backup or restore fails before
+service/database access; retry after the active operation finishes.
+Manual service starts and factory reset do not take this lock; avoid them during
+either operation.
 
 Custom output path:
 
@@ -93,8 +96,10 @@ installation or an older package without the command, use
 
 Steps:
 
-1. Stops **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
-2. Extracts the archive to a temp directory.
+1. Requires `flock` and acquires the shared backup/restore lock on `/etc/easy-waf`.
+2. Extracts the archive privately and checks the required directories, dump and
+   nonempty `DATABASE_URL` in the backed-up env before stopping
+   **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
 3. **`pg_restore --single-transaction --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host). A failed restore leaves the database unchanged and **does not** replace on-disk state.
 4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).

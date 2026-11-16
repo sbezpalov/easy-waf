@@ -39,6 +39,19 @@ if ! command -v pg_restore &>/dev/null; then
   echo "ERROR: pg_restore not found" >&2
   exit 1
 fi
+if ! command -v flock &>/dev/null; then
+  echo "ERROR: flock not found (install util-linux)" >&2
+  exit 1
+fi
+# Backup's timer and manual invocations pause the same writers and capture this
+# directory. Keep the shared inode locked through extraction, replacement and
+# service startup. Wiping its contents below does not replace the directory.
+mkdir -p "$CFG"
+exec {RESTORE_LOCK_FD}<"$CFG"
+if ! flock -n "$RESTORE_LOCK_FD"; then
+  echo "ERROR: cannot acquire backup/restore lock; another backup or restore may be running" >&2
+  exit 1
+fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-restore.XXXXXX")"
 cleanup() { rm -rf "$WORKDIR"; }
@@ -81,11 +94,6 @@ if [[ ! -d "$ROOT/state" ]] || [[ ! -d "$ROOT/etc" ]]; then
   exit 1
 fi
 
-echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
-systemctl stop easy-waf-api.service 2>/dev/null || true
-systemctl stop easy-waf-acmed.service 2>/dev/null || true
-systemctl stop easy-waf-hostd.service 2>/dev/null || true
-
 REST_ENV="$ROOT/etc/easy-waf.env"
 if [[ ! -f "$REST_ENV" ]]; then
   echo "ERROR: backup missing etc/easy-waf.env" >&2
@@ -98,6 +106,11 @@ if [[ -z "$DATABASE_URL" ]]; then
   echo "ERROR: DATABASE_URL empty in backup env $REST_ENV" >&2
   exit 1
 fi
+
+echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
+systemctl stop easy-waf-api.service 2>/dev/null || true
+systemctl stop easy-waf-acmed.service 2>/dev/null || true
+systemctl stop easy-waf-hostd.service 2>/dev/null || true
 
 echo "[easy-waf-restore] pg_restore into configured database (single transaction; drops conflicting objects)…"
 # --single-transaction keeps --clean + restore atomic: a mid-restore failure

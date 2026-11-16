@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Copyright 2026 Sergey Bezpalov
+# SPDX-License-Identifier: Apache-2.0
+# Real backup/restore and flock; fake DB/services, private container config only.
+set -euo pipefail
+awk '$2 == "/etc/easy-waf" && $3 == "tmpfs" { found=1 } END { exit !found }' /proc/mounts || exit 90
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKUP_SCRIPT="${EASY_WAF_TEST_BACKUP_SCRIPT:-$SCRIPT_DIR/backup.sh}"
+RESTORE_SCRIPT="${EASY_WAF_TEST_RESTORE_SCRIPT:-$SCRIPT_DIR/restore.sh}"
+ROOT="$(mktemp -d)"
+HOLDER_PID=''
+cleanup() {
+  touch "$ROOT/release"
+  if [[ -n "$HOLDER_PID" ]]; then wait "$HOLDER_PID" || true; fi
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
+mode="${1:-all}"
+[[ "$mode" == all || "$mode" == preflight || "$mode" == locks ]] || fail 'unknown test selection'
+mkdir -p "$ROOT/bin" "$ROOT/source/backup/state" "$ROOT/source/backup/etc" "$ROOT/state"
+printf 'fixture dump\n' >"$ROOT/source/backup/easywaf.dump"
+printf 'fixture data\n' >"$ROOT/source/backup/state/data"
+printf 'DATABASE_URL=postgres://fixture.invalid/never-connected\n' >/etc/easy-waf/easy-waf.env
+cp /etc/easy-waf/easy-waf.env "$ROOT/source/backup/etc/easy-waf.env"
+tar -czf "$ROOT/valid.tar.gz" -C "$ROOT/source" backup
+export RESTORE_LOCK_TEST_ROOT="$ROOT" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_SKIP_APPLY=1
+cat >"$ROOT/bin/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$*" >>"$RESTORE_LOCK_TEST_ROOT/services"
+if [[ "$1" == start && "${RESTORE_LOCK_HOLD:-}" == service-start ]]; then
+  "$RESTORE_LOCK_TEST_ROOT/bin/barrier"
+fi
+MOCK
+printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/chown"
+cat >"$ROOT/bin/barrier" <<'MOCK'
+#!/usr/bin/env bash
+touch "$RESTORE_LOCK_TEST_ROOT/entered"
+for ((i=0; i<500; i++)); do
+  [[ ! -f "$RESTORE_LOCK_TEST_ROOT/release" ]] || exit 0
+  sleep 0.02
+done
+exit 91
+MOCK
+cat >"$ROOT/bin/database" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+operation="$(basename "$0")"
+printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$operation" >>"$RESTORE_LOCK_TEST_ROOT/database"
+if [[ "${RESTORE_LOCK_HOLD:-}" == "$operation" ]]; then
+  "$RESTORE_LOCK_TEST_ROOT/bin/barrier"
+fi
+if [[ "$operation" == pg_dump ]]; then
+  for argument in "$@"; do
+    if [[ "$argument" == --file=* ]]; then printf 'fixture dump\n' >"${argument#--file=}"; fi
+  done
+fi
+MOCK
+chmod 0700 "$ROOT/bin/"*
+ln -s database "$ROOT/bin/pg_restore"
+ln -s database "$ROOT/bin/pg_dump"
+export PATH="$ROOT/bin:$PATH"
+
+if [[ "$mode" != locks ]]; then
+  for invalid in missing empty; do
+    : >"$ROOT/services"; : >"$ROOT/database"
+    if [[ "$invalid" == missing ]]; then
+      rm "$ROOT/source/backup/etc/easy-waf.env"
+    else
+      printf 'DATABASE_URL=\n' >"$ROOT/source/backup/etc/easy-waf.env"
+    fi
+    tar -czf "$ROOT/invalid.tar.gz" -C "$ROOT/source" backup
+    if bash "$RESTORE_SCRIPT" "$ROOT/invalid.tar.gz" >"$ROOT/invalid.log" 2>&1; then
+      fail "restore accepted $invalid env"
+    fi
+    [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail "$invalid env touched services/database"
+  done
+  echo 'OK: invalid restore env rejected before service/database access'
+  mkdir "$ROOT/no-flock"
+  for tool in bash dirname readlink id; do ln -s "$(type -P "$tool")" "$ROOT/no-flock/$tool"; done
+  ln -s "$ROOT/bin/database" "$ROOT/no-flock/pg_restore"
+  : >"$ROOT/services"; : >"$ROOT/database"
+  if PATH="$ROOT/no-flock" bash "$RESTORE_SCRIPT" "$ROOT/valid.tar.gz" >"$ROOT/no-flock.log" 2>&1; then
+    fail 'restore continued without locking capability'
+  fi
+  grep -qF 'flock not found' "$ROOT/no-flock.log" || fail 'missing flock was not diagnosed'
+  [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'missing flock touched services/database'
+  echo 'OK: missing flock rejected before service/database access'
+fi
+
+if [[ "$mode" != preflight ]]; then
+  for holder in backup restore; do
+    for phase in database startup; do
+      rm -f "$ROOT/entered" "$ROOT/release"
+      : >"$ROOT/services"; : >"$ROOT/database"
+      script="$BACKUP_SCRIPT"; argument="$ROOT/held-backup.tar.gz"; hold=pg_dump
+      if [[ "$holder" == restore ]]; then script="$RESTORE_SCRIPT"; argument="$ROOT/valid.tar.gz"; hold=pg_restore; fi
+      if [[ "$phase" == startup ]]; then hold=service-start; fi
+      RESTORE_LOCK_RUN=holder RESTORE_LOCK_HOLD="$hold" bash "$script" "$argument" >"$ROOT/holder.log" 2>&1 &
+      HOLDER_PID=$!
+      for ((i=0; i<500; i++)); do
+        [[ ! -f "$ROOT/entered" ]] || break
+        sleep 0.02
+      done
+      [[ -f "$ROOT/entered" ]] || fail 'holder did not reach database barrier'
+      for competitor in backup restore; do
+        script="$BACKUP_SCRIPT"; argument="$ROOT/rejected-backup.tar.gz"
+        if [[ "$competitor" == restore ]]; then script="$RESTORE_SCRIPT"; argument="$ROOT/valid.tar.gz"; fi
+        if RESTORE_LOCK_RUN=competitor RESTORE_LOCK_HOLD='' bash "$script" "$argument" >"$ROOT/rejected.log" 2>&1; then
+          fail "$competitor overlapped $holder"
+        fi
+        grep -qi 'lock' "$ROOT/rejected.log" || fail 'overlap failed for an unrelated reason'
+        if grep -q '^competitor ' "$ROOT/services" "$ROOT/database"; then fail 'rejected operation reached services/database'; fi
+      done
+      touch "$ROOT/release"
+      wait "$HOLDER_PID" || { cat "$ROOT/holder.log"; fail 'holder failed'; }
+      HOLDER_PID=''
+    done
+  done
+  echo 'OK: backup/restore locks cover database work and writer startup against both competitors'
+fi

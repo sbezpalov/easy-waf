@@ -91,7 +91,7 @@ fi
 # Keep this descriptor open through rotation and EXIT's writer restart.
 exec {BACKUP_LOCK_FD}<"$CFG"
 if ! flock -n "$BACKUP_LOCK_FD"; then
-  echo "ERROR: cannot acquire backup lock; another backup may be running" >&2
+  echo "ERROR: cannot acquire backup lock; another backup or restore may be running" >&2
   exit 1
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
