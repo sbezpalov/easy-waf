@@ -61,6 +61,22 @@ the bouncer is down. On the appliance itself:
 4. Delete the decision and record that the next request succeeds.
 5. Stop the bouncer, record that traffic still passes, then start it again.
 
+## AC-06 — rejected Apply and revision rollback
+
+On an isolated appliance with a matched backup, record a working published HTTPS
+request and a good revision. Introduce a reversible configuration dependency
+failure through the normal API, such as a CrowdSec engine absent from the configured
+SPOE file, and invoke Apply. Confirm actual `haproxy -c` rejection in the private
+journal, unchanged live artifacts/revisions/runtime and a successful new HTTPS
+request. A malformed request rejected at the API boundary does not cover this.
+Restore the setting and Apply in cleanup.
+
+Separately apply maintenance mode to an owned test application, observe 503,
+roll back to its prior good revision and observe 200 with the expected response.
+Revision rollback changes artifacts, not database rows: restore the original saved
+application/settings and Apply after the check. Use the matched checkpoint if
+exact database/state recovery is required. Record cleanup and independent checks.
+
 ## Install and upgrade
 
 - Clean Ubuntu 24.04: `sudo bash scripts/install.sh`, then

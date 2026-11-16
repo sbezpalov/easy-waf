@@ -80,6 +80,13 @@ Its recovery snapshot covers both current and historical artifact paths, so
 a failed rollback restores overwritten files and removes files it created
 at previously absent historical paths.
 
+Revision rollback changes the generated edge artifacts, not the application or
+settings rows in PostgreSQL. A later Apply, application auto-Apply or API startup
+reconciliation can render the saved rows again. After emergency rollback, correct
+the saved settings/application and Apply them, or use a matched backup/restore
+when the database and on-disk state must both return to an earlier checkpoint.
+The actual appliance check is recorded in [the AC-06 report](release-evidence/1.6.1-apply-rollback-74b0df7.md).
+
 HAProxy validation and systemctl reload honor the apply caller's context,
 including the API's two-minute and the ACME worker's five-minute budgets.
 Recovery reload uses a fresh context with a 30-second limit so an expired
