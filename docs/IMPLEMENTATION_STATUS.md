@@ -185,6 +185,11 @@ passed all five actual LAPI/SPOA network checks and all seven real systemd/APT
 lifecycle cases on f8f7694. The installed c27c77b dev clone also recovered from an
 actual power cycle with exact baseline data, stats/TLS/smoke and a 2 GiB lab profile;
 this is not a production sizing benchmark or a repeat of late-DB failure injection.
+The [nightly coverage audit](release-evidence/1.6.1-nightly-audit-c5c322f.md) also
+passed the remaining three root-fixture launchers and confirmed actual GitHub CI
+success for c27c77b. Runtime/package inputs remain identical through c5c322f;
+newer E2E changes, final release notes/signatures and external acceptance remain
+separate gates. No release is approved by these aggregate coverage counts.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
