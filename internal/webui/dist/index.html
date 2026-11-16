@@ -444,6 +444,7 @@
             <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
             <button type="button" id="btn-acme-settings-save">Save ACME</button>
           </div>
+          <p id="acme-configuration-status" class="warn" aria-live="polite">Saved ACME configuration has not loaded. Automatic renewal readiness is unknown.</p>
           <p id="certs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
 
@@ -2334,6 +2335,26 @@
     void refreshGeoIPProvidersNote();
   }
 
+  function renderACMEConfigurationStatus(settings) {
+    const status = document.getElementById('acme-configuration-status');
+    if (!status) return;
+    if (!settings) {
+      status.textContent = 'Saved ACME configuration has not loaded. Automatic renewal readiness is unknown.';
+      status.className = 'warn';
+      return;
+    }
+    const warnings = [];
+    if (!(settings.acme_email || '').trim()) {
+      warnings.push('ACME issuance and renewal are paused: set and save a contact email.');
+    }
+    if (settings.acme_staging) {
+      warnings.push('Staging is enabled: new and renewed ACME certificates will not be trusted by browsers.');
+    }
+    status.textContent = 'Saved ACME configuration: ' + (warnings.length ? warnings.join(' ') :
+      'Production ACME configured. Individual certificates can still select staging.');
+    status.className = warnings.length ? 'warn' : 'dash-note';
+  }
+
   async function loadSettingsPanel() {
     const sm = document.getElementById('settings-msg');
     const cm = document.getElementById('certs-settings-msg');
@@ -2350,12 +2371,18 @@
       csm.textContent = '';
       csm.className = 'warn';
     }
-    const r = await fetch('/api/v1/settings', { headers: hdr() });
-    if (!r.ok) {
-      if (sm) sm.textContent = await r.text();
+    renderACMEConfigurationStatus(null);
+    try {
+      const r = await fetch('/api/v1/settings', { headers: hdr() });
+      if (!r.ok) throw new Error('Settings request failed');
+      cachedSettings = await r.json();
+    } catch (_) {
+      [sm, cm, csm].forEach((message) => {
+        if (message) message.textContent = 'Could not load settings. Reload this page to try again.';
+      });
       return;
     }
-    cachedSettings = await r.json();
+    renderACMEConfigurationStatus(cachedSettings);
     document.getElementById('acme-email').value = cachedSettings.acme_email || '';
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
     document.getElementById('waf-basic-enabled').checked = cachedSettings.waf_basic_rules_enabled !== false;
@@ -3185,6 +3212,7 @@
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
       cachedSettings = await r.json();
+      renderACMEConfigurationStatus(cachedSettings);
       if (msg) {
         msg.textContent = 'ACME saved.';
         msg.className = 'ok';
