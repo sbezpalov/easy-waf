@@ -503,7 +503,9 @@ install_release_package() {
 
   local rc=0
   easy_waf_apt_get_update
-  if DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"; then
+  # debconf's noninteractive frontend does not answer dpkg conffile prompts.
+  # Adopt source-installed/operator files without replacing their credentials.
+  if DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y "$deb"; then
     EASY_WAF_PKG_INSTALLED=1
     log "Installed easy-waf ${ver} from the Debian package"
   else
@@ -647,7 +649,7 @@ EOF
       apt)
         easy_waf_apt_get_update
         log "Installing build toolchain (golang, make, git) via apt..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y golang-go make git ca-certificates curl 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y golang-go make git ca-certificates curl 2>/dev/null || true
         if ! easy_waf_go_version_meets 1 27; then
           log "Distro Go is older than 1.27 or missing — bootstrapping Go from go.dev..."
           easy_waf_bootstrap_go_toolchain || die "Go bootstrap failed (network or arch?)"
@@ -900,19 +902,19 @@ install_os_packages() {
         policykit-1
         sudo
       )
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${base_pkgs[@]}" \
+      DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y --no-install-recommends "${base_pkgs[@]}" \
         || die "apt install failed (haproxy/nftables/base packages)"
 
       if easy_waf_pkg_installed fail2ban; then
         log "fail2ban already installed"
-      elif DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban; then
+      elif DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y fail2ban; then
         :
       else
         log "warning: fail2ban unavailable (optional). Install later: apt install fail2ban"
       fi
 
       if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" == "1" ]]; then
-        DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib \
+        DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y postgresql postgresql-contrib \
           || die "postgresql install failed"
         systemctl enable --now postgresql || true
         log "PostgreSQL enabled — ensure /etc/easy-waf/easy-waf.env DATABASE_URL matches your cluster"

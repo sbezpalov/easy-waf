@@ -42,7 +42,7 @@ crowdsec_add_packagecloud_repo() {
   elif command -v apt-get &>/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y --no-install-recommends gnupg ca-certificates curl
+    apt-get -o Dpkg::Options::=--force-confold install -y --no-install-recommends gnupg ca-certificates curl
     crowdsec_add_apt_repo
   else
     echo "[easy-waf] CrowdSec: need dnf or apt-get" >&2
@@ -114,8 +114,8 @@ crowdsec_systemd_recover_until_healthy() {
 # Run apt/dpkg once, then controlled restarts (fresh install only — re-runs use systemd recovery).
 crowdsec_apt_recover_crowdsec_until_healthy() {
   echo "[easy-waf] CrowdSec: finishing dpkg configuration (one apt pass)..." >&2
-  DEBIAN_FRONTEND=noninteractive apt-get -f install -y 2>/dev/null || true
-  dpkg --configure -a 2>/dev/null || true
+  DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold -f install -y 2>/dev/null || true
+  dpkg --force-confold --configure -a 2>/dev/null || true
   crowdsec_systemd_recover_until_healthy
 }
 
@@ -127,7 +127,7 @@ crowdsec_install_agent_package() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     # apt may exit non-zero if postinst's systemctl start hits a transient LAPI error — recover, don't ask the operator to re-run.
-    if ! apt-get install -y crowdsec; then
+    if ! apt-get -o Dpkg::Options::=--force-confold install -y crowdsec; then
       echo "[easy-waf] CrowdSec: apt install crowdsec returned non-zero — finishing dpkg and stabilizing LAPI" >&2
     fi
     if crowdsec_apt_probe_healthy 50; then
@@ -153,7 +153,7 @@ crowdsec_install_spoa_bouncer_package() {
   elif command -v apt-get &>/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y crowdsec-haproxy-spoa-bouncer
+    apt-get -o Dpkg::Options::=--force-confold install -y crowdsec-haproxy-spoa-bouncer
   else
     return 1
   fi
@@ -213,7 +213,7 @@ crowdsec_bind_spoa_loopback() {
 crowdsec_start_agent() {
   systemctl enable crowdsec.service 2>/dev/null || true
   local a
-  for a in 1 2 3 4 5; do
+  for ((a = 0; a < 5; a++)); do
     systemctl reset-failed crowdsec.service 2>/dev/null || true
     systemctl start crowdsec.service 2>/dev/null || true
     sleep 2

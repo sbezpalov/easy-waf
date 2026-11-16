@@ -12,6 +12,16 @@ permissions:
   contents: read
 
 jobs:
+  installer-conffiles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Prepare disposable Ubuntu APT fixture
+        run: docker pull ubuntu:24.04
+      - name: Preserve source-installed and packaged conffiles without a terminal
+        run: bash scripts/test-installer-conffiles.sh
+
   backup-publication:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

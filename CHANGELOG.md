@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Unattended conffile adoption.** Installer and CrowdSec APT/dpkg paths now preserve existing operator conffiles explicitly, including files created by older script installations. Upgrades no longer stop at a conffile prompt despite `DEBIAN_FRONTEND=noninteractive`; real offline APT regressions cover adoption, packaged upgrades, fresh defaults and SPOA configuration.
+
 - **Factory reset reads `DATABASE_URL` from `-env-file`.** `factory-reset` and `reset-appliance` no longer ignore the env file they document and demand a process environment variable.
 - **Bootstrap writes the credentials report before wiping.** If the report path cannot be created, configuration tables and the state directory are left in place. The new database password is already in the env file.
 - **`doctor` reports a certificate directory with no readable chain.** A missing or non-PEM `fullchain.pem` is a warning instead of a silent skip.

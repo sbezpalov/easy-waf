@@ -25,6 +25,15 @@ not replaced by file entries. The nftables repair command likewise reads only
 firewall options and legacy aliases; `EASY_WAF_ENV_FILE` selects its input file.
 Neither path executes shell statements from that file.
 
+APT installation and CrowdSec package recovery explicitly keep existing local
+conffiles with dpkg's `--force-confold`. This also covers files created by an
+earlier script installation, which otherwise prompt even with a noninteractive
+debconf frontend. Credentials and operator changes stay in place; new vendor
+versions may be saved as `.dpkg-dist` for deliberate review. Fresh installations
+still receive the package defaults. `make test-installer-conffiles` exercises
+these decisions with real APT/dpkg and dummy private package state in Docker
+(prepare `ubuntu:24.04` first, or set `EASY_WAF_CONFFILE_TEST_IMAGE`).
+
 [`scripts/install.sh`](../scripts/install.sh) (run as **root**):
 
 1. Creates user `easy-waf` and directory layout under `EASY_WAF_STATE_DIR` (default `/var/lib/easy-waf`): `haproxy/`, `revisions/`, `certs/`, `acme/webroot`, `secrets/` (0700).
