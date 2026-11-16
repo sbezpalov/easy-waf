@@ -1,6 +1,6 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-16
+**Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
@@ -194,6 +194,16 @@ Named [1.6.1 candidate notes](../CHANGELOG.md#161---unreleased) are now prepared
 with an explicit Unreleased status and upgrade/recovery guidance. This closes the
 missing-section preparation gap; final acceptance, release date, tag/signatures
 and newer remote runs remain open. Notes preparation does not approve publication.
+The [PVE candidate alignment](release-evidence/1.6.1-pve-c27-alignment.md)
+installed the same verified c27c77b package through APT after a matched private
+checkpoint. Exact payload/UI/CSP, unchanged application/certificate objects,
+production HTTP-01 served-leaf equality, core services and direct Windows trusted
+HTTPS passed. The Windows DNS-address path timed out; fresh external-client and
+native-browser acceptance remain open. Existing public certificates were
+preserved, not reissued, and no test logout was performed.
+The same record confirms successful remote push CI for 8d3da16, including all
+three jobs; later notes/evidence commits and a fresh remote nightly E2E run
+remain outside that CI scope.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
