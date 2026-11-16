@@ -41,7 +41,7 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 	settings.BlockEmptyUA = false
 	settings.WAFBasicRulesEnabled = false
 	settings.HAProxyStatsSocketPath = socketPath
-	var apps []config.Application
+	apps := make([]config.Application, 0, 3)
 	for _, profile := range []string{"home-assistant", "balanced", "ha-mcp"} {
 		a := config.Application{ID: profile, Name: profile, PublicHost: profile + ".example.test",
 			BackendHost: "127.0.0.1", BackendPort: backend.port, Profile: profile,

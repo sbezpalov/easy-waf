@@ -24,6 +24,13 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 	if err != nil {
 		t.Skip("haproxy not in PATH (install haproxy to run integration golden validation)")
 	}
+	goldenDir, err := filepath.Abs(filepath.Join("testdata", "golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixturePaths := func(body []byte) []byte {
+		return bytes.ReplaceAll(body, []byte("testdata/golden/"), []byte(filepath.ToSlash(goldenDir)+"/"))
+	}
 
 	for _, name := range goldenScenarioNames {
 		t.Run(name, func(t *testing.T) {
@@ -35,6 +42,20 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			// HAProxy 3.x requires an absolute stats socket path, but sun_path is limited (~97 bytes).
 			// t.TempDir() already includes a long test name; keep socket filename very short.
 			d := t.TempDir()
+			// Validate deliberately runs from /, as it does on the appliance.
+			// Materialize the list with absolute PEM paths, and resolve shared
+			// SPOE/map fixtures without depending on HAProxy's working directory.
+			listName := name + ".crt-list.txt"
+			list, err := os.ReadFile(filepath.Join(goldenDir, listName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			listPath := filepath.Join(d, "crt-list.txt")
+			if err := os.WriteFile(listPath, fixturePaths(list), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			raw = fixturePaths(raw)
+			raw = bytes.ReplaceAll(raw, []byte(filepath.ToSlash(filepath.Join(goldenDir, listName))), []byte(filepath.ToSlash(listPath)))
 			absSock := filepath.Join(d, "s.sock")
 			cfgBody := rewriteStatsSocketPathForHAProxyCheck(raw, absSock)
 			// Backend-TLS fixtures record an operator CA path that exists only on the

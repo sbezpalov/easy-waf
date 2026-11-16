@@ -24,12 +24,13 @@ echo "== Checking shell files for CRLF (Windows line endings) =="
 _sh_crlf=0
 while IFS= read -r -d '' f; do
   if grep -q $'\r' "$f" 2>/dev/null; then
-    echo "ERROR: CRLF in $f — use LF only (.gitattributes). Re-save as Unix or: sed -i 's/\\r$//' \"$f\"" >&2
+    printf 'ERROR: CRLF in %s — use LF only (.gitattributes). Re-save with Unix line endings.\n' "$f" >&2
     _sh_crlf=1
   fi
 done < <(
   find scripts -name '*.sh' -type f -print0 2>/dev/null || true
   find packaging/deb -maxdepth 1 -type f -print0 2>/dev/null || true
+  find packaging/ovf -name '*.sh' -type f -print0 2>/dev/null || true
 )
 if [[ "$_sh_crlf" -ne 0 ]]; then
   exit 1
@@ -52,7 +53,7 @@ fi
 
 echo "== Scanning docs/configs for Windows drive-letter paths (C:\\...) =="
 # Do not scan scripts/*.sh: JSON \" escapes and regex \\s false-positive here.
-if grep -RE '[A-Za-z]:\\' --include='*.example' --include='*.md' --include='*.service' \
+if grep -RE "[A-Za-z]:\\\\" --include='*.example' --include='*.md' --include='*.service' \
   configs packaging docs 2>/dev/null; then
   echo "WARNING: possible Windows paths in docs/configs — use forward slashes for Linux." >&2
 else
