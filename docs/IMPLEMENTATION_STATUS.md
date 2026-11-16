@@ -175,6 +175,11 @@ HAProxy integration, actual isolated nftables rollback and package/CLI checks.
 The same c27c77b package is installed on the VMware dev clone with matching
 served UI/CSP, preserved baseline state and passing smoke/HTTPS. These are local
 equivalents; remote required CI and the remaining appliance/release rows stay open.
+The nightly body-policy launcher subsequently had its failed/incomplete-output
+false success and Git Bash path conversion repaired; all six result-handling
+regressions and the actual 26-case HAProxy/curl suite passed on
+[f6bc4ad](release-evidence/1.6.1-body-e2e-f6bc4ad.md). CrowdSec/systemd-APT follow-ups
+and remote workflow execution remain separate gates.
 Record candidate-specific results using [RELEASE_ACCEPTANCE_TEMPLATE.md](RELEASE_ACCEPTANCE_TEMPLATE.md)
 and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
