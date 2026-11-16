@@ -11,6 +11,11 @@ stats and trusted HTTPS passed on PVE. Release approval remains open.
 The public certificate from the [cb2d0a7 production renewal](release-evidence/1.6.1-http01-renewal-cb2d0a7.md)
 and the [22ce6f0 reboot](release-evidence/1.6.1-reboot-22ce6f0.md) retain their scopes;
 no fresh renewal or reboot of the new dependency binaries is claimed.
+The same package passed a [matched backup and packaged restore on the independent
+VMware copy](release-evidence/1.6.1-restore-9cfc841.md), including an actual
+maintenance 503 to restored HTTPS 200 transition and exact persisted objects.
+Post-restore smoke: 18 passed, 0 failed, 3 skipped; GeoIP lookup returned 502
+and remains unverified in that run.
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
