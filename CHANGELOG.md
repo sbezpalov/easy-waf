@@ -29,6 +29,7 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
 
 ### Changed
 
+- **ACME contact validation.** Settings reject malformed, list and display-name contacts before persistence; the standalone Save ACME button checks its email field before sending. Rejected updates preserve saved configuration.
 - **Visible ACME configuration gaps.** Certificates warns when a missing contact pauses issuance/renewal or global staging selects untrusted certificates. The saved-state notice updates after load/save and remains unknown on settings-load failures.
 - **Release metadata preflight.** Tag/version and exact, unique, nonempty changelog notes are checked before Go setup, package builds and signing. Version punctuation is matched literally; missing notes never fall back to Unreleased. Portable extractor and workflow regressions run in `make verify`.
 - **Portable CrowdSec E2E.** The nightly LAPI/SPOA/HAProxy launcher normalizes host mounts and preserves container paths under Windows Git Bash, and joins the ShellCheck gate.

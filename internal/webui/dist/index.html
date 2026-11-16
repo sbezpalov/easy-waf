@@ -3205,6 +3205,10 @@
       if (msg) msg.textContent = 'Use Settings → Load from server first.';
       return;
     }
+    if (!document.getElementById('acme-email').checkValidity()) {
+      if (msg) msg.textContent = 'Enter a valid email address.';
+      return;
+    }
     const patch = {
       acme_email: document.getElementById('acme-email').value.trim(),
       acme_staging: document.getElementById('acme-staging').checked

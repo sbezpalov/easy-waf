@@ -101,7 +101,7 @@ password, every authenticated route except `GET /api/v1/auth/me`,
 unless the session confirmed its password in the last **5 minutes** (call
 [`POST /auth/confirm`](#post-apiv1authconfirm) and repeat with the new token):
 `/api/v1/host/*` routes that change the host (including netplan/firewall
-**commit**); `PATCH`/`PUT /settings` and `PUT /settings/management-tls`; `POST /apply`
+**commit**); `PATCH /settings` and `PUT /settings/management-tls`; `POST /apply`
 and revision rollback; every application and certificate lifecycle mutation; IPBL/IPWL/blocked-UA/CrowdSec/Fail2Ban/GeoIP
 mutations; panel-user and TOTP setup/disable; `POST /diagnostics/bundle`. Reads
 and `POST /host/diagnostics/*` do not need it. The legacy automation token
@@ -632,7 +632,7 @@ Returns the current global settings.
   ```
 - **Fields with special handling:**
   - `crowdsec_lapi_key` (write-only): an empty string leaves the stored key unchanged, so the key cannot be cleared through this API. `crowdsec_lapi_key_set` in the response shows whether a key is stored.
-  - `acme_email`: an empty string keeps the stored value, so the address cannot be cleared through this API.
+  - `acme_email`: an empty string keeps the stored value, so the address cannot be cleared through this API. A nonempty contact must be one bare email address of at most 254 bytes, without display names, lists or surrounding whitespace. Invalid contacts return 400 without changing settings.
   - `management_allowed_cidrs`: `null` keeps the stored list. Otherwise the list must contain at least one entry, and every entry must be a valid CIDR prefix (`netip.ParsePrefix`, so a bare IP without `/n` is rejected). The new list is enforced from the next request on. A list that excludes your own address locks you out of the API and UI.
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
   - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.

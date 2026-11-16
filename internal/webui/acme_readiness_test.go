@@ -39,7 +39,7 @@ function include(context, from, until) {
 }
 function fixture() {
  const elements = {};
- const get = id => elements[id] ||= {textContent:'',className:'',value:'',checked:false};
+ const get = id => elements[id] ||= {textContent:'',className:'',value:'',checked:false,checkValidity:()=>true};
  const context = {document:{getElementById:get},cachedSettings:null,hdr:()=>({}),
   loadIpwlToggleFromSettings(){},loadBotProtectionFromSettings(){},loadEdgeNetworkFromSettings(){},
   loadGeoIPFromSettings(){},loadIpblFetchCIDRsFromSettings(){}};
@@ -81,17 +81,20 @@ async function run() {
   else assert.equal(status.className,'warn');
   assert.doesNotMatch(status.textContent,/@|<script/);
  }
- for(const scenario of ['production','staging','missing','rejected']) {
+ for(const scenario of ['production','staging','missing','rejected','invalid']) {
   const {context:c,get}=fixture();
   c.cachedSettings={acme_email:'ops@example.test',acme_staging:true};
   c.renderACMEConfigurationStatus(c.cachedSettings);
   get('acme-email').value=' ops@example.test ';get('acme-staging').checked=false;
+  if(scenario==='invalid')get('acme-email').checkValidity=()=>false;
   const persisted={acme_email:scenario==='missing'?'':'ops@example.test',acme_staging:scenario==='staging'};
   let calls=0;
   c.fetch=async(path,init)=>{calls++;assert.equal(path,'/api/v1/settings');assert.equal(init.method,'PATCH');
    assert.deepEqual(JSON.parse(init.body),{acme_email:'ops@example.test',acme_staging:false});
    return {ok:scenario!=='rejected',json:async()=>persisted,text:async()=> 'fixture rejection'};};
-  await get('btn-acme-settings-save').onclick();assert.equal(calls,1);
+  await get('btn-acme-settings-save').onclick();
+  if(scenario==='invalid') {assert.equal(calls,0);assert.match(get('certs-settings-msg').textContent,/valid email/i);continue;}
+  assert.equal(calls,1);
   const status=get('acme-configuration-status');
   if(scenario==='rejected') {assert.match(get('certs-settings-msg').textContent,/fixture rejection/);assert.match(status.textContent,/staging/i);continue;}
   assert.equal(get('certs-settings-msg').textContent,'ACME saved.');
@@ -99,7 +102,7 @@ async function run() {
   if(scenario==='missing')assert.match(status.textContent,/paused/i);
   else assert.match(status.textContent,scenario==='staging'?/staging/i:/production/i);
  }
- console.log('PASS: 7 settings-load and 4 ACME-save scenarios');
+ console.log('PASS: 7 settings-load and 5 ACME-save scenarios');
 }
 run().catch(error=>{console.error(error);process.exitCode=1});
 `

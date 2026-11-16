@@ -5,6 +5,7 @@ package api
 
 import (
 	"fmt"
+	"net/mail"
 	"os"
 	"strings"
 
@@ -26,6 +27,15 @@ func validateRuntimeSettings(s config.GlobalSettings) error {
 	// the checks that only make sense at the API boundary.
 	if err := config.ValidateSettingsRenderSafety(&s); err != nil {
 		return err
+	}
+	// ACME contacts are serialized as mailto URIs, so display names, lists and
+	// whitespace must not be accepted as an account email. Empty remains valid
+	// for appliances that have not configured ACME yet.
+	if s.ACMEEmail != "" {
+		address, err := mail.ParseAddress(s.ACMEEmail)
+		if err != nil || len(s.ACMEEmail) > 254 || address.Name != "" || address.Address != s.ACMEEmail {
+			return fmt.Errorf("acme_email: enter one email address without a display name or surrounding whitespace (maximum 254 bytes)")
+		}
 	}
 	// On write the paths must also be absolute: a relative one resolves against
 	// whatever directory the service happened to start in.

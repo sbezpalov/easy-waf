@@ -98,7 +98,7 @@ Full appliance installation and external ACME/WAN acceptance remain manual.
 
 ### 7.2 ACME — **Done** (HTTP-01, DNS-01 providers, renew worker, apply hook in `easy-waf-acmed`; failed issuances retry with exponential backoff 10 min → 24 h, stale `issuing` rows are reclaimed — `internal/acme/retry.go`, `docs/ACME.md`. `notify_webhook_url` is an optional daily JSON POST from `easy-waf-acmed` when a certificate needs attention; empty leaves the journal warning only)
 
-### 7.2a Global settings API — **Done** (`GET /api/v1/settings`; **`PATCH /api/v1/settings`** — partial JSON, merge over current in-memory/DB values; **`PUT /api/v1/settings`** — same merge so a partial body does not zero paths/timeouts; fields `geoip_cache_ttl` and `acme_renewal_interval` in JSON as `time.ParseDuration` strings, e.g. `"24h"`, `"30m"`, plus nanosecond numbers for older snapshots; UI saves ACME via PATCH) — `internal/api/server.go`, `internal/config/settings_merge.go`, `internal/config/duration.go`, `internal/webui/dist/index.html`
+### 7.2a Global settings API — **Done** (`GET /api/v1/settings`; **`PATCH /api/v1/settings`** — partial JSON, merge over current in-memory/DB values; **`PUT /api/v1/settings`** — disabled (405; `Allow: GET, PATCH`), use PATCH to preserve omitted settings; fields `geoip_cache_ttl` and `acme_renewal_interval` in JSON as `time.ParseDuration` strings, e.g. `"24h"`, `"30m"`, plus nanosecond numbers for older snapshots; UI saves ACME via PATCH) — `internal/api/server.go`, `internal/config/settings_merge.go`, `internal/config/duration.go`, `internal/webui/dist/index.html`
 
 ### 7.3 HAProxy engine — **Done** (template, checksum, validate, revisions/rollback, golden)
 

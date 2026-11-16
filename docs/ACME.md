@@ -44,6 +44,10 @@ selects certificates browsers do not trust. Loading failures leave readiness
 unknown. Production selection describes configuration only; verify the worker,
 challenge reachability and actual served certificate as well. An existing valid
 certificate does not prove that automatic renewal is configured.
+Save ACME validates the email field before sending. Settings API writes require
+one bare email address of at most 254 bytes, without a display name, list or
+surrounding whitespace. Invalid values return a field error and leave stored
+settings unchanged. Syntax validation does not establish mailbox delivery.
 
 A failed issuance or renewal, or fewer than 21 days left, is shown on the dashboard and once a day in the `easy-waf-acmed` journal. Set **`notify_webhook_url`** (`PATCH /api/v1/settings`, or Settings → Certificate notifications) to also POST a JSON body `{source, event, certificates}` to one URL. Point it at ntfy, a mail bridge, or a Telegram bridge. The worker does not follow redirects, refuses link-local addresses, and does not log the URL. The same warning also goes to Telegram when `notify_telegram_chat_id` and `notify_telegram_bot_token` are set (see [MONITORING.md](MONITORING.md#notifications)); email is not built in.
 
