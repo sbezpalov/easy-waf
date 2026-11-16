@@ -67,7 +67,8 @@ Self-hosted **WAF и защищённый reverse proxy** для публика�
   (см. [CONTRIBUTING.md](CONTRIBUTING.md#what-this-project-is-and-is-not))
 - root на appliance, systemd, nftables
 - PostgreSQL — ставится автоматически либо подключается внешний
-- 2 vCPU / 2 ГБ RAM — комфортный минимум, подробнее в
+- Для полного стека рекомендуются 2 vCPU / 4 ГБ RAM; 2 ГБ — минимум для лёгкого
+  лабораторного стенда. Подробнее в
   [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md)
 
 ## Установка

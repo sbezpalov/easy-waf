@@ -64,7 +64,7 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
   [CONTRIBUTING.md](CONTRIBUTING.md#what-this-project-is-and-is-not))
 - root on the appliance, systemd, nftables
 - PostgreSQL — installed for you by default, or point at an external one
-- 2 vCPU / 2 GB RAM is comfortable; see [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md)
+- 2 vCPU / 4 GB RAM recommended for the all-in-one stack; 2 GB is a light-lab minimum. See [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md).
 
 ## Install
 
