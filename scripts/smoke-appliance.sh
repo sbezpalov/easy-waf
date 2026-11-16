@@ -384,7 +384,7 @@ if [[ -n "$api_token" ]]; then
   if [[ "$(status_of "$r")" == "200" ]]; then
     pass "GeoIP lookup 8.8.8.8 -> $(body_of "$r" | tr -d '\n' | head -c 120)"
   else
-    skip "GeoIP lookup -> $(status_of "$r") (provider may be disabled)"
+    fail "GeoIP lookup -> $(status_of "$r"); check the configured provider, database and upstream availability"
   fi
 fi
 

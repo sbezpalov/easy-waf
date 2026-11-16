@@ -13,6 +13,10 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
 
 ### Upgrade notes
 
+- Authenticated GeoIP lookup failures now fail the post-upgrade smoke test.
+  Provider errors, authentication failures and network failures are no longer
+  silently reported as skipped coverage; optional MMDB upload remains optional.
+
 - Take a matched database/state/config backup before upgrading and retain the
   previous package. Use APT for a package-managed appliance; use the script
   upgrade path only for an installation without a package. See

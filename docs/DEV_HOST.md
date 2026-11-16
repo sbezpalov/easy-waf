@@ -96,6 +96,11 @@ ssh waf-dev 'cd ~/easy-waf && sudo bash scripts/smoke-appliance.sh'
 Pull on the host **before** running anything, or you will be testing older code
 and chasing failures that do not exist.
 
+When authenticated GeoIP lookup returns a non-200 response, smoke fails rather
+than skipping it. Check the configured database/provider and upstream limits;
+for example, IPinfo rate limiting can surface as management API HTTP 502.
+An unavailable optional MMDB upload input is still a separate skipped check.
+
 ## 4. Working from Windows or macOS
 
 Windows and macOS support native Go development. Ubuntu 24.04 remains the

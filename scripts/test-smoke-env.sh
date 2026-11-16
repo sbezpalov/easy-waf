@@ -11,17 +11,22 @@ cat >"$ROOT/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >>"$SMOKE_TEST_ARGS"
 body='{}'
+code=200
 for arg in "$@"; do
   if [[ "$arg" == */api/v1/stats/haproxy ]]; then
     body="${SMOKE_TEST_STATS:-}"
     if [[ -z "$body" ]]; then body='{"frontends":[],"backends":[]}'; fi
+  fi
+  if [[ "$arg" == */api/v1/geoip/lookup\?* ]]; then
+    code="${SMOKE_TEST_GEOIP_STATUS:-200}"
+    body='{"ip":"8.8.8.8","country":"US","cached":false}'
   fi
 done
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == -o ]]; then shift; printf '%s\n' "$body" >"$1"; fi
   shift
 done
-printf '200'
+printf '%s' "$code"
 MOCK
 cat >"$ROOT/bin/admin" <<'MOCK'
 #!/usr/bin/env bash
@@ -64,4 +69,17 @@ grep -qF 'PASS  HAProxy runtime stats available after reload' "$ROOT/output" || 
 export SMOKE_TEST_STATS='{"frontends":[],"backends":[],"error":"fixture socket missing"}'
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 grep -qF 'FAIL  HAProxy runtime stats unavailable after reload' "$ROOT/output" || { echo 'FAIL: HTTP 200 collector error accepted' >&2; exit 1; }
-echo 'OK: smoke env stays data'
+unset SMOKE_TEST_STATS
+bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+grep -qF 'PASS  GeoIP lookup 8.8.8.8' "$ROOT/output" || { echo 'FAIL: successful GeoIP lookup rejected' >&2; exit 1; }
+for code in 502 401 000; do
+  export SMOKE_TEST_GEOIP_STATUS="$code"
+  bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+  grep -qF "FAIL  GeoIP lookup -> $code;" "$ROOT/output" || { echo "FAIL: GeoIP $code did not fail smoke" >&2; exit 1; }
+  if grep -qF 'SKIP  GeoIP lookup' "$ROOT/output"; then
+    echo "FAIL: GeoIP $code silently skipped" >&2
+    exit 1
+  fi
+done
+unset SMOKE_TEST_GEOIP_STATUS
+echo 'OK: smoke env stays data; GeoIP failures are not skipped'

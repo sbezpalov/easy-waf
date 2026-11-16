@@ -16,6 +16,9 @@ VMware copy](release-evidence/1.6.1-restore-9cfc841.md), including an actual
 maintenance 503 to restored HTTPS 200 transition and exact persisted objects.
 Post-restore smoke: 18 passed, 0 failed, 3 skipped; GeoIP lookup returned 502
 and remains unverified in that run.
+The [GeoIP follow-up](release-evidence/1.6.1-geoip-smoke.md) observed upstream
+IPinfo rate limiting and corrected smoke's silent non-200 skip. One live run
+with the fixed script passed 19 checks with 0 failures and 2 optional skips.
 **Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
