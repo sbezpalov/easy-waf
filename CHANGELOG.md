@@ -129,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Private release mirror URLs.** The downloader keeps URLs that may contain
+  credentials out of curl arguments and download logs.
+
 - **Owned backup staging.** Root backups no longer write to or unconditionally delete a predictable `<output>.partial` path. Private staging preserves linked targets and unrelated files; publication replaces the final pathname only after packing succeeds, with private permissions already set.
 
 - **Private diagnostic archive publication.** The root collector constructs archives privately and sets permissions before publication. Replacing an output no longer follows its final symlink or truncates a hardlinked target; archive creation failures preserve the previous output.

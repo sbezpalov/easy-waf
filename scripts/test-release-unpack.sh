@@ -53,10 +53,26 @@ DIST_DIR="$REPO_ROOT/dist"
 mkdir -p "$SCRIPT_DIR/lib" "$DIST_DIR"
 cp "$SOURCE_DIR/lib/release-unpack.sh" "$SCRIPT_DIR/lib/"
 cat >"$SCRIPT_DIR/lib/release-verify.sh" <<'MOCK'
-easy_waf_curl_https() { cp "$TEST_ARCHIVE" "$2"; }
+easy_waf_curl_https() {
+  if [[ "${TEST_CUSTOM_RELEASE:-}" == 1 ]]; then
+    [[ "${EASY_WAF_RELEASE_URL+x}" != x ]] || return 99
+    [[ "$#" == 5 && "$1" == --globoff && "$2" == -o && "$4" == --config && "$5" == - ]] || return 99
+    local config
+    IFS= read -r config || return 99
+    [[ "$config" == "$TEST_RELEASE_CONFIG" ]] || return 99
+    if [[ "${TEST_MIRROR_FAIL:-}" == 1 ]]; then
+      printf '%s\n' "$config" >&2
+      printf '%s\n' "$config"
+      return 22
+    fi
+    cp "$TEST_ARCHIVE" "$3"
+    return
+  fi
+  cp "$TEST_ARCHIVE" "$2"
+}
 easy_waf_verify_release_artifact() { return 0; }
 easy_waf_verify_sha256() { return 0; }
-log_relv() { :; }
+log_relv() { printf '%s\n' "$*"; }
 MOCK
 printf 'easy_waf_github_repo() { echo fixture/repo; }\n' >"$SCRIPT_DIR/lib/github-repo.sh"
 printf 'easy_waf_release_arch() { echo amd64; }\n' >"$SCRIPT_DIR/lib/release-arch.sh"
@@ -80,7 +96,9 @@ if (acquire_dist_binaries) >/dev/null 2>&1; then fail 'installer accepted trunca
 # Check both real downloader entry paths with the same private network/auth
 # stand-ins. Rejected archives must not leave nested dist/ extraction debris.
 cp "$SOURCE_DIR/download-release.sh" "$SCRIPT_DIR/"
-export EASY_WAF_RELEASE_URL='https://fixture.example/release.tgz'
+export EASY_WAF_RELEASE_URL='https://fixture.example/release.tgz?token=fixture-private-token&label="a\b"'
+export TEST_RELEASE_CONFIG='url = "https://fixture.example/release.tgz?token=fixture-private-token&label=\"a\\b\""'
+export TEST_CUSTOM_RELEASE=1
 export EASY_WAF_RELEASE_SHA256='fixture-authentication-is-mocked'
 for archive in truncated missing; do
   export TEST_ARCHIVE="$ROOT/$archive.tgz"
@@ -89,8 +107,18 @@ for archive in truncated missing; do
   [[ "$(cat "$DIST_DIR/easy-waf-hostd")" == 'old hostd' ]] || fail 'downloader changed old files on failure'
 done
 export TEST_ARCHIVE="$ROOT/full.tgz"
-bash "$SCRIPT_DIR/download-release.sh" >/dev/null || fail 'custom downloader rejected complete release'
-unset EASY_WAF_RELEASE_URL
+bash -x "$SCRIPT_DIR/download-release.sh" >"$ROOT/download.log" 2>&1 || fail 'custom downloader rejected complete release'
+if grep -Fq 'fixture-private-token' "$ROOT/download.log"; then fail 'custom downloader exposed the URL'; fi
+if TEST_MIRROR_FAIL=1 bash -x "$SCRIPT_DIR/download-release.sh" >"$ROOT/download.log" 2>&1; then
+  fail 'custom downloader accepted a failed transfer'
+fi
+if grep -Fq 'fixture-private-token' "$ROOT/download.log"; then fail 'custom downloader exposed a failing URL'; fi
+grep -Fq 'download from the configured release URL failed' "$ROOT/download.log" || fail 'missing transfer error'
+if EASY_WAF_RELEASE_URL="$EASY_WAF_RELEASE_URL"$'\n' bash "$SCRIPT_DIR/download-release.sh" >"$ROOT/download.log" 2>&1; then
+  fail 'custom downloader accepted a control character'
+fi
+grep -Fq 'control characters' "$ROOT/download.log" || fail 'missing invalid URL error'
+unset EASY_WAF_RELEASE_URL TEST_CUSTOM_RELEASE
 export EASY_WAF_VERSION=9.9.9
 bash "$SCRIPT_DIR/download-release.sh" >/dev/null || fail 'versioned downloader rejected complete release'
 for binary in "${required[@]}"; do

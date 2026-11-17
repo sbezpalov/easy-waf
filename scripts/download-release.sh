@@ -13,6 +13,15 @@
 
 set -euo pipefail
 
+# A private mirror URL can carry credentials. Keep it out of tracing and
+# remove it from the environment inherited by external commands.
+initial_flags=$-
+set +x
+release_url="${EASY_WAF_RELEASE_URL:-}"
+export -n release_url
+unset EASY_WAF_RELEASE_URL
+if [[ -z "$release_url" && "$initial_flags" == *x* ]]; then set -x; fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIST="${REPO_ROOT}/dist"
@@ -26,10 +35,23 @@ source "${SCRIPT_DIR}/lib/release-unpack.sh"
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
 
-if [[ -n "${EASY_WAF_RELEASE_URL:-}" ]]; then
-  echo "Downloading $EASY_WAF_RELEASE_URL"
+if [[ -n "$release_url" ]]; then
+  if [[ "$release_url" == *[[:cntrl:]]* ]]; then
+    log_relv "custom release URL contains control characters"
+    exit 1
+  fi
+  echo "Downloading from the configured release URL"
   TGZ="${TMPD}/easy-waf-release.tgz"
-  easy_waf_curl_https -o "$TGZ" "$EASY_WAF_RELEASE_URL"
+  # Curl's quoted config values escape backslashes and quotes. Feeding the
+  # option on stdin keeps the URL out of curl's process arguments.
+  release_url="${release_url//\\/\\\\}"
+  release_url="${release_url//\"/\\\"}"
+  if ! printf 'url = "%s"\n' "$release_url" |
+      easy_waf_curl_https --globoff -o "$TGZ" --config - >/dev/null 2>&1; then
+    log_relv "download from the configured release URL failed"
+    exit 1
+  fi
+  unset release_url
   if [[ -n "${EASY_WAF_RELEASE_SHA256:-}" ]]; then
     easy_waf_verify_sha256 "$TGZ" "$EASY_WAF_RELEASE_SHA256" || exit 1
   elif [[ "${EASY_WAF_ALLOW_UNVERIFIED_RELEASE:-0}" == "1" ]]; then
