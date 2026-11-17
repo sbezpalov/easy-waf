@@ -25,7 +25,10 @@ var defaultManifest = []string{
 	"screens/security.html",
 	"screens/crowdsec.html",
 	"screens/fail2ban.html",
-	"document-after-fail2ban.html",
+	"screens/system.html",
+	"screens/network.html",
+	"screens/users.html",
+	"document-after-users.html",
 }
 
 // DefaultManifest returns the ordered source files used for the web UI bundle.

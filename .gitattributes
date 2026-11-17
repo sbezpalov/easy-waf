@@ -16,7 +16,7 @@ packaging/deb/* text eol=lf
 internal/webui/dist/*.html text eol=lf
 internal/webui/src/** text eol=lf whitespace=-blank-at-eof
 # The trailing partial preserves six legacy end-of-line spaces for byte identity.
-internal/webui/src/document-after-fail2ban.html whitespace=-blank-at-eof,-trailing-space
+internal/webui/src/document-after-users.html whitespace=-blank-at-eof,-trailing-space
 .cursor/rules/*.mdc text eol=lf
 
 # HAProxy golden fixtures + SPOE/IPBL snippets — LF only (Windows checkout + haproxy -c on Linux).

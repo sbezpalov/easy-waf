@@ -1,0 +1,29 @@
+      <div id="tab-users" class="tab-panel">
+        <h2>☺ Users</h2>
+        <div class="panel admin-only" style="max-width:100%">
+          <h3>Panel users</h3>
+          <p class="dash-note" style="margin-top:0">Who can sign in to this panel. <b>Admin</b> can change everything; <b>viewer</b> sees the panel read-only (no host management, no diagnostics bundle). New users and password resets get a temporary password, shown once, that must be changed at first sign-in.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-bottom:0.5rem">
+            <label>Username <input id="pu-new-name" type="text" autocomplete="off" placeholder="alice" style="min-width:10rem" /></label>
+            <label>Role
+              <select id="pu-new-role"><option value="viewer">viewer (read-only)</option><option value="admin">admin</option></select>
+            </label>
+            <button type="button" id="btn-pu-create">Create panel user</button>
+          </div>
+          <div id="pu-table"></div>
+        </div>
+        <p class="dash-note" style="margin-top:0">Local UNIX accounts (uid ≥ 1000) and SSH authorized keys. Protected accounts: <code>root</code>, <code>easy-waf</code>.</p>
+        <div class="panel" style="max-width:100%">
+          <h3>Accounts</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-bottom:0.5rem">
+            <label>New username
+              <input id="users-new-name" type="text" autocomplete="off" placeholder="alice" pattern="[a-z_][a-z0-9_-]*" style="min-width:10rem" />
+            </label>
+            <button type="button" id="btn-users-create">Create user</button>
+            <button type="button" class="secondary" id="btn-users-refresh">Refresh</button>
+          </div>
+          <p id="users-msg" class="warn" style="min-height:1rem"></p>
+          <div id="users-table" style="margin-top:0.35rem"></div>
+        </div>
+      </div>
+
