@@ -9,13 +9,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GOLDEN="$ROOT/internal/haproxy/testdata/golden"
-NET=easywaf-cs-e2e
-NAMES=(cs-e2e-lapi cs-e2e-spoa cs-e2e-app cs-e2e-haproxy)
 BOUNCER_KEY=e2e-bouncer-key-0123456789abcdef
 HOST_HEADER="$(sed -n 's/.*acl http_app_ho1_host hdr(host) -i \([^ ]*\).*/\1/p' "$GOLDEN/http-only-app.cfg" | head -1)"
 [[ -n "$HOST_HEADER" ]] || { echo "could not read the published host from the golden config" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
+NET="easywaf-cs-e2e-${WORK##*/}"
+network_id=''
+container_id=''
+containers=()
+remove_stack() {
+  if ((${#containers[@]})); then
+    docker rm -f "${containers[@]}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$network_id" ]]; then
+    docker network rm "$network_id" >/dev/null 2>&1 || true
+  fi
+}
+trap 'remove_stack; rm -rf "$WORK"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # Normalize only the host bind source; keep container arguments as Linux paths
 # when this launcher is invoked through Git Bash on Windows.
 docker_work="$WORK"
@@ -23,12 +36,14 @@ if command -v cygpath >/dev/null 2>&1; then
   docker_work="$(cygpath -m "$WORK")"
 fi
 export MSYS_NO_PATHCONV=1
-remove_stack() {
-  docker rm -f "${NAMES[@]}" >/dev/null 2>&1 || true
-  docker network rm "$NET" >/dev/null 2>&1 || true
+
+# Keep the ID before starting: Docker can create a container successfully
+# and then fail to start it. Cleanup must still remove that container.
+start_container() {
+  container_id="$(docker create --network "$network_id" "$@")"
+  containers+=("$container_id")
+  docker start "$container_id" >/dev/null
 }
-trap 'remove_stack; rm -rf "$WORK"' EXIT
-remove_stack
 
 failures=0
 check() { # description want got
@@ -42,21 +57,22 @@ check() { # description want got
 
 # status <client-ip>: the HTTP status that client gets through HAProxy.
 status() {
-  docker run --rm --network "$NET" --ip "$1" curlimages/curl:8.10.1 \
+  docker run --rm --network "$network_id" --ip "$1" curlimages/curl:8.10.1 \
     -s -o /dev/null -w '%{http_code}' -m 10 -H "Host: $HOST_HEADER" http://10.77.0.40/
 }
 
-docker network create --subnet 10.77.0.0/24 "$NET" >/dev/null
+network_id="$(docker network create --subnet 10.77.0.0/24 "$NET")"
 
-docker run -d --name cs-e2e-lapi --network "$NET" --ip 10.77.0.10 \
+start_container --ip 10.77.0.10 \
   -e DISABLE_ONLINE_API=true -e CROWDSEC_BYPASS_DB_VOLUME_CHECK=true \
-  -e "BOUNCER_KEY_SPOA=$BOUNCER_KEY" crowdsecurity/crowdsec:latest >/dev/null
+  -e "BOUNCER_KEY_SPOA=$BOUNCER_KEY" crowdsecurity/crowdsec:latest
+lapi="$container_id"
 
 for _ in $(seq 1 60); do
-  docker exec cs-e2e-lapi cscli lapi status >/dev/null 2>&1 && break
+  docker exec "$lapi" cscli lapi status >/dev/null 2>&1 && break
   sleep 2
 done
-docker exec cs-e2e-lapi cscli lapi status >/dev/null
+docker exec "$lapi" cscli lapi status >/dev/null
 
 cat >"$WORK/bouncer.yaml" <<EOF
 log_mode: stdout
@@ -66,11 +82,12 @@ api_url: http://10.77.0.10:8080/
 api_key: $BOUNCER_KEY
 listen_tcp: 0.0.0.0:9000
 EOF
-docker run -d --name cs-e2e-spoa --network "$NET" --ip 10.77.0.20 \
+start_container --ip 10.77.0.20 \
   --mount "type=bind,source=${docker_work}/bouncer.yaml,target=/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml,readonly" \
-  crowdsecurity/spoa-bouncer:latest >/dev/null
+  crowdsecurity/spoa-bouncer:latest
+spoa="$container_id"
 
-docker run -d --name cs-e2e-app --network "$NET" --ip 10.77.0.30 traefik/whoami:v1.10 --port 80 >/dev/null
+start_container --ip 10.77.0.30 traefik/whoami:v1.10 --port 80
 
 sed -E \
   -e '/^[[:space:]]*(user|group) haproxy$/d' \
@@ -82,12 +99,13 @@ sed -E \
 cp "$GOLDEN/spoe/crowdsec-vendor.cfg" "$WORK/crowdsec.cfg"
 chmod -R a+rX "$WORK"
 
-docker run -d --name cs-e2e-haproxy --network "$NET" --ip 10.77.0.40 --ulimit nofile=200000:200000 \
+start_container --ip 10.77.0.40 --ulimit nofile=200000:200000 \
   --mount "type=bind,source=${docker_work},target=/cfg,readonly" \
-  haproxy:2.8 haproxy -f /cfg/haproxy.cfg >/dev/null
+  haproxy:2.8 haproxy -f /cfg/haproxy.cfg
+haproxy="$container_id"
 sleep 3
-docker ps --format '{{.Names}}' | grep -q '^cs-e2e-haproxy$' || {
-  docker logs cs-e2e-haproxy 2>&1 | tail -20
+[[ "$(docker inspect --format '{{.State.Running}}' "$haproxy")" == true ]] || {
+  docker logs "$haproxy" 2>&1 | tail -20
   exit 1
 }
 
@@ -96,24 +114,24 @@ OTHER=10.77.0.51
 
 check "no decision yet: client passes" 200 "$(status "$BANNED")"
 
-docker exec cs-e2e-lapi cscli decisions add --ip "$BANNED" --duration 1h --type ban >/dev/null
+docker exec "$lapi" cscli decisions add --ip "$BANNED" --duration 1h --type ban >/dev/null
 sleep 4
 check "banned client is refused" 403 "$(status "$BANNED")"
 check "other client still passes" 200 "$(status "$OTHER")"
 
-docker exec cs-e2e-lapi cscli decisions delete --ip "$BANNED" >/dev/null
+docker exec "$lapi" cscli decisions delete --ip "$BANNED" >/dev/null
 sleep 4
 check "unbanned client passes again" 200 "$(status "$BANNED")"
 
-docker exec cs-e2e-lapi cscli decisions add --ip "$BANNED" --duration 1h --type ban >/dev/null
+docker exec "$lapi" cscli decisions add --ip "$BANNED" --duration 1h --type ban >/dev/null
 sleep 4
-docker stop -t 1 cs-e2e-spoa >/dev/null
+docker stop -t 1 "$spoa" >/dev/null
 sleep 1
 check "bouncer down: traffic fails open" 200 "$(status "$BANNED")"
 
 if ((failures)); then
-  echo "---- bouncer log"; docker logs --tail 20 cs-e2e-spoa 2>&1 | cut -c1-200
-  echo "---- haproxy log"; docker logs --tail 20 cs-e2e-haproxy 2>&1 | cut -c1-200
+  echo "---- bouncer log"; docker logs --tail 20 "$spoa" 2>&1 | cut -c1-200
+  echo "---- haproxy log"; docker logs --tail 20 "$haproxy" 2>&1 | cut -c1-200
   exit 1
 fi
 echo "OK: CrowdSec decisions are enforced"
