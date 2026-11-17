@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -287,7 +288,11 @@ func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) 
 			return err
 		}
 		res = r
-		return e.writeGeoIPEnforceMap(ctx, cfg, r.AllCIDRs, nil)
+		if err := e.writeGeoIPEnforceMap(ctx, cfg, r.AllCIDRs, nil); err != nil {
+			return err
+		}
+		_, err = e.Store.BumpEdgeGeneration(ctx)
+		return err
 	})
 	return res, err
 }
@@ -504,6 +509,43 @@ func (e *Engine) LiveHAProxySHA256() (string, error) {
 	return sha256HexFile(haproxy.LiveCfgPath(e.StateDir, e.Settings().HAProxyConfigPath))
 }
 
+func edgeApplyErrorCode(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "apply_timed_out"
+	case errors.Is(err, context.Canceled):
+		return "apply_cancelled"
+	case strings.Contains(err.Error(), "configuration changed during render"):
+		return "configuration_changed"
+	case strings.Contains(err.Error(), "validation failed"):
+		return "validation_failed"
+	case strings.Contains(err.Error(), "reload"):
+		return "reload_failed"
+	default:
+		return "apply_failed"
+	}
+}
+
+func (e *Engine) recordEdgeApplyFailure(ctx context.Context, applied bool, err error) {
+	if e.Store == nil || err == nil {
+		return
+	}
+	record := store.EdgeApplyRecord{
+		Outcome:   config.EdgeApplyOutcomeFailed,
+		ErrorCode: edgeApplyErrorCode(err),
+	}
+	if applied {
+		record.Outcome = config.EdgeApplyOutcomeUnknown
+		record.ErrorCode = "bookkeeping_failed"
+		record.RevisionSHA, _ = e.LiveHAProxySHA256()
+	}
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if recordErr := e.Store.RecordEdgeApply(recordCtx, record); recordErr != nil {
+		log.Printf("edge apply status: record %s outcome: %v", record.Outcome, recordErr)
+	}
+}
+
 func appendFailure(base *error, action string, err error) {
 	if err == nil {
 		return
@@ -624,6 +666,9 @@ func (e *Engine) refreshForApply(ctx context.Context) (config.GlobalSettings, er
 // AppliedError and keep the applied configuration in place.
 func (e *Engine) Apply(ctx context.Context, label string) error {
 	applied, err := e.apply(ctx, label, false)
+	if err != nil {
+		e.recordEdgeApplyFailure(ctx, applied, err)
+	}
 	err = appliedOperationError(applied, err)
 	e.notifyApplyFailure(label, err)
 	return err
@@ -636,6 +681,9 @@ func (e *Engine) Apply(ctx context.Context, label string) error {
 // reload (or an empty revision) on every ordinary restart.
 func (e *Engine) ApplyIfChanged(ctx context.Context, label string) (bool, error) {
 	applied, err := e.apply(ctx, label, true)
+	if err != nil {
+		e.recordEdgeApplyFailure(ctx, applied, err)
+	}
 	err = appliedOperationError(applied, err)
 	e.notifyApplyFailure(label, err)
 	return applied, err
@@ -662,6 +710,11 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	if err != nil {
 		return false, err
 	}
+	edgeBefore, err := e.Store.GetEdgeStatus(ctx)
+	if err != nil {
+		return false, fmt.Errorf("read edge generation: %w", err)
+	}
+	savedGeneration := edgeBefore.SavedGeneration
 
 	tx, err := e.beginArtifactTransaction(cfg)
 	if err != nil {
@@ -704,6 +757,13 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 	if err != nil {
 		return false, err
 	}
+	edgeAfter, err := e.Store.GetEdgeStatus(ctx)
+	if err != nil {
+		return false, fmt.Errorf("verify edge generation: %w", err)
+	}
+	if edgeAfter.SavedGeneration != savedGeneration {
+		return false, fmt.Errorf("configuration changed during render; retry apply")
+	}
 	if strings.TrimSpace(r.CRTList) == "" && r.RequiresTLS {
 		return false, fmt.Errorf("TLS: crt-list would be empty — add at least one certificate with fullchain/key (bundle generated on apply) or use a placeholder PEM for lab installs")
 	}
@@ -730,6 +790,17 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 				return false, err
 			}
 			if !changed {
+				liveSHA, err := sha256HexFile(cfgPath)
+				if err != nil {
+					return false, fmt.Errorf("hash unchanged live configuration: %w", err)
+				}
+				if err := e.Store.RecordEdgeApply(ctx, store.EdgeApplyRecord{
+					Outcome:           config.EdgeApplyOutcomeSuccess,
+					AppliedGeneration: &savedGeneration,
+					RevisionSHA:       liveSHA,
+				}); err != nil {
+					return false, fmt.Errorf("record unchanged edge generation: %w", err)
+				}
 				return false, nil
 			}
 		}
@@ -777,6 +848,11 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 		revisionSnapshot.ManifestPath,
 		"apply",
 		detail,
+		store.EdgeApplyRecord{
+			Outcome:           config.EdgeApplyOutcomeSuccess,
+			AppliedGeneration: &savedGeneration,
+			RevisionSHA:       r.SHA256,
+		},
 	); err != nil {
 		return true, fmt.Errorf("record HAProxy revision and audit: %w", err)
 	}
@@ -787,7 +863,12 @@ func (e *Engine) apply(ctx context.Context, label string, onlyIfChanged bool) (a
 // without a manifest retain cfg-only fallback behavior.
 func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) {
 	runtimeChanged := false
-	defer func() { retErr = appliedOperationError(runtimeChanged, retErr) }()
+	defer func() {
+		if retErr != nil {
+			e.recordEdgeApplyFailure(ctx, runtimeChanged, retErr)
+		}
+		retErr = appliedOperationError(runtimeChanged, retErr)
+	}()
 	releaseLock, err := e.lockApply(ctx)
 	if err != nil {
 		return err
@@ -938,6 +1019,10 @@ func (e *Engine) Rollback(ctx context.Context, revisionID int64) (retErr error) 
 		revisionSnapshot.ManifestPath,
 		"rollback",
 		detail,
+		store.EdgeApplyRecord{
+			Outcome:     config.EdgeApplyOutcomeRollback,
+			RevisionSHA: got,
+		},
 	); err != nil {
 		return fmt.Errorf("record rollback revision and audit: %w", err)
 	}

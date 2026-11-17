@@ -137,14 +137,19 @@ func TestDollarQuoteTag(t *testing.T) {
 	}
 }
 
-// The shipped migrations must keep producing exactly the statements the previous
-// line-based splitter produced, so upgrading an existing appliance is a no-op.
+// Migrations shipped before the dollar-quote-aware splitter must keep producing
+// exactly the statements the previous line-based splitter produced, so
+// upgrading an existing appliance is a no-op. New migrations may deliberately
+// use constructs the legacy splitter could not represent.
 func TestSplitSQLStatements_matchesLegacyOnShippedMigrations(t *testing.T) {
 	all, err := loadMigrations()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i, m := range all {
+		if m.version > 27 {
+			continue
+		}
 		raw := m.sql
 		legacy := legacySplitForTest(raw)
 		got := splitSQLStatements(raw)
@@ -157,6 +162,19 @@ func TestSplitSQLStatements_matchesLegacyOnShippedMigrations(t *testing.T) {
 					i+1, j+1, got[j], legacy[j])
 			}
 		}
+	}
+}
+
+func TestSplitSQLStatementsKeepsEdgeGenerationFunctionWhole(t *testing.T) {
+	statements := splitSQLStatements(migrationSQL("028_edge_state.sql"))
+	var functions []string
+	for _, statement := range statements {
+		if strings.Contains(statement, "CREATE OR REPLACE FUNCTION easy_waf_bump_edge_generation") {
+			functions = append(functions, statement)
+		}
+	}
+	if len(functions) != 1 || !strings.Contains(functions[0], "UPDATE edge_state SET saved_generation = saved_generation + 1") {
+		t.Fatalf("edge generation function split incorrectly: %#v", functions)
 	}
 }
 

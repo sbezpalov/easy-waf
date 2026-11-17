@@ -52,6 +52,10 @@ func TestApplyIfChangedOnlyAppliesDifferences(t *testing.T) {
 	if !applied {
 		t.Fatal("first reconcile with no live config did not apply")
 	}
+	edgeStatus, err := st.GetEdgeStatus(ctx)
+	if err != nil || edgeStatus.AppliedGeneration == nil || edgeStatus.Pending == nil || *edgeStatus.Pending {
+		t.Fatalf("first reconcile did not persist applied generation: %+v err=%v", edgeStatus, err)
+	}
 	before := revisionCount(t, st)
 
 	applied, err = e.ApplyIfChanged(ctx, "reconcile-test")
@@ -60,6 +64,10 @@ func TestApplyIfChangedOnlyAppliesDifferences(t *testing.T) {
 	}
 	if applied || revisionCount(t, st) != before {
 		t.Fatal("reconcile applied (and recorded a revision) although nothing changed")
+	}
+	edgeStatus, err = st.GetEdgeStatus(ctx)
+	if err != nil || edgeStatus.AppliedGeneration == nil || *edgeStatus.AppliedGeneration != edgeStatus.SavedGeneration || edgeStatus.Pending == nil || *edgeStatus.Pending {
+		t.Fatalf("unchanged reconcile lost exact generation: %+v err=%v", edgeStatus, err)
 	}
 
 	app := config.Application{
@@ -74,6 +82,10 @@ func TestApplyIfChangedOnlyAppliesDifferences(t *testing.T) {
 	if err := st.UpsertApplication(ctx, &app); err != nil {
 		t.Fatal(err)
 	}
+	edgeStatus, err = st.GetEdgeStatus(ctx)
+	if err != nil || edgeStatus.Pending == nil || !*edgeStatus.Pending {
+		t.Fatalf("application write did not become pending: %+v err=%v", edgeStatus, err)
+	}
 	t.Cleanup(func() { _ = st.DeleteApplication(context.Background(), app.ID) })
 
 	applied, err = e.ApplyIfChanged(ctx, "reconcile-test")
@@ -82,6 +94,10 @@ func TestApplyIfChangedOnlyAppliesDifferences(t *testing.T) {
 	}
 	if !applied {
 		t.Fatal("reconcile did not apply a new application")
+	}
+	edgeStatus, err = st.GetEdgeStatus(ctx)
+	if err != nil || edgeStatus.Pending == nil || *edgeStatus.Pending {
+		t.Fatalf("successful reconcile did not clear pending: %+v err=%v", edgeStatus, err)
 	}
 }
 
@@ -182,6 +198,10 @@ func TestApplyIfChangedAppliesRenewedCertificate(t *testing.T) {
 	if err := e.Apply(ctx, "renew-test"); err == nil {
 		t.Fatal("apply with /bin/false as haproxy succeeded")
 	}
+	edgeStatus, statusErr := st.GetEdgeStatus(ctx)
+	if statusErr != nil || edgeStatus.Pending == nil || !*edgeStatus.Pending || edgeStatus.LastApply == nil || edgeStatus.LastApply.Outcome != config.EdgeApplyOutcomeFailed {
+		t.Fatalf("failed apply cleared pending state: %+v err=%v", edgeStatus, statusErr)
+	}
 	t.Setenv("EASY_WAF_SKIP_VALIDATE", "1")
 	applied, err = e.ApplyIfChanged(ctx, "renew-test")
 	if err != nil {
@@ -189,5 +209,9 @@ func TestApplyIfChangedAppliesRenewedCertificate(t *testing.T) {
 	}
 	if !applied {
 		t.Fatal("certificate renewed before a failed apply was never applied")
+	}
+	edgeStatus, statusErr = st.GetEdgeStatus(ctx)
+	if statusErr != nil || edgeStatus.Pending == nil || *edgeStatus.Pending {
+		t.Fatalf("successful retry did not persist exact generation: %+v err=%v", edgeStatus, statusErr)
 	}
 }

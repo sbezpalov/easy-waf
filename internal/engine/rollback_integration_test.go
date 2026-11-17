@@ -133,4 +133,11 @@ func TestRollbackRestoresPriorConfig(t *testing.T) {
 	if latest[0].HAProxySHA256 != h1 {
 		t.Fatalf("latest revision sha = %q, want %q", latest[0].HAProxySHA256, h1)
 	}
+	edgeStatus, err := st.GetEdgeStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edgeStatus.AppliedGeneration != nil || edgeStatus.Pending != nil || edgeStatus.LastApply == nil || edgeStatus.LastApply.Outcome != config.EdgeApplyOutcomeRollback || edgeStatus.LastApply.RevisionSHA != h1 {
+		t.Fatalf("rollback claimed saved database state was applied: %+v", edgeStatus)
+	}
 }

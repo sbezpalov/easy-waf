@@ -202,6 +202,20 @@ rewrites live map files outside a full apply, and acmed's PEM writes take the
 same lock. Settings changes from the API merge over the stored settings, not
 the process's copy.
 
+Migration `028_edge_state.sql` adds a singleton persistent generation record.
+Database triggers advance its saved generation for application, certificate,
+settings, IP-list, and blocked-user-agent inputs; explicit IPBL map sync advances
+it after the new maps are written. Apply captures the generation it renders and
+checks it again before promotion, so a concurrent write cannot be acknowledged
+as applied accidentally. A successful reload writes the exact applied
+generation together with its revision and audit row in one transaction. A
+failure keeps the last known applied generation. On upgrade both
+`applied_generation` and `pending` start unknown until a successful apply or
+startup reconciliation; artifact rollback also makes them unknown because it
+does not roll PostgreSQL back. `GET /api/v1/edge/status` exposes this state and
+the checksum of the managed live config without treating that checksum as a
+HAProxy or backend health signal.
+
 Application changes are **validated by the apply they trigger**: the handler
 writes the row, applies, and if the apply fails (HAProxy rejects the config,
 the reload fails) it restores the previous row and answers **422 "change not

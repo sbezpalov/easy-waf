@@ -133,6 +133,9 @@ func TestRouterAuthzValidationAndLimits(t *testing.T) {
 	if rec := call(http.MethodPost, "/api/v1/applications", "", `{}`, nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous write: %d %s", rec.Code, rec.Body.String())
 	}
+	if rec := call(http.MethodGet, "/api/v1/edge/status", "", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous edge status: %d %s", rec.Code, rec.Body.String())
+	}
 	if rec := call(http.MethodPost, "/api/v1/auth/login", "", `{"username":"x","password":"y"}`, func(r *http.Request) {
 		r.Header.Del("X-Requested-With")
 	}); rec.Code != http.StatusForbidden {
@@ -164,6 +167,9 @@ func TestRouterAuthzValidationAndLimits(t *testing.T) {
 	}
 	if rec := call(http.MethodGet, "/api/v1/applications", viewerTok, "", nil); rec.Code != http.StatusOK {
 		t.Fatalf("viewer read: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(http.MethodGet, "/api/v1/edge/status", viewerTok, "", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"saved_generation"`) {
+		t.Fatalf("viewer edge status: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := call(http.MethodGet, "/api/v1/applications/missing-app", adminTok, "", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing application: %d %s", rec.Code, rec.Body.String())

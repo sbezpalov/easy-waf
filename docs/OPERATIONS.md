@@ -65,6 +65,13 @@ also distinguish an applied change from a rejection. Check the current status
 before retrying so a missing revision/audit record is not mistaken for an
 unapplied configuration.
 
+Authenticated operators can query `GET /api/v1/edge/status` for the persistent
+saved and applied generations. `pending: true` means the stored configuration is
+newer than the last exactly acknowledged apply; `pending: null` means that
+relationship is not yet known. The runtime SHA in this response identifies the
+managed live `haproxy.cfg` only. Use the service and backend health views to
+decide whether HAProxy and applications are actually healthy.
+
 If restoring files fails, the engine does not reload the incomplete artifact
 set. If restoration or the recovery reload fails, the error includes the
 retained recovery manifest at `$STATE/revisions/.apply-before-*/manifest.json`.
@@ -85,6 +92,8 @@ settings rows in PostgreSQL. A later Apply, application auto-Apply or API startu
 reconciliation can render the saved rows again. After emergency rollback, correct
 the saved settings/application and Apply them, or use a matched backup/restore
 when the database and on-disk state must both return to an earlier checkpoint.
+The rollback therefore sets the applied generation and `pending` field reported
+by `GET /api/v1/edge/status` to `null` until that reconciliation succeeds.
 The actual appliance check is recorded in [the AC-06 report](release-evidence/1.6.1-apply-rollback-74b0df7.md).
 
 HAProxy validation and systemctl reload honor the apply caller's context,

@@ -437,12 +437,14 @@ func (s *Store) AppendRevision(ctx context.Context, label, sha256, path string) 
 	return err
 }
 
-// AppendRevisionAndAudit records a successful revision and its audit event in
-// one database transaction so callers never retain half of the bookkeeping.
+// AppendRevisionAndAudit records a successful revision, its audit event and
+// persistent edge outcome in one transaction so callers never retain partial
+// bookkeeping or claim the wrong applied generation.
 func (s *Store) AppendRevisionAndAudit(
 	ctx context.Context,
 	label, sha256, path, action string,
 	detail any,
+	edge EdgeApplyRecord,
 ) error {
 	b, userArg, ipArg, err := auditRecordArgs(ctx, detail)
 	if err != nil {
@@ -463,6 +465,10 @@ func (s *Store) AppendRevisionAndAudit(
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
 		VALUES ($1,$2,$3,$4,$5)`, now, action, b, userArg, ipArg); err != nil {
+		return err
+	}
+	edge.At = now
+	if err := recordEdgeApply(ctx, tx, edge); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -952,14 +958,14 @@ func (s *Store) DeleteBlockedUserAgent(ctx context.Context, id string) error {
 	return s.deleteByID(ctx, `DELETE FROM blocked_user_agents WHERE id = $1`, id)
 }
 
-// FactoryReset removes all configuration rows (destructive). Schema is kept.
-// Truncates every public base table except schema_migrations so new tables are
-// covered without editing this list for each migration.
+// FactoryReset removes all configuration rows (destructive). Schema and the
+// edge-state singleton are kept. The reset advances the desired generation and
+// clears applied truth because the current edge may still serve old artifacts.
 func (s *Store) FactoryReset(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT quote_ident(tablename)
 		FROM pg_tables
-		WHERE schemaname = 'public' AND tablename <> 'schema_migrations'
+		WHERE schemaname = current_schema() AND tablename NOT IN ('schema_migrations', 'edge_state')
 		ORDER BY tablename`)
 	if err != nil {
 		return err
@@ -979,8 +985,23 @@ func (s *Store) FactoryReset(ctx context.Context) error {
 	if len(tables) == 0 {
 		return nil
 	}
-	_, err = s.db.ExecContext(ctx, "TRUNCATE "+strings.Join(tables, ", ")+" RESTART IDENTITY CASCADE")
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "TRUNCATE "+strings.Join(tables, ", ")+" RESTART IDENTITY CASCADE"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE edge_state
+		SET saved_generation = saved_generation + 1, applied_generation = NULL,
+		    last_apply_outcome = NULL, last_apply_at = NULL,
+		    last_apply_revision_sha = NULL, last_apply_error_code = NULL
+		WHERE singleton = 1`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // deleteByID runs a single-row delete and returns sql.ErrNoRows when no row

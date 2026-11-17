@@ -300,6 +300,50 @@ Optional per user (ADR 0004, option C). When it is on, `POST /api/v1/auth/login`
 Minimal status for the control plane.
 - **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.6.1"}`. `version` comes from root `VERSION` embedded in the running binary. It does not require or accept an `EASY_WAF_VERSION` environment override. The panel header and Dashboard use this value.
 
+### `GET /api/v1/edge/status`
+Returns the persistent saved/applied generation relationship and the checksum of
+the managed live `haproxy.cfg`. Viewer and administrator sessions may read it.
+
+- **Response:** `200`
+  ```json
+  {
+    "saved_generation": 184,
+    "applied_generation": 182,
+    "pending": true,
+    "last_apply": {
+      "outcome": "failed",
+      "at": "2026-11-17T10:15:30Z",
+      "revision_sha": "<sha256 hex>",
+      "error_code": "validation_failed"
+    },
+    "runtime": {
+      "state": "known",
+      "checked_at": "2026-11-17T10:15:34Z",
+      "revision_sha": "<sha256 hex>"
+    }
+  }
+  ```
+- `saved_generation` advances transactionally when a stored input that may
+  affect managed edge artifacts changes, and after an explicit IPBL map sync.
+- `applied_generation` is the exact saved generation acknowledged by the last
+  successful apply or startup reconciliation. It is `null` after upgrading
+  from an older release until that first acknowledgement.
+- `pending` is `saved_generation != applied_generation`; it is `null` while the
+  applied generation is unknown. An apply failure keeps the last known applied
+  generation, so pending changes remain visible.
+- `last_apply.outcome` is `success`, `failed`, `unknown`, or `rollback`.
+  `error_code`, when present, is a stable category and never contains command
+  output, paths, or secrets.
+- `runtime.revision_sha` is the SHA-256 of the currently managed live
+  `haproxy.cfg`. It proves which file is present; it does **not** claim that the
+  HAProxy process, its listeners, or application backends are healthy. When the
+  artifact cannot be read, `runtime.state` is `unknown` and its checksum is
+  omitted.
+- A revision rollback changes artifacts without changing the database, so it
+  deliberately clears `applied_generation` and makes `pending` unknown until a
+  later apply or startup reconciliation renders the saved state again.
+- **Errors:** `500` (text/plain) when the persistent state cannot be read.
+
 ### `GET /api/v1/system/services`
 Reports the systemd `ActiveState` of the appliance's core units. Each unit is queried in turn (`systemctl show -p ActiveState --value`, falling back to `systemctl is-active`) with a 5-second timeout per unit, covering all attempts for that unit. With eight units, a hung systemd can delay the response by up to about 40 seconds.
 - **Response:** `200`
