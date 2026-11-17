@@ -93,6 +93,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/security/modes", s.listSecurityModes)
 				r.Get("/applications", s.listApps)
 				r.Get("/applications/{id}", s.getApp)
+				r.Get("/applications/{id}/diagnostics", s.getApplicationDiagnostics)
 				r.Get("/applications/{id}/security", s.getAppSecurity)
 				r.Get("/certificates/summary", s.listCertsSummary)
 				r.Get("/certificates", s.listCerts)

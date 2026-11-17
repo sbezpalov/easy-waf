@@ -174,6 +174,9 @@ func TestRouterAuthzValidationAndLimits(t *testing.T) {
 	if rec := call(http.MethodGet, "/api/v1/applications/missing-app", adminTok, "", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing application: %d %s", rec.Code, rec.Body.String())
 	}
+	if rec := call(http.MethodGet, "/api/v1/applications/missing-app/diagnostics", viewerTok, "", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("viewer application diagnostics: %d %s", rec.Code, rec.Body.String())
+	}
 	if rec := call(http.MethodPost, "/api/v1/auth/login", "", `{"username":"nobody","password":"secretsecret"}`, nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("bad login: %d %s", rec.Code, rec.Body.String())
 	}

@@ -434,6 +434,13 @@ func sanitizeBackendName(host string) string {
 	return "bk_" + sanitizeHAProxyIdent(host)
 }
 
+// ApplicationBackendName returns the HAProxy proxy name rendered for an
+// application's public hostname. Runtime consumers must use this helper rather
+// than duplicate the renderer's identifier mapping.
+func ApplicationBackendName(publicHost string) string {
+	return sanitizeBackendName(publicHost)
+}
+
 func sanitizeAppACLTag(id, publicHost string) string {
 	s := strings.TrimSpace(id)
 	if s == "" {

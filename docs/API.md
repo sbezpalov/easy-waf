@@ -411,6 +411,65 @@ Returns one application.
 - **Response:** `200` `config.Application`.
 - **Errors:** `404` (text/plain, `not found`) for an unknown ID. `500` (text/plain) on a database error.
 
+### `GET /api/v1/applications/{id}/diagnostics`
+
+Runs a bounded, read-only availability diagnosis for one application. Viewer
+and administrator sessions may call it. The checks are based on separately
+identified server facts; the endpoint does not send a synthetic request through
+the public application and does not equate stored configuration with health.
+
+- DNS resolves `public_host` from the appliance. A successful lookup proves
+  only that addresses exist, not that they point to this appliance.
+- TLS reads and parses the assigned PEM material, checks its validity window,
+  and verifies `public_host`. It is `not_applicable` for `http_only`.
+- Applied route compares the saved and applied generations and requires the
+  managed live artifact checksum to match the successful apply record.
+- HAProxy runtime finds the exact backend name produced by the renderer.
+- Backend uses HAProxy health-check state; it does not infer health from the
+  application's presence in PostgreSQL.
+
+Every step has `status: ok | failed | unknown | not_applicable`, a stable
+machine-readable `code`, an operator-facing `summary`, and a bounded `evidence`
+array. The top-level status is `failed` when any check fails, otherwise
+`unknown` when any applicable check is unknown, otherwise `ok`.
+
+- **Response:** `200`, including when one or more observations are unavailable:
+  ```json
+  {
+    "application_id": "home-assistant",
+    "checked_at": "2026-11-17T12:00:00Z",
+    "status": "failed",
+    "summary": "HAProxy health checks report the backend unavailable.",
+    "steps": [
+      {
+        "id": "dns",
+        "label": "DNS",
+        "status": "ok",
+        "code": "hostname_resolved",
+        "summary": "Public hostname resolves from the appliance.",
+        "evidence": ["Addresses: 203.0.113.8"]
+      },
+      {
+        "id": "backend",
+        "label": "Backend",
+        "status": "failed",
+        "code": "backend_down",
+        "summary": "HAProxy health checks report the backend unavailable.",
+        "evidence": ["s1: DOWN"]
+      }
+    ]
+  }
+  ```
+- The complete ordered step IDs are `publication`, `dns`, `tls`,
+  `applied_route`, `runtime`, and `backend`.
+- Raw resolver, filesystem, database, and HAProxy socket errors are not returned
+  in the payload. Their stable result is `unknown`, except for facts such as
+  NXDOMAIN, missing/invalid certificate material, or a reported DOWN backend.
+- The DNS and HAProxy observations run concurrently under a five-second bound.
+- **Errors:** `404` (text/plain, `not found`) for an unknown application; `500`
+  only when the application itself cannot be loaded. Failures of supporting
+  observations are represented as `unknown` steps in the `200` response.
+
 ### `POST /api/v1/applications`
 Creates or replaces an application (upsert), then applies it to HAProxy. A body without `id`, or with an `id` that does not exist yet, creates the application; a server-generated UUID is used when `id` is omitted. A body with an existing `id` replaces the whole stored row. The audit label for the apply is `api-application`. Extra audit rows are written for:
 - `app_listen_mode_changed`, when an existing application's `listen_mode` changes. Its detail is `app_id`, `app_name`, `from` and `to`, plus `severity: "warn"` when either side is `http_only`.
