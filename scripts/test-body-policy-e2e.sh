@@ -9,11 +9,27 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GOLDEN="$ROOT/internal/haproxy/testdata/golden"
-NET=easywaf-body-e2e
-NAMES=(body-e2e-app body-e2e-haproxy)
 CURL_IMAGE=curlimages/curl:8.10.1
 
 WORK="$(mktemp -d)"
+network_name="easywaf-body-e2e-${WORK##*/}"
+network_id=''
+app_id=''
+haproxy_id=''
+remove_stack() {
+  local id
+  for id in "$haproxy_id" "$app_id"; do
+    if [[ -n "$id" ]]; then
+      docker rm -f "$id" >/dev/null 2>&1 || true
+    fi
+  done
+  if [[ -n "$network_id" ]]; then
+    docker network rm "$network_id" >/dev/null 2>&1 || true
+  fi
+}
+trap 'remove_stack; rm -rf "$WORK"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # Docker needs a native host bind path, while /cfg and executable arguments
 # must remain Linux paths when launched from Git Bash on Windows.
 docker_work="$WORK"
@@ -21,15 +37,11 @@ if command -v cygpath >/dev/null 2>&1; then
   docker_work="$(cygpath -m "$WORK")"
 fi
 export MSYS_NO_PATHCONV=1
-remove_stack() {
-  docker rm -f "${NAMES[@]}" >/dev/null 2>&1 || true
-  docker network rm "$NET" >/dev/null 2>&1 || true
-}
-trap 'remove_stack; rm -rf "$WORK"' EXIT
-remove_stack
 
-docker network create --subnet 10.78.0.0/24 "$NET" >/dev/null
-docker run -d --name body-e2e-app --network "$NET" --ip 10.78.0.30 traefik/whoami:v1.10 --port 80 >/dev/null
+network_id="$(docker network create --subnet 10.78.0.0/24 "$network_name")"
+# Keep each ID before starting so a failed start still cleans up the container.
+app_id="$(docker create --network "$network_id" --ip 10.78.0.30 traefik/whoami:v1.10 --port 80)"
+docker start "$app_id" >/dev/null
 
 sed -E \
   -e '/^[[:space:]]*(user|group) haproxy$/d' \
@@ -41,12 +53,13 @@ sed -E \
 cp "$GOLDEN/spoe/crowdsec-vendor.cfg" "$WORK/crowdsec.cfg"
 chmod -R a+rX "$WORK"
 
-docker run -d --name body-e2e-haproxy --network "$NET" --ip 10.78.0.40 --ulimit nofile=200000:200000 \
+haproxy_id="$(docker create --network "$network_id" --ip 10.78.0.40 --ulimit nofile=200000:200000 \
   --mount "type=bind,source=${docker_work},target=/cfg,readonly" \
-  haproxy:2.8 haproxy -f /cfg/haproxy.cfg >/dev/null
+  haproxy:2.8 haproxy -f /cfg/haproxy.cfg)"
+docker start "$haproxy_id" >/dev/null
 sleep 3
-docker ps --format '{{.Names}}' | grep -q '^body-e2e-haproxy$' || {
-  docker logs body-e2e-haproxy 2>&1 | tail -20
+[[ "$(docker inspect --format '{{.State.Running}}' "$haproxy_id")" == true ]] || {
+  docker logs "$haproxy_id" 2>&1 | tail -20
   exit 1
 }
 
@@ -97,7 +110,7 @@ EOF
 # Process substitution would hide a failed Docker client/container and let an
 # empty or truncated suite report success. Collect only a completed runner's
 # output, then require one result for every check in the generated case script.
-if ! docker run --rm -i --network "$NET" --entrypoint sh "$CURL_IMAGE" -s <"$WORK/cases.sh" >"$WORK/results"; then
+if ! docker run --rm -i --network "$network_id" --entrypoint sh "$CURL_IMAGE" -s <"$WORK/cases.sh" >"$WORK/results"; then
   echo 'FAIL: body policy case runner did not complete' >&2
   exit 1
 fi
@@ -121,7 +134,7 @@ fi
 
 if ((failures)); then
   echo "---- haproxy log"
-  docker logs --tail 20 body-e2e-haproxy 2>&1 | cut -c1-200
+  docker logs --tail 20 "$haproxy_id" 2>&1 | cut -c1-200
   exit 1
 fi
 echo "OK: multipart block and body limit hold"

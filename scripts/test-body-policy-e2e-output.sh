@@ -8,11 +8,22 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir "$WORK/bin"
+export DOCKER_CALLS="$WORK/docker-calls"
 cat >"$WORK/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == ps ]]; then
-  echo body-e2e-haproxy
+printf '%s\n' "$*" >>"$DOCKER_CALLS"
+if [[ "$1 ${2:-}" == 'network create' ]]; then
+  [[ "$BODY_POLICY_OUTPUT_CASE" != subnet_conflict ]] || exit 43
+  echo owned-network
+elif [[ "$1" == create ]]; then
+  [[ "$2 $3" == '--network owned-network' ]] || exit 91
+  if [[ " $* " == *' --ip 10.78.0.30 '* ]]; then echo owned-app; else echo owned-haproxy; fi
+elif [[ "$1 ${2:-}" == 'start owned-haproxy' ]]; then
+  [[ "$BODY_POLICY_OUTPUT_CASE" != start_failure ]] || exit 44
+elif [[ "$1" == inspect ]]; then
+  [[ "${*: -1}" == owned-haproxy ]] || exit 92
+  echo true
 elif [[ "$1" == run && " $* " == *' --entrypoint sh '* ]]; then
   case "$BODY_POLICY_OUTPUT_CASE" in
     transport_failure) exit 42 ;;
@@ -39,6 +50,22 @@ printf '#!/bin/sh\nexit 0\n' >"$WORK/bin/sleep"
 chmod 0700 "$WORK/bin/"*
 export PATH="$WORK/bin:$PATH"
 [[ "$(command -v docker)" == "$WORK/bin/docker" ]] || fail 'Docker mock not selected'
+
+for scenario in subnet_conflict start_failure; do
+  : >"$DOCKER_CALLS"
+  result=0
+  BODY_POLICY_OUTPUT_CASE="$scenario" bash "$SCRIPT_DIR/test-body-policy-e2e.sh" >"$WORK/$scenario.log" 2>&1 || result=$?
+  if [[ "$scenario" == subnet_conflict ]]; then
+    [[ "$result" == 43 && "$(wc -l <"$DOCKER_CALLS")" -eq 1 ]] || fail 'failed network creation touched another resource'
+    grep -q '^network create ' "$DOCKER_CALLS" || fail 'expected network creation attempt'
+  else
+    [[ "$result" == 44 ]] || fail 'failed HAProxy start did not reach cleanup'
+    diff -u <(printf '%s\n' 'rm -f owned-haproxy' 'rm -f owned-app' 'network rm owned-network') \
+      <(grep -E '^(rm |network rm )' "$DOCKER_CALLS")
+  fi
+  echo "PASS: body E2E cleanup $scenario"
+done
+
 for scenario in transport_failure partial_failure empty_success partial_success http_failure success; do
   result=0
   BODY_POLICY_OUTPUT_CASE="$scenario" bash "$SCRIPT_DIR/test-body-policy-e2e.sh" >"$WORK/$scenario.log" 2>&1 || result=$?
