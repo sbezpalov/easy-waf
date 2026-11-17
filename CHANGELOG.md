@@ -25,11 +25,17 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   previous package. Use APT for a package-managed appliance; use the script
   upgrade path only for an installation without a package. See
   [the upgrade procedure](docs/ACCEPTANCE.md#install-and-upgrade).
+- Backup and restore now abort before database work if they cannot confirm
+  the required services have stopped. A backup can return a failure after
+  saving a complete archive if a writer could not resume. A restore can return
+  a failure after replacing data if Apply or a service start failed. Keep the
+  archive and inspect the reported stage before retrying. See
+  [backup and restore](docs/BACKUP_RESTORE.md).
 - API startup applies migrations through 028, which adds persistent tracking
   of saved and applied edge configuration. After this migration, older
   binaries that only support schema 027 will refuse to start against the
-  upgraded database. Recover with the matching
-  package and [matched backup/restore](docs/BACKUP_RESTORE.md), tested on a copy.
+  upgraded database. To roll back, use the matching package and archive, and
+  [restore into an empty database](docs/BACKUP_RESTORE.md#restoring-an-older-schema-after-an-upgrade).
   Revision rollback changes edge artifacts, not saved applications/settings;
   a later Apply or API startup reconciliation can replace that runtime rollback.
 - Review existing publication restrictions before exposing Home Assistant. One
@@ -43,6 +49,8 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   data from service failures. The application flow guides first publication,
   shows whether saved changes reached HAProxy, and reports application-specific
   diagnostics.
+- **Stable edge generations on restart.** Rewriting an unchanged settings value
+  no longer advances the saved generation. A changed value still advances it.
 - **Safer appliance controls.** Network and firewall rollback status survives
   a page reload. The panel shows a scoped service journal and improves keyboard
   focus and accessible labels for high-risk actions.

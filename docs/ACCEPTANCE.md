@@ -109,6 +109,23 @@ HTTPS service. Confirm API, ACME and host-management services recover, including
 when PostgreSQL becomes available late. Enabled unit files and restarting a
 fixture service do not establish this criterion.
 
+## AC-10 — backup, restore and recovery
+
+On an isolated copy, take a matched archive with the installed backup command.
+Record the package identity, archive checksum and confirmed writer restart.
+Make a reversible change to an owned test application, restore the archive
+with the packaged command and verify the original application, certificate,
+edge status and trusted HTTPS response.
+
+Exercise failure handling on the same isolated copy. A writer that cannot stop
+must prevent database work and preserve an existing archive. A backup that
+saves an archive but cannot resume a writer must report the path and exit
+nonzero. A restore that replaces data but cannot complete Apply or a required
+service start must also exit nonzero. Confirm service recovery and archive
+usability after removing the test failure. For a package rollback across
+schema versions, use the matching archive and an empty database. See
+[Backup and restore](BACKUP_RESTORE.md).
+
 Write the date, the host (not its secrets), and the result next to each item
 before approving the candidate named in the report. A passing container or CI
 run does not fill the outstanding appliance rows automatically.

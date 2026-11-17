@@ -48,7 +48,7 @@ state. Stop on a failure and record recovery, rather than marking later rows pas
 | AC-07 UI status | Not run | Apps/certificates/blocked views agree with actual state |
 | AC-08 actual reboot and late DB recovery | Not run | Different boot IDs, recovered services/readiness and published HTTPS request |
 | AC-09 WebSocket | Not run | Actual upgrade and sustained bidirectional traffic through edge |
-| AC-10 backup and restore | Not run | Matched DB/state backup, restore on a copy, recovered config/cert and edge requests |
+| AC-10 backup and restore | Not run | Matched archive, exact recovered state and trusted HTTPS on a copy, writer stop/start failures and retained archive usability |
 
 ## Decision
 
