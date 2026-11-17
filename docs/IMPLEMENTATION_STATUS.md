@@ -19,6 +19,8 @@ was verified after restore. The run exercised APT directly.
 **Latest VMware package and backup:** [2bdeca3](release-evidence/1.6.1-backup-2bdeca3.md).
 The installed backup preserved the previous archive on stop refusal. It retained
 a usable private archive on restart refusal, and packaged restore verified it.
+The [timer-driven run](release-evidence/1.6.1-scheduled-backup-9d7dbc8.md) on a
+separate VMware guest produced a private readable archive and resumed both writers.
 **Latest VMware package and restore:** [d5f7475](release-evidence/1.6.1-restore-d5f7475.md).
 The installed command rejected a real systemd stop refusal before database work,
 reported incomplete recovery when Apply was unavailable, and restored trusted
