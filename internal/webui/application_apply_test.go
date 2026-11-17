@@ -64,6 +64,14 @@ const context = {pendingApply: true, document: {getElementById: element},
   toast: (...args) => notices.push(args), apiMessage: async () => 'Apply rejected',
   confirmDialog: async () => !scenario.endsWith('_cancelled'), loadApps: async () => {refreshed++},
   parseBackendServers: () => [], collectRestrictedPaths: () => [], collectPathPolicy: () => null,
+  readPublicationBasics: () => ({name: element('name').value, public_host: element('host').value,
+    backend_host: element('backend').value, backend_port: Number(element('port').value),
+    listen_mode: element('listen-mode').value, certificate_id: element('app-cert').value}),
+  selectedPublicationCertificate: () => null,
+  validatePublicationBasics: draft => draft.listen_mode !== 'http_only' && !draft.certificate_id
+    ? {certificate: 'Choose a ready certificate for HTTPS.'} : {},
+  showPublicationErrors: () => {}, clearPublicationErrors: () => {},
+  securityForPublication: (mode, previous) => previous || {mode: mode || 'balanced'},
   withBodyPolicy: value => value,
   clearAppFormFields: () => {cleared++}, setAppFormCollapsed: on => {if (on) collapsed++}};
 vm.createContext(context);
