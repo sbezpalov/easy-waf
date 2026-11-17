@@ -3,6 +3,9 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest local appliance E2E:** [218b833](release-evidence/1.6.1-appliance-e2e-218b833.md).
+Six scenarios passed, covering installer conffiles, HAProxy working directory,
+backup/restore, systemd/APT, nftables rollback and CrowdSec.
 **Latest full native Linux race:** [24bfc42 on Ubuntu VMware](release-evidence/1.6.1-native-linux-race-24bfc42.md).
 858 tests passed in 49 packages with PostgreSQL 16. The separate golden gate also
 passed. The earlier [8c860d3 WSL2 run](release-evidence/1.6.1-linux-race-8c860d3.md)
