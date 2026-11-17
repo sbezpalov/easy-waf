@@ -100,9 +100,12 @@ if [[ ! -f "$REST_ENV" ]]; then
 fi
 
 DATABASE_URL="$(easy_waf_read_env_value "$REST_ENV" DATABASE_URL)"
-export DATABASE_URL
 if [[ -z "$DATABASE_URL" ]]; then
   echo "ERROR: DATABASE_URL empty in backup env $REST_ENV" >&2
+  exit 1
+fi
+if ! command -v python3 &>/dev/null || [[ ! -r "$SCRIPT_DIR/lib/pg-archive.py" ]]; then
+  echo "ERROR: Python 3 or the PostgreSQL archive helper is missing" >&2
   exit 1
 fi
 
@@ -152,7 +155,8 @@ done
 echo "[easy-waf-restore] pg_restore into configured database (single transaction; drops conflicting objects)…"
 # --single-transaction keeps --clean + restore atomic: a mid-restore failure
 # rolls back instead of leaving a half-destroyed schema.
-if ! pg_restore --single-transaction --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/easywaf.dump"; then
+if ! python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" pg_restore \
+  --single-transaction --clean --if-exists --no-owner --no-acl "$ROOT/easywaf.dump" <<<"$DATABASE_URL"; then
   echo "ERROR: pg_restore failed — database left unchanged; refusing to replace on-disk state" >&2
   exit 1
 fi

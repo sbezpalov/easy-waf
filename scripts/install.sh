@@ -773,6 +773,7 @@ install_binaries() {
     install -d -m 0755 /usr/share/easy-waf/scripts/lib
     install -m 0755 "${REPO_ROOT}/scripts/backup.sh" /usr/share/easy-waf/scripts/backup.sh
     install -m 0644 "${REPO_ROOT}/scripts/lib/env-file.sh" "${REPO_ROOT}/scripts/lib/backup-rotate.sh" /usr/share/easy-waf/scripts/lib/
+    install -m 0644 "${REPO_ROOT}/scripts/lib/pg-archive.py" /usr/share/easy-waf/scripts/lib/
     ln -sfn /usr/share/easy-waf/scripts/backup.sh /usr/sbin/easy-waf-backup
     log "Installed /usr/sbin/easy-waf-backup (see docs/BACKUP_RESTORE.md)"
   fi
@@ -954,6 +955,7 @@ install_os_packages() {
         ca-certificates
         curl
         util-linux
+        python3
         iproute2
         netplan.io
         iputils-ping

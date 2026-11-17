@@ -18,6 +18,7 @@ cleanup() {
 trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir -p "$ROOT/bin" "$ROOT/state" "$ROOT/output"
+cp "$(dirname "${BASH_SOURCE[0]}")/pg-archive-mock.sh" "$ROOT/bin/python3"
 printf 'fixture-state\n' >"$ROOT/state/data"
 printf 'DATABASE_URL=postgres://fixture.invalid/never-connected\n' >/etc/easy-waf/easy-waf.env
 printf 'fixture-recovery-candidate\n' >/etc/easy-waf/easy-waf.env.rotation.ABC123
@@ -58,7 +59,8 @@ MOCK
 cat >"$ROOT/bin/pg_dump" <<'MOCK'
 #!/usr/bin/env bash
 touch "$BACKUP_TEST_ROOT/dump-called"
-[[ "$1" == "${BACKUP_TEST_EXPECTED_DSN:-postgres://fixture.invalid/never-connected}" ]] || exit 90
+[[ "$1" == --dbname=service=easy-waf-archive &&
+   "$MOCK_PG_DSN" == "${BACKUP_TEST_EXPECTED_DSN:-postgres://fixture.invalid/never-connected}" ]] || exit 90
 if [[ "$BACKUP_TEST_MODE" == change-source ]]; then
   printf 'DATABASE_URL=postgres://changed.invalid/db\n' >"$EASY_WAF_ENV_FILE"
 fi

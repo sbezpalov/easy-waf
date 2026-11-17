@@ -109,7 +109,7 @@ mkdir -p "$APT_REPO" "$PAYLOAD/dist" "$OUTPUT_DIR"
 packages=(
   haproxy nftables ca-certificates curl iproute2 netplan.io iputils-ping
   traceroute iputils-tracepath systemd policykit-1 sudo fail2ban
-  postgresql postgresql-contrib adduser polkitd
+  postgresql postgresql-contrib adduser polkitd python3
 )
 if [[ "$INCLUDE_CROWDSEC" == "1" ]]; then
   packages+=(crowdsec crowdsec-haproxy-spoa-bouncer)

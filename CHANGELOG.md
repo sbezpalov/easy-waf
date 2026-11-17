@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commands. An explicit empty setting stops inherited database fallback.
 - Keep the database selected by backup in the archive's appliance settings.
   Restore uses those settings for edge Apply as well as the database restore.
+- Pass backup and restore connection settings through a private libpq
+  service file so PostgreSQL client arguments contain no database credentials.
 
 ## [1.6.1] - Unreleased
 

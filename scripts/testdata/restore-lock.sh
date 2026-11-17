@@ -66,6 +66,7 @@ MOCK
 cat >"$ROOT/bin/database" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
+[[ "$1" == --dbname=service=easy-waf-archive && -n "$MOCK_PG_DSN" ]]
 operation="$(basename "$0")"
 printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$operation" >>"$RESTORE_LOCK_TEST_ROOT/database"
 if [[ "${RESTORE_LOCK_HOLD:-}" == "$operation" ]]; then
@@ -77,6 +78,7 @@ if [[ "$operation" == pg_dump ]]; then
   done
 fi
 MOCK
+cp "$(dirname "${BASH_SOURCE[0]}")/pg-archive-mock.sh" "$ROOT/bin/python3"
 chmod 0700 "$ROOT/bin/"*
 ln -s database "$ROOT/bin/pg_restore"
 ln -s database "$ROOT/bin/pg_dump"

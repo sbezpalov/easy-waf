@@ -33,6 +33,10 @@ jobs:
         run: docker pull ubuntu:24.04
       - name: Backup publication preserves linked targets and previous archives
         run: bash scripts/test-backup-publication.sh
+      - name: Prepare PostgreSQL archive client tests
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-16 python3
+      - name: Verify private connection settings with PostgreSQL SCRAM
+        run: bash scripts/testdata/pg-archive-libpq.sh
 
   package-restart:
     runs-on: ubuntu-24.04

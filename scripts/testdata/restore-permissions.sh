@@ -8,6 +8,7 @@ ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir -p "$ROOT/bin" "$ROOT/source/backup/state" "$ROOT/source/backup/etc" "$ROOT/state"
+cp "$(dirname "${BASH_SOURCE[0]}")/pg-archive-mock.sh" "$ROOT/bin/python3"
 state="$ROOT/source/backup/state"
 mkdir -p "$state/haproxy" "$state/certs/nested" "$state/revisions" "$state/secrets"
 printf 'fixture-config\n' >"$state/haproxy/haproxy.cfg"
@@ -24,6 +25,7 @@ tar -czf "$ROOT/archive.tar.gz" -C "$ROOT/source" backup
 cat >"$ROOT/bin/pg_restore" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
+[[ "$1" == --dbname=service=easy-waf-archive && "$MOCK_PG_DSN" == postgres://fixture.invalid/never-connected ]]
 parent="$(dirname "$(dirname "${@: -1}")")"
 [[ "$(stat -c %a "$parent")" == 700 ]] || exit 91
 MOCK
@@ -51,7 +53,7 @@ mkdir -p "$ROOT/packaged scripts/lib" "$ROOT/operator commands"
 restore_source="$(readlink -f "$RESTORE_SCRIPT")"
 cp "$restore_source" "$ROOT/packaged scripts/restore.sh"
 chmod 0755 "$ROOT/packaged scripts/restore.sh"
-cp "$(dirname "$restore_source")/lib/env-file.sh" "$ROOT/packaged scripts/lib/"
+cp "$(dirname "$restore_source")/lib/"{env-file.sh,pg-archive.py} "$ROOT/packaged scripts/lib/"
 ln -s '../packaged scripts/restore.sh' "$ROOT/operator commands/easy-waf-restore"
 for entrypoint in "$RESTORE_SCRIPT" "$ROOT/operator commands/easy-waf-restore"; do
   restore_command=("$entrypoint")

@@ -32,6 +32,7 @@ depends:
   - curl
   # flock: manual and timer backups share one writer-quiescence lock.
   - util-linux
+  - python3
   # adduser: the maintainer scripts create the easy-waf system account.
   - adduser
   # polkitd: the rule that lets easy-waf reload haproxy.service needs the daemon.
@@ -80,6 +81,9 @@ contents:
     file_info: { mode: 0644 }
   - src: scripts/lib/backup-rotate.sh
     dst: /usr/share/easy-waf/scripts/lib/backup-rotate.sh
+    file_info: { mode: 0644 }
+  - src: scripts/lib/pg-archive.py
+    dst: /usr/share/easy-waf/scripts/lib/pg-archive.py
     file_info: { mode: 0644 }
   - src: internal/haproxy/forward-auth.lua
     dst: /usr/share/easy-waf/haproxy/forward-auth.lua

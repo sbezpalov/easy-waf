@@ -68,8 +68,13 @@ For an archive made by an older backup with an alternate env file, verify
 that its archived `etc/easy-waf.env` identifies the intended database
 before running restore.
 
-Requires **`pg_dump`** (PostgreSQL client packages) and **`flock`** (`util-linux`)
-on `PATH`. Missing or unavailable locking fails before any writer is stopped.
+Requires **`pg_dump`** and **`pg_restore`** (PostgreSQL client packages with
+libpq), **Python 3** with its standard library, and **`flock`** (`util-linux`).
+Backup and restore use a temporary mode-0600 libpq service file to keep the
+connection string out of the client arguments. The file is removed with the
+private staging directory. Values that do not fit libpq's service-file
+format use the corresponding libpq environment variable where one exists.
+An option with neither representation produces an error.
 
 For development, `make test-backup-publication` exercises the real backup with
 dummy data and fake database/service commands in a disposable Linux Docker

@@ -72,7 +72,7 @@ shellcheck-sh:
 		shellcheck -x -P SCRIPTDIR scripts/test-db-password.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-postgres.sh && \
 		shellcheck scripts/test-upgrade-staging.sh && \
-		shellcheck -x -P SCRIPTDIR scripts/test-backup-publication.sh scripts/testdata/backup-publication.sh scripts/testdata/restore-permissions.sh scripts/testdata/restore-lock.sh && \
+		shellcheck -x -P SCRIPTDIR scripts/test-backup-publication.sh scripts/testdata/backup-publication.sh scripts/testdata/restore-permissions.sh scripts/testdata/restore-lock.sh scripts/testdata/pg-archive-mock.sh scripts/testdata/pg-archive-libpq.sh && \
 		cd scripts && shellcheck -x install.sh upgrade.sh install-interactive.sh build-offline-bundle.sh install-offline-bundle.sh download-release.sh smoke-appliance.sh diagnostics.sh test-backup-restore.sh test-backup-restore-workflow.sh test-env-file.sh test-smoke-env.sh test-diagnostics-env.sh test-root-env.sh test-management-listen.sh test-package-restart.sh test-package-restart-e2e.sh testdata/package-restart/boot.sh test-release-verify.sh release-notes.sh test-release-notes.sh test-release-unpack.sh test-offline-bundle.sh backup.sh test-backup-rotate.sh restore.sh update-geoip-db.sh fix-haproxy-easy-waf-dropin.sh fix-fail2ban-api-access.sh fix-nftables-edge.sh test-body-policy-e2e.sh test-body-policy-e2e-output.sh test-crowdsec-e2e.sh test-crowdsec-e2e-cleanup.sh lib/env-file.sh lib/backup-rotate.sh lib/fail2ban-access.sh lib/management-listen.sh lib/release-verify.sh lib/release-unpack.sh lib/github-repo.sh lib/selinux-easy-waf-haproxy.sh lib/nftables-easy-waf.sh lib/db-password.sh host/privileged.sh; \
 	else \
 		echo "[easy-waf] verify: shellcheck not in PATH — skip (e.g. apt install shellcheck)"; \

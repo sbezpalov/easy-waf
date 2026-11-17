@@ -172,6 +172,10 @@ if ! command -v pg_dump &>/dev/null; then
   echo "ERROR: pg_dump not found (install postgresql client packages)" >&2
   exit 1
 fi
+if ! command -v python3 &>/dev/null || [[ ! -r "$SCRIPT_DIR/lib/pg-archive.py" ]]; then
+  echo "ERROR: Python 3 or the PostgreSQL archive helper is missing" >&2
+  exit 1
+fi
 
 # Quiesce control-plane writers so pg_dump and on-disk secrets/certs stay
 # consistent. Without this, ACME/apply/rotation between steps can pair a dump
@@ -212,7 +216,8 @@ for u in "${writers[@]}"; do
 done
 
 echo "[easy-waf-backup] pg_dump (custom format) → $ROOT/easywaf.dump"
-pg_dump "$DATABASE_URL" --format=custom --file="$ROOT/easywaf.dump"
+python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" pg_dump \
+  --format=custom --file="$ROOT/easywaf.dump" <<<"$DATABASE_URL"
 
 echo "[easy-waf-backup] archiving state: $STATE"
 tar -C "$STATE" -cf - . | tar -C "$ROOT/state" -xf -
