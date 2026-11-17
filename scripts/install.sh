@@ -1007,10 +1007,28 @@ start_appliance_units() {
     log "Run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
     return 0
   fi
-  if ! systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; then
-    log "WARNING: systemctl enable --now failed — run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
-    log "Then: sudo journalctl -u easy-waf-hostd -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager"
-    return 0
+  local unit unit_status status=0
+  local -a units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)
+  systemctl enable "${units[@]}" || status=$?
+  if (( status )); then
+    log "ERROR: could not enable appliance services (systemctl exit $status)" >&2
+    return "$status"
+  fi
+
+  # A batched enable --now can report a rejected start while exiting zero.
+  for unit in "${units[@]}"; do
+    unit_status=0
+    systemctl start "$unit" || unit_status=$?
+    if (( unit_status )); then
+      log "ERROR: could not start $unit (systemctl exit $unit_status)" >&2
+      if (( status == 0 )); then
+        status=$unit_status
+      fi
+    fi
+  done
+  if (( status )); then
+    log "Inspect: sudo journalctl -u easy-waf-hostd -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager" >&2
+    return "$status"
   fi
   log "Enabled and started easy-waf-hostd, easy-waf-api, easy-waf-acmed"
 
