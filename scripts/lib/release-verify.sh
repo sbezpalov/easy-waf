@@ -52,6 +52,15 @@ easy_waf_verify_sha256() {
   return 0
 }
 
+# easy_waf_verify_github_blob <file> <bundle> <owner/repo> <tag>
+easy_waf_verify_github_blob() {
+  local file="${1:?}" bundle="${2:?}" repo="${3:?}" tag="${4:?}"
+  cosign verify-blob --bundle "$bundle" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity "https://github.com/${repo}/.github/workflows/release.yml@refs/tags/${tag}" \
+    "$file"
+}
+
 # easy_waf_verify_sums_signature <SHA256SUMS-file> <SHA256SUMS-url>
 #
 # SHA256SUMS sits next to what it describes, so it catches corruption but not a
@@ -88,10 +97,7 @@ easy_waf_verify_sums_signature() {
   if ! easy_waf_curl_https -o "$bundle" "${sums_url}.sigstore.json" 2>/dev/null; then
     log_relv "no signature published at ${sums_url}.sigstore.json"
     rc=1
-  elif ! cosign verify-blob --bundle "$bundle" \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity "https://github.com/${repo}/.github/workflows/release.yml@refs/tags/${tag}" \
-    "$sums" >/dev/null 2>&1; then
+  elif ! easy_waf_verify_github_blob "$sums" "$bundle" "$repo" "$tag" >/dev/null 2>&1; then
     log_relv "SHA256SUMS signature INVALID for ${repo}"
     rc=1
   else

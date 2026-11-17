@@ -92,6 +92,13 @@ jobs:
       - name: Sign SHA256SUMS
         run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
 
+      - name: Verify signed release artifacts before publication
+        run: |
+          set -euo pipefail
+          source scripts/lib/release-verify.sh
+          easy_waf_verify_github_blob SHA256SUMS SHA256SUMS.sigstore.json "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          sha256sum --check --strict SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
@@ -140,17 +147,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          source scripts/lib/release-verify.sh
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           DEB="easy-waf_${VERSION}_${{ matrix.arch }}.deb"
           gh release download "${GITHUB_REF_NAME}" --dir dist \
             --pattern "$DEB" --pattern SHA256SUMS --pattern SHA256SUMS.sigstore.json
           cd dist
-          cosign verify-blob \
-            --bundle SHA256SUMS.sigstore.json \
-            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            SHA256SUMS
+          easy_waf_verify_github_blob SHA256SUMS SHA256SUMS.sigstore.json "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
           grep -F "  $DEB" SHA256SUMS >DEB_SHA256SUM
           [[ "$(wc -l <DEB_SHA256SUM)" -eq 1 ]]
           sha256sum -c DEB_SHA256SUM
@@ -166,9 +170,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          source scripts/lib/release-verify.sh
           VERSION="${GITHUB_REF_NAME#v}"
           NAME="easy-waf_${VERSION}_offline_ubuntu24.04_${{ matrix.arch }}.iso"
           cd dist
           sha256sum "$NAME" >"${NAME}.sha256"
           cosign sign-blob --yes --bundle "${NAME}.sigstore.json" "$NAME"
+          easy_waf_verify_github_blob "$NAME" "${NAME}.sigstore.json" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
           gh release upload "${GITHUB_REF_NAME}" "$NAME" "${NAME}.sha256" "${NAME}.sigstore.json" --clobber

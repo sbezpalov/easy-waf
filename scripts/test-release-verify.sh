@@ -120,6 +120,8 @@ PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature "$SUMS" "$GH_U
   || fail "valid signature rejected"
 grep -qxF -- '--certificate-identity' "$FAKE_ARGS" \
   || fail "signature must use exact identity rather than an unbounded tag regexp"
+grep -qxF 'https://token.actions.githubusercontent.com' "$FAKE_ARGS" \
+  || fail "signature must name the GitHub Actions OIDC issuer"
 grep -qxF 'https://github.com/acme/easy-waf/.github/workflows/release.yml@refs/tags/v9.9.9' "$FAKE_ARGS" \
   || fail "signature not tied to the requested release tag"
 PATH="${TMPD}/bin:$PATH" FAKE_RC=0 easy_waf_verify_sums_signature \

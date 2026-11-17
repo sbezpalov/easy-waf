@@ -6,6 +6,7 @@ package releasecheck
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v4"
@@ -88,5 +89,40 @@ func TestReleaseRequiresSameCommitCI(t *testing.T) {
 				t.Fatalf("CI job %s contains a softened step", name)
 			}
 		}
+	}
+}
+
+func TestReleaseVerifiesSignedArtifactsBeforePublishing(t *testing.T) {
+	release := readWorkflow(t, "release.yml")
+	signed, verified, published := -1, -1, -1
+	for index, step := range release.Jobs["build-and-release"].Steps {
+		switch step["name"] {
+		case "Sign SHA256SUMS":
+			signed = index
+		case "Verify signed release artifacts before publication":
+			verified = index
+			run, _ := step["run"].(string)
+			for _, command := range []string{
+				"set -euo pipefail",
+				"source scripts/lib/release-verify.sh",
+				`easy_waf_verify_github_blob SHA256SUMS SHA256SUMS.sigstore.json "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"`,
+				"sha256sum --check --strict SHA256SUMS",
+			} {
+				if !strings.Contains(run, command) {
+					t.Errorf("publication verifier must run %q", command)
+				}
+			}
+			if step["if"] != nil || step["continue-on-error"] != nil {
+				t.Error("signature verification must not be skipped or softened")
+			}
+		case "Create GitHub Release":
+			published = index
+			if step["if"] != nil {
+				t.Error("publication must require all earlier steps to succeed")
+			}
+		}
+	}
+	if signed < 0 || verified <= signed || published <= verified {
+		t.Fatal("the release must be signed, verified and then published in that order")
 	}
 }
