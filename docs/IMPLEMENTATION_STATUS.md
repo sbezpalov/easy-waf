@@ -1,13 +1,12 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-17
+**Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Latest pristine VMware installation:** [9d7dbc8 and backup timer follow-up](release-evidence/1.6.1-pristine-vmware-9d7dbc8.md).
-The default amd64 package installer, fresh CrowdSec setup, enrollment and
-schema 028 passed. An installer rerun with the timer fix started scheduled
-backups before reboot. Both smoke runs passed 19/0/2 and the publication
-recovered automatically.
+**Latest pristine VMware installation:** [4f64bc4](release-evidence/1.6.1-pristine-vmware-4f64bc4.md).
+The default amd64 installer, fresh CrowdSec setup, enrollment and schema 028
+passed. The backup timer started on the first installation. Both smoke runs
+passed 20/0/2 and the publication recovered before any post-reboot Apply.
 **Latest unpackaged upgrade:** [published 1.6.0 through upgrade.sh on VMware](release-evidence/1.6.1-source-upgrade-7a1499b.md).
 The wrapper returned 0, restarted all three daemons and migrated schema 019 to
 028. The publication retained its certificate and trusted HTTPS. HAProxy stats,
@@ -293,7 +292,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 | ID | Criterion | Status | Check in repository |
 |----|-----------|--------|---------------------|
-| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** (scoped VMware/PVE) | The [pristine VMware run](release-evidence/1.6.1-pristine-vmware-9d7dbc8.md) passed default installation, CrowdSec bootstrap, enrollment, schema 028, authenticated smoke and reboot on 9d7dbc8, with a follow-up installer fix for immediate backup scheduling. VMware also passed direct upgrades from published 1.6.0/schema 019 [through APT](release-evidence/1.6.1-upgrade-160-bccbf26.md) and [through the unpackaged installer](release-evidence/1.6.1-source-upgrade-7a1499b.md). A separate [earlier PVE package upgrade](release-evidence/1.6.1-package-upgrade-b5fa4a4.md) passed. Final signed-release acceptance remains open. Follow [ACCEPTANCE.md](ACCEPTANCE.md). |
+| **AC-01** | Install via `install.sh` on Ubuntu 24.04 LTS (full cycle: packages, layout, env, optional PostgreSQL, binaries, systemd) | **Done** (scoped VMware/PVE) | The [pristine VMware run](release-evidence/1.6.1-pristine-vmware-4f64bc4.md) passed default installation, CrowdSec bootstrap, enrollment, schema 028, immediate backup scheduling, authenticated smoke and reboot on 4f64bc4. VMware also passed direct upgrades from published 1.6.0/schema 019 [through APT](release-evidence/1.6.1-upgrade-160-bccbf26.md) and [through the unpackaged installer](release-evidence/1.6.1-source-upgrade-7a1499b.md). A separate [earlier PVE package upgrade](release-evidence/1.6.1-package-upgrade-b5fa4a4.md) passed. Final signed-release acceptance remains open. Follow [ACCEPTANCE.md](ACCEPTANCE.md). |
 | **AC-02** | Add app via UI + Apply | **Done** (scoped PVE) | Native Edge form creation and Config → Apply HAProxy passed on [candidate 2220fde](release-evidence/1.6.1-application-apply.md), with an independent backend HTTP 200 marker before and after manual Apply and cleanup of the owned test application. Implementation: `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); a real NXDOMAIN HTTP-01 failure/backoff passed in the [follow-up](release-evidence/1.6.1-https-reboot-failure.md). Fresh production HTTP-01 renewal after the global configuration repair passed on [cb2d0a7](release-evidence/1.6.1-http01-renewal-cb2d0a7.md), including new DB/served leaf, trusted Windows request and native UI expiry. DNS-01 and optional notification checks remain scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Done** (scoped PVE) | Operator-confirmed mobile-data HTTPS request without certificate warnings, with the external client IP matched between HAProxy and backend X-Forwarded-For on the [PVE candidate](release-evidence/1.6.1-public-http01.md). WAN/NAT routing remains deployment-specific; follow [ACCEPTANCE.md](ACCEPTANCE.md). |

@@ -30,6 +30,13 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   restarts or rejected API/ACME restart requests. API and ACME restarts after
   an unpackaged upgrade are asynchronous. Check service readiness and run
   appliance smoke before accepting the upgrade.
+- Before its final startup step, the installer verifies local PostgreSQL
+  provisioning and synchronizes settings and migrations using `DATABASE_URL`.
+  A failed sync stops startup. An installation staged with service startup
+  disabled can defer that sync until PostgreSQL is configured.
+- The local password rotation stages a private configuration before changing
+  the role password. It retains a recovery file if it cannot confirm the change
+  or publish the new configuration. That temporary file stays out of backups.
 - Installer reruns preserve local CrowdSec keys that LAPI accepts. Missing
   or rejected keys are replaced individually. The installer stops credential
   setup on a transport error or unexpected HTTP response.
@@ -39,6 +46,8 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
 - Smoke bounds management HTTP transfers and fails on incomplete responses
   even when the server sends HTTP 200. The GeoIP database upload has a longer
   transfer deadline than ordinary probes.
+- Smoke passes bearer headers to curl through private temporary storage.
+  Local PostgreSQL password changes pass SQL through stdin to `psql`.
 - Backup and restore now abort before database work if they cannot confirm
   the required services have stopped. A backup can return a failure after
   saving a complete archive if a writer could not resume. A restore can return
