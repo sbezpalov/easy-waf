@@ -119,7 +119,8 @@ elif [[ "$INCLUDE_CROWDSEC" != "0" ]]; then
 fi
 
 echo "[offline-build] resolving ${#packages[@]} roots for Ubuntu 24.04/$ARCH"
-# Download the concrete closure APT would install on an empty system.
+# Download the concrete closure for the selected DEB and the appliance
+# packages on an empty system.
 # apt-rdepends also prints virtual names (dbus-system-bus, libgnutls30,
 # systemd-sysusers, ...). Those have no candidate, so apt-get download fails
 # before the repository exists. The solver below picks one real provider
@@ -140,7 +141,7 @@ apt_resolve_opts=(
   -o "APT::Get::Assume-Yes=true"
   -o "Acquire::Languages=none"
 )
-apt-get "${apt_resolve_opts[@]}" --download-only install "${packages[@]}"
+apt-get "${apt_resolve_opts[@]}" --download-only install "$DEB" "${packages[@]}"
 find "${RESOLVE}/cache/archives" -maxdepth 1 -type f -name '*.deb' -exec mv -t "$APT_REPO" {} +
 mapfile -d '' downloaded_debs < <(find "$APT_REPO" -maxdepth 1 -type f -name '*.deb' -print0)
 if [[ "${#downloaded_debs[@]}" -lt 1 ]]; then
@@ -212,7 +213,10 @@ apt_opts=(
   -o "Acquire::Languages=none"
 )
 apt-get "${apt_opts[@]}" update -qq
-apt-get "${apt_opts[@]}" --simulate install easy-waf "${packages[@]}" >/dev/null
+if ! apt-get "${apt_opts[@]}" --simulate install easy-waf "${packages[@]}" >"${SOLVER}/simulate.log" 2>&1; then
+  cat "${SOLVER}/simulate.log" >&2
+  exit 1
+fi
 echo "[offline-build] isolated APT dependency solve passed"
 
 write_bundle_checksums() {
