@@ -1,0 +1,21 @@
+      <div id="tab-fail2ban" class="tab-panel">
+        <h2>⛔ Fail2Ban</h2>
+        <p class="dash-note" style="margin-top:0">SSH and optional jails installed with the appliance. Status is read via <code>fail2ban-client</code> through the <code>easy-waf-hostd</code> broker.</p>
+        <div class="panel" style="max-width:100%">
+          <div class="row">
+            <button type="button" class="secondary" id="btn-f2b-refresh">Refresh jails</button>
+          </div>
+          <p id="f2b-status-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <div id="f2b-jails-wrap"></div>
+          <h3 style="margin-top:1.25rem">Unban IP</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end">
+            <label>Jail
+              <select id="f2b-unban-jail" style="min-width:10rem"><option value="">(refresh jails first)</option></select>
+            </label>
+            <label>IP <input id="f2b-unban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
+            <button type="button" id="btn-f2b-unban">Unban</button>
+          </div>
+          <p id="f2b-unban-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+      </div>
+

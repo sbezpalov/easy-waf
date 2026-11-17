@@ -22,7 +22,10 @@ var defaultManifest = []string{
 	"screens/dashboard.html",
 	"screens/applications.html",
 	"screens/certificates.html",
-	"document-after-certificates.html",
+	"screens/security.html",
+	"screens/crowdsec.html",
+	"screens/fail2ban.html",
+	"document-after-fail2ban.html",
 }
 
 // DefaultManifest returns the ordered source files used for the web UI bundle.

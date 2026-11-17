@@ -1,0 +1,161 @@
+      <div id="tab-security" class="tab-panel">
+        <h2>◎ Security</h2>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Profile presets</h3>
+          <p><small>Reference for <strong>Applications</strong> → profile dropdown. Data from <code>GET /api/v1/profiles</code>.</small></p>
+          <div id="profiles-doc" class="dash-note" style="color:#e6edf3">Open this tab to load presets…</div>
+        </div>
+
+        <div class="panel" style="max-width:100%">
+          <h3>WAF rules</h3>
+          <label><input id="waf-basic-enabled" type="checkbox" checked /> Basic WAF rules (SQLi / XSS / traversal)</label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-waf-security-save">Save WAF toggle</button>
+          </div>
+          <p id="waf-security-msg" class="warn" style="margin:0.5rem 0 0"></p>
+        </div>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Edge network</h3>
+          <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Edge changes</a>).</small></p>
+          <label><input id="edge-listen-ipv6" type="checkbox" /> Listen on IPv6 too (<code>[::]:80</code>, <code>[::]:443</code>). The host must have IPv6 enabled; publish AAAA records only after this is on.</label>
+          <label><input id="edge-http3" type="checkbox" /> HTTP/3 (QUIC on <code>UDP 443</code>, advertised with <code>Alt-Svc</code>). Open <code>udp dport 443</code> in <a href="#network">Network → Firewall</a> first; browsers fall back to HTTP/2 when UDP is blocked.</label>
+          <h4 style="margin:0.9rem 0 0.3rem">Response headers</h4>
+          <label><input id="edge-security-headers" type="checkbox" checked /> Add <code>X-Content-Type-Options: nosniff</code> and <code>Referrer-Policy: strict-origin-when-cross-origin</code> when the backend did not, and remove <code>Server</code> / <code>X-Powered-By</code></label>
+          <label><input id="edge-hsts-subdomains" type="checkbox" /> HSTS <code>includeSubDomains</code>. Browsers will then refuse plain HTTP on every subdomain of a published host, for six months.</label>
+          <h4 style="margin:0.9rem 0 0.3rem">Real client IP behind a proxy</h4>
+          <p><small>Only requests whose source is in <strong>Trusted proxies</strong> may replace their address with the header below; others keep their own. Without this, behind Cloudflare or a tunnel every client looks like the proxy to IP lists, GeoIP, CrowdSec and rate limits.</small></p>
+          <label for="edge-trusted-proxies">Trusted proxies (IP or CIDR, one per line)</label>
+          <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
+          <label for="edge-tcp-services" style="display:block;margin-top:0.75rem"><strong>TCP services</strong></label>
+          <p id="edge-tcp-services-hint" class="dash-note" style="margin:0 0 0.25rem">MQTT, RTSP, ...: one per line, <code>name listen_port backend_host:backend_port [allow=CIDR,CIDR] [off]</code>. Raw TCP: no HTTP rules apply; the IP blacklist does. Allow each listen port in Network → Firewall.</p>
+          <textarea id="edge-tcp-services" aria-describedby="edge-tcp-services-hint" rows="3" style="width:100%;font-family:monospace" placeholder="mqtt 8883 192.168.1.20:1883 allow=192.168.0.0/16"></textarea>
+          <label for="edge-tls-passthrough" style="display:block;margin-top:0.75rem"><strong>TLS passthrough on :443</strong></label>
+          <p id="edge-tls-passthrough-hint" class="dash-note" style="margin:0 0 0.25rem">One per line, <code>server_name backend_host:backend_port [allow=CIDR,CIDR] [proxy] [off]</code>. Connections for that name (or <code>*.domain</code>) go to the backend still encrypted, with its own certificate; no HTTP rules apply. <code>proxy</code> sends PROXY protocol v2 (the backend must expect it). The name must not be an application's public host.</p>
+          <textarea id="edge-tls-passthrough" aria-describedby="edge-tls-passthrough-hint" rows="3" style="width:100%;font-family:monospace" placeholder="vpn.example.com 192.168.1.30:443 allow=192.168.0.0/16"></textarea>
+          <div class="row" style="margin-top:0.3rem">
+            <label>Client IP header
+              <select id="edge-real-ip-header">
+                <option value="">X-Forwarded-For (last value)</option>
+                <option value="X-Real-IP">X-Real-IP</option>
+                <option value="CF-Connecting-IP">CF-Connecting-IP (Cloudflare)</option>
+                <option value="True-Client-IP">True-Client-IP</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-edge-cloudflare">Fill Cloudflare ranges</button>
+          </div>
+          <label style="display:block;margin-top:0.5rem">PROXY protocol sources (IP or CIDR, one per line): must send a PROXY v1/v2 header on :80/:443, e.g. a load balancer or NGFW
+            <textarea id="edge-proxy-protocol" rows="2" style="width:100%;font-family:monospace" placeholder="192.168.88.1"></textarea>
+          </label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-edge-network-save">Save edge network</button>
+          </div>
+          <p id="edge-network-msg" class="warn" style="margin:0.5rem 0 0"></p>
+        </div>
+
+        <h3>IP Blacklist</h3>
+        <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map; use <a href="#config">Edge changes</a> for a new HAProxy config.</small></p>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-ipbl-load">Load blacklist</button>
+          <button type="button" class="secondary" id="btn-ipbl-sync">Sync lists</button>
+        </div>
+        <div id="ipbl-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <label>CIDR or IP <input id="ipbl-cidr" placeholder="203.0.113.0/24" /></label>
+          <label>Note <input id="ipbl-note" placeholder="optional reason" /></label>
+          <button type="button" id="btn-ipbl-add">Add to blacklist</button>
+        </div>
+        <p id="ipbl-msg" class="warn"></p>
+
+        <div class="panel" style="max-width:42rem;margin-top:1rem">
+          <h4>Trusted internal CIDRs for feed fetch</h4>
+          <p class="dash-note" style="margin-top:0">Allow IPBL feeds hosted on internal DNS names resolving to these private ranges (split-DNS). Loopback and metadata addresses are always blocked.</p>
+          <label>One CIDR per line<br />
+            <textarea id="ipbl-fetch-allowed-cidrs" rows="4" style="width:100%;font-family:monospace;font-size:12px" placeholder="192.168.1.0/24&#10;10.0.0.0/8"></textarea>
+          </label>
+          <div class="row" style="margin-top:0.5rem">
+            <button type="button" class="secondary" id="btn-ipbl-fetch-cidrs-save">Save trusted CIDRs</button>
+          </div>
+          <p id="ipbl-fetch-cidrs-msg" class="warn" style="margin:0.35rem 0 0"></p>
+        </div>
+
+        <h3>IP Allowlist</h3>
+        <p><small>Trusted CIDRs bypass IP blacklist and per-app HTTP rate limits when enabled.</small></p>
+        <div class="row">
+          <label><input id="ipwl-enabled" type="checkbox" /> Enable allowlist in HAProxy</label>
+          <button type="button" class="secondary" id="btn-ipwl-settings-save">Save allowlist toggle</button>
+          <button type="button" class="secondary" id="btn-ipwl-load">Load entries</button>
+        </div>
+        <div id="ipwl-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <label>CIDR or IP <input id="ipwl-cidr" placeholder="192.168.0.0/16" /></label>
+          <label>Comment <input id="ipwl-comment" placeholder="optional context" /></label>
+          <button type="button" id="btn-ipwl-add">Add to allowlist</button>
+        </div>
+        <p id="ipwl-msg" class="warn"></p>
+
+        <h3>Bot protection</h3>
+        <p><small>Blocked UA map is written on <strong>Apply HAProxy</strong> (<a href="#config">Edge changes</a>).</small></p>
+        <div class="row">
+          <label><input id="ua-block-empty" type="checkbox" checked /> Block empty User-Agent</label>
+          <label><input id="ua-blocklist-enabled" type="checkbox" /> Enable blocked User-Agent list in HAProxy</label>
+          <button type="button" class="secondary" id="btn-ua-settings-save">Save bot protection toggles</button>
+          <button type="button" class="secondary" id="btn-ua-load">Load patterns</button>
+        </div>
+        <div id="ua-table"></div>
+        <div class="row" style="margin-top:0.5rem">
+          <label>User-Agent substring <input id="ua-pattern" placeholder="scanner-name" /></label>
+          <label>Comment <input id="ua-comment" placeholder="optional context" /></label>
+          <button type="button" id="btn-ua-add">Add pattern</button>
+        </div>
+        <p id="ua-msg" class="warn"></p>
+
+        <h3>GeoIP</h3>
+        <p><small>When enabled, Sync / Apply resolve blacklist CIDRs to countries. <strong>ipinfo:</strong> optional <code>GEOIP_IPINFO_TOKEN</code> on the API host. <strong>maxmind:</strong> local GeoLite2-Country MMDB — see repository file <code>docs/GEOIP.md</code>.</small></p>
+        <p id="geoip-providers-note" class="dash-note" style="margin-top:0.25rem"></p>
+        <div class="row">
+          <label><input id="geoip-enabled" type="checkbox" /> Enable GeoIP in HAProxy (batch map)</label>
+        </div>
+        <div class="row">
+          <label>Provider
+            <select id="geoip-provider">
+              <option value="ipinfo">ipinfo</option>
+              <option value="maxmind">maxmind (MMDB)</option>
+            </select>
+          </label>
+          <label>Policy
+            <select id="geoip-policy">
+              <option value="allow">Allow listed only</option>
+              <option value="deny">Deny listed</option>
+            </select>
+          </label>
+        </div>
+        <div id="geoip-maxmind-row" class="row hidden" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin-top:0.35rem">
+          <label>MMDB path
+            <input id="geoip-mmdb-path" type="text" style="width:100%;min-width:0" placeholder="/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb" autocomplete="off" />
+          </label>
+          <button type="button" class="secondary" id="btn-geoip-validate-mm">Validate (8.8.8.8)</button>
+        </div>
+        <div id="geoip-upload-row" class="row hidden" style="flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.35rem">
+          <label>Upload database
+            <input id="geoip-mmdb-file" type="file" accept=".mmdb,.gz,.tgz,application/gzip,application/octet-stream" />
+          </label>
+          <button type="button" class="secondary" id="btn-geoip-upload">Upload &amp; install</button>
+          <small class="dash-note">GeoLite2 <code>.mmdb</code> or the MaxMind <code>.tar.gz</code>. Installed only after it opens and answers a test lookup.</small>
+        </div>
+        <label>Country codes (ISO alpha-2, comma-separated)<br />
+          <textarea id="geoip-countries" rows="2" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px" placeholder="US, DE"></textarea>
+        </label>
+        <div class="row" style="margin-top:0.5rem">
+          <button type="button" class="secondary" id="btn-geoip-settings-save">Save GeoIP settings</button>
+        </div>
+        <p id="security-geo-msg" class="warn" style="min-height:1rem;margin:0.35rem 0 0"></p>
+        <h4>Lookup test</h4>
+        <div class="row">
+          <label>IP address <input id="geoip-lookup-ip" placeholder="8.8.8.8" /></label>
+          <button type="button" class="secondary" id="btn-geoip-lookup">Lookup</button>
+        </div>
+        <pre id="geoip-lookup-out" style="max-height:8rem;overflow:auto;background:#161b22;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
+      </div>
+

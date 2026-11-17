@@ -1,10 +1,9 @@
 # Web UI maintainability plan
 
 Status: **active phased refactor**. Phase 1 added a deterministic, manifest-based
-Go generator. Phase 2a separates shared CSS plus Dashboard, Applications and
-Certificates source without changing the delivered `dist/index.html` bytes.
-This document does not authorize a runtime, dependency, CSP, API, or permission
-change.
+Go generator. Phase 2a/2b separates shared CSS plus Dashboard through Fail2Ban
+source without changing the delivered `dist/index.html` bytes. This document
+does not authorize a runtime, dependency, CSP, API, or permission change.
 
 ## Problem
 
@@ -93,7 +92,10 @@ internal/webui/src/
     dashboard.html
     applications.html
     certificates.html
-  document-after-certificates.html
+    security.html
+    crowdsec.html
+    fail2ban.html
+  document-after-fail2ban.html
 ```
 
 `internal/webui/generate.go` invokes the repository-owned generator with
@@ -135,8 +137,9 @@ change.
 
 ### 2. Split markup by screen
 
-**In progress:** Phase 2a extracts Dashboard, Applications and Certificates.
-Remaining screens stay in the trailing partial until subsequent small commits.
+**In progress:** Phase 2a extracts Dashboard, Applications and Certificates;
+Phase 2b adds Security, CrowdSec and Fail2Ban. Remaining screens stay in the
+trailing partial until subsequent small commits.
 
 Extract static screen sections without changing IDs, hash routes, order,
 labels, classes or visible text. Run the 12-screen route/reflow/AX matrix after

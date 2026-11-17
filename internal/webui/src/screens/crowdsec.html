@@ -1,0 +1,58 @@
+      <div id="tab-crowdsec" class="tab-panel">
+        <h2>⚑ CrowdSec</h2>
+        <p class="dash-note" style="margin-top:0">LAPI + HAProxy SPOE (<code>filter spoe</code>). The bouncer API key is stored server-side and <strong>never</strong> returned in JSON. After <code>install.sh</code> keys are configured automatically; use <a href="#settings">Settings</a> → <strong>Load from server</strong> only to review or rotate.</p>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Connection &amp; SPOE</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem">
+            <label>LAPI base URL <input id="cs-lapi-url" type="url" placeholder="http://127.0.0.1:8080/" style="min-width:20rem" autocomplete="off" /></label>
+            <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
+            <label>SPOE config path <input id="cs-spoe-path" type="text" style="width:100%;min-width:0" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
+            <label>SPOE engine name <input id="cs-engine-name" type="text" style="min-width:10rem" placeholder="crowdsec" autocomplete="off" /></label>
+            <button type="button" id="btn-cs-settings-save">Save CrowdSec</button>
+          </div>
+          <p id="cs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <h3>Active decisions</h3>
+          <p id="cs-decisions-msg" class="warn" style="min-height:1rem"></p>
+          <div id="cs-decisions-table-wrap"></div>
+          <h3 style="margin-top:1.25rem">Allow IP (LAPI whitelist)</h3>
+          <p class="dash-note" style="margin-top:0">Adds a <code>whitelist</code> decision in CrowdSec LAPI (long duration). Use for trusted IPs that should bypass bouncer blocks.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-top:0.35rem">
+            <label>IP <input id="cs-allow-ip" type="text" placeholder="203.0.113.50" autocomplete="off" style="min-width:10rem" /></label>
+            <label style="flex:1;min-width:14rem">Reason<br /><textarea id="cs-allow-reason" rows="2" style="width:100%;min-width:14rem" placeholder="manual allowlist from UI"></textarea></label>
+            <button type="button" id="btn-cs-allow">Allow IP</button>
+          </div>
+          <p id="cs-allow-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <h3 style="margin-top:1.25rem">Manual ban</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-top:0.35rem">
+            <label>IP <input id="cs-ban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
+            <label>Duration
+              <select id="cs-ban-duration">
+                <option value="1h">1 hour</option>
+                <option value="4h">4 hours</option>
+                <option value="24h" selected>24 hours</option>
+                <option value="168h">7 days</option>
+                <option value="permanent">Permanent</option>
+              </select>
+            </label>
+            <label style="flex:1;min-width:14rem">Reason<br /><textarea id="cs-ban-reason" rows="2" style="width:100%;min-width:14rem" placeholder="manual ban from UI"></textarea></label>
+            <button type="button" id="btn-cs-ban">Ban IP</button>
+          </div>
+          <p id="cs-ban-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Diagnostics</h3>
+          <div class="row">
+            <button type="button" class="secondary" id="btn-cs-ping">Ping LAPI</button>
+            <button type="button" class="secondary" id="btn-cs-dec">Refresh decisions table</button>
+          </div>
+          <pre id="crowdsec-out" style="max-height:14rem;overflow:auto;background:#161b22;padding:0.75rem;border-radius:6px;font-size:12px;margin-top:0.75rem"></pre>
+        </div>
+      </div>
+
