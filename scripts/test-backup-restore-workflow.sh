@@ -7,6 +7,9 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_ROOT="$(command mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
+TEST_POSIX_MODES=0
+if [[ "$(uname -s)" == Linux ]]; then TEST_POSIX_MODES=1; fi
+export TEST_POSIX_MODES
 
 id() { printf '0\n'; }
 python3() {
@@ -59,13 +62,27 @@ bash() {
   esac
 }
 curl() {
-  local url='' output='' data=0 method=GET payload=''
+  local url='' output='' data=0 method=GET payload='' header='' header_file child_env
+  child_env="$(command env)"
+  if [[ "$child_env" =~ (^|$'\n')(EASY_WAF_)?E2E_(USERNAME|PASSWORD|TOTP_CODE)= ]]; then return 94; fi
   while (($#)); do
     case "$1" in
       -o) output="$2"; shift 2 ;;
       -X) method="$2"; shift 2 ;;
       --data-binary) data=1; shift 2 ;;
-      -H|-w|--cacert) shift 2 ;;
+      -H)
+        case "$2" in
+          @*)
+            header_file="${2#@}"
+            [[ -f "$header_file" ]] || return 94
+            if [[ "$TEST_POSIX_MODES" == 1 && "$(stat -c %a "$header_file")" != 600 ]]; then return 94; fi
+            header="$(<"$header_file")"
+            ;;
+          Authorization:*) return 94 ;;
+        esac
+        shift 2
+        ;;
+      -w|--cacert) shift 2 ;;
       http*) url="$1"; shift ;;
       *) shift ;;
     esac
@@ -73,9 +90,27 @@ curl() {
   if [[ "$data" == 1 ]]; then
     payload="$(command cat)"
   fi
+  if [[ "$url" == */auth/login ]]; then
+    [[ -z "$header" ]] || return 94
+  elif [[ "$url" == */auth/confirm || "$method" == GET ]]; then
+    [[ "$header" == 'Authorization: Bearer fixture-session-token' ]] || return 94
+  else
+    [[ "$header" == 'Authorization: Bearer fixture-step-up-token' ]] || return 94
+  fi
   case "$url" in
-    */auth/login|*/auth/confirm)
-      printf '{"token":"test-session"}\n' >"$output"
+    */auth/login)
+      [[ "$payload" == '{"username":"test","password":"test","totp_code":"123456"}' ]] || return 94
+      printf '{"token":"fixture-session-token"}\n' >"$output"
+      printf '200'
+      ;;
+    */auth/confirm)
+      [[ "$payload" == '{"password":"test"}' ]] || return 94
+      if [[ "$FAIL_AT" == auth-denied ]]; then
+        printf '{"error":"fixture-sensitive-auth-response"}\n' >"$output"
+        printf '401'
+        return
+      fi
+      printf '{"token":"fixture-step-up-token"}\n' >"$output"
       printf '200'
       ;;
     */certificates)
@@ -99,7 +134,7 @@ curl() {
 export -f id python3 psql systemctl chown sleep mktemp install bash curl
 
 for destination in default explicit; do
-  for FAIL_AT in none wrong-db reset restore verify cleanup; do
+  for FAIL_AT in none auth-denied wrong-db reset restore verify cleanup; do
     TEST_CASE="$TEST_ROOT/$destination-$FAIL_AT"
     mkdir -p "$TEST_CASE"
     export TEST_CASE FAIL_AT
@@ -126,10 +161,18 @@ MOCK
     if [[ "$destination" == explicit ]]; then
       export EASY_WAF_E2E_BACKUP_PATH="$TEST_CASE/custom-backup.tar.gz"
     fi
-    export RUN_BACKUP_RESTORE_E2E=1 EASY_WAF_E2E_USERNAME=test EASY_WAF_E2E_PASSWORD=test
+    export RUN_BACKUP_RESTORE_E2E=1 EASY_WAF_E2E_USERNAME=test EASY_WAF_E2E_PASSWORD=test EASY_WAF_E2E_TOTP_CODE=123456
+    export E2E_USERNAME=inherited E2E_PASSWORD=inherited E2E_TOTP_CODE=inherited
     status=0
     "$BASH" "$SCRIPT_DIR/test-backup-restore.sh" >"$TEST_CASE/output" 2>&1 || status=$?
     [[ ! -e "$TEST_CASE/env-executed" ]] || { echo 'FAIL: backup driver executed env file'; exit 1; }
+    if [[ "$FAIL_AT" == auth-denied ]]; then
+      [[ "$status" == 1 && ! -e "$TEST_CASE/backup-path" && ! -d "$(<"$TEST_CASE/temp-dir")" ]]
+      grep -Fq 'request to /api/v1/auth/confirm failed (HTTP 401)' "$TEST_CASE/output"
+      if grep -Fq 'fixture-sensitive-auth-response' "$TEST_CASE/output"; then exit 1; fi
+      echo "PASS: $destination backup, auth failure discards private response"
+      continue
+    fi
     if [[ "$FAIL_AT" == wrong-db ]]; then
       [[ "$status" == 1 && ! -e "$TEST_CASE/backup-path" ]]
       grep -Fq 'panel application is absent from the selected database' "$TEST_CASE/output"
@@ -153,7 +196,7 @@ MOCK
         cat "$TEST_CASE/output"; echo 'FAIL: failed run lost recovery archive'; exit 1;
       }
       grep -Fq "recovery backup retained: $backup" "$TEST_CASE/output"
-      [[ ! -f "$temp_dir/auth-response" ]]
+      [[ ! -d "$temp_dir/auth" ]]
       [[ ! -d "$temp_dir/pg-client" ]]
     fi
     expected_cert="$(printf '{"id":"e2e-backup-restore-cert","primary_domain":"backup-restore-e2e.example.local","mode":"self-signed","pem_crt_path":"%s/certs/_e2e/e2e-bundle.pem"}' "$EASY_WAF_STATE_DIR")"

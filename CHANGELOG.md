@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service file so PostgreSQL client arguments contain no database credentials.
 - Use the same private connection transport in root diagnostics and the
   backup/restore acceptance driver.
+- Keep backup/restore acceptance tokens in private curl header files.
 
 ## [1.6.1] - Unreleased
 

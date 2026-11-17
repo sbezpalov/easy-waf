@@ -18,6 +18,12 @@ if [[ "${RUN_BACKUP_RESTORE_E2E:-}" != "1" ]]; then
   exit 0
 fi
 
+E2E_USERNAME="${EASY_WAF_E2E_USERNAME:-}"
+E2E_PASSWORD="${EASY_WAF_E2E_PASSWORD:-}"
+E2E_TOTP_CODE="${EASY_WAF_E2E_TOTP_CODE:-}"
+unset EASY_WAF_E2E_USERNAME EASY_WAF_E2E_PASSWORD EASY_WAF_E2E_TOTP_CODE
+export -n E2E_USERNAME E2E_PASSWORD E2E_TOTP_CODE
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "ERROR: run as root (sudo)" >&2
   exit 1
@@ -35,6 +41,9 @@ API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
 ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
 CERT_SRC="${EASY_WAF_E2E_CERT_PEM:-${REPO_ROOT}/internal/haproxy/testdata/golden/certs/bundle-a.pem}"
 E2E_TMPDIR="$(mktemp -d)"
+AUTH_DIR="$E2E_TMPDIR/auth"
+SESSION_HEADER="$AUTH_DIR/session-header"
+STEP_UP_HEADER="$AUTH_DIR/step-up-header"
 BACKUP_PATH="${EASY_WAF_E2E_BACKUP_PATH:-${E2E_TMPDIR}/backup.tar.gz}"
 APP_HOST="backup-restore-e2e.example.local"
 BACKEND_IP="10.77.88.99"
@@ -53,8 +62,7 @@ cleanup() {
     # The default archive lives inside this private temporary directory. Keep
     # it on failure, but discard temporary credentials and test keys.
     if [[ "$BACKUP_PATH" == "$E2E_TMPDIR/backup.tar.gz" ]]; then
-      rm -f "$E2E_TMPDIR/auth-response"
-      rm -rf "$E2E_TMPDIR/cert" "$E2E_TMPDIR/pg-client"
+      rm -rf "$AUTH_DIR" "$E2E_TMPDIR/cert" "$E2E_TMPDIR/pg-client"
       return "$status"
     fi
   elif [[ "$BACKUP_CREATED" == "1" ]]; then
@@ -100,9 +108,6 @@ reserved_rows="$(query_database \
 [[ "$reserved_rows" == "0" ]] \
   || die "reserved E2E application or certificate already exists; refusing to overwrite it"
 
-E2E_USERNAME="${EASY_WAF_E2E_USERNAME:-}"
-E2E_PASSWORD="${EASY_WAF_E2E_PASSWORD:-}"
-E2E_TOTP_CODE="${EASY_WAF_E2E_TOTP_CODE:-}"
 if [[ -z "$E2E_USERNAME" || -z "$E2E_PASSWORD" ]]; then
   [[ -t 0 ]] || die "set EASY_WAF_E2E_USERNAME and EASY_WAF_E2E_PASSWORD when stdin is not a TTY"
   if [[ -z "$E2E_USERNAME" ]]; then
@@ -124,19 +129,22 @@ if [[ "$API_BASE" == https://* ]]; then
   fi
 fi
 
-AUTH_BODY=""
-AUTH_CODE=""
-auth_json_post() {
-  local path="$1" bearer="$2" payload="$3"
-  local args=("${CURL_EXTRA[@]}" -sS -o "${E2E_TMPDIR}/auth-response" -w '%{http_code}'
+request_auth_header() {
+  local path="$1" payload="$2" destination="$3" authorization="${4:-}" code token
+  local response="$AUTH_DIR/response"
+  local args=("${CURL_EXTRA[@]}" -sS -o "$response" -w '%{http_code}'
     -X POST "${BASE}${path}"
     -H "Content-Type: application/json"
     -H "X-Requested-With: XMLHttpRequest")
-  if [[ -n "$bearer" ]]; then
-    args+=(-H "Authorization: Bearer ${bearer}")
+  if [[ -n "$authorization" ]]; then
+    args+=(-H "@$authorization")
   fi
-  AUTH_CODE="$(curl "${args[@]}" --data-binary @- <<<"$payload")" || die "request to $path failed"
-  AUTH_BODY="$(<"${E2E_TMPDIR}/auth-response")"
+  code="$(curl "${args[@]}" --data-binary @- <<<"$payload")" || die "request to $path failed"
+  [[ "$code" == 200 ]] || die "request to $path failed (HTTP $code)"
+  token="$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$response")"
+  rm -f "$response"
+  [[ "$token" =~ ^[a-zA-Z0-9._-]+$ ]] || die "invalid or missing token from $path"
+  printf 'Authorization: Bearer %s\n' "$token" >"$destination"
 }
 
 login_session() {
@@ -147,35 +155,28 @@ login_session() {
     payload+=",\"totp_code\":\"$(json_escape "$E2E_TOTP_CODE")\""
   fi
   payload+='}'
-  auth_json_post "/api/v1/auth/login" "" "$payload"
-  [[ "$AUTH_CODE" == "200" ]] || die "panel login failed (HTTP $AUTH_CODE): $(head -c 200 <<<"$AUTH_BODY")"
-  SESSION_TOKEN="$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$AUTH_BODY")"
-  [[ -n "$SESSION_TOKEN" ]] || die "panel login returned no token"
+  request_auth_header "/api/v1/auth/login" "$payload" "$SESSION_HEADER"
 }
 
 confirm_session() {
   local payload
   payload="$(printf '{\"password\":\"%s\"}' "$(json_escape "$E2E_PASSWORD")")"
-  auth_json_post "/api/v1/auth/confirm" "$SESSION_TOKEN" "$payload"
-  [[ "$AUTH_CODE" == "200" ]] || die "password confirmation failed (HTTP $AUTH_CODE): $(head -c 200 <<<"$AUTH_BODY")"
-  STEP_UP_TOKEN="$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$AUTH_BODY")"
-  [[ -n "$STEP_UP_TOKEN" ]] || die "password confirmation returned no token"
+  request_auth_header "/api/v1/auth/confirm" "$payload" "$STEP_UP_HEADER" "$SESSION_HEADER"
 }
 
 api_get() {
-  curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${SESSION_TOKEN}" "$1"
+  curl -fsS "${CURL_EXTRA[@]}" -H "@$SESSION_HEADER" "$1"
 }
 
 api_post() {
-  curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${STEP_UP_TOKEN}" -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" -X POST "$1" --data-binary @- <<<"$2"
+  curl -fsS "${CURL_EXTRA[@]}" -H "@$STEP_UP_HEADER" -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" -X POST "$1" --data-binary @- <<<"$2"
 }
 
 api_delete() {
-  curl -fsS "${CURL_EXTRA[@]}" -H "Authorization: Bearer ${STEP_UP_TOKEN}" -H "X-Requested-With: XMLHttpRequest" -X DELETE "$1"
+  curl -fsS "${CURL_EXTRA[@]}" -H "@$STEP_UP_HEADER" -H "X-Requested-With: XMLHttpRequest" -X DELETE "$1"
 }
 
-SESSION_TOKEN=""
-STEP_UP_TOKEN=""
+mkdir "$AUTH_DIR"
 login_session
 confirm_session
 

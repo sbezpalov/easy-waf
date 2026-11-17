@@ -222,6 +222,10 @@ database before starting the backup or reset. Test options and operator
 credentials come from the invoking environment or the prompts above. File
 entries cannot change the selected state directory or recovery flags.
 
+The driver uses private header files for panel session and confirmation tokens.
+It discards those files and the authentication response even when it retains a
+recovery archive. Authentication failure messages include the HTTP status.
+
 `make test-backup-restore-workflow` exercises JSON requests, literal DSN handling,
 env isolation and recovery-archive retention with mocked appliance commands. It
 runs without root, PostgreSQL or systemd and is included in `make verify`; it does
