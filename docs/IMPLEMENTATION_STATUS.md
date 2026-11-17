@@ -3,6 +3,12 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest local Linux verification:** [39742bd](release-evidence/1.6.1-linux-gates-39742bd.md).
+The full race suite with PostgreSQL, live HAProxy integration, fresh
+govulncheck, repository verification and five local nightly scenarios passed.
+The adjacent GitHub CI and nightly runs cover the exact earlier commits named
+in the report.
+
 **Latest local artifact and packaged recovery:** [3f039d9 on VMware](release-evidence/1.6.1-reinstall-backup-3f039d9.md).
 Both architectures passed artifact verification. The amd64 package passed a
 same-version APT reinstall, packaged backup and restore, authenticated smoke
