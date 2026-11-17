@@ -30,7 +30,8 @@ easy_waf_maybe_rotate_weak_db_password() {
   newpw="$(openssl rand -hex 24)" # hex only: safe inside a URL and as a sed replacement
 
   if command -v psql &>/dev/null && command -v sudo &>/dev/null; then
-    if sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER USER easywaf WITH PASSWORD '${newpw}';" 2>/dev/null; then
+    if printf "ALTER USER easywaf WITH PASSWORD '%s';\n" "$newpw" |
+      sudo -u postgres psql -X -w -v ON_ERROR_STOP=1 -f - >/dev/null 2>&1; then
       :
     else
       log_dbpw "ALTER USER failed — change postgres password manually and update DATABASE_URL"
@@ -68,7 +69,8 @@ PY
   fi
 
   if [[ "$updated" -eq 0 ]] && command -v sed &>/dev/null; then
-    if sed -i -E "s|(^DATABASE_URL=postgres://easywaf:)[^@]+(@)|\1${newpw}\2|" "$env_file" 2>/dev/null; then
+    if printf 's|(^DATABASE_URL=postgres://easywaf:)[^@]+(@)|\\1%s\\2|\n' "$newpw" |
+      sed -i -E -f - "$env_file" 2>/dev/null; then
       updated=1
     fi
   fi

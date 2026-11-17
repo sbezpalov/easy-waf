@@ -130,12 +130,17 @@ func runPostgresSuperuserSQL(sql string) error {
 	if _, err := exec.LookPath("runuser"); err != nil {
 		return fmt.Errorf("runuser not in PATH (install util-linux): %w", err)
 	}
-	cmd := exec.Command("runuser", "-u", "postgres", "--", "psql", "-v", "ON_ERROR_STOP=1", "-c", sql)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("runuser postgres psql: %w: %s", err, strings.TrimSpace(string(out)))
+	// Client diagnostics can include the password-bearing SQL statement.
+	if err := postgresSuperuserSQLCommand(sql).Run(); err != nil {
+		return fmt.Errorf("runuser postgres psql failed to change the database role password: %w", err)
 	}
 	return nil
+}
+
+func postgresSuperuserSQLCommand(sql string) *exec.Cmd {
+	cmd := exec.Command("runuser", "-u", "postgres", "--", "psql", "-X", "-w", "-v", "ON_ERROR_STOP=1", "-f", "-")
+	cmd.Stdin = strings.NewReader(sql + "\n")
+	return cmd
 }
 
 // DefaultBootstrapReportPath is where generated secrets are written (root-readable only).

@@ -4,9 +4,24 @@
 package admin
 
 import (
+	"io"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestPostgresSuperuserSQLCommandReadsSQLFromStdin(t *testing.T) {
+	const sql = "ALTER USER fixture WITH PASSWORD 'fixture-password';"
+	cmd := postgresSuperuserSQLCommand(sql)
+	want := []string{"runuser", "-u", "postgres", "--", "psql", "-X", "-w", "-v", "ON_ERROR_STOP=1", "-f", "-"}
+	if !slices.Equal(cmd.Args, want) {
+		t.Fatal("unexpected PostgreSQL client arguments")
+	}
+	input, err := io.ReadAll(cmd.Stdin)
+	if err != nil || string(input) != sql+"\n" {
+		t.Fatal("PostgreSQL client did not receive the SQL statement on stdin")
+	}
+}
 
 func TestRandomAlphanumericPassword_lengthAndAlphabet(t *testing.T) {
 	s, err := RandomAlphanumericPassword(19)
