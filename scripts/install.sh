@@ -434,17 +434,16 @@ setup_local_postgres_database() {
   fi
   local env_file="$CFG_DIR/easy-waf.env"
   [[ -f "$env_file" ]] || {
-    log "WARNING: missing $env_file — skip local DB provisioning"
-    return 0
+    log "ERROR: missing $env_file — cannot provision the local database" >&2
+    return 1
   }
 
   log "Waiting for PostgreSQL to accept connections..."
-  local i=0
-  while ! sudo -u postgres pg_isready -q 2>/dev/null; do
-    i=$((i + 1))
-    if [[ "$i" -gt 90 ]]; then
-      log "WARNING: PostgreSQL not ready after 90s — create role/database manually (docs/DEPLOYMENT.md)"
-      return 0
+  local deadline=$((SECONDS + 90))
+  while ! sudo -u postgres pg_isready -q -t 1 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      log "ERROR: local PostgreSQL did not become ready within 90 seconds — check: systemctl status postgresql" >&2
+      return 1
     fi
     sleep 1
   done
@@ -455,8 +454,19 @@ setup_local_postgres_database() {
   easy_waf_insert_pg_hba_for_easywaf ""
 
   log "Ensuring PostgreSQL role and database (easywaf / easywaf)…"
+  # The create commands can fail because the objects already exist. Verify
+  # their resulting state instead of relying on the create exit codes.
   sudo -u postgres createuser -D -R -S easywaf 2>/dev/null || true
   sudo -u postgres createdb -O easywaf easywaf 2>/dev/null || true
+  local usable
+  if ! usable="$(sudo -u postgres psql -X -w -qAt -v ON_ERROR_STOP=1 -d easywaf -c \
+    "SELECT 1 FROM pg_catalog.pg_roles
+     WHERE rolname = 'easywaf' AND rolcanlogin
+       AND pg_catalog.has_database_privilege(oid, current_database(), 'CONNECT')")" ||
+    [[ "$usable" != 1 ]]; then
+    log "ERROR: local database easywaf is unavailable or role easywaf lacks LOGIN or CONNECT" >&2
+    return 1
+  fi
 
   if [[ "${EASY_WAF_ROTATE_WEAK_DB_PASSWORD:-1}" == "1" ]]; then
     # shellcheck source=lib/db-password.sh

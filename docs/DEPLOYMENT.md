@@ -70,6 +70,12 @@ Requirements:
 
 ## PostgreSQL password on first install
 
+For local provisioning, the installer waits up to 90 seconds for PostgreSQL.
+It then verifies that the `easywaf` database accepts a connection and that its
+`easywaf` role can log in and connect. If this fails, the installer exits before
+its final service-start step. Check the local cluster and the database and role
+settings before retrying.
+
 If **local PostgreSQL** is installed and `DATABASE_URL` still uses the example passwords **`easywaf:secret`** or **`easywaf:easywaf`**, the installer stages a private configuration with a random password. It then changes the role password and atomically publishes that configuration. Set `EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0` to opt out. Always use a strong password for external databases.
 
 If rotation stops after the database operation or publication fails, the
