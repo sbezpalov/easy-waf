@@ -204,6 +204,7 @@
       .page-header { align-items: stretch; flex-direction: column; }
       .page-header-actions { justify-content: space-between; }
       .page-header-actions button { min-height: var(--touch-target); }
+      .nav-toggle, .header-logout, .modal-actions button, .app-content button:not(.secondary) { min-height: var(--touch-target); }
       .nav-link { min-height: var(--touch-target); }
       #header-version { display: none; }
     }
@@ -1029,6 +1030,13 @@
           <p id="sys-apt-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
           <pre id="sys-apt-output" style="max-height:18rem;overflow:auto;background:#0d1117;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-word"></pre>
         </div>
+        <section class="panel" id="system-backup-restore" aria-labelledby="system-backup-restore-title" style="max-width:100%">
+          <h3 id="system-backup-restore-title">Backup and restore</h3>
+          <p>Backup and restore are not available in the web panel. Run the packaged commands from the appliance console or an SSH session with <code>sudo</code>.</p>
+          <p><code>sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7</code></p>
+          <p><code>sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz</code></p>
+          <p class="dash-note">Restore replaces the database and appliance state. Use a protected, same-version archive and follow <code>docs/BACKUP_RESTORE.md</code>. The daily <code>easy-waf-backup.timer</code> keeps seven archives by default.</p>
+        </section>
         <div class="panel" style="max-width:100%">
           <h3>Power</h3>
           <div class="row">
@@ -1618,7 +1626,7 @@
     };
     const k = variants[kind] ? kind : 'info';
     const variant = variants[k];
-    const ms = timeoutMs == null ? 5000 : timeoutMs;
+    const ms = k === 'err' ? 0 : (timeoutMs == null ? 5000 : timeoutMs);
     const el = document.createElement('div');
     el.className = 'toast toast-' + k;
     el.setAttribute('role', variant.role);
