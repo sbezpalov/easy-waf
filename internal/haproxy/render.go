@@ -773,6 +773,14 @@ backend {{backendName $a.Application.PublicHost}}
 	mode http
 	timeout connect {{haDur $a.Profile.ConnectTimeout}}
 	timeout server {{haDur $a.Profile.ServerTimeout}}
+	{{- if eq $a.Profile.Name "openclaw" }}
+	# Remove incoming addresses before HAProxy appends the frontend client address.
+	http-request del-header X-Forwarded-For
+	http-request del-header X-Real-IP
+	http-request del-header Forwarded
+	# The inherited forwardfor rule skips IPv4 loopback.
+	http-request set-header X-Forwarded-For %[src] if { src 127.0.0.0/8 }
+	{{- end }}
 	{{- if $a.Profile.HTTPKeepAlive }}
 	option http-keep-alive
 	{{- else }}

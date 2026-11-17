@@ -9,6 +9,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -23,9 +25,10 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/profiles"
+	"github.com/easy-waf/easy-waf/internal/testcert"
 )
 
-func TestLiveHomeAssistantPublication(t *testing.T) {
+func TestLiveApplicationProfiles(t *testing.T) {
 	hx, err := exec.LookPath("haproxy")
 	if err != nil {
 		t.Skip("haproxy not in PATH")
@@ -46,8 +49,25 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 	settings.BlockEmptyUA = false
 	settings.WAFBasicRulesEnabled = false
 	settings.HAProxyStatsSocketPath = socketPath
-	apps := make([]config.Application, 0, 3)
-	for _, profile := range []string{"home-assistant", "balanced", "ha-mcp"} {
+	settings.TrustedProxyCIDRs = []string{"127.0.0.1/32"}
+	settings.RealIPHeader = "X-Real-IP"
+	const clawHost = "openclaw.example.test"
+	const clawCert = "openclaw"
+	bundle := filepath.Join(dir, "openclaw.pem")
+	if err := testcert.WriteBundle(bundle, clawHost); err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := os.ReadFile(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(certificate) {
+		t.Fatal("load OpenClaw fixture certificate")
+	}
+	tlsConfig := &tls.Config{RootCAs: roots, ServerName: clawHost, MinVersion: tls.VersionTLS12}
+	apps := make([]config.Application, 0, 4)
+	for _, profile := range []string{"home-assistant", "balanced", "ha-mcp", "openclaw"} {
 		a := config.Application{ID: profile, Name: profile, PublicHost: profile + ".example.test",
 			BackendHost: "127.0.0.1", BackendPort: backend.port, Profile: profile,
 			Enabled: true, ListenMode: "http_only", WebSocket: true,
@@ -56,14 +76,25 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 			preset := profiles.HAMCPPathPolicy()
 			a.PathPolicy = &preset
 		}
+		if profile == "openclaw" {
+			a.ListenMode = "https_only"
+			a.CertificateID = clawCert
+		}
 		apps = append(apps, a)
 	}
-	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: apps})
+	crtListPath := filepath.Join(dir, "crt-list.txt")
+	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: apps, CRTListPath: crtListPath,
+		Certificates: map[string]config.Certificate{clawCert: {ID: clawCert, BundlePath: bundle}}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(crtListPath, []byte(rendered.CRTList), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	port := freePort(t)
+	tlsPort := freePort(t)
 	cfg := strings.ReplaceAll(rendered.HAProxyConfig, "bind *:80", fmt.Sprintf("bind 127.0.0.1:%d", port))
+	cfg = strings.ReplaceAll(cfg, "bind *:443", fmt.Sprintf("bind 127.0.0.1:%d", tlsPort))
 	cfg = strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200")
 	cfg = stripPrivilegeDrop(cfg)
 	// Keep HTTP inactivity short so the later idle WebSocket exchange proves
@@ -94,8 +125,30 @@ func TestLiveHomeAssistantPublication(t *testing.T) {
 	mustStatus(t, client, base+"/", "ha-mcp.example.test", "", http.StatusNotFound)
 	mustStatus(t, client, base+"/api/mcp/assist", "ha-mcp.example.test", "Bearer fixture", http.StatusOK)
 	mustStatus(t, client, base+"/api/", "ha-mcp.example.test", "Bearer fixture", http.StatusNotFound)
-	mustWebSocketExchange(t, port, "home-assistant.example.test", http.StatusSwitchingProtocols)
-	mustWebSocketExchange(t, port, "ha-mcp.example.test", http.StatusNotFound)
+	clawBase := fmt.Sprintf("https://127.0.0.1:%d", tlsPort)
+	clawClient := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+	defer clawClient.CloseIdleConnections()
+	mustStatus(t, clawClient, clawBase+"/config", clawHost, "", http.StatusOK)
+	mustStatus(t, clawClient, clawBase+"/.env", clawHost, "", http.StatusForbidden)
+	proxiedRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, clawBase+"/config/via-proxy", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxiedRequest.Host = clawHost
+	proxiedRequest.Header.Set("X-Real-IP", "192.0.2.42")
+	proxiedRequest.Header.Set("X-Forwarded-For", "192.0.2.41")
+	proxiedRequest.Header.Set("Forwarded", "for=192.0.2.41;proto=https")
+	response, err := clawClient.Do(proxiedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("OpenClaw via trusted proxy: HTTP %d, want 200", response.StatusCode)
+	}
+	mustWebSocketExchange(t, port, "home-assistant.example.test", "/api/websocket", nil, http.StatusSwitchingProtocols)
+	mustWebSocketExchange(t, port, "ha-mcp.example.test", "/api/websocket", nil, http.StatusNotFound)
+	mustWebSocketExchange(t, tlsPort, clawHost, "/", tlsConfig, http.StatusSwitchingProtocols)
 }
 
 // RFC 6455 sections 1.3 and 5.7 supply the fixed handshake and masked Hello
@@ -157,9 +210,17 @@ func webSocketEchoHandler(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func mustWebSocketExchange(t *testing.T, port int, host string, want int) {
+func mustWebSocketExchange(t *testing.T, port int, host, path string, tlsConfig *tls.Config, want int) {
 	t.Helper()
-	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	dialer := &net.Dialer{Timeout: time.Second}
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	var connection net.Conn
+	var err error
+	if tlsConfig == nil {
+		connection, err = dialer.DialContext(t.Context(), "tcp", address)
+	} else {
+		connection, err = (&tls.Dialer{NetDialer: dialer, Config: tlsConfig}).DialContext(t.Context(), "tcp", address)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +228,7 @@ func mustWebSocketExchange(t *testing.T, port int, host string, want int) {
 	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fmt.Fprintf(connection, "GET /api/websocket HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n\r\n", host, webSocketTestKey); err != nil {
+	if _, err := fmt.Fprintf(connection, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n\r\n", path, host, webSocketTestKey); err != nil {
 		t.Fatal(err)
 	}
 	reader := bufio.NewReader(connection)

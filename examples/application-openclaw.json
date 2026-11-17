@@ -1,0 +1,11 @@
+{
+  "name": "OpenClaw",
+  "public_host": "claw.example.com",
+  "backend_host": "192.168.1.51",
+  "backend_port": 18789,
+  "backend_https": false,
+  "websocket": true,
+  "listen_mode": "https_only",
+  "profile": "openclaw",
+  "enabled": true
+}

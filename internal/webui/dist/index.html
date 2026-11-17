@@ -606,6 +606,7 @@
           <div class="publication-fields">
             <div class="form-field"><label for="profile">Application profile</label><select id="profile">
               <option value="home-assistant">home-assistant</option>
+              <option value="openclaw">openclaw</option>
               <option value="balanced">balanced</option>
               <option value="strict">strict</option>
               <option value="php-app">php-app</option>
@@ -2582,6 +2583,7 @@
       lines.push('Default body limit: ' + (p.max_body_bytes ? p.max_body_bytes / 1048576 + ' MiB' : 'none') + '. Multipart: ' + (p.block_multipart ? 'blocked outside allowed paths' : 'allowed') + '.');
     }
     if (name === 'home-assistant') lines.push('One publication can serve the Home Assistant web UI, Companion and API. Enable WebSocket; configure trusted proxies in Home Assistant.');
+    if (name === 'openclaw') lines.push('The default Gateway port is 18789. In OpenClaw, trust only the proxy address and allow the exact HTTPS origin. Keep device pairing enabled.');
     if (p.path_policy && Array.isArray(p.path_policy.allow)) {
       lines.push('Default allowed paths for a new, unset path policy: ' + p.path_policy.allow.join(', ') + '. Other paths return 404; this is not a full Home Assistant publication. Existing path rules stay in effect.');
     }

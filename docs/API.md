@@ -356,7 +356,7 @@ Reports the systemd `ActiveState` of the appliance's core units. Each unit is qu
 - **Errors:** none. Failures show up as `unknown`.
 
 ### `GET /api/v1/profiles`
-Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `ha-mcp`, `none` and `custom`.
+Returns the built-in profile catalogue (`profiles.All()` in `internal/profiles/profiles.go`) as an object keyed by profile name: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `openclaw`, `ha-mcp`, `none` and `custom`.
 - **Response:** `200`. Each value has the fields `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (integers, milliseconds), `http_keep_alive`, `block_paths` and `extra_blocked_methods` (arrays, `[]` when empty), `geo_default_deny`, `max_body_bytes` (integer, bytes; `0` means no limit), `block_multipart`, and `notes` (omitted when empty). `ha-mcp` also includes `path_policy`, the exposure preset applied when an application of that profile is saved without one. See [HA-MCP.md](HA-MCP.md).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
@@ -570,7 +570,9 @@ What each preset does:
 - `reverse-proxy-only`: turns every toggle off and leaves `profile` unchanged.
 - `custom`: sets `mode` to `custom` and leaves the toggles and `profile` unchanged. Unlike PUT and PATCH, the mode is not re-detected, so it stays `custom` even when the toggles match a preset.
 
-GeoIP policy, the country list and the rate-limit overrides are never changed by a preset.
+Presets preserve the `php-app` and `openclaw` profiles while updating their
+security toggles. GeoIP policy, the country list and the rate-limit overrides
+are never changed by a preset.
 - **Request body:** `{"mode": "trusted-lan"}`. `mode` is required and is matched case-insensitively after trimming.
 - **Response:** `200`, the resulting `config.ApplicationSecurity`.
 - **Errors:** `400` (text/plain) for invalid JSON, `unknown mode`, or an unknown profile. `404` if the application does not exist. `422` / `503` if the apply failed and the change was undone. `500` on a database error.

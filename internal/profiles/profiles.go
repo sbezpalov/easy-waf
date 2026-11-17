@@ -20,6 +20,7 @@ const (
 	PublicApp     ProfileName = "public-app"
 	PHPApp        ProfileName = "php-app"
 	HomeAssistant ProfileName = "home-assistant"
+	OpenClaw      ProfileName = "openclaw"
 	// HAMCP publishes a Home Assistant MCP endpoint with a tight path allowlist.
 	// The numeric limits live here; the path preset is HAMCPPathPolicy.
 	HAMCP  ProfileName = "ha-mcp"
@@ -125,9 +126,20 @@ func All() map[ProfileName]Profile {
 			ConnectTimeout:      5 * time.Second,
 			ServerTimeout:       3600 * time.Second,
 			HTTPKeepAlive:       true,
-			BlockPaths:          homeAssistantBlockedPaths(),
+			BlockPaths:          blockedPathsWithoutConfig(),
 			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 			Notes:               "Long server timeout for SSE/WebSocket; still block obvious probes",
+		},
+		OpenClaw: {
+			Name:                OpenClaw,
+			Description:         "OpenClaw Gateway and Control UI. Use HTTPS and WebSocket with Gateway token or password authentication.",
+			RateLimitRPS:        40,
+			RateLimitBurst:      80,
+			ConnectTimeout:      5 * time.Second,
+			ServerTimeout:       time.Hour,
+			HTTPKeepAlive:       true,
+			BlockPaths:          blockedPathsWithoutConfig(),
+			ExtraBlockedMethods: []string{"TRACE", "CONNECT"},
 		},
 		HAMCP: {
 			Name:                HAMCP,
@@ -176,10 +188,10 @@ func defaultBlockedPaths() []string {
 	}
 }
 
-func homeAssistantBlockedPaths() []string {
+func blockedPathsWithoutConfig() []string {
 	var paths []string
 	for _, path := range defaultBlockedPaths() {
-		// /config is the authenticated HA settings frontend, not a probe.
+		// Home Assistant and OpenClaw use /config for their application UI.
 		if path != "/config" {
 			paths = append(paths, path)
 		}

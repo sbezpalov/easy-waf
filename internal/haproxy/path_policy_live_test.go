@@ -178,7 +178,24 @@ func httptestServer(t *testing.T) *testBackend {
 			flusher.Flush()
 		}
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	ws := webSocketEchoHandler(t)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "openclaw.example.test" {
+			want := "127.0.0.1"
+			if r.URL.Path == "/config/via-proxy" {
+				want = "192.0.2.42"
+			}
+			forwarded := r.Header.Values("X-Forwarded-For")
+			if len(forwarded) != 1 || forwarded[0] != want ||
+				r.Header.Get("X-Real-IP") != "" || r.Header.Get("Forwarded") != "" ||
+				r.Header.Get("X-Forwarded-Proto") != "https" {
+				t.Errorf("unexpected OpenClaw forwarding metadata: %q", forwarded)
+				http.Error(w, "invalid forwarding metadata", http.StatusBadRequest)
+				return
+			}
+			ws(w, r)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}

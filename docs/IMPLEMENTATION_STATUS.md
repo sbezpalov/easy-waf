@@ -316,7 +316,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 7. **Smoke test checklist** — partly done: `scripts/smoke-appliance.sh` runs after installs and upgrades.
 8. **Tests:** broader e2e — partly done: container runs for CrowdSec, the body policy and the real systemd/APT package-restart lifecycle in `.github/workflows/e2e.yml`; full appliance install/upgrade and real ACME are still checked by hand. The package lifecycle fixture uses a minimal package and fixture API/ACME workers (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 9. **UI:** optional separate frontend framework instead of a single `index.html`.
-10. **OpenClaw publication template — planned:** requested for homelab and smart-home deployments. Before implementation, verify upstream deployment guidance, authentication and trusted-proxy requirements, WebSocket/streaming behavior, and whether UI, API or MCP endpoints need separate policies. Provide clear template help, a deployment example and real HAProxy integration coverage; do not assume the Home Assistant profile is suitable. This is a backlog item, not an implemented profile or an additional 1.6.1 release gate.
+10. **OpenClaw publication template:** the [Gateway profile and example](OPENCLAW.md) cover Control UI with HTTPS, WebSocket and Gateway authentication. HAProxy integration covers forwarding metadata, the UI settings path and upgraded transport. Pairing with a deployed OpenClaw Gateway is a separate acceptance check.
 
 Update this file when closing MVP items and when `VERSION` changes.
 

@@ -66,6 +66,16 @@ func TestModePresetKeepsPHPAppProfile(t *testing.T) {
 	}
 }
 
+func TestModePresetKeepsOpenClawProfile(t *testing.T) {
+	for _, mode := range []SecurityMode{ModeFull, ModeBalanced, ModeTrustedLAN} {
+		app := config.Application{Profile: string(OpenClaw)}
+		ApplyModePreset(&app, mode)
+		if app.Profile != string(OpenClaw) || app.Security.Mode != string(mode) {
+			t.Errorf("mode %s resulted in profile %s and mode %s", mode, app.Profile, app.Security.Mode)
+		}
+	}
+}
+
 func TestModePresetStillSetsOtherProfiles(t *testing.T) {
 	app := config.Application{Profile: string(Balanced)}
 

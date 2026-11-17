@@ -278,7 +278,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Ошибки:** нет. Сбои отображаются как `unknown`.
 
 ### `GET /api/v1/profiles`
-Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `ha-mcp`, `none` и `custom`.
+Возвращает встроенный каталог профилей (`profiles.All()` в `internal/profiles/profiles.go`) в виде объекта с ключами по имени профиля: `balanced`, `strict`, `trusted-lan`, `public-app`, `php-app`, `home-assistant`, `openclaw`, `ha-mcp`, `none` и `custom`.
 - **Ответ:** `200`. У каждого значения есть поля `name`, `description`, `rate_limit_rps`, `rate_limit_burst`, `connect_timeout_ms`, `server_timeout_ms` (целые числа, миллисекунды), `http_keep_alive`, `block_paths` и `extra_blocked_methods` (массивы, `[]`, если пусто), `geo_default_deny`, `max_body_bytes` (целое, байты; `0` означает отсутствие лимита), `block_multipart` и `notes` (опускается, если пусто). У `ha-mcp` дополнительно есть `path_policy` — пресет публикации, который применяется, если приложение с этим профилем сохраняют без своей политики. См. [HA-MCP.ru.md](HA-MCP.ru.md).
   ```json
   {"balanced": {"name": "balanced", "description": "Reasonable defaults for most home apps",
@@ -422,7 +422,9 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - `reverse-proxy-only`: выключает все переключатели и не трогает `profile`.
 - `custom`: устанавливает `mode` в `custom` и не трогает переключатели и `profile`. В отличие от PUT и PATCH, режим не определяется заново, поэтому остаётся `custom`, даже если переключатели совпадают с каким-либо пресетом.
 
-Политику GeoIP, список стран и переопределения rate limit пресеты никогда не меняют.
+Пресеты сохраняют профили `php-app` и `openclaw`, обновляя переключатели
+защиты. Политику GeoIP, список стран и переопределения rate limit пресеты
+никогда не меняют.
 - **Тело запроса:** `{"mode": "trusted-lan"}`. `mode` обязателен и сопоставляется без учёта регистра после обрезки пробелов.
 - **Ответ:** `200`, итоговый `config.ApplicationSecurity`.
 - **Ошибки:** `400` (text/plain) при некорректном JSON, `unknown mode` или неизвестном профиле. `404`, если приложения не существует. `422` / `503`, если apply не удался и изменение отменено. `500` при ошибке базы данных.
