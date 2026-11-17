@@ -105,3 +105,33 @@ if easy_waf_prepare_crowdsec_bouncers "$env_file" "$yaml"; then
 fi
 unchanged || fail 'ambiguous configuration caused changes'
 echo 'OK: CrowdSec installer key preservation and recovery'
+
+(
+  # The sourced installer calls this lookup to select its APT branch.
+  # shellcheck disable=SC2317
+  command() {
+    case "$*" in
+      '-v dnf') return 1 ;;
+      '-v apt-get') return 0 ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+  mkdir() { [[ "$*" == '-p /etc/haproxy/errors' ]]; }
+  apt-get() {
+    printf '%s\n' "$@" >>"$ROOT/spoa-apt-arguments"
+  }
+  crowdsec_install_spoa_bouncer_package
+  cat >"$ROOT/spoa-apt-expected" <<'EOF'
+update
+-qq
+-o
+Dpkg::Options::=--force-confold
+-o
+Dpkg::Options::=--path-include=/usr/share/doc/crowdsec-haproxy-spoa-bouncer/examples/crowdsec.cfg
+install
+-y
+crowdsec-haproxy-spoa-bouncer
+EOF
+  cmp "$ROOT/spoa-apt-expected" "$ROOT/spoa-apt-arguments"
+)
+echo 'OK: SPOA keeps the required vendor file on hosts that exclude documentation'

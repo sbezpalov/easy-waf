@@ -153,7 +153,11 @@ crowdsec_install_spoa_bouncer_package() {
   elif command -v apt-get &>/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get -o Dpkg::Options::=--force-confold install -y crowdsec-haproxy-spoa-bouncer
+    # SPOA 0.4.0 copies this example during postinst. Minimal images can
+    # exclude documentation, including the file the package needs to configure.
+    apt-get -o Dpkg::Options::=--force-confold \
+      -o Dpkg::Options::=--path-include=/usr/share/doc/crowdsec-haproxy-spoa-bouncer/examples/crowdsec.cfg \
+      install -y crowdsec-haproxy-spoa-bouncer
   else
     return 1
   fi
