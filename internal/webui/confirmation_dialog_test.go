@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestConfirmationDialogKeyboard(t *testing.T) {
+func TestConfirmationDialogs(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node.js is required for UI interaction tests")
@@ -33,12 +33,12 @@ const confirmationDialogTest = `
 const assert = require('node:assert/strict'), vm = require('node:vm');
 const page = require('node:fs').readFileSync(0, 'utf8');
 const modalStart = page.indexOf('  function modalDialog(');
-const modalEnd = page.indexOf('  // Resolves to the password', modalStart);
+const modalEnd = page.indexOf('  function oneTimeCredentialDialog(', modalStart);
 const confirmStart = page.indexOf('  function confirmDialog(');
 const confirmEnd = page.indexOf('  async function withBusy(', confirmStart);
 assert.ok(modalStart >= 0 && modalEnd > modalStart, 'missing modal primitive');
 assert.ok(confirmStart >= 0 && confirmEnd > confirmStart, 'missing confirmation handler');
-async function scenario(action, danger = true) {
+function setup() {
   const document = {activeElement: null};
   class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = {}; this.isConnected = true; this.disabled = false; this.id = ''; }
@@ -53,6 +53,10 @@ async function scenario(action, danger = true) {
   const trigger = new Element('button'); trigger.focus();
   const context = vm.createContext({document});
   vm.runInContext('let modalSequence = 0;\n' + page.slice(modalStart, modalEnd) + page.slice(confirmStart, confirmEnd), context);
+  return {document, trigger, context};
+}
+async function scenario(action, danger = true) {
+  const {document, trigger, context} = setup();
   let settled = false;
   const promise = context.confirmDialog('Delete <fixture> & publication?', {danger, okLabel: 'Delete'})
     .then(result => {settled = true; return result;});
@@ -93,8 +97,30 @@ async function scenario(action, danger = true) {
   if (action === 'detached') assert.notEqual(document.activeElement, trigger);
   else assert.equal(document.activeElement, trigger, 'restore invoking control');
 }
+async function passwordScenario() {
+  const {document, trigger, context} = setup();
+  const promise = context.passwordDialog('Apply HAProxy configuration?');
+  const box = document.body.children[0].children[0];
+  const form = box.children[2].children[0];
+  const input = form.children[0].children[0];
+  const [cancel, ok] = box.children[3].children;
+  assert.equal(document.activeElement, input);
+  assert.equal(input.type, 'password');
+  assert.equal(input.required, true);
+  assert.equal(cancel.type, 'button');
+  assert.equal(ok.type, 'submit');
+  assert.ok(form.id, 'password form requires an id');
+  assert.equal(ok.attributes.form, form.id, 'Confirm must submit its sibling form');
+  input.value = 'fixture';
+  let prevented = false;
+  form.onsubmit({preventDefault() {prevented = true;}});
+  assert.equal(await promise, 'fixture');
+  assert.ok(prevented);
+  assert.equal(document.activeElement, trigger);
+}
 (async () => {
   for (const action of ['escape', 'tab', 'inside', 'backdrop', 'confirm', 'cancel', 'detached']) await scenario(action);
   await scenario('escape', false);
+  await passwordScenario();
 })().catch(error => {console.error(error); process.exitCode = 1});
 `

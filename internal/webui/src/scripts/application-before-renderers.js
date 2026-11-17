@@ -95,6 +95,7 @@
       cancelValue: null,
       render: ({ content, actions, addFocusable, close }) => {
       const form = document.createElement('form');
+      form.id = 'step-up-form-' + modalSequence;
       const input = document.createElement('input');
       input.type = 'password';
       input.autocomplete = 'current-password';
@@ -110,6 +111,7 @@
       cancel.textContent = 'Cancel';
       const ok = document.createElement('button');
       ok.type = 'submit';
+      ok.setAttribute('form', form.id);
       ok.textContent = 'Confirm';
       cancel.onclick = () => close(null);
       form.onsubmit = (e) => {

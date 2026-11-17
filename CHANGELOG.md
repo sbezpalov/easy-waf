@@ -194,6 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Privileged confirmation.** Clicking Confirm submits the password form
+  when applying HAProxy changes or confirming other privileged actions.
 - **Consistent backup and restore targets.** The archive records the same
   database selection used for its dump. Restore uses the restored env file
   for database restore and edge Apply. The acceptance driver checks that
