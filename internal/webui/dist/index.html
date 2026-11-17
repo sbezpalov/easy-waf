@@ -312,8 +312,10 @@
     }
     .toast-ok { border-left-color: #3fb950; }
     .toast-err { border-left-color: #f85149; }
+    .toast-warn { border-left-color: var(--color-warning); }
     .toast-info { border-left-color: #58a6ff; }
     .toast-body { flex: 1; line-height: 1.35; }
+    .toast-label { margin-right: var(--space-1); }
     .toast-close { padding: 0.15rem 0.45rem; font-size: 1.1rem; line-height: 1; min-width: auto; }
 
     .modal-overlay {
@@ -351,7 +353,7 @@
 <div id="view-login" class="login-wrap">
   <div class="panel" style="max-width:420px">
     <h2>Sign in</h2>
-    <p class="warn">Use <strong>http://this-host:8000</strong> or <strong>https://this-host:8443</strong> (browser warns until you install a trusted cert in the panel).</p>
+    <p class="warn">Use <strong>https://this-host:8443</strong>. Your browser may warn until you install a trusted management certificate in the panel.</p>
     <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
     <div class="row"><label>Password <input id="login-pass" type="password" autocomplete="current-password" /></label></div>
     <div class="row hidden" id="login-totp-row"><label>Code <input id="login-totp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456 or a recovery code" /></label></div>
@@ -624,7 +626,7 @@
           <p class="dash-note">Optional controls for backend pools, maintenance, forward authentication and path/body policies.</p>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>More backend servers <span class="dash-note">(one per line: <code>host:port</code>; add <code>backup</code> for failover only)</span>
-            <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="min-width:22rem"></textarea>
+            <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="width:100%;min-width:0"></textarea>
           </label>
           <label>Load balancing
             <select id="backend-balance">
@@ -638,7 +640,7 @@
             <input id="app-maint-bypass" placeholder="192.168.1.0/24, 10.0.0.5" style="min-width:16rem" />
           </label>
           <label>Forward auth URL <span class="dash-note">(Authelia: http://authelia-host:9091/api/authz/forward-auth; empty = off. While the auth service is down, this app is closed.)</span>
-            <input id="app-fwd-auth" placeholder="http://192.168.1.10:9091/api/authz/forward-auth" style="min-width:24rem" />
+            <input id="app-fwd-auth" placeholder="http://192.168.1.10:9091/api/authz/forward-auth" style="width:100%;min-width:0" />
           </label>
           <label>Forward auth bypass <span class="dash-note">(IPs/CIDRs that skip the login)</span>
             <input id="app-fwd-auth-bypass" placeholder="192.168.1.0/24" style="min-width:16rem" />
@@ -788,13 +790,14 @@
           <label><input id="edge-hsts-subdomains" type="checkbox" /> HSTS <code>includeSubDomains</code>. Browsers will then refuse plain HTTP on every subdomain of a published host, for six months.</label>
           <h4 style="margin:0.9rem 0 0.3rem">Real client IP behind a proxy</h4>
           <p><small>Only requests whose source is in <strong>Trusted proxies</strong> may replace their address with the header below; others keep their own. Without this, behind Cloudflare or a tunnel every client looks like the proxy to IP lists, GeoIP, CrowdSec and rate limits.</small></p>
-          <label>Trusted proxies (IP or CIDR, one per line)
-            <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
-            <p class="dash-note" style="margin:0.75rem 0 0.25rem"><b>TCP services</b> (MQTT, RTSP, ...): one per line, <code>name listen_port backend_host:backend_port [allow=CIDR,CIDR] [off]</code>. Raw TCP: no HTTP rules apply; the IP blacklist does. Allow each listen port in Network → Firewall.</p>
-            <textarea id="edge-tcp-services" rows="3" style="width:100%;font-family:monospace" placeholder="mqtt 8883 192.168.1.20:1883 allow=192.168.0.0/16"></textarea>
-            <p class="dash-note" style="margin:0.75rem 0 0.25rem"><b>TLS passthrough on :443</b>: one per line, <code>server_name backend_host:backend_port [allow=CIDR,CIDR] [proxy] [off]</code>. Connections for that name (or <code>*.domain</code>) go to the backend still encrypted, with its own certificate; no HTTP rules apply. <code>proxy</code> sends PROXY protocol v2 (the backend must expect it). The name must not be an application's public host.</p>
-            <textarea id="edge-tls-passthrough" rows="3" style="width:100%;font-family:monospace" placeholder="vpn.example.com 192.168.1.30:443 allow=192.168.0.0/16"></textarea>
-          </label>
+          <label for="edge-trusted-proxies">Trusted proxies (IP or CIDR, one per line)</label>
+          <textarea id="edge-trusted-proxies" rows="4" style="width:100%;font-family:monospace" placeholder="173.245.48.0/20"></textarea>
+          <label for="edge-tcp-services" style="display:block;margin-top:0.75rem"><strong>TCP services</strong></label>
+          <p id="edge-tcp-services-hint" class="dash-note" style="margin:0 0 0.25rem">MQTT, RTSP, ...: one per line, <code>name listen_port backend_host:backend_port [allow=CIDR,CIDR] [off]</code>. Raw TCP: no HTTP rules apply; the IP blacklist does. Allow each listen port in Network → Firewall.</p>
+          <textarea id="edge-tcp-services" aria-describedby="edge-tcp-services-hint" rows="3" style="width:100%;font-family:monospace" placeholder="mqtt 8883 192.168.1.20:1883 allow=192.168.0.0/16"></textarea>
+          <label for="edge-tls-passthrough" style="display:block;margin-top:0.75rem"><strong>TLS passthrough on :443</strong></label>
+          <p id="edge-tls-passthrough-hint" class="dash-note" style="margin:0 0 0.25rem">One per line, <code>server_name backend_host:backend_port [allow=CIDR,CIDR] [proxy] [off]</code>. Connections for that name (or <code>*.domain</code>) go to the backend still encrypted, with its own certificate; no HTTP rules apply. <code>proxy</code> sends PROXY protocol v2 (the backend must expect it). The name must not be an application's public host.</p>
+          <textarea id="edge-tls-passthrough" aria-describedby="edge-tls-passthrough-hint" rows="3" style="width:100%;font-family:monospace" placeholder="vpn.example.com 192.168.1.30:443 allow=192.168.0.0/16"></textarea>
           <div class="row" style="margin-top:0.3rem">
             <label>Client IP header
               <select id="edge-real-ip-header">
@@ -823,8 +826,8 @@
         </div>
         <div id="ipbl-table"></div>
         <div class="row" style="margin-top:0.5rem">
-          <input id="ipbl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
-          <input id="ipbl-note" placeholder="note" style="min-width:10rem" />
+          <label>CIDR or IP <input id="ipbl-cidr" placeholder="203.0.113.0/24" /></label>
+          <label>Note <input id="ipbl-note" placeholder="optional reason" /></label>
           <button type="button" id="btn-ipbl-add">Add to blacklist</button>
         </div>
         <p id="ipbl-msg" class="warn"></p>
@@ -850,8 +853,8 @@
         </div>
         <div id="ipwl-table"></div>
         <div class="row" style="margin-top:0.5rem">
-          <input id="ipwl-cidr" placeholder="CIDR or IP" style="min-width:12rem" />
-          <input id="ipwl-comment" placeholder="comment" style="min-width:10rem" />
+          <label>CIDR or IP <input id="ipwl-cidr" placeholder="192.168.0.0/16" /></label>
+          <label>Comment <input id="ipwl-comment" placeholder="optional context" /></label>
           <button type="button" id="btn-ipwl-add">Add to allowlist</button>
         </div>
         <p id="ipwl-msg" class="warn"></p>
@@ -866,8 +869,8 @@
         </div>
         <div id="ua-table"></div>
         <div class="row" style="margin-top:0.5rem">
-          <input id="ua-pattern" placeholder="substring pattern" style="min-width:14rem" />
-          <input id="ua-comment" placeholder="comment" style="min-width:10rem" />
+          <label>User-Agent substring <input id="ua-pattern" placeholder="scanner-name" /></label>
+          <label>Comment <input id="ua-comment" placeholder="optional context" /></label>
           <button type="button" id="btn-ua-add">Add pattern</button>
         </div>
         <p id="ua-msg" class="warn"></p>
@@ -894,7 +897,7 @@
         </div>
         <div id="geoip-maxmind-row" class="row hidden" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin-top:0.35rem">
           <label>MMDB path
-            <input id="geoip-mmdb-path" type="text" style="min-width:22rem" placeholder="/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb" autocomplete="off" />
+            <input id="geoip-mmdb-path" type="text" style="width:100%;min-width:0" placeholder="/var/lib/easy-waf/geoip/GeoLite2-Country.mmdb" autocomplete="off" />
           </label>
           <button type="button" class="secondary" id="btn-geoip-validate-mm">Validate (8.8.8.8)</button>
         </div>
@@ -914,7 +917,7 @@
         <p id="security-geo-msg" class="warn" style="min-height:1rem;margin:0.35rem 0 0"></p>
         <h4>Lookup test</h4>
         <div class="row">
-          <input id="geoip-lookup-ip" placeholder="8.8.8.8" style="min-width:12rem" />
+          <label>IP address <input id="geoip-lookup-ip" placeholder="8.8.8.8" /></label>
           <button type="button" class="secondary" id="btn-geoip-lookup">Lookup</button>
         </div>
         <pre id="geoip-lookup-out" style="max-height:8rem;overflow:auto;background:#161b22;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem"></pre>
@@ -931,7 +934,7 @@
             <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
           </div>
           <div class="row" style="flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
-            <label>SPOE config path <input id="cs-spoe-path" type="text" style="min-width:22rem" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
+            <label>SPOE config path <input id="cs-spoe-path" type="text" style="width:100%;min-width:0" placeholder="/etc/haproxy/crowdsec.cfg" autocomplete="off" /></label>
             <label>SPOE engine name <input id="cs-engine-name" type="text" style="min-width:10rem" placeholder="crowdsec" autocomplete="off" /></label>
             <button type="button" id="btn-cs-settings-save">Save CrowdSec</button>
           </div>
@@ -1051,6 +1054,7 @@
         <div class="panel" style="max-width:100%">
           <h3>Netplan <small>(Advanced)</small></h3>
           <p class="dash-note" style="margin-top:0">Wrong configuration can temporarily cut network access. Changes auto-revert after the safety window unless you click <strong>Keep changes</strong>. Form-based editor — next iteration.</p>
+          <label class="field-label" for="net-netplan-yaml">Netplan YAML</label>
           <textarea id="net-netplan-yaml" rows="10" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px" placeholder="# 99-easy-waf.yaml"></textarea>
           <div class="row" style="margin-top:0.5rem">
             <button type="button" id="btn-net-netplan-apply">Apply (safety 90s)</button>
@@ -1060,6 +1064,7 @@
         <div class="panel" style="max-width:100%">
           <h3>Firewall / nftables <small>(Advanced)</small></h3>
           <p class="dash-note" style="margin-top:0">Managed file <code>/etc/nftables/easy-waf.nft</code>. Same safety window as netplan.</p>
+          <label class="field-label" for="net-firewall-rules">nftables ruleset</label>
           <textarea id="net-firewall-rules" rows="12" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px"></textarea>
           <div class="row" style="margin-top:0.5rem">
             <button type="button" id="btn-net-firewall-apply">Apply (safety 90s)</button>
@@ -1147,13 +1152,13 @@
           <h3>Notifications</h3>
           <p class="dash-note" style="margin-top:0">Sent to a webhook (JSON), a Telegram chat, or both: a failed HAProxy apply, a backend server going down or coming back, a spike of blocked requests, and once a day certificates that failed to issue or renew or have fewer than 21 days left. Leave both empty to keep warnings in the journal only. The URL and token are not written to the log; redirects are not followed.</p>
           <label>Webhook URL
-            <input id="notify-webhook-url" type="url" placeholder="https://ntfy.example/easy-waf" style="min-width:22rem;width:100%" />
+            <input id="notify-webhook-url" type="url" placeholder="https://ntfy.example/easy-waf" style="width:100%;min-width:0" />
           </label>
           <label>Telegram chat ID
-            <input id="notify-telegram-chat" type="text" placeholder="-1001234567890 or @channel" style="min-width:22rem;width:100%" />
+            <input id="notify-telegram-chat" type="text" placeholder="-1001234567890 or @channel" style="width:100%;min-width:0" />
           </label>
           <label>Telegram bot token
-            <input id="notify-telegram-token" type="password" autocomplete="off" placeholder="123456:ABC... from @BotFather" style="min-width:22rem;width:100%" />
+            <input id="notify-telegram-token" type="password" autocomplete="off" placeholder="123456:ABC... from @BotFather" style="width:100%;min-width:0" />
           </label>
           <label>Blocked-requests spike alert (refused requests per 5 minutes, 0 = off)
             <input id="notify-spike-threshold" type="number" min="0" max="1000000" step="1" style="width:10rem" />
@@ -1605,13 +1610,28 @@
   function toast(message, kind, timeoutMs) {
     const host = document.getElementById('toast-host');
     if (!host) return;
-    const k = kind || 'info';
+    const variants = {
+      ok: { label: 'Success', role: 'status' },
+      err: { label: 'Error', role: 'alert' },
+      warn: { label: 'Warning', role: 'status' },
+      info: { label: 'Information', role: 'status' }
+    };
+    const k = variants[kind] ? kind : 'info';
+    const variant = variants[k];
     const ms = timeoutMs == null ? 5000 : timeoutMs;
     const el = document.createElement('div');
     el.className = 'toast toast-' + k;
+    el.setAttribute('role', variant.role);
+    el.setAttribute('aria-label', variant.label + ' notification');
     const body = document.createElement('span');
     body.className = 'toast-body';
-    body.textContent = String(message);
+    const label = document.createElement('strong');
+    label.className = 'toast-label';
+    label.textContent = variant.label + ': ';
+    const messageText = document.createElement('span');
+    messageText.textContent = String(message);
+    body.appendChild(label);
+    body.appendChild(messageText);
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'toast-close secondary';
@@ -1892,7 +1912,7 @@
     const raw = await r.json();
     const list = Array.isArray(raw) ? raw : [];
     box.innerHTML = '<table><thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
-      list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select name="panel_user_role" class="pu-role" data-user="' + esc(u.username) + '">' +
+      list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select name="panel_user_role" class="pu-role" aria-label="Role for ' + esc(u.username) + '" data-user="' + esc(u.username) + '">' +
         '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
         '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>viewer</option></select></td><td>' +
         (u.must_change_password ? 'must change password' : 'active') + (u.totp_enabled ? ', 2FA on' : '') + '</td><td>' +
@@ -6466,6 +6486,6 @@
 
   refreshSession();
 </script>
-<div id="toast-host" class="toast-host" aria-live="polite"></div>
+<div id="toast-host" class="toast-host" aria-live="polite" aria-relevant="additions"></div>
 </body>
 </html>
