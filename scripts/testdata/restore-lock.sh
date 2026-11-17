@@ -28,6 +28,27 @@ export RESTORE_LOCK_TEST_ROOT="$ROOT" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_
 cat >"$ROOT/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$*" >>"$RESTORE_LOCK_TEST_ROOT/services"
+case "$1" in
+  show)
+    fault="${RESTORE_STOP_FAULT:-}"
+    if [[ "$fault" == initial-query ]]; then exit 42; fi
+    if [[ -e "$RESTORE_LOCK_TEST_ROOT/stop-attempt" ]]; then
+      if [[ "$fault" == still-active && "${@: -1}" == easy-waf-api.service ]]; then
+        echo active
+      else
+        echo inactive
+      fi
+    elif [[ "${@: -1}" == easy-waf-api.service ]]; then
+      echo active
+    else
+      echo inactive
+    fi
+    ;;
+  stop)
+    touch "$RESTORE_LOCK_TEST_ROOT/stop-attempt"
+    if [[ "${RESTORE_STOP_FAULT:-}" == stop-error ]]; then exit 43; fi
+    ;;
+esac
 if [[ "$1" == start && "${RESTORE_LOCK_HOLD:-}" == service-start ]]; then
   "$RESTORE_LOCK_TEST_ROOT/bin/barrier"
 fi
@@ -86,6 +107,25 @@ if [[ "$mode" != locks ]]; then
   grep -qF 'flock not found' "$ROOT/no-flock.log" || fail 'missing flock was not diagnosed'
   [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'missing flock touched services/database'
   echo 'OK: missing flock rejected before service/database access'
+  for fault in initial-query stop-error still-active; do
+    : >"$ROOT/services"; : >"$ROOT/database"
+    rm -f "$ROOT/stop-attempt"
+    printf 'original state\n' >"$ROOT/state/original"
+    cp /etc/easy-waf/easy-waf.env "$ROOT/original-env"
+    rc=0
+    RESTORE_STOP_FAULT="$fault" bash "$RESTORE_SCRIPT" "$ROOT/valid.tar.gz" >"$ROOT/quiesce.log" 2>&1 || rc=$?
+    [[ "$rc" == 1 ]] || fail "$fault did not abort restore"
+    grep -Fq 'restore aborted before database changes' "$ROOT/quiesce.log" || fail "$fault did not explain the abort"
+    [[ ! -s "$ROOT/database" && ! -e "$ROOT/state/data" && -f "$ROOT/state/original" ]] || fail "$fault changed database or state"
+    cmp -s "$ROOT/original-env" /etc/easy-waf/easy-waf.env || fail "$fault changed configuration"
+    if [[ "$fault" == initial-query ]]; then
+      if grep -Eq '^preflight (stop|start) ' "$ROOT/services"; then fail 'initial query failure changed services'; fi
+    else
+      diff -u <(printf 'preflight start easy-waf-api.service\n') <(grep '^preflight start ' "$ROOT/services") \
+        || fail "$fault did not resume only the originally active service"
+    fi
+  done
+  echo 'OK: restore requires confirmed writer quiescence before replacing data'
 fi
 
 if [[ "$mode" != preflight ]]; then

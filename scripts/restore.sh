@@ -108,13 +108,51 @@ if [[ -z "$DATABASE_URL" ]]; then
 fi
 
 echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
-systemctl stop easy-waf-api.service 2>/dev/null || true
-systemctl stop easy-waf-acmed.service 2>/dev/null || true
-systemctl stop easy-waf-hostd.service 2>/dev/null || true
+restore_units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)
+resume_units=()
+for unit in "${restore_units[@]}"; do
+  if ! state="$(systemctl show --property=ActiveState --value "$unit")"; then
+    echo "ERROR: cannot determine initial state of $unit — restore aborted before database changes" >&2
+    exit 1
+  fi
+  case "$state" in
+    active|activating|reloading|refreshing) resume_units+=("$unit") ;;
+    inactive|failed|deactivating) ;;
+    *)
+      echo "ERROR: unexpected state for $unit — restore aborted before database changes" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# If quiescence fails before database work, the original data is still paired.
+# Resume only the services that were running or starting before this attempt.
+resume_original_services() {
+  local unit
+  for unit in "${resume_units[@]}"; do
+    if ! systemctl start "$unit"; then
+      echo "WARNING: could not resume $unit — check journalctl -u $unit" >&2
+    fi
+  done
+}
+
+if ! systemctl stop easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service; then
+  echo "ERROR: failed to stop appliance services — restore aborted before database changes" >&2
+  resume_original_services
+  exit 1
+fi
+for unit in "${restore_units[@]}"; do
+  if ! state="$(systemctl show --property=ActiveState --value "$unit")" ||
+    [[ "$state" != inactive && "$state" != failed ]]; then
+    echo "ERROR: cannot confirm $unit is stopped — restore aborted before database changes" >&2
+    resume_original_services
+    exit 1
+  fi
+done
 
 echo "[easy-waf-restore] pg_restore into configured database (single transaction; drops conflicting objects)…"
 # --single-transaction keeps --clean + restore atomic: a mid-restore failure
-# rolls back instead of leaving a half-destroyed schema with the control plane down.
+# rolls back instead of leaving a half-destroyed schema.
 if ! pg_restore --single-transaction --clean --if-exists --no-owner --no-acl -d "$DATABASE_URL" "$ROOT/easywaf.dump"; then
   echo "ERROR: pg_restore failed — database left unchanged; refusing to replace on-disk state" >&2
   exit 1
@@ -181,7 +219,7 @@ if ! systemctl daemon-reload; then
   echo "ERROR: systemd daemon-reload failed" >&2
   post_restore_failed=1
 fi
-for unit in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; do
+for unit in "${restore_units[@]}"; do
   if ! systemctl start "$unit"; then
     echo "ERROR: $unit failed to start — check journalctl -u $unit" >&2
     post_restore_failed=1

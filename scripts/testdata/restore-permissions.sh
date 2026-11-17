@@ -34,6 +34,9 @@ set -eu
 if [[ "${1:-}" == start ]]; then
   printf '%s\n' "$2" >>"$RESTORE_TEST_STARTS"
 fi
+if [[ "${1:-}" == show ]]; then
+  printf 'inactive\n'
+fi
 [[ "$*" != "$RESTORE_TEST_FAILURE" ]]
 MOCK
 cat >"$ROOT/bin/admin" <<'MOCK'

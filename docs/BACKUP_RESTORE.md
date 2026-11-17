@@ -123,6 +123,9 @@ Steps:
 2. Extracts the archive privately and checks the required directories, dump and
    nonempty `DATABASE_URL` in the backed-up env before stopping
    **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
+   Checks their initial state and confirms they have stopped before touching
+   the database or replacing files. If stopping or verification fails, restore
+   aborts and attempts to resume only the services that were running or starting.
 3. **`pg_restore --single-transaction --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host). A failed restore leaves the database unchanged and **does not** replace on-disk state.
 4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
