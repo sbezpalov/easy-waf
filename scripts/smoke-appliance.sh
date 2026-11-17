@@ -186,6 +186,44 @@ unit_installed() { systemctl list-unit-files "${1}.service" &>/dev/null; }
 # chroot) — a missing answer means "cannot tell", not "broken".
 unit_state() { systemctl is-active "${1}.service" 2>/dev/null; }
 
+check_backup_timer() {
+  local timer=easy-waf-backup.timer properties key value load='' enabled='' active='' sub='' next=''
+  if ! properties="$(systemctl show -p LoadState -p UnitFileState -p ActiveState -p SubState \
+    -p NextElapseUSecRealtime -p NextElapseUSecMonotonic "$timer" 2>/dev/null)"; then
+    skip "$timer status unavailable"
+    return
+  fi
+  while IFS='=' read -r key value; do
+    case "$key" in
+      LoadState) load="$value" ;;
+      UnitFileState) enabled="$value" ;;
+      ActiveState) active="$value" ;;
+      SubState) sub="$value" ;;
+      NextElapseUSecRealtime|NextElapseUSecMonotonic)
+        case "$value" in
+          '' | n/a | 0 | infinity) ;;
+          *) next="$value" ;;
+        esac
+        ;;
+    esac
+  done <<<"$properties"
+  if [[ "$enabled" == disabled || "$enabled" == masked || "$enabled" == masked-runtime ]]; then
+    skip "$timer is $enabled"
+  elif [[ "$load" == not-found ]]; then
+    skip "$timer not installed"
+  elif [[ "$load" != loaded || ( "$enabled" != enabled && "$enabled" != enabled-runtime ) ]]; then
+    fail "$timer is not a loaded, enabled timer (load: ${load:-unknown}, unit file: ${enabled:-unknown})"
+  elif [[ "$active" != active ]]; then
+    fail "$timer is $enabled but ${active:-has unknown status}"
+  elif [[ "$sub" == running ]]; then
+    pass "$timer active (backup running)"
+  elif [[ -z "$next" ]]; then
+    fail "$timer is active but has no next run"
+  else
+    pass "$timer active with a scheduled run"
+  fi
+}
+
 section "secrets"
 env_mode="$(stat -c '%a %U:%G' "$ENV_FILE" 2>/dev/null || echo unknown)"
 if [[ "$env_mode" == "600 root:root" ]]; then
@@ -207,6 +245,7 @@ for unit in easy-waf-hostd easy-waf-api easy-waf-acmed; do
     *) fail "$unit is $state" ;;
   esac
 done
+check_backup_timer
 
 # 1.2.1 shipped ProtectHome=false for the broker; with true, /home is invisible
 # to it and SSH key management silently cannot write.

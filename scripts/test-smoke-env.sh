@@ -43,7 +43,14 @@ cat >"$ROOT/bin/admin" <<'MOCK'
 printf '%s\n' "$@" >>"$SMOKE_TEST_ADMIN_ARGS"
 exit 0
 MOCK
-printf '#!/bin/sh\nexit 1\n' >"$ROOT/bin/systemctl"
+cat >"$ROOT/bin/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == show && "${!#}" == easy-waf-backup.timer && -n "${SMOKE_TEST_TIMER:-}" ]]; then
+  printf '%s\n' "$SMOKE_TEST_TIMER"
+  exit 0
+fi
+exit 1
+MOCK
 chmod 0700 "$ROOT/bin/"*
 export PATH="$ROOT/bin:$PATH"
 export EASY_WAF_ENV_FILE="$ROOT/config.env"
@@ -56,6 +63,30 @@ unset EASY_WAF_SMOKE_USER EASY_WAF_SMOKE_PASSWORD EASY_WAF_SMOKE_MMDB
 marker="$ROOT/executed"
 expected="literal-token-\$not_expanded;still-data-123456789"
 printf 'UNUSED=%s\nEASY_WAF_ADMIN_TOKEN=%s\n' "\$(touch \"$marker\")" "$expected" >"$EASY_WAF_ENV_FILE"
+assert_timer() {
+  local properties="$1" message="$2"
+  SMOKE_TEST_TIMER="$properties" bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+  if ! grep -qF "$message" "$ROOT/output"; then
+    echo "FAIL: missing backup timer report: $message" >&2
+    exit 1
+  fi
+}
+assert_timer $'LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled' \
+  'FAIL  easy-waf-backup.timer is enabled but inactive'
+assert_timer $'LoadState=loaded\nActiveState=active\nSubState=waiting\nUnitFileState=enabled\nNextElapseUSecRealtime=Wed 2026-11-18 03:45:00 UTC' \
+  'PASS  easy-waf-backup.timer active with a scheduled run'
+assert_timer $'LoadState=loaded\nActiveState=active\nSubState=waiting\nUnitFileState=enabled-runtime\nNextElapseUSecMonotonic=2h 30min' \
+  'PASS  easy-waf-backup.timer active with a scheduled run'
+assert_timer $'LoadState=loaded\nActiveState=active\nSubState=elapsed\nUnitFileState=enabled\nNextElapseUSecRealtime=n/a\nNextElapseUSecMonotonic=0' \
+  'FAIL  easy-waf-backup.timer is active but has no next run'
+assert_timer $'LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled' \
+  'PASS  easy-waf-backup.timer active (backup running)'
+assert_timer $'LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled' \
+  'SKIP  easy-waf-backup.timer is disabled'
+assert_timer $'LoadState=masked\nActiveState=inactive\nUnitFileState=masked' \
+  'SKIP  easy-waf-backup.timer is masked'
+assert_timer $'LoadState=not-found\nActiveState=inactive' \
+  'SKIP  easy-waf-backup.timer not installed'
 # Appliance checks intentionally fail in this non-appliance fixture.
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 [[ ! -e "$marker" ]] || { echo 'FAIL: env file executed shell code' >&2; exit 1; }
