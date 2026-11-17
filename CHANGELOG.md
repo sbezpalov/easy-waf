@@ -7,20 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Add an [OpenClaw Gateway profile](docs/OPENCLAW.md) for HTTPS and WebSocket
-  publications with Gateway authentication and a rebuilt forwarded address.
-- Report malformed PostgreSQL connection settings without logging the input
-  or its credentials.
-- Read the last database setting from the appliance env file in administration
-  commands. An explicit empty setting stops inherited database fallback.
-- Keep the database selected by backup in the archive's appliance settings.
-  Restore uses those settings for edge Apply as well as the database restore.
-- Pass backup and restore connection settings through a private libpq
-  service file so PostgreSQL client arguments contain no database credentials.
-- Use the same private connection transport in root diagnostics and the
-  backup/restore acceptance driver.
-- Keep backup/restore acceptance tokens in private curl header files.
-
 ## [1.6.1] - Unreleased
 
 ### Upgrade notes
@@ -66,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a failure after replacing data if Apply or a service start failed. Keep the
   archive and inspect the reported stage before retrying. See
   [backup and restore](docs/BACKUP_RESTORE.md).
+- Before restoring an archive created by an older script with an alternate
+  `EASY_WAF_ENV_FILE`, verify the database named in its archived
+  `etc/easy-waf.env`. The current backup and restore commands use Python 3
+  with libpq, and the Debian package declares the Python dependency.
 - API startup applies migrations through 028, which adds persistent tracking
   of saved and applied edge configuration. After this migration, older
   binaries that only support schema 027 will refuse to start against the
@@ -143,7 +133,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Private diagnostic archive publication.** The root collector constructs archives privately and sets permissions before publication. Replacing an output no longer follows its final symlink or truncates a hardlinked target; archive creation failures preserve the previous output.
 
-- **Credential-safe SQL diagnostics.** Root support collection discards raw libpq errors/warnings and failed partial output, which can expose password tokens from malformed DSNs. Failed revision probes retain only a static message and exit code and never prompt for a password.
+- **Private PostgreSQL connection settings.** Backup, restore, root diagnostics
+  and the acceptance driver keep credentials out of PostgreSQL client arguments.
+  Root diagnostic archives keep a static message and exit code on SQL failure
+  and discard raw errors and partial output. The admin CLI and Go components
+  report connection-setting parse failures without exposing the input.
+- **Private backup acceptance tokens.** The acceptance driver passes session and
+  confirmation headers to curl through files and removes them when retaining a
+  recovery archive.
 
 - **Multiline diagnostic secrets.** API process snapshots mask entries before flattening, and root/API file copies redact complete quoted or continued sensitive values. Continuation text no longer leaks into support archives; non-secret process newlines are escaped to preserve entry boundaries.
 
@@ -159,6 +156,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OpenClaw Gateway profile.** Publish the Control UI over HTTPS with
+  WebSocket and Gateway authentication. HAProxy rebuilds the forwarded
+  client address for the Gateway. See the [OpenClaw configuration guide](docs/OPENCLAW.md).
 - **Features previously previewed in 1.7.0-rc.1.** This stable candidate includes profile/application body-size and multipart controls, `php-app`, certificate-attention status and the nightly body/CrowdSec scenarios described in that prerelease. Body controls use headers; they do not inspect bodies or replace backend patching.
 - **`make dev-up`.** Starts the development PostgreSQL from `docker-compose.yml` and prints `DATABASE_URL`. Docker Compose v2 is the only extra tool; nothing reads a private machine path or an `easy-waf` GitHub organization.
 - **`make test-integration`.** Runs the PostgreSQL-backed packages against `DATABASE_URL`, or starts the Compose database when that variable is empty.
@@ -193,6 +193,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ADR 0006** (proposed): Easy Home WAF stays an edge and a reverse proxy. Optional Coraza/CRS through coraza-spoa is described, including fail-open when the sidecar is down and fail-closed on a rule match, and is not implemented.
 
 ### Fixed
+
+- **Consistent backup and restore targets.** The archive records the same
+  database selection used for its dump. Restore uses the restored env file
+  for database restore and edge Apply. The acceptance driver checks that
+  its test application is in the selected database before backup or reset.
+- **Consistent admin database selection.** Administration commands read the
+  last `DATABASE_URL` assignment from the appliance env file, including quoted
+  values. An explicit empty assignment stops fallback to the shell environment.
 
 - **Publication controls and Home Assistant guidance.** Application cards now offer confirmed deletion through the existing atomic API. The form explains selected profile defaults and MCP-only exposure. New forms no longer silently add a LAN-only `/api` rule, which blocked external HA clients; existing restrictions are preserved. The Home Assistant profile permits its `/config` settings route while other profiles retain the probe block.
 
