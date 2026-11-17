@@ -147,7 +147,15 @@ Environment:
 | `EASY_WAF_ADMIN_BIN` | `/usr/sbin/easy-waf-admin` | Console CLI used for apply |
 | `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip `easy-waf-admin apply-edge` |
 
-If apply fails, run it manually after fixing the reported database, render, validation or reload problem:
+If Apply is requested and fails, the admin command is unavailable, or a systemd
+reload or start command fails, restore exits nonzero after attempting all three
+service starts. The restored database and files are already in place. Keep the
+archive, check the reported errors and finish recovery before treating the
+appliance as ready. A successful exit confirms the requested commands returned
+success. Verify the services and traffic separately.
+
+If Apply failed, run it manually after fixing the reported database, render,
+validation or reload problem:
 
 ```bash
 sudo /usr/sbin/easy-waf-admin apply-edge \

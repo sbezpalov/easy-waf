@@ -27,7 +27,21 @@ set -eu
 parent="$(dirname "$(dirname "${@: -1}")")"
 [[ "$(stat -c %a "$parent")" == 700 ]] || exit 91
 MOCK
-for tool in systemctl chown; do printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/$tool"; done
+printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/chown"
+cat >"$ROOT/bin/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+if [[ "${1:-}" == start ]]; then
+  printf '%s\n' "$2" >>"$RESTORE_TEST_STARTS"
+fi
+[[ "$*" != "$RESTORE_TEST_FAILURE" ]]
+MOCK
+cat >"$ROOT/bin/admin" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+[[ "$1" == apply-edge && "$RESTORE_TEST_FAILURE" != apply ]]
+MOCK
+export RESTORE_TEST_STARTS="$ROOT/starts" RESTORE_TEST_FAILURE=''
 chmod 0700 "$ROOT/bin/"*
 mkdir -p "$ROOT/packaged scripts/lib" "$ROOT/operator commands"
 restore_source="$(readlink -f "$RESTORE_SCRIPT")"
@@ -59,3 +73,32 @@ for entrypoint in "$RESTORE_SCRIPT" "$ROOT/operator commands/easy-waf-restore"; 
   [[ "$(stat -c %a /etc/easy-waf/easy-waf.env)" == 600 ]] || fail 'environment file widened'
 done
 echo 'OK: restore retains edge group access and private secret modes inside private staging'
+
+for selection in success skip missing apply reload hostd api acmed; do
+  admin="$ROOT/bin/admin"
+  skip=0
+  RESTORE_TEST_FAILURE=''
+  case "$selection" in
+    skip) skip=1; admin="$ROOT/missing-admin" ;;
+    missing) admin="$ROOT/missing-admin" ;;
+    apply) RESTORE_TEST_FAILURE=apply ;;
+    reload) RESTORE_TEST_FAILURE=daemon-reload ;;
+    hostd|api|acmed) RESTORE_TEST_FAILURE="start easy-waf-$selection.service" ;;
+  esac
+  : >"$RESTORE_TEST_STARTS"
+  rc=0
+  PATH="$ROOT/bin:$PATH" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_ADMIN_BIN="$admin" EASY_WAF_SKIP_APPLY="$skip" \
+    "$ROOT/operator commands/easy-waf-restore" "$ROOT/archive.tar.gz" >"$ROOT/log" 2>&1 || rc=$?
+  if [[ "$selection" == success || "$selection" == skip ]]; then
+    [[ "$rc" == 0 ]] || fail "$selection should succeed"
+    grep -q '^\[easy-waf-restore\] done\.' "$ROOT/log" || fail "$selection lost completion message"
+  else
+    [[ "$rc" == 1 ]] || fail "$selection did not fail recovery"
+    grep -q 'database and files restored, but appliance recovery is incomplete' "$ROOT/log" || fail "$selection lost recovery context"
+    if grep -q '^\[easy-waf-restore\] done\.' "$ROOT/log"; then fail "$selection printed false completion"; fi
+  fi
+  diff -u <(printf '%s\n' easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service) "$RESTORE_TEST_STARTS" \
+    || fail "$selection did not attempt every service start"
+  [[ "$(<"$ROOT/state/haproxy/haproxy.cfg")" == fixture-config ]] || fail "$selection lost restored data"
+done
+echo 'OK: restore reports incomplete recovery and attempts every start'

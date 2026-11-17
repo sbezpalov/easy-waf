@@ -160,25 +160,37 @@ if command -v semanage &>/dev/null && [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-
   EASY_WAF_STATE_DIR="$STATE" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
 fi
 
+post_restore_failed=0
 if [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then
   echo "[easy-waf-restore] EASY_WAF_SKIP_APPLY=1 — skipping console apply"
 elif [[ ! -x "$ADMIN_BIN" ]]; then
-  echo "WARNING: $ADMIN_BIN not found — run easy-waf-admin apply-edge after installing the package" >&2
+  echo "ERROR: $ADMIN_BIN is missing or not executable — run easy-waf-admin apply-edge after installing the package" >&2
+  post_restore_failed=1
 else
   echo "[easy-waf-restore] easy-waf-admin apply-edge (regenerate HAProxy)…"
   if "$ADMIN_BIN" apply-edge -env-file "$ENV_FILE" -state-dir "$STATE" -label restore; then
     echo "[easy-waf-restore] apply OK"
   else
-    echo "WARNING: apply-edge failed — run it manually after fixing the reported problem" >&2
+    echo "ERROR: apply-edge failed — run it manually after fixing the reported problem" >&2
+    post_restore_failed=1
   fi
 fi
 
 echo "[easy-waf-restore] starting services…"
-systemctl daemon-reload 2>/dev/null || true
-systemctl start easy-waf-hostd.service 2>/dev/null || true
-systemctl start easy-waf-api.service 2>/dev/null || {
-  echo "WARNING: easy-waf-api failed to start — check journalctl -u easy-waf-api" >&2
-}
-systemctl start easy-waf-acmed.service 2>/dev/null || true
+if ! systemctl daemon-reload; then
+  echo "ERROR: systemd daemon-reload failed" >&2
+  post_restore_failed=1
+fi
+for unit in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; do
+  if ! systemctl start "$unit"; then
+    echo "ERROR: $unit failed to start — check journalctl -u $unit" >&2
+    post_restore_failed=1
+  fi
+done
+
+if ((post_restore_failed)); then
+  echo "ERROR: database and files restored, but appliance recovery is incomplete. Keep the backup and inspect the errors above." >&2
+  exit 1
+fi
 
 echo "[easy-waf-restore] done. Validate: haproxy -c -f $STATE/haproxy/haproxy.cfg (path may differ via settings)"
