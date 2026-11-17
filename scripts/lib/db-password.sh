@@ -1,95 +1,57 @@
 #!/usr/bin/env bash
-# Rotate weak default PostgreSQL passwords in DATABASE_URL (local appliance).
-# Sourced by install-interactive.sh when PostgreSQL was installed via the installer.
-#
-# The generated password is a secret: it is never echoed to stdout (install logs are
-# routinely redirected to files or captured by cron). If the env file cannot be
-# rewritten, the password is written to a 0600 file and only that path is logged.
+# Rotate weak default PostgreSQL passwords in DATABASE_URL on a local appliance.
+# The caller sources env-file.sh before invoking the rotation.
 
 log_dbpw() { echo "[easy-waf-db] $*"; }
 
-# If DATABASE_URL still uses known-weak passwords for user easywaf, set a strong random password and ALTER USER.
-easy_waf_maybe_rotate_weak_db_password() {
-  local env_file="${1:-}"
-  [[ -n "$env_file" && -f "$env_file" ]] || return 0
-  grep -qE '^DATABASE_URL=postgres://easywaf:(secret|easywaf)@' "$env_file" || return 0
+easy_waf_maybe_rotate_weak_db_password() (
+  local rotation_env="${1:-}" current newpw staged expected config_dir lock_fd
+  [[ -n "$rotation_env" && -f "$rotation_env" ]] || return 0
+  current="$(easy_waf_read_env_value "$rotation_env" DATABASE_URL)" || return 1
+  [[ "$current" =~ ^postgres://easywaf:(secret|easywaf)@ ]] || return 0
 
-  command -v openssl &>/dev/null || {
-    log_dbpw "openssl not found; skip DB password rotation"
-    return 0
-  }
-
-  # Rotating in PostgreSQL before we know we can persist the new value would leave
-  # the appliance with a DATABASE_URL that no longer authenticates.
-  if ! command -v python3 &>/dev/null && ! command -v sed &>/dev/null; then
-    log_dbpw "neither python3 nor sed available — skip DB password rotation"
+  if ! command -v openssl &>/dev/null || ! command -v sed &>/dev/null ||
+     ! command -v psql &>/dev/null || ! command -v sudo &>/dev/null; then
+    log_dbpw "openssl, sed, psql and sudo are required to rotate the local password automatically"
     return 0
   fi
+  # The installer and backup/restore share a lock on the config directory.
+  config_dir="$(dirname -- "$rotation_env")" || return 1
+  if ! exec {lock_fd}<"$config_dir" || ! flock -n "$lock_fd"; then
+    log_dbpw "ERROR: could not lock the PostgreSQL configuration directory for rotation" >&2
+    return 1
+  fi
+  current="$(easy_waf_read_env_value "$rotation_env" DATABASE_URL)" || return 1
+  [[ "$current" =~ ^postgres://easywaf:(secret|easywaf)@ ]] || return 0
+  if ! newpw="$(openssl rand -hex 24)" || [[ ! "$newpw" =~ ^[a-f0-9]{48}$ ]]; then
+    log_dbpw "ERROR: could not generate the new PostgreSQL password" >&2
+    return 1
+  fi
 
-  local newpw
-  newpw="$(openssl rand -hex 24)" # hex only: safe inside a URL and as a sed replacement
+  # Stage next to the target, preserving a symlink to an operator-managed file.
+  # mktemp creates the full recovery configuration with mode 0600.
+  rotation_env="$(readlink -f -- "$rotation_env")" || return 1
+  if ! staged="$(mktemp "${rotation_env}.rotation.XXXXXX")"; then
+    log_dbpw "ERROR: could not stage the PostgreSQL configuration beside $rotation_env" >&2
+    return 1
+  fi
+  expected="postgres://easywaf:$newpw@${current#*@}"
+  if ! printf "s#^(DATABASE_URL=['\"]?postgres://easywaf:)(secret|easywaf)(@)#\\\\1%s\\\\3#\n" "$newpw" |
+      sed -E -f - "$rotation_env" >"$staged" ||
+     [[ "$(easy_waf_read_env_value "$staged" DATABASE_URL)" != "$expected" ]]; then
+    rm -f -- "$staged"
+    log_dbpw "ERROR: could not prepare the replacement PostgreSQL configuration" >&2
+    return 1
+  fi
 
-  if command -v psql &>/dev/null && command -v sudo &>/dev/null; then
-    if printf "ALTER USER easywaf WITH PASSWORD '%s';\n" "$newpw" |
+  if ! printf "ALTER USER easywaf WITH PASSWORD '%s';\n" "$newpw" |
       sudo -u postgres psql -X -w -v ON_ERROR_STOP=1 -f - >/dev/null 2>&1; then
-      :
-    else
-      log_dbpw "ALTER USER failed — change postgres password manually and update DATABASE_URL"
-      return 0
-    fi
-  else
-    log_dbpw "sudo/psql not available; update DATABASE_URL with a strong password manually"
-    return 0
+    log_dbpw "ERROR: could not confirm the PostgreSQL password change; recovery configuration retained at $staged" >&2
+    return 1
   fi
-
-  local updated=0
-  if command -v python3 &>/dev/null; then
-    if EASY_WAF_NEW_DB_PW="$newpw" python3 - "$env_file" <<'PY'
-import os, re, sys
-path = sys.argv[1]
-pw = os.environ["EASY_WAF_NEW_DB_PW"]
-text = open(path, encoding="utf-8").read()
-
-# Callable repl avoids re.sub interpreting digits in pw as \10, \12, … (invalid group refs).
-def repl(m):
-    return m.group(1) + pw + m.group(3)
-
-text2 = re.sub(
-    r"(^DATABASE_URL=postgres://easywaf:)([^@]+)(@)",
-    repl,
-    text,
-    count=1,
-    flags=re.MULTILINE,
+  if ! mv -fT -- "$staged" "$rotation_env"; then
+    log_dbpw "ERROR: PostgreSQL password changed, but $rotation_env could not be replaced; recovery configuration retained at $staged" >&2
+    return 1
+  fi
+  log_dbpw "rotated weak default password for role easywaf in $rotation_env"
 )
-open(path, "w", encoding="utf-8").write(text2)
-PY
-    then
-      updated=1
-    fi
-  fi
-
-  if [[ "$updated" -eq 0 ]] && command -v sed &>/dev/null; then
-    if printf 's|(^DATABASE_URL=postgres://easywaf:)[^@]+(@)|\\1%s\\2|\n' "$newpw" |
-      sed -i -E -f - "$env_file" 2>/dev/null; then
-      updated=1
-    fi
-  fi
-
-  if [[ "$updated" -eq 1 ]]; then
-    log_dbpw "rotated weak default password for role easywaf in $env_file"
-    return 0
-  fi
-
-  # Password already changed in PostgreSQL but the env file was not rewritten:
-  # hand it over through a root-only file instead of the log.
-  local pwfile="${env_file}.new-db-password"
-  if (
-    umask 077
-    printf '%s\n' "$newpw" >"$pwfile"
-  ) 2>/dev/null; then
-    log_dbpw "could not rewrite $env_file — new password stored in $pwfile (mode 0600)"
-    log_dbpw "put it into DATABASE_URL, then delete $pwfile"
-  else
-    log_dbpw "could not rewrite $env_file and could not store the new password — reset the easywaf role password manually"
-  fi
-}

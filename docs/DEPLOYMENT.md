@@ -70,7 +70,12 @@ Requirements:
 
 ## PostgreSQL password on first install
 
-If **local PostgreSQL** is installed and `DATABASE_URL` still uses the example passwords **`easywaf:secret`** or **`easywaf:easywaf`**, **`scripts/lib/db-password.sh`** runs **`ALTER USER easywaf`** and rewrites **`DATABASE_URL`** with a random hex password (unless `EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0`). Always use a strong password for external databases.
+If **local PostgreSQL** is installed and `DATABASE_URL` still uses the example passwords **`easywaf:secret`** or **`easywaf:easywaf`**, the installer stages a private configuration with a random password. It then changes the role password and atomically publishes that configuration. Set `EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0` to opt out. Always use a strong password for external databases.
+
+If rotation stops after the database operation or publication fails, the
+installer reports the path to the private candidate `easy-waf.env.rotation.*`. Before retrying,
+check which configuration authenticates to the intended database. Use the
+working configuration as `/etc/easy-waf/easy-waf.env` and remove any unused recovery files.
 
 If you see **`Ident authentication failed for user "easywaf"`**, run **`sudo bash scripts/lib/pg-hba-easywaf.sh`** (or re-run **`install.sh`**) — see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
