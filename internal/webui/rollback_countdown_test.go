@@ -39,47 +39,70 @@ const start = page.indexOf('  function updateHostRollbackApplyButtons()');
 const end = page.indexOf('  async function loadSystemTab()', start);
 assert.ok(start >= 0 && end > start, 'countdown functions not found');
 let now = Date.now(), nextTimer = 0;
-const timers = new Map(), notices = [], elements = new Map();
-const state = {timer: null};
+const timers = new Map(), notices = [], elements = new Map(), storage = new Map();
+const state = {timer: null, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false};
 const element = id => {
   if (!elements.has(id)) elements.set(id, {hidden: true, classList: {
-    add: () => {element(id).hidden = true}, remove: () => {element(id).hidden = false}
+    add: () => {element(id).hidden = true}, remove: () => {element(id).hidden = false},
+    toggle: (_, force) => {element(id).hidden = !!force}
   }});
   return elements.get(id);
 };
-let payload;
+let applyPayload, statusPayload = {changes: []}, networkReloads = 0;
 const context = {assert, hostRollback: state, Date: class extends Date {static now() {return now}},
+  HOST_ROLLBACK_STORAGE_KEY: 'test-host-rollback',
   document: {getElementById: element}, setInterval: fn => {timers.set(++nextTimer, fn); return nextTimer},
   clearInterval: id => timers.delete(id), toast: (...args) => notices.push(args),
-  confirmDialog: async () => true, hdr: () => ({}),
-  fetch: async () => ({ok: true, json: async () => payload})};
+  confirmDialog: async () => true, hdr: () => ({}), apiMessage: async () => 'failed',
+  sessionStorage: {getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key)},
+  loadNetworkTab: async () => {networkReloads++},
+  fetch: async url => ({ok: true, json: async () => url === '/api/v1/host/changes/pending' ? statusPayload : applyPayload})};
 vm.createContext(context);
 vm.runInContext(page.slice(start, end), context);
-const show = expiry => context.showHostRollbackBanner('netplan', 'test-token', expiry, '/commit');
-for (const expiry of [new Date(now - 1000).toISOString(), 'invalid-date']) {
-  notices.length = 0;
-  const shown = show(expiry);
-  assert.equal(timers.size, 0, 'expired response restarted countdown');
-  assert.equal(shown, false);
+const operationID = 'a'.repeat(64);
+const capability = {kind: 'netplan', token: 'test-token', operation_id: operationID,
+  expires_at: new Date(now + 90000).toISOString(), commit_url: '/commit'};
+statusPayload = {changes: [{kind: 'netplan', operation_id: operationID, phase: 'pending',
+  expires_at: capability.expires_at, confirmable: true}]};
+context.saveHostRollbackCapability(capability);
+(async () => {
+  await context.refreshHostRollbackStatus();
+  assert.equal(state.statusUnknown, false);
+  assert.equal(state.token, 'test-token', 'same-tab reload lost commit capability');
+  assert.match(element('host-rollback-message').textContent, /90s/);
+  assert.equal(element('btn-host-rollback-keep').hidden, false);
+  assert.equal(element('btn-net-netplan-apply').disabled, true);
+
+  context.clearHostRollbackCapability();
+  await context.refreshHostRollbackStatus();
+  assert.equal(state.token, null, 'another tab obtained commit capability from status');
+  assert.equal(element('host-rollback-banner').hidden, false, 'other tab lost server pending state');
+  assert.equal(element('btn-host-rollback-keep').hidden, true, 'other tab can keep changes');
+  assert.match(element('host-rollback-message').textContent, /only in the tab that started/);
+
+  context.saveHostRollbackCapability(capability);
+  state.polling = true;
+  context.showHostRollbackBanner(statusPayload.changes[0], capability);
+  now += 90000;
+  for (const tick of [...timers.values()]) tick();
+  for (const tick of [...timers.values()]) tick();
+  state.polling = false;
+  assert.equal(state.phase, 'expired');
   assert.equal(state.token, null);
-  assert.equal(notices.length, 1);
-}
-notices.length = 0;
-assert.equal(show(new Date(now + 90000).toISOString()), true);
-assert.equal(element('host-rollback-countdown').textContent, '90');
-assert.equal(element('btn-net-netplan-apply').disabled, true);
-assert.equal(timers.size, 1);
-now += 90000;
-for (const tick of [...timers.values()]) tick();
-assert.equal(timers.size, 0);
-assert.equal(state.token, null);
-assert.equal(element('btn-net-netplan-apply').disabled, false);
-assert.equal(notices.length, 1);
-notices.length = 0;
-payload = {token: 'test-token', expires_at: new Date(now - 1000).toISOString()};
-context.applyHostWithRollback({kind: 'netplan', applyUrl: '/apply', commitUrl: '/commit', body: {}, msgEl: {}})
-  .then(() => {
-    assert.equal(timers.size, 0);
-    assert.equal(notices.length, 1, 'expired response advertised successful confirmation window');
-  }).catch(err => {console.error(err); process.exitCode = 1});
+  assert.equal(element('host-rollback-banner').hidden, false, 'expiry hid unverified rollback state');
+  assert.equal(storage.size, 0, 'expired commit token remained in session storage');
+  assert.equal(notices.filter(args => String(args[0]).includes('expired')).length, 1, 'expiry notice repeated');
+
+  statusPayload = {changes: []};
+  await context.refreshHostRollbackStatus(true);
+  assert.equal(element('host-rollback-banner').hidden, true);
+  assert.equal(element('btn-net-netplan-apply').disabled, false);
+  assert.equal(networkReloads, 1, 'effective network state was not reloaded after settlement');
+
+  applyPayload = {token: 'new-token', operation_id: operationID, expires_at: new Date(now - 1000).toISOString()};
+  notices.length = 0;
+  await context.applyHostWithRollback({kind: 'netplan', applyUrl: '/apply', commitUrl: '/commit', body: {}, msgEl: {}});
+  assert.equal(state.token, null, 'expired apply response exposed confirmation');
+  assert.ok(notices.some(args => String(args[0]).includes('expired')), 'expired response advertised success');
+})().catch(err => {console.error(err); process.exitCode = 1});
 `

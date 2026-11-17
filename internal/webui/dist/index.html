@@ -1016,7 +1016,7 @@
       <div id="tab-network" class="tab-panel">
         <h2>⇄ Network</h2>
         <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
-          <div><strong>Safety window active</strong> — <span id="host-rollback-label">changes</span> will auto-revert in <span id="host-rollback-countdown">90</span>s unless you confirm.</div>
+          <div><strong id="host-rollback-title">Safety window active</strong> — <span id="host-rollback-message">Changes will auto-revert in 90s unless you confirm.</span></div>
           <div class="row">
             <button type="button" id="btn-host-rollback-keep">Keep changes</button>
           </div>
@@ -4970,7 +4970,8 @@
 
   const HOST_CRITICAL_UNITS = ['easy-waf-api.service', 'haproxy.service', 'postgresql.service'];
   const HOST_SERVICE_ACTIONS = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
-  let hostRollback = { kind: null, token: null, commitUrl: null, timer: null, deadline: 0 };
+  const HOST_ROLLBACK_STORAGE_KEY = 'easy-waf.host-rollback-capability.v1';
+  let hostRollback = { kind: null, token: null, operationID: null, commitUrl: null, phase: null, timer: null, deadline: 0, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false };
 
   const HOST_PROTECTED_USERNAMES = ['root', 'easy-waf'];
   const HOST_USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
@@ -5189,12 +5190,30 @@
   function updateHostRollbackApplyButtons() {
     const np = document.getElementById('btn-net-netplan-apply');
     const fw = document.getElementById('btn-net-firewall-apply');
-    const busy = !!hostRollback.kind;
+    const busy = !!hostRollback.kind || hostRollback.statusUnknown;
     if (np) np.disabled = busy;
     if (fw) fw.disabled = busy;
   }
 
-  function hideHostRollbackBanner() {
+  function readHostRollbackCapability() {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(HOST_ROLLBACK_STORAGE_KEY) || 'null');
+      if (!value || !value.kind || !value.token || !value.operation_id || !value.expires_at || !value.commit_url) return null;
+      return value;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveHostRollbackCapability(value) {
+    try { sessionStorage.setItem(HOST_ROLLBACK_STORAGE_KEY, JSON.stringify(value)); } catch (_) { /* browser storage unavailable */ }
+  }
+
+  function clearHostRollbackCapability() {
+    try { sessionStorage.removeItem(HOST_ROLLBACK_STORAGE_KEY); } catch (_) { /* browser storage unavailable */ }
+  }
+
+  function hideHostRollbackBanner(clearCapability = false) {
     const banner = document.getElementById('host-rollback-banner');
     if (banner) banner.classList.add('hidden');
     if (hostRollback.timer) {
@@ -5203,38 +5222,119 @@
     }
     hostRollback.kind = null;
     hostRollback.token = null;
+    hostRollback.operationID = null;
     hostRollback.commitUrl = null;
+    hostRollback.phase = null;
     hostRollback.deadline = 0;
+    if (clearCapability) {
+      hostRollback.expiryNotified = false;
+      clearHostRollbackCapability();
+    }
     updateHostRollbackApplyButtons();
   }
 
-  function showHostRollbackBanner(kind, token, expiresAt, commitUrl) {
-    hideHostRollbackBanner();
-    hostRollback.kind = kind;
-    hostRollback.token = token;
-    hostRollback.commitUrl = commitUrl;
-    hostRollback.deadline = new Date(expiresAt).getTime();
+  function showHostRollbackBanner(change, capability = null) {
+    const previousOperationID = hostRollback.operationID;
+    hideHostRollbackBanner(false);
+    hostRollback.kind = change.kind;
+    hostRollback.operationID = change.operation_id || null;
+    if (previousOperationID !== hostRollback.operationID) hostRollback.expiryNotified = false;
+    hostRollback.phase = change.phase || 'pending';
+    hostRollback.deadline = change.expires_at ? new Date(change.expires_at).getTime() : 0;
+    const ownsCapability = !!(capability && capability.operation_id === hostRollback.operationID && capability.kind === hostRollback.kind);
+    hostRollback.token = ownsCapability && change.confirmable ? capability.token : null;
+    hostRollback.commitUrl = ownsCapability && change.confirmable ? capability.commit_url : null;
     const banner = document.getElementById('host-rollback-banner');
-    const label = document.getElementById('host-rollback-label');
-    const cd = document.getElementById('host-rollback-countdown');
-    if (label) label.textContent = kind === 'netplan' ? 'Netplan' : 'Firewall';
+    const title = document.getElementById('host-rollback-title');
+    const message = document.getElementById('host-rollback-message');
+    const keep = document.getElementById('btn-host-rollback-keep');
     if (banner) banner.classList.remove('hidden');
+    if (keep) keep.classList.toggle('hidden', !hostRollback.token);
     updateHostRollbackApplyButtons();
     const tick = () => {
-      const left = Math.max(0, Math.ceil((hostRollback.deadline - Date.now()) / 1000));
-      if (cd) cd.textContent = String(left);
-      if (!Number.isFinite(hostRollback.deadline) || left <= 0) {
-        clearInterval(hostRollback.timer);
-        hostRollback.timer = null;
-        toast('Safety window expired — if access was lost, changes were reverted. Reload the page.', 'warn', 12000);
-        hideHostRollbackBanner();
-        return false;
+      const labelText = hostRollback.kind === 'netplan' ? 'Netplan' : 'Firewall';
+      const extra = Number(change.total) > 1 ? ' (' + (Number(change.total) - 1) + ' other change also active)' : '';
+      const capabilityHint = !hostRollback.token ? ' Confirmation is available only in the tab that started the change.' : '';
+      if (hostRollback.phase === 'pending') {
+        if (title) title.textContent = 'Safety window active';
+        if (Number.isFinite(hostRollback.deadline) && hostRollback.deadline > 0) {
+          const left = Math.max(0, Math.ceil((hostRollback.deadline - Date.now()) / 1000));
+          if (message) {
+            message.textContent = labelText + ' will auto-revert in ' + left + 's unless it is confirmed.' + capabilityHint + extra;
+          }
+          if (left <= 0) {
+            hostRollback.phase = 'expired';
+            hostRollback.token = null;
+            hostRollback.commitUrl = null;
+            clearHostRollbackCapability();
+            if (keep) keep.classList.add('hidden');
+            if (title) title.textContent = 'Safety window expired';
+            if (message) message.textContent = labelText + ' rollback is being verified…' + extra;
+            if (!hostRollback.expiryNotified) {
+              hostRollback.expiryNotified = true;
+              toast('Safety window expired — verifying the server-confirmed rollback state.', 'warn', 12000);
+            }
+          }
+        } else {
+          if (title) title.textContent = 'Safety window active';
+          if (message) message.textContent = labelText + ' has a pending legacy safety change; the server has no persisted countdown.' + extra;
+        }
+      } else {
+        if (title) title.textContent = hostRollback.phase === 'reverting' ? 'Rollback in progress' : 'Safety window expired';
+        if (message) message.textContent = labelText + ' is no longer confirmable; waiting for the server to verify the effective configuration…' + extra;
       }
-      return true;
+      if ((hostRollback.phase !== 'pending' || hostRollback.deadline <= 0) && !hostRollback.polling) {
+        void refreshHostRollbackStatus(true);
+      }
     };
-    if (!tick()) return false;
-    hostRollback.timer = setInterval(tick, 500);
-    return true;
+    tick();
+    hostRollback.timer = setInterval(tick, 1500);
+    return hostRollback.phase === 'pending' && Number.isFinite(hostRollback.deadline) && hostRollback.deadline > Date.now();
+  }
+
+  async function refreshHostRollbackStatus(reloadOnSettled = false) {
+    if (hostRollback.polling) return;
+    hostRollback.polling = true;
+    hostRollback.statusUnknown = true;
+    updateHostRollbackApplyButtons();
+    try {
+      const r = await fetch('/api/v1/host/changes/pending', { headers: hdr(), cache: 'no-store' });
+      if (!r.ok) throw new Error(await apiMessage(r));
+      const payload = await r.json();
+      if (!payload || !Array.isArray(payload.changes)) throw new Error('Invalid rollback status response');
+      const changes = payload.changes;
+      hostRollback.statusUnknown = false;
+      hostRollback.statusWarned = false;
+      if (changes.length === 0) {
+        const hadPending = !!hostRollback.kind;
+        hideHostRollbackBanner(true);
+        if (hadPending && reloadOnSettled) await loadNetworkTab({ skipRollbackStatus: true });
+        return;
+      }
+      let capability = readHostRollbackCapability();
+      let change = capability ? changes.find((item) => item.operation_id === capability.operation_id && item.kind === capability.kind) : null;
+      if (!change && capability) {
+        clearHostRollbackCapability();
+        capability = null;
+      }
+      if (!change) {
+        change = [...changes].sort((a, b) => {
+          if (a.phase !== b.phase) return a.phase === 'pending' ? 1 : -1;
+          const aTime = a.expires_at ? new Date(a.expires_at).getTime() : Number.POSITIVE_INFINITY;
+          const bTime = b.expires_at ? new Date(b.expires_at).getTime() : Number.POSITIVE_INFINITY;
+          return aTime - bTime;
+        })[0];
+      }
+      showHostRollbackBanner({ ...change, total: changes.length }, capability);
+    } catch (err) {
+      if (!hostRollback.statusWarned) {
+        hostRollback.statusWarned = true;
+        toast('Could not verify the network/firewall safety state. Refresh after checking connectivity.', 'err', 12000);
+      }
+    } finally {
+      hostRollback.polling = false;
+      updateHostRollbackApplyButtons();
+    }
   }
 
   document.getElementById('btn-host-rollback-keep').onclick = async () => {
@@ -5246,11 +5346,12 @@
     });
     if (!r.ok) {
       toast(await apiMessage(r), 'err');
+      await refreshHostRollbackStatus(true);
       return;
     }
     toast('Changes kept.', 'ok');
-    hideHostRollbackBanner();
-    loadNetworkTab();
+    hideHostRollbackBanner(true);
+    await loadNetworkTab();
   };
 
   async function applyHostWithRollback(opts) {
@@ -5269,13 +5370,40 @@
       return;
     }
     const j = await r.json();
-    if (!showHostRollbackBanner(opts.kind, j.token, j.expires_at, opts.commitUrl)) {
+    if (!j || !j.token || !j.operation_id || !j.expires_at) {
+      clearHostRollbackCapability();
       if (opts.msgEl) {
-        opts.msgEl.textContent = 'Safety window expired. Reload to check the current configuration.';
+        opts.msgEl.textContent = 'Applied, but the confirmation capability could not be verified. Waiting for the server safety rollback.';
         opts.msgEl.className = 'warn';
       }
+      toast('Applied, but confirmation cannot be verified. Waiting for the safety rollback.', 'err', 12000);
+      await refreshHostRollbackStatus(true);
       return;
     }
+    const capability = {
+      kind: opts.kind,
+      token: j.token,
+      operation_id: j.operation_id,
+      expires_at: j.expires_at,
+      commit_url: opts.commitUrl
+    };
+    saveHostRollbackCapability(capability);
+    if (!showHostRollbackBanner({
+      kind: opts.kind,
+      operation_id: j.operation_id,
+      phase: 'pending',
+      expires_at: j.expires_at,
+      confirmable: true,
+      total: 1
+    }, capability)) {
+      if (opts.msgEl) {
+        opts.msgEl.textContent = 'Safety window expired. Verifying the current configuration.';
+        opts.msgEl.className = 'warn';
+      }
+      await refreshHostRollbackStatus(true);
+      return;
+    }
+    await refreshHostRollbackStatus(false);
     toast('Applied — confirm within the safety window.', 'warn', 8000);
     if (opts.msgEl) {
       opts.msgEl.textContent = 'Applied. Click “Keep changes” before the timer ends.';
@@ -5899,12 +6027,14 @@
     return f ? (f.content || '') : (files[0] ? files[0].content : '');
   }
 
-  async function loadNetworkTab() {
+  async function loadNetworkTab(options = {}) {
     const ovBox = document.getElementById('net-overview');
     if (ovBox) ovBox.textContent = 'Loading…';
+    const pendingTask = options.skipRollbackStatus ? Promise.resolve() : refreshHostRollbackStatus(false);
     const [netR, fwR] = await Promise.all([
       fetch('/api/v1/host/network', { headers: hdr() }),
-      fetch('/api/v1/host/firewall', { headers: hdr() })
+      fetch('/api/v1/host/firewall', { headers: hdr() }),
+      pendingTask
     ]);
     if (netR.ok) {
       const ov = await netR.json();
@@ -5927,7 +6057,7 @@
   }
 
   document.getElementById('btn-net-netplan-apply').onclick = async () => {
-    if (hostRollback.kind) return;
+    if (hostRollback.kind || hostRollback.statusUnknown) return;
     const yaml = document.getElementById('net-netplan-yaml').value;
     const msgEl = document.getElementById('net-netplan-msg');
     await applyHostWithRollback({
@@ -5940,7 +6070,7 @@
   };
 
   document.getElementById('btn-net-firewall-apply').onclick = async () => {
-    if (hostRollback.kind) return;
+    if (hostRollback.kind || hostRollback.statusUnknown) return;
     const ruleset = document.getElementById('net-firewall-rules').value;
     const msgEl = document.getElementById('net-firewall-msg');
     await applyHostWithRollback({
