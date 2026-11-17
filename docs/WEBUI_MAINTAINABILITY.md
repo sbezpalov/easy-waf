@@ -1,7 +1,9 @@
-# Web UI maintainability proposal
+# Web UI maintainability plan
 
-Status: **proposal**. This document does not authorize or implement a runtime,
-dependency, CSP, API, or permission change.
+Status: **active phased refactor**. Phase 1 added a deterministic, manifest-based
+Go generator and extracted CSS tokens without changing the delivered
+`dist/index.html` bytes. This document does not authorize a runtime, dependency,
+CSP, API, or permission change.
 
 ## Problem
 
@@ -75,6 +77,26 @@ The source files are not served. File order is an explicit manifest rather than
 a directory glob, and the generator rejects missing, duplicate or unexpected
 sections. It performs no template evaluation of untrusted input.
 
+### Current implementation
+
+Phase 1 intentionally starts with only three source partials:
+
+```text
+internal/webui/src/
+  document-before-tokens.html
+  styles/tokens.css
+  document-after-tokens.html
+```
+
+`internal/webui/generate.go` invokes the repository-owned generator with
+`go generate ./internal/webui`. The manifest is explicit, source newlines are
+normalized to LF, and `generator_test.go` requires the assembled bytes to equal
+the committed `dist/index.html`. The large trailing partial remains temporary;
+later phases split it by responsibility without changing delivery shape. Its
+narrow `whitespace=-trailing-space` Git attribute preserves six pre-existing
+end-of-line spaces for the byte-identical first commit; remove that exception
+when the affected JavaScript regions are split and regenerated together.
+
 ## Delivery phases
 
 ### 0. Characterize the current bundle
@@ -84,6 +106,9 @@ report, CSP tests and full Go suite as the baseline. No source move happens in
 this phase.
 
 ### 1. Add a byte-stable generator
+
+**Implemented:** the first generated output is byte-identical to the preceding
+committed page, and CSS tokens are the first independently owned source region.
 
 Move one inert region at a time into `src/`, starting with CSS tokens. Generate
 `dist/index.html` and require:

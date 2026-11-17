@@ -14,6 +14,9 @@ packaging/deb/* text eol=lf
 *.go text eol=lf
 # Embedded UI CSP hashes use browser-normalized script text on every OS.
 internal/webui/dist/*.html text eol=lf
+internal/webui/src/** text eol=lf
+# Phase 1 preserves six legacy end-of-line spaces for a byte-identical bundle.
+internal/webui/src/document-after-tokens.html whitespace=-trailing-space
 .cursor/rules/*.mdc text eol=lf
 
 # HAProxy golden fixtures + SPOE/IPBL snippets — LF only (Windows checkout + haproxy -c on Linux).
