@@ -6,6 +6,8 @@
 **Latest VMware boot recovery:** [2b025f6, schema 028](release-evidence/1.6.1-edge-generation-reboot.md).
 The corrected settings upsert preserved the applied generation and HAProxy
 revision over an actual boot. All ten checked services recovered automatically.
+The same clone also passed a matched rollback to schema 027 in an empty database
+and a verified return to the fixed schema 028 package.
 **Latest VMware delivery:** [ecadad2, schema 028](release-evidence/1.6.1-vmware-schema-028.md).
 The upgraded UI bundle, CSP, reconciled edge status and smoke passed on the clone.
 A same-version restore on the clone recovered the original edge generation,

@@ -94,6 +94,29 @@ package and PostgreSQL prerequisites before restoring on a new OS. For a source
 installation or an older package without the command, use
 `sudo bash scripts/restore.sh /path/to/backup.tar.gz` from the matching checkout.
 
+### Restoring an older schema after an upgrade
+
+Use the pre-upgrade package and its matched database, state and configuration
+archive. Stop the appliance writers and scheduled backups before changing the
+database or package. Preserve the current package and a new matched archive so
+you can return to the current state.
+
+Restore the older archive into an empty, dedicated database reachable through
+the archived `DATABASE_URL`. Ask the database administrator to provision it with
+the required owner and access. For a local appliance database with an unchanged
+connection string, one option is to park the current database under a different
+name and create an empty database at the original name. Keep the parked database
+until recovery is verified. Do not rename or replace a shared database.
+
+Install the matched package with the appliance writers stopped, then run its
+packaged restore command. The restore's `pg_restore --clean` only drops objects
+listed in the archive. Restoring an older dump into the upgraded database can
+leave newer tables or functions behind even if the older application starts.
+Verify the restored migration level, live HTTPS and service health before
+resuming scheduled backups.
+
+### What the restore command does
+
 Steps:
 
 1. Requires `flock` and acquires the shared backup/restore lock on `/etc/easy-waf`.
