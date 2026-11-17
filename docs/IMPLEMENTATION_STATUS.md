@@ -96,6 +96,7 @@ Full appliance installation and external ACME/WAN acceptance remain manual.
 | Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health` (liveness), `/health/ready` (503 without PostgreSQL), `/status` |
 | Per-application availability diagnosis | **Done** | Applications → **Diagnose**; read-only `GET /applications/{id}/diagnostics` separates DNS, actual TLS material, applied route, HAProxy runtime and backend health, with explicit unknown/not-applicable states |
 | Scoped service journal | **Done** | Administrator-only Events & audit panel uses existing `GET /host/journal`; fixed allowlisted services and bounded time/priority/line filters, text-only output |
+| High-risk interaction consistency | **Done** | Contextual confirmations for protective-rule and user deletion/reset actions; accessible SSH-key editor; temporary panel passwords use explicit reveal/copy/acknowledge and are cleared when the dialog closes |
 | Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
 ## Platform constraints

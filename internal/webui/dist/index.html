@@ -324,9 +324,16 @@
       max-width: 28rem; width: 100%; background: var(--panel);
       border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem;
     }
+    .modal-box.modal-box-wide { max-width: 42rem; }
     .modal-message { margin: 0 0 1rem; white-space: pre-wrap; line-height: 1.4; }
     .modal-actions { justify-content: flex-end; gap: 0.5rem; }
     button.modal-ok-danger { background: #da3633; }
+    .credential-box { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+    .credential-value {
+      display: block; min-height: 2.5rem; padding: var(--space-2); border: 1px solid var(--border);
+      border-radius: var(--radius-md); background: #090d12; font-family: var(--font-mono);
+      overflow-wrap: anywhere; user-select: all;
+    }
 
     .table-state { margin: 0.5rem 0; font-size: 0.9rem; }
     .copy-btn { padding: 0.2rem 0.45rem; font-size: 0.85rem; line-height: 1; min-width: auto; }
@@ -1299,10 +1306,12 @@
     const o = options || {};
     return new Promise((resolve) => {
       const previousFocus = document.activeElement;
+      const returnFocus = o.returnFocus || previousFocus;
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       const box = document.createElement('div');
       box.className = 'modal-box';
+      if (o.wide) box.className += ' modal-box-wide';
       box.setAttribute('role', 'dialog');
       box.setAttribute('aria-modal', 'true');
       const title = document.createElement('h2');
@@ -1326,8 +1335,9 @@
       const close = (value) => {
         if (closed) return;
         closed = true;
+        if (typeof o.onClose === 'function') o.onClose();
         overlay.remove();
-        if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+        if (returnFocus && returnFocus.isConnected) returnFocus.focus();
         resolve(value);
       };
       const initialFocus = typeof o.render === 'function'
@@ -1337,7 +1347,7 @@
         if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
-          close(o.cancelValue);
+          if (o.dismissible !== false) close(o.cancelValue);
           return;
         }
         if (e.key !== 'Tab') return;
@@ -1353,7 +1363,7 @@
           first.focus();
         }
       });
-      overlay.onclick = (e) => { if (e.target === overlay) close(o.cancelValue); };
+      overlay.onclick = (e) => { if (e.target === overlay && o.dismissible !== false) close(o.cancelValue); };
       box.appendChild(title);
       box.appendChild(p);
       box.appendChild(content);
@@ -1401,6 +1411,75 @@
       addFocusable(cancel);
       addFocusable(ok);
       return input;
+      }
+    });
+  }
+
+  function oneTimeCredentialDialog(username, credential, returnFocus) {
+    let secret = String(credential || '');
+    let value = null;
+    return modalDialog({
+      title: 'Temporary password created',
+      message: 'Temporary password for "' + String(username || '') + '". It is available only in this dialog and must be changed at first sign-in.',
+      cancelValue: false,
+      dismissible: false,
+      returnFocus,
+      onClose: () => {
+        if (value) value.textContent = '';
+        secret = '';
+      },
+      render: ({ content, actions, addFocusable, close }) => {
+        const credentialBox = document.createElement('div');
+        credentialBox.className = 'credential-box';
+        const label = document.createElement('strong');
+        label.textContent = 'Temporary password';
+        value = document.createElement('code');
+        value.className = 'credential-value';
+        value.textContent = 'Hidden until revealed';
+        const status = document.createElement('p');
+        status.className = 'dash-note';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.textContent = 'Reveal or copy it, store it securely, then acknowledge below.';
+        credentialBox.appendChild(label);
+        credentialBox.appendChild(value);
+        credentialBox.appendChild(status);
+        content.appendChild(credentialBox);
+
+        const reveal = document.createElement('button');
+        reveal.type = 'button';
+        reveal.className = 'secondary';
+        reveal.textContent = 'Reveal password';
+        reveal.setAttribute('aria-pressed', 'false');
+        reveal.onclick = () => {
+          const shown = reveal.getAttribute('aria-pressed') === 'true';
+          value.textContent = shown ? 'Hidden until revealed' : secret;
+          reveal.textContent = shown ? 'Reveal password' : 'Hide password';
+          reveal.setAttribute('aria-pressed', shown ? 'false' : 'true');
+        };
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'secondary';
+        copy.textContent = 'Copy password';
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(secret);
+            status.textContent = 'Copied. Store the password securely before closing this dialog.';
+          } catch (_) {
+            status.textContent = 'Copy failed. Reveal the password and copy it manually.';
+          }
+        };
+        const saved = document.createElement('button');
+        saved.type = 'button';
+        saved.textContent = 'I saved it';
+        saved.onclick = () => close(true);
+        actions.appendChild(reveal);
+        actions.appendChild(copy);
+        actions.appendChild(saved);
+        addFocusable(reveal);
+        addFocusable(copy);
+        addFocusable(saved);
+        return reveal;
       }
     });
   }
@@ -1598,6 +1677,35 @@
     });
   }
 
+  function confirmProtectiveRuleChange(action, rawValue) {
+    const value = String(rawValue || '');
+    const prompts = {
+      'blacklist-add': {
+        title: 'Blacklist client',
+        message: 'Add ' + value + ' to the local IP blacklist?\n\nRequests from this address will be blocked after Apply HAProxy. Remove the entry to restore access.',
+        okLabel: 'Add to blacklist'
+      },
+      'blacklist-delete': {
+        title: 'Delete blacklist entry',
+        message: 'Delete blacklist entry ' + value + '?\n\nThe CIDR is removed from the local blacklist after Apply HAProxy. Requests blocked only by this entry may be allowed. Add the CIDR again to restore the rule.',
+        okLabel: 'Delete entry'
+      },
+      'allowlist-delete': {
+        title: 'Remove trusted allowlist entry',
+        message: 'Remove trusted CIDR ' + value + '?\n\nThe CIDR is removed from the trusted allowlist after Apply HAProxy. If the allowlist is enabled, it stops bypassing IP blocklists. Add the CIDR again to restore trusted access.',
+        okLabel: 'Remove entry'
+      },
+      'user-agent-delete': {
+        title: 'Delete blocked User-Agent pattern',
+        message: 'Delete blocked User-Agent pattern "' + value + '"?\n\nThe pattern is removed after Apply HAProxy. If User-Agent blocking is enabled, matching clients may be allowed. Add the pattern again to restore the rule.',
+        okLabel: 'Delete pattern'
+      }
+    };
+    const prompt = prompts[action];
+    if (!prompt) return Promise.resolve(false);
+    return confirmDialog(prompt.message, { title: prompt.title, danger: true, okLabel: prompt.okLabel });
+  }
+
   async function withBusy(btn, fn) {
     if (!btn) return fn();
     const prevDisabled = btn.disabled;
@@ -1609,6 +1717,17 @@
     } finally {
       btn.disabled = prevDisabled;
       btn.textContent = prevText;
+    }
+  }
+
+  async function withFocusableBusy(btn, fn) {
+    if (!btn) return fn();
+    if (btn.getAttribute('aria-busy') === 'true') return;
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      return await fn();
+    } finally {
+      btn.removeAttribute('aria-busy');
     }
   }
 
@@ -1789,30 +1908,46 @@
       };
     });
     box.querySelectorAll('.pu-reset').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!(await confirmDialog('Reset the password of ' + btn.dataset.user + '? Their sessions end now.', { okLabel: 'Reset' }))) return;
-        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user) + '/reset-password', { method: 'POST', headers: hdr() });
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        const username = btn.dataset.user;
+        if (!(await confirmDialog(
+          'Reset the password of ' + username + '?\n\nTheir current password stops working and all sessions end. A new temporary password is shown once; reset it again if it is lost.',
+          { title: 'Reset panel password', danger: true, okLabel: 'Reset password' }
+        ))) return;
+        const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(username) + '/reset-password', { method: 'POST', headers: hdr() });
         if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
         const j = await r.json();
-        window.prompt('Temporary password for ' + j.username + ' (shown once):', j.temporary_password);
-        loadPanelUsers();
-      };
+        if (!j || typeof j.temporary_password !== 'string') { toast('The server returned an invalid temporary password response.', 'err'); return; }
+        await oneTimeCredentialDialog(j.username, j.temporary_password, btn);
+        j.temporary_password = '';
+        await loadPanelUsers();
+        const replacement = Array.from(box.querySelectorAll('.pu-reset')).find((candidate) => candidate.dataset.user === username);
+        if (replacement) replacement.focus();
+      });
     });
     box.querySelectorAll('.pu-2fa').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!(await confirmDialog('Turn off two-factor sign-in for ' + btn.dataset.user + '?', { okLabel: 'Reset 2FA' }))) return;
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        if (!(await confirmDialog(
+          'Turn off two-factor sign-in for ' + btn.dataset.user + '?\n\nTheir next sign-in will require only the password. They can set up two-factor sign-in again after signing in.',
+          { title: 'Reset two-factor sign-in', danger: true, okLabel: 'Reset 2FA' }
+        ))) return;
         const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user) + '/totp', { method: 'DELETE', headers: hdr() });
-        if (!r.ok) toast(await apiMessage(r), 'err');
-        loadPanelUsers();
-      };
+        if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+        await loadPanelUsers();
+        document.getElementById('btn-pu-create').focus();
+      });
     });
     box.querySelectorAll('.pu-del').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!(await confirmDialog('Delete panel user ' + btn.dataset.user + '?', { danger: true, okLabel: 'Delete' }))) return;
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        if (!(await confirmDialog(
+          'Delete panel user ' + btn.dataset.user + '?\n\nTheir sessions end and they can no longer sign in. Recreate the account to restore access.',
+          { title: 'Delete panel user', danger: true, okLabel: 'Delete user' }
+        ))) return;
         const r = await fetch('/api/v1/panel-users/' + encodeURIComponent(btn.dataset.user), { method: 'DELETE', headers: hdr() });
-        if (!r.ok) toast(await apiMessage(r), 'err');
-        loadPanelUsers();
-      };
+        if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+        await loadPanelUsers();
+        document.getElementById('btn-pu-create').focus();
+      });
     });
   }
 
@@ -2216,7 +2351,7 @@
   document.getElementById('blocked-period').onchange = () => { loadBlocked(); };
   document.getElementById('blocked-ips').onclick = (e) => {
     const b = e.target.closest('button[data-block-ip]');
-    if (b) blockIPFromLog(b.getAttribute('data-block-ip'));
+    if (b) blockIPFromLog(b.getAttribute('data-block-ip'), b);
   };
   document.getElementById('btn-audit-more').onclick = () => { loadAuditPage(false); };
   document.getElementById('audit-filter-action').onchange = () => { loadAuditPage(true); syncAuditAutoRefresh(); };
@@ -3147,15 +3282,21 @@
     document.getElementById('totp-recovery').classList.add('hidden');
   };
 
-  document.getElementById('btn-pu-create').onclick = async () => {
-    const username = document.getElementById('pu-new-name').value.trim();
-    const role = document.getElementById('pu-new-role').value;
-    const r = await fetch('/api/v1/panel-users', { method: 'POST', headers: hdr(), body: JSON.stringify({ username, role }) });
-    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
-    const j = await r.json();
-    document.getElementById('pu-new-name').value = '';
-    window.prompt('Temporary password for ' + j.username + ' (shown once):', j.temporary_password);
-    loadPanelUsers();
+  document.getElementById('btn-pu-create').onclick = () => {
+    const button = document.getElementById('btn-pu-create');
+    return withFocusableBusy(button, async () => {
+      const username = document.getElementById('pu-new-name').value.trim();
+      const role = document.getElementById('pu-new-role').value;
+      const r = await fetch('/api/v1/panel-users', { method: 'POST', headers: hdr(), body: JSON.stringify({ username, role }) });
+      if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+      const j = await r.json();
+      if (!j || typeof j.temporary_password !== 'string') { toast('The server returned an invalid temporary password response.', 'err'); return; }
+      document.getElementById('pu-new-name').value = '';
+      await oneTimeCredentialDialog(j.username, j.temporary_password, button);
+      j.temporary_password = '';
+      await loadPanelUsers();
+      button.focus();
+    });
   };
 
   document.getElementById('btn-apps-refresh').onclick = async () => {
@@ -3750,15 +3891,17 @@
     return BLOCKED_RULES[r] || r;
   }
 
-  async function blockIPFromLog(ip) {
-    if (!confirm('Add ' + ip + ' to the local IP blacklist?')) return;
-    const r = await fetch('/api/v1/ipbl/local', {
-      method: 'POST', headers: hdr(),
-      body: JSON.stringify({ cidr: ip, note: 'from Blocked requests', enabled: true }),
+  async function blockIPFromLog(ip, button) {
+    await withFocusableBusy(button, async () => {
+      if (!(await confirmProtectiveRuleChange('blacklist-add', ip))) return;
+      const r = await fetch('/api/v1/ipbl/local', {
+        method: 'POST', headers: hdr(),
+        body: JSON.stringify({ cidr: ip, note: 'from Blocked requests', enabled: true }),
+      });
+      if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+      markPendingApply(true);
+      toast(ip + ' blacklisted. Apply HAProxy to enforce it.', 'ok');
     });
-    if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
-    markPendingApply(true);
-    toast(ip + ' blacklisted. Apply HAProxy to enforce it.', 'ok');
   }
 
   async function loadBlocked() {
@@ -4940,16 +5083,18 @@
       return;
     }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.note)}</td><td>${e.enabled ? 'yes' : 'no'}</td><td><button type="button" class="secondary" data-ipbl-del="${escLocal(e.id)}" data-rule-value="${escLocal(e.cidr)}">Delete</button></td></tr>`).join('');
     box.innerHTML = `<table><thead><tr><th>CIDR</th><th>Note</th><th>Enabled</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
     box.querySelectorAll('[data-ipbl-del]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        if (!(await confirmProtectiveRuleChange('blacklist-delete', btn.getAttribute('data-rule-value')))) return;
         const id = btn.getAttribute('data-ipbl-del');
         const d = await fetch('/api/v1/ipbl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipbl-msg').textContent = __m; return; } 
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipbl-msg').textContent = __m; return; }
         markPendingApply(true);
         document.getElementById('btn-ipbl-load').click();
-      };
+        document.getElementById('btn-ipbl-load').focus();
+      });
     });
   };
   document.getElementById('btn-ipbl-sync').onclick = async () => {
@@ -4995,16 +5140,18 @@
       return;
     }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.cidr)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ipwl-del="${escLocal(e.id)}" data-rule-value="${escLocal(e.cidr)}">Delete</button></td></tr>`).join('');
     box.innerHTML = `<table><thead><tr><th>CIDR</th><th>Comment</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
     box.querySelectorAll('[data-ipwl-del]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        if (!(await confirmProtectiveRuleChange('allowlist-delete', btn.getAttribute('data-rule-value')))) return;
         const id = btn.getAttribute('data-ipwl-del');
         const d = await fetch('/api/v1/ipwl/local/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipwl-msg').textContent = __m; return; } 
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ipwl-msg').textContent = __m; return; }
         markPendingApply(true);
         document.getElementById('btn-ipwl-load').click();
-      };
+        document.getElementById('btn-ipwl-load').focus();
+      });
     });
   };
   document.getElementById('btn-ipwl-add').onclick = async () => {
@@ -5073,16 +5220,18 @@
       return;
     }
     const escLocal = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    const rows = list.map((e) => `<tr><td><code>${escLocal(e.pattern)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${escLocal(e.id)}">Delete</button></td></tr>`).join('');
+    const rows = list.map((e) => `<tr><td><code>${escLocal(e.pattern)}</code></td><td>${escLocal(e.comment)}</td><td><button type="button" class="secondary" data-ua-del="${escLocal(e.id)}" data-rule-value="${escLocal(e.pattern)}">Delete</button></td></tr>`).join('');
     box.innerHTML = `<table><thead><tr><th>Pattern</th><th>Comment</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
     box.querySelectorAll('[data-ua-del]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => withFocusableBusy(btn, async () => {
+        if (!(await confirmProtectiveRuleChange('user-agent-delete', btn.getAttribute('data-rule-value')))) return;
         const id = btn.getAttribute('data-ua-del');
         const d = await fetch('/api/v1/security/blocked-ua/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
-        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ua-msg').textContent = __m; return; } 
+        if (!d.ok) { const __m = await apiMessage(d); toast(__m, 'err'); document.getElementById('ua-msg').textContent = __m; return; }
         markPendingApply(true);
-        loadBlockedUATable();
-      };
+        await loadBlockedUATable();
+        document.getElementById('btn-ua-load').focus();
+      });
     });
   }
   document.getElementById('btn-ua-load').onclick = loadBlockedUATable;
@@ -5221,54 +5370,43 @@
   const HOST_USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
 
   function sshKeysEditorDialog(username, initialKeys) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      const box = document.createElement('div');
-      box.className = 'modal-box';
-      box.style.maxWidth = '42rem';
-      const title = document.createElement('p');
-      title.className = 'modal-message';
-      title.style.marginBottom = '0.5rem';
-      title.textContent = 'SSH keys for ' + username;
-      const hint = document.createElement('p');
-      hint.className = 'dash-note';
-      hint.style.margin = '0 0 0.5rem';
-      hint.textContent = 'One OpenSSH public key per line (ssh-ed25519, ssh-rsa, …). Empty lines ignored.';
-      const ta = document.createElement('textarea');
-      ta.rows = 10;
-      ta.style.width = '100%';
-      ta.style.fontFamily = 'ui-monospace, monospace';
-      ta.style.fontSize = '12px';
-      ta.value = Array.isArray(initialKeys) ? initialKeys.join('\n') : '';
-      const actions = document.createElement('div');
-      actions.className = 'modal-actions row';
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'secondary';
-      cancel.textContent = 'Cancel';
-      const save = document.createElement('button');
-      save.type = 'button';
-      save.textContent = 'Save keys';
-      const close = (val) => {
-        overlay.remove();
-        resolve(val);
-      };
-      cancel.onclick = () => close(null);
-      save.onclick = () => {
-        const keys = ta.value.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-        close(keys);
-      };
-      overlay.onclick = (e) => { if (e.target === overlay) close(null); };
-      actions.appendChild(cancel);
-      actions.appendChild(save);
-      box.appendChild(title);
-      box.appendChild(hint);
-      box.appendChild(ta);
-      box.appendChild(actions);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      ta.focus();
+    return modalDialog({
+      title: 'SSH keys for ' + String(username || ''),
+      message: 'One OpenSSH public key per line (ssh-ed25519, ssh-rsa, …). Empty lines and lines beginning with # are ignored.',
+      cancelValue: null,
+      wide: true,
+      render: ({ content, actions, addFocusable, close }) => {
+        const label = document.createElement('label');
+        label.setAttribute('for', 'ssh-keys-editor');
+        label.textContent = 'Public keys';
+        const ta = document.createElement('textarea');
+        ta.id = 'ssh-keys-editor';
+        ta.rows = 10;
+        ta.style.width = '100%';
+        ta.style.fontFamily = 'ui-monospace, monospace';
+        ta.style.fontSize = '12px';
+        ta.value = Array.isArray(initialKeys) ? initialKeys.join('\n') : '';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'secondary';
+        cancel.textContent = 'Cancel';
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.textContent = 'Save keys';
+        cancel.onclick = () => close(null);
+        save.onclick = () => {
+          const keys = ta.value.split('\n').map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
+          close(keys);
+        };
+        content.appendChild(label);
+        content.appendChild(ta);
+        actions.appendChild(cancel);
+        actions.appendChild(save);
+        addFocusable(ta);
+        addFocusable(cancel);
+        addFocusable(save);
+        return ta;
+      }
     });
   }
 
@@ -5310,10 +5448,10 @@
     }).join('');
     box.innerHTML = `<table><thead><tr><th>User</th><th>UID</th><th>Home</th><th>Shell</th><th>Keys</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
     box.querySelectorAll('.users-ssh').forEach((btn) => {
-      btn.onclick = () => withBusy(btn, () => editUserSSHKeys(btn.getAttribute('data-user')));
+      btn.onclick = () => withFocusableBusy(btn, () => editUserSSHKeys(btn.getAttribute('data-user')));
     });
     box.querySelectorAll('.users-del').forEach((btn) => {
-      btn.onclick = () => withBusy(btn, () => deleteHostUser(btn.getAttribute('data-user')));
+      btn.onclick = () => withFocusableBusy(btn, () => deleteHostUser(btn.getAttribute('data-user')));
     });
   }
 
@@ -5356,8 +5494,8 @@
   async function deleteHostUser(username) {
     if (!username || HOST_PROTECTED_USERNAMES.includes(username)) return;
     const ok = await confirmDialog(
-      'Delete user ' + username + ' and remove home directory?',
-      { danger: true, okLabel: 'Delete' }
+      'Delete local user ' + username + '?\n\nTheir SSH access ends and the home directory is removed. Recreate the account and restore its files from backup to recover it.',
+      { title: 'Delete local user and home', danger: true, okLabel: 'Delete user' }
     );
     if (!ok) return;
     const msg = document.getElementById('users-msg');
