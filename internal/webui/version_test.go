@@ -53,7 +53,7 @@ async function run() {
     await context.loadApplicationVersion();
     assert.equal(calls, 1);
     assert.equal(elements['header-version'].textContent, scenario === 'success' ? 'v9.8.7-rc.2' : 'Version unavailable');
-    assert.equal(elements['dash-version'].textContent, scenario === 'success' ? '9.8.7-rc.2' : '—');
+    assert.equal(elements['dash-version'].textContent, scenario === 'success' ? '9.8.7-rc.2' : 'Unknown');
   }
 }
 run().catch(error => {console.error(error); process.exitCode = 1});

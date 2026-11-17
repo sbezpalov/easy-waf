@@ -32,13 +32,16 @@ func TestConfirmationDialogKeyboard(t *testing.T) {
 const confirmationDialogTest = `
 const assert = require('node:assert/strict'), vm = require('node:vm');
 const page = require('node:fs').readFileSync(0, 'utf8');
-const start = page.indexOf('  function confirmDialog(');
-const end = page.indexOf('  async function withBusy(', start);
-assert.ok(start >= 0 && end > start, 'missing confirmation handler');
+const modalStart = page.indexOf('  function modalDialog(');
+const modalEnd = page.indexOf('  // Resolves to the password', modalStart);
+const confirmStart = page.indexOf('  function confirmDialog(');
+const confirmEnd = page.indexOf('  async function withBusy(', confirmStart);
+assert.ok(modalStart >= 0 && modalEnd > modalStart, 'missing modal primitive');
+assert.ok(confirmStart >= 0 && confirmEnd > confirmStart, 'missing confirmation handler');
 async function scenario(action, danger = true) {
   const document = {activeElement: null};
   class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = {}; this.isConnected = true; }
+    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = {}; this.isConnected = true; this.disabled = false; this.id = ''; }
     appendChild(child) { this.children.push(child); }
     setAttribute(key, value) { this.attributes[key] = value; }
     addEventListener(key, fn) { this.events[key] = fn; }
@@ -49,17 +52,20 @@ async function scenario(action, danger = true) {
   document.body = new Element('body');
   const trigger = new Element('button'); trigger.focus();
   const context = vm.createContext({document});
-  vm.runInContext(page.slice(start, end), context);
+  vm.runInContext('let modalSequence = 0;\n' + page.slice(modalStart, modalEnd) + page.slice(confirmStart, confirmEnd), context);
   let settled = false;
   const promise = context.confirmDialog('Delete <fixture> & publication?', {danger, okLabel: 'Delete'})
     .then(result => {settled = true; return result;});
   const overlay = document.body.children[0], box = overlay.children[0];
-  const [cancel, ok] = box.children[1].children;
+  const title = box.children[0], message = box.children[1];
+  const [cancel, ok] = box.children[3].children;
   assert.equal(document.activeElement, danger ? cancel : ok, 'initial focus');
   assert.equal(box.attributes.role, 'dialog');
   assert.equal(box.attributes['aria-modal'], 'true');
-  assert.equal(box.attributes['aria-label'], 'Delete <fixture> & publication?');
-  assert.equal(box.children[0].textContent, 'Delete <fixture> & publication?');
+  assert.equal(box.attributes['aria-labelledby'], title.id);
+  assert.equal(box.attributes['aria-describedby'], message.id);
+  assert.equal(title.textContent, 'Confirm action');
+  assert.equal(message.textContent, 'Delete <fixture> & publication?');
   function key(name, shiftKey = false) {
     const event = {key: name, shiftKey, prevented: false, stopped: false,
       preventDefault() {this.prevented = true}, stopPropagation() {this.stopped = true}};

@@ -7,22 +7,64 @@
   <link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="16x16 32x32" />
   <style>
     :root {
-      font-family: system-ui, sans-serif;
-      background: #0f1419;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      background: #0d1117;
       color: #e6edf3;
-      --border: #30363d;
-      --panel: #161b22;
-      --accent: #238636;
-      --muted: #8b949e;
+      --color-bg: #0d1117;
+      --color-surface-1: #161b22;
+      --color-surface-2: #21262d;
+      --color-text: #e6edf3;
+      --color-text-muted: #8b949e;
+      --color-border: #30363d;
+      --color-accent: #2ea043;
+      --color-focus: #79c0ff;
+      --color-info: #58a6ff;
+      --color-success: #3fb950;
+      --color-warning: #d29922;
+      --color-danger: #f85149;
+      --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      --text-xs: 0.75rem;
+      --text-sm: 0.875rem;
+      --text-md: 1rem;
+      --text-lg: 1.25rem;
+      --text-xl: 1.5rem;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --control-height: 2.25rem;
+      --touch-target: 2.75rem;
+      --content-max: 90rem;
+      --border: var(--color-border);
+      --panel: var(--color-surface-1);
+      --accent: var(--color-accent);
+      --muted: var(--color-text-muted);
     }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--color-bg); }
+    body { margin: 0; min-width: 20rem; background: var(--color-bg); color: var(--color-text); }
     a { color: #58a6ff; }
-    code { background: #161b22; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    code { background: var(--color-surface-1); padding: 0.15rem 0.35rem; border-radius: var(--radius-sm); font-family: var(--font-mono); overflow-wrap: anywhere; }
     table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
     th, td { border-bottom: 1px solid var(--border); padding: 0.5rem; text-align: left; font-size: 0.9rem; }
-    button { background: var(--accent); color: #fff; border: 0; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; }
+    button { min-height: var(--control-height); background: var(--accent); color: #fff; border: 1px solid transparent; padding: 0.4rem 0.8rem; border-radius: var(--radius-md); cursor: pointer; font: inherit; }
     button.secondary { background: #21262d; color: #e6edf3; }
     button.btn-app-delete { color: #ff7b72; border: 1px solid #f85149; }
-    input, select, textarea { background: #0d1117; color: #e6edf3; border: 1px solid var(--border); padding: 0.35rem 0.5rem; border-radius: 4px; }
+    button:disabled { cursor: not-allowed; opacity: 0.62; }
+    input, select, textarea { min-height: var(--control-height); max-width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid var(--border); padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); font: inherit; }
+    :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .skip-link {
+      position: fixed; left: var(--space-3); top: var(--space-3); z-index: 200;
+      transform: translateY(-200%); padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius-md); background: var(--color-focus); color: #07111d; font-weight: 700;
+    }
+    .skip-link:focus { transform: translateY(0); }
     .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
     .panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--panel); max-width: 52rem; }
     .warn { color: #d29922; }
@@ -48,45 +90,74 @@
     .app-header {
       display: flex; align-items: center; gap: 0.75rem;
       padding: 0.65rem 1rem; border-bottom: 1px solid var(--border);
-      background: #0d1117; position: sticky; top: 0; z-index: 40;
+      background: #0d1117; position: sticky; top: 0; z-index: 40; min-width: 0;
     }
     .nav-toggle {
       display: none; background: #21262d; padding: 0.35rem 0.6rem; font-size: 1.25rem; line-height: 1;
     }
-    .app-title { font-size: 1.1rem; margin: 0; flex: 1; }
+    .app-title { font-size: 1.1rem; margin: 0; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .header-logout { margin-left: auto; }
 
-    .app-layout { display: flex; flex: 1; min-height: 0; }
+    .app-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
     .app-sidebar {
       width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
       background: #0d1117; padding: 0.75rem 0; z-index: 30;
     }
-    .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.5rem; }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.5rem 1rem; }
+    .nav-group { display: grid; gap: 0.15rem; margin-top: 0.85rem; }
+    .nav-group:first-child { margin-top: 0; }
+    .nav-group-label { margin: 0 0 0.15rem; padding: 0 0.65rem; color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
     .nav-link {
       display: flex; align-items: center; gap: 0.5rem;
       padding: 0.5rem 0.65rem; border-radius: 6px; color: #e6edf3; text-decoration: none; font-size: 0.9rem;
     }
     .nav-link:hover { background: #21262d; }
-    .nav-link.active { background: #21262d; border-left: 3px solid var(--accent); margin-left: -3px; }
+    .nav-link.active, .nav-link[aria-current="page"] { background: #21262d; border-left: 3px solid var(--accent); margin-left: -3px; }
 
-    .app-content { flex: 1; padding: 1rem 1.25rem 2rem; max-width: 100%; overflow-x: auto; }
+    .app-content { flex: 1 1 auto; min-width: 0; width: 100%; padding: 1rem 1.25rem 2rem; max-width: var(--content-max); overflow-x: clip; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
     .nav-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 25;
+      display: none; position: fixed; inset: 0; width: 100%; height: 100%; min-height: 0;
+      border: 0; border-radius: 0; background: rgba(0,0,0,0.45); z-index: 25;
     }
     body.nav-open .nav-overlay { display: block; }
 
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+    .page-header h2 { margin: 0; font-size: var(--text-xl); }
+    .page-header p { margin: var(--space-1) 0 0; color: var(--muted); }
+    .page-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
+    .freshness { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
     .dash-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--space-3); margin-top: var(--space-3);
     }
     .dash-card {
       border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--panel);
     }
     .dash-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--muted); font-weight: 600; }
-    .dash-stat { font-size: 1.35rem; font-weight: 600; }
+    .dash-stat { font-size: 1.35rem; font-weight: 600; overflow-wrap: anywhere; }
     .dash-note { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
+    .section-heading { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+    .attention-list { display: grid; gap: var(--space-2); }
+    .alert { border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); background: var(--panel); }
+    .alert-title { display: block; margin-bottom: var(--space-1); }
+    .alert p { margin: 0; color: var(--color-text); }
+    .alert-info { border-left-color: var(--color-info); }
+    .alert-success { border-left-color: var(--color-success); }
+    .alert-warning { border-left-color: var(--color-warning); }
+    .alert-danger { border-left-color: var(--color-danger); }
+    .alert-unknown { border-left-color: var(--muted); }
+    .status-badge { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0.18rem 0.5rem; border-radius: 999px; font-size: var(--text-xs); font-weight: 700; line-height: 1.25; white-space: nowrap; }
+    .status-badge::before { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+    .status-badge-success { background: #0d2818; color: var(--color-success); }
+    .status-badge-warning { background: #2d2710; color: var(--color-warning); }
+    .status-badge-danger { background: #2d1619; color: var(--color-danger); }
+    .status-badge-info { background: #10243d; color: var(--color-info); }
+    .status-badge-neutral, .status-badge-unknown { background: var(--color-surface-2); color: var(--muted); }
+    .state-view { margin: var(--space-2) 0; padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--muted); }
+    .state-view[data-state="error"], .state-view[data-state="offline"] { color: var(--color-warning); border-color: #9e6a03; }
+    .table-scroll { max-width: 100%; overflow-x: auto; }
 
     .tab-panel h2 { margin-top: 0; font-size: 1.15rem; }
     .tab-panel h3 { font-size: 1rem; }
@@ -121,6 +192,23 @@
       }
       body.nav-open .app-sidebar { transform: translateX(0); }
       .header-logout { font-size: 0.85rem; padding: 0.35rem 0.55rem; }
+      .app-content { padding: var(--space-3) var(--space-3) var(--space-8); }
+      .page-header { align-items: stretch; flex-direction: column; }
+      .page-header-actions { justify-content: space-between; }
+      .page-header-actions button { min-height: var(--touch-target); }
+      .nav-link { min-height: var(--touch-target); }
+      #header-version { display: none; }
+    }
+
+    @media (max-width: 420px) {
+      .app-header { gap: var(--space-2); padding-inline: var(--space-2); }
+      .header-user { display: none !important; }
+      .app-title { font-size: var(--text-md); }
+      .header-logout { white-space: nowrap; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
     }
 
     .app-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; margin-top: 1rem; }
@@ -182,14 +270,16 @@
 
     .table-state { margin: 0.5rem 0; font-size: 0.9rem; }
     .copy-btn { padding: 0.2rem 0.45rem; font-size: 0.85rem; line-height: 1; min-width: auto; }
-    /* Viewers: hide what the API refuses them anyway (host management, panel users). */
+    /* Viewers get read controls only; mutating requests are also blocked centrally in JS. */
     .role-viewer .admin-only,
     .role-viewer .nav-link[data-tab="system"],
     .role-viewer .nav-link[data-tab="network"],
     .role-viewer .nav-link[data-tab="users"] { display: none !important; }
+    .role-viewer main button:not([data-viewer-action="true"]):not(.copy-btn) { display: none !important; }
   </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <div id="view-login" class="login-wrap">
   <div class="panel" style="max-width:420px">
@@ -232,65 +322,104 @@
 
 <div id="view-app" class="app-shell hidden">
   <header class="app-header">
-    <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open menu">☰</button>
+    <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="app-sidebar">☰</button>
     <h1 class="app-title">◆ Easy Home WAF</h1>
     <span class="dash-note" id="header-version" aria-label="Application version">Version unavailable</span>
     <span class="header-user hidden" id="header-user"></span>
     <button type="button" class="secondary header-logout" id="btn-logout">Sign out</button>
   </header>
-  <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
+  <button type="button" class="nav-overlay" id="nav-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"></button>
   <div class="app-layout">
-    <aside class="app-sidebar" id="app-sidebar">
-      <nav class="sidebar-nav" id="sidebar-nav">
-        <a href="#dashboard" class="nav-link" data-tab="dashboard"><span>▣</span> Dashboard</a>
-        <a href="#apps" class="nav-link" data-tab="apps"><span>◇</span> Applications</a>
-        <a href="#certs" class="nav-link" data-tab="certs"><span>▤</span> Certificates</a>
-        <a href="#security" class="nav-link" data-tab="security"><span>◎</span> Security</a>
-        <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span>⚑</span> CrowdSec</a>
-        <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span>⛔</span> Fail2Ban</a>
-        <a href="#system" class="nav-link" data-tab="system"><span>▦</span> System</a>
-        <a href="#network" class="nav-link" data-tab="network"><span>⇄</span> Network</a>
-        <a href="#users" class="nav-link" data-tab="users"><span>☺</span> Users</a>
-        <a href="#config" class="nav-link" data-tab="config"><span>⚙</span> Config<span class="pending-dot hidden" id="nav-config-pending" aria-hidden="true"></span></a>
-        <a href="#settings" class="nav-link" data-tab="settings"><span>✎</span> Settings</a>
-        <a href="#logs" class="nav-link" data-tab="logs"><span>◈</span> Logs / Audit</a>
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Primary navigation">
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Control plane">
+        <div class="nav-group">
+          <p class="nav-group-label">Overview</p>
+          <a href="#dashboard" class="nav-link" data-tab="dashboard"><span aria-hidden="true">▣</span> Dashboard</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Publish</p>
+          <a href="#apps" class="nav-link" data-tab="apps"><span aria-hidden="true">◇</span> Applications</a>
+          <a href="#certs" class="nav-link" data-tab="certs"><span aria-hidden="true">▤</span> Certificates</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Protect</p>
+          <a href="#security" class="nav-link" data-tab="security"><span aria-hidden="true">◎</span> Security</a>
+          <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span aria-hidden="true">⚑</span> CrowdSec</a>
+          <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span aria-hidden="true">⛔</span> Fail2Ban</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Operate</p>
+          <a href="#system" class="nav-link" data-tab="system"><span aria-hidden="true">▦</span> System</a>
+          <a href="#network" class="nav-link" data-tab="network"><span aria-hidden="true">⇄</span> Network</a>
+          <a href="#users" class="nav-link" data-tab="users"><span aria-hidden="true">☺</span> Users</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Configure</p>
+          <a href="#config" class="nav-link" data-tab="config"><span aria-hidden="true">⚙</span> Edge changes<span class="pending-dot hidden" id="nav-config-pending" aria-hidden="true"></span></a>
+          <a href="#settings" class="nav-link" data-tab="settings"><span aria-hidden="true">✎</span> Settings</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Observe</p>
+          <a href="#logs" class="nav-link" data-tab="logs"><span aria-hidden="true">◈</span> Events &amp; audit</a>
+        </div>
       </nav>
     </aside>
-    <div class="app-content">
+    <main class="app-content" id="main-content" tabindex="-1">
 
       <div id="tab-dashboard" class="tab-panel">
-        <h2>▣ Dashboard</h2>
-        <p class="dash-note" style="margin-top:0">Overview from the API. Open each tab for full controls.</p>
-        <p id="dash-status" class="warn" style="min-height:1.25rem"></p>
-        <div class="dash-grid">
-          <div class="dash-card"><h3>Applications</h3><div class="dash-stat" id="dash-apps-stat">—</div><div class="dash-note">enabled / total</div></div>
-          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">—</div><div class="dash-note" id="dash-certs-sub">valid · expiring (&lt;30d) · expired</div></div>
-          <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">—</div><div class="dash-note" id="dash-cs-sub">—</div></div>
-          <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">—</div><div class="dash-note">local entries · external sources</div></div>
-          <div class="dash-card"><h3>Traffic (HAProxy)</h3><div class="dash-stat" id="dash-req-rate">—</div><div class="dash-note">requests/s (edge frontends)</div></div>
-          <div class="dash-card"><h3>Active sessions</h3><div class="dash-stat" id="dash-active-sessions">—</div><div class="dash-note">frontends · auto-refresh 10s</div></div>
-          <div class="dash-card"><h3>Version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">—</div><div class="dash-note" id="dash-state-dir"></div></div>
+        <div class="page-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Saved configuration, component state, and HAProxy runtime are reported separately.</p>
+          </div>
+          <div class="page-header-actions">
+            <span class="freshness" id="dash-loaded-at" aria-live="polite">Not loaded</span>
+            <button type="button" class="secondary" id="btn-dashboard-refresh" data-viewer-action="true">Refresh</button>
+          </div>
         </div>
+        <div id="viewer-banner" class="alert alert-info hidden" role="status">
+          <strong class="alert-title">Read-only access</strong>
+          <p>You can inspect current data. Change controls are hidden, and the client blocks write requests for this session.</p>
+        </div>
+        <div id="dash-status" class="state-view" data-state="loading" role="status" aria-live="polite">Loading dashboard…</div>
+        <section aria-labelledby="dash-attention-title">
+          <h3 class="section-heading" id="dash-attention-title">Needs attention</h3>
+          <div id="dash-attention-list" class="attention-list">
+            <div class="state-view" data-state="loading">Checking current data…</div>
+          </div>
+        </section>
+        <section aria-labelledby="dash-overview-title" style="margin-top:1.5rem">
+          <h3 class="section-heading" id="dash-overview-title">Overview</h3>
+        <div class="dash-grid">
+          <div class="dash-card"><h3>Configured applications</h3><div class="dash-stat" id="dash-apps-stat">Unknown</div><div class="dash-note">enabled / total · saved configuration</div></div>
+          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">Unknown</div><div class="dash-note" id="dash-certs-sub">API summary</div></div>
+          <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">Unknown</div><div class="dash-note" id="dash-cs-sub">LAPI reachability probe</div></div>
+          <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">Unknown</div><div class="dash-note">local entries · external sources</div></div>
+          <div class="dash-card"><h3>HAProxy request rate</h3><div class="dash-stat" id="dash-req-rate">Unknown</div><div class="dash-note">runtime stats · requests/s</div></div>
+          <div class="dash-card"><h3>HAProxy sessions</h3><div class="dash-stat" id="dash-active-sessions">Unknown</div><div class="dash-note">runtime stats · auto-refresh 10s</div></div>
+          <div class="dash-card"><h3>API version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">Unknown</div><div class="dash-note" id="dash-state-dir"></div></div>
+        </div>
+        </section>
         <div id="dash-sec-overview-wrap" class="panel" style="max-width:100%;margin-top:1rem">
-          <h3>Application security overview</h3>
-          <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">—</p>
-          <p id="dash-http-line" class="dash-note" style="color:#e6edf3;margin-top:0.35rem">—</p>
+          <h3>Saved application policy</h3>
+          <p class="dash-note">These values describe saved presets and listen modes. They do not prove that a revision is applied or that a backend is healthy.</p>
+          <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <p id="dash-http-line" class="dash-note" style="color:#e6edf3;margin-top:0.35rem">Unknown</p>
         </div>
         <div id="dash-cert-warn" class="dash-sec-warn hidden"></div>
         <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
         <div id="dash-http-warn" class="dash-sec-warn hidden"></div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
-          <h3>Current HAProxy revision</h3>
-          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">—</p>
+          <h3>Recorded HAProxy revision</h3>
+          <p class="dash-note">Revision records come from the API. Applied state after a reload remains unknown without a persistent edge-status contract.</p>
+          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">Unknown</p>
           <h3 style="margin-top:1rem">Last config activity</h3>
-          <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">—</p>
+          <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">Unknown</p>
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Core services (systemd)</h3>
-          <p class="dash-note" style="margin-bottom:0.35rem">On the API host, as user <code>easy-waf</code>: <code>systemctl show -p ActiveState</code>; if empty, fall back to <code>is-active</code>.</p>
-          <p class="dash-note" style="margin-top:0">If everything shows <span class="warn">unknown</span>: <code>systemctl</code> is missing from standard PATH; D-Bus to systemd is unavailable from the API process (check the unit: write access under <code>/run</code>, AppArmor); or after an upgrade the unit was not reinstalled / <code>easy-waf-api</code> was not restarted.</p>
-          <p class="dash-note" style="margin-top:0.5rem;color:#8b949e">Live state on the API host as <code>easy-waf</code>. All <span class="warn">unknown</span>: missing <code>systemctl</code>, D-Bus to systemd blocked (unit needs <code>/run</code> writable, check AppArmor), or service not redeployed/restarted after upgrade.</p>
-          <div id="dash-services"></div>
+          <p class="dash-note">Live systemd ActiveState reported by the API host. This is separate from CrowdSec LAPI reachability and HAProxy runtime stats.</p>
+          <div id="dash-services"><div class="state-view" data-state="loading">Loading systemd state…</div></div>
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Support diagnostics</h3>
@@ -302,21 +431,22 @@
         </div>
         <div class="panel" style="max-width:100%">
           <h3>HAProxy backends (runtime)</h3>
+          <p class="dash-note">Live rows from the HAProxy stats endpoint; unavailable data is not inferred from saved application settings.</p>
           <p id="dash-haproxy-err" class="warn" style="min-height:1rem"></p>
           <div id="dash-haproxy-table"></div>
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Published applications</h3>
-          <p class="dash-note">Browser cannot probe backends; status reflects <strong>enabled</strong> in the database.</p>
+          <p class="dash-note">Configured state comes from saved application data. Runtime backend state is shown only in the HAProxy table above.</p>
           <div id="dash-backends"></div>
         </div>
       </div>
 
       <div id="tab-apps" class="tab-panel">
         <h2>◇ Applications</h2>
-        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Application changes apply automatically by default. For pending changes, use <a href="#config">Config</a> → <strong>Apply HAProxy</strong>.</small></p>
+        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Application changes apply automatically by default. For pending changes, use <a href="#config">Edge changes</a> → <strong>Apply HAProxy</strong>.</small></p>
         <div id="apps-pending-banner" class="apps-pending-banner hidden" role="status">
-          You have unapplied changes. <a href="#config">Go to Config → Apply HAProxy</a>
+          You have unapplied changes. <a href="#config">Go to Edge changes → Apply HAProxy</a>
         </div>
         <div class="row">
           <button type="button" class="secondary" id="btn-apps-refresh">Refresh</button>
@@ -505,7 +635,7 @@
 
         <div class="panel" style="max-width:100%">
           <h3>Edge network</h3>
-          <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
+          <p><small>Takes effect on the next <strong>Apply HAProxy</strong> (<a href="#config">Edge changes</a>).</small></p>
           <label><input id="edge-listen-ipv6" type="checkbox" /> Listen on IPv6 too (<code>[::]:80</code>, <code>[::]:443</code>). The host must have IPv6 enabled; publish AAAA records only after this is on.</label>
           <label><input id="edge-http3" type="checkbox" /> HTTP/3 (QUIC on <code>UDP 443</code>, advertised with <code>Alt-Svc</code>). Open <code>udp dport 443</code> in <a href="#network">Network → Firewall</a> first; browsers fall back to HTTP/2 when UDP is blocked.</label>
           <h4 style="margin:0.9rem 0 0.3rem">Response headers</h4>
@@ -541,7 +671,7 @@
         </div>
 
         <h3>IP Blacklist</h3>
-        <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map; <a href="#config">Apply HAProxy</a> for a new config.</small></p>
+        <p><small>Local CIDRs and optional external lists → <code>ip_blacklist.map</code>. <strong>Sync</strong> refreshes the map; use <a href="#config">Edge changes</a> for a new HAProxy config.</small></p>
         <div class="row">
           <button type="button" class="secondary" id="btn-ipbl-load">Load blacklist</button>
           <button type="button" class="secondary" id="btn-ipbl-sync">Sync lists</button>
@@ -582,7 +712,7 @@
         <p id="ipwl-msg" class="warn"></p>
 
         <h3>Bot protection</h3>
-        <p><small>Blocked UA map is written on <strong>Apply HAProxy</strong> (<a href="#config">Config</a>).</small></p>
+        <p><small>Blocked UA map is written on <strong>Apply HAProxy</strong> (<a href="#config">Edge changes</a>).</small></p>
         <div class="row">
           <label><input id="ua-block-empty" type="checkbox" checked /> Block empty User-Agent</label>
           <label><input id="ua-blocklist-enabled" type="checkbox" /> Enable blocked User-Agent list in HAProxy</label>
@@ -823,7 +953,7 @@
       </div>
 
       <div id="tab-config" class="tab-panel">
-        <h2>⚙ Config</h2>
+        <h2>⚙ Edge changes</h2>
         <p><small>Apply renders from the database, validates with <code>haproxy -c</code>, writes the live config, and records a revision.</small></p>
         <div class="row">
           <button id="apply">Apply HAProxy</button>
@@ -892,7 +1022,7 @@
       </div>
 
       <div id="tab-logs" class="tab-panel">
-        <h2>◈ Logs / Audit</h2>
+        <h2>◈ Events &amp; audit</h2>
         <div class="panel" style="max-width:100%;overflow-x:auto">
           <h3>Blocked requests</h3>
           <p class="dash-note" style="margin-top:0">Requests the edge refused, read from the HAProxy journal: the rule, the client and what it asked for. Backend errors are not included.</p>
@@ -957,7 +1087,7 @@
         </div>
       </div>
 
-    </div>
+    </main>
   </div>
 </div>
 
@@ -977,23 +1107,94 @@
     return h;
   };
 
-  // Resolves to the password, or null when cancelled.
-  function passwordDialog(message) {
+  let modalSequence = 0;
+
+  function modalDialog(options) {
+    const o = options || {};
     return new Promise((resolve) => {
+      const previousFocus = document.activeElement;
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
-      const form = document.createElement('form');
-      form.className = 'modal-box';
+      const box = document.createElement('div');
+      box.className = 'modal-box';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      const title = document.createElement('h2');
+      title.id = 'modal-title-' + (++modalSequence);
+      title.textContent = o.title || 'Confirm action';
+      box.setAttribute('aria-labelledby', title.id);
       const p = document.createElement('p');
       p.className = 'modal-message';
-      p.textContent = message;
+      p.id = title.id + '-description';
+      p.textContent = String(o.message || '');
+      box.setAttribute('aria-describedby', p.id);
+      const content = document.createElement('div');
+      const actions = document.createElement('div');
+      actions.className = 'modal-actions row';
+      const focusables = [];
+      const addFocusable = (el) => {
+        focusables.push(el);
+        return el;
+      };
+      let closed = false;
+      const close = (value) => {
+        if (closed) return;
+        closed = true;
+        overlay.remove();
+        if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+        resolve(value);
+      };
+      const initialFocus = typeof o.render === 'function'
+        ? o.render({ content, actions, addFocusable, close })
+        : null;
+      overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          close(o.cancelValue);
+          return;
+        }
+        if (e.key !== 'Tab') return;
+        const available = focusables.filter((el) => el && el.isConnected && !el.disabled);
+        if (!available.length) return;
+        const first = available[0];
+        const last = available[available.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      });
+      overlay.onclick = (e) => { if (e.target === overlay) close(o.cancelValue); };
+      box.appendChild(title);
+      box.appendChild(p);
+      box.appendChild(content);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      (initialFocus || focusables[0] || box).focus();
+    });
+  }
+
+  // Resolves to the password, or null when cancelled.
+  function passwordDialog(message) {
+    return modalDialog({
+      title: 'Confirm privileged action',
+      message,
+      cancelValue: null,
+      render: ({ content, actions, addFocusable, close }) => {
+      const form = document.createElement('form');
       const input = document.createElement('input');
       input.type = 'password';
       input.autocomplete = 'current-password';
       input.required = true;
-      input.setAttribute('aria-label', 'Password');
-      const actions = document.createElement('div');
-      actions.className = 'modal-actions row';
+      input.id = 'step-up-password';
+      const label = document.createElement('label');
+      label.setAttribute('for', input.id);
+      label.textContent = 'Password';
+      label.appendChild(input);
       const cancel = document.createElement('button');
       cancel.type = 'button';
       cancel.className = 'secondary';
@@ -1001,28 +1202,27 @@
       const ok = document.createElement('button');
       ok.type = 'submit';
       ok.textContent = 'Confirm';
-      const close = (val) => {
-        overlay.remove();
-        resolve(val);
-      };
       cancel.onclick = () => close(null);
       form.onsubmit = (e) => {
         e.preventDefault();
         close(input.value);
       };
+      form.appendChild(label);
+      content.appendChild(form);
       actions.appendChild(cancel);
       actions.appendChild(ok);
-      form.appendChild(p);
-      form.appendChild(input);
-      form.appendChild(actions);
-      overlay.appendChild(form);
-      document.body.appendChild(overlay);
-      input.focus();
+      addFocusable(input);
+      addFocusable(cancel);
+      addFocusable(ok);
+      return input;
+      }
     });
   }
 
   const nativeFetch = window.fetch.bind(window);
   let stepUpPrompt = null;
+  let currentRole = '';
+  let sessionExpired = false;
 
   async function promptStepUp() {
     let message = 'This is a privileged operation. Enter your password to continue.';
@@ -1051,17 +1251,69 @@
     return stepUpPrompt;
   }
 
+  function requestMeta(url, init) {
+    const raw = url instanceof Request ? url.url : String(url || '');
+    let path = raw;
+    try { path = new URL(raw, window.location.origin).pathname; } catch (_) { /* relative path */ }
+    const method = String((init && init.method) || (url instanceof Request ? url.method : 'GET') || 'GET').toUpperCase();
+    return { path, method };
+  }
+
+  function isPublicAuthPath(path) {
+    return path === '/api/v1/auth/status' || path === '/api/v1/auth/login' || path === '/api/v1/auth/enroll';
+  }
+
+  function handleSessionExpired() {
+    if (sessionExpired) return;
+    sessionExpired = true;
+    currentRole = '';
+    setTok('');
+    document.body.classList.remove('role-viewer');
+    stopDashStatsTimer();
+    stopAuditRefreshTimer();
+    closeMobileNav(false);
+    show('view-enroll', false);
+    show('view-pass', false);
+    show('view-app', false);
+    show('view-login', true);
+    const err = document.getElementById('login-err');
+    if (err) err.textContent = 'Your session expired. Sign in again. No blocked write was submitted.';
+    const password = document.getElementById('login-pass');
+    if (password) {
+      password.value = '';
+      password.focus();
+    }
+  }
+
+  function finalizeAuthenticatedResponse(response, meta, hadToken) {
+    if (response.status === 401 && hadToken && !isPublicAuthPath(meta.path)) handleSessionExpired();
+    return response;
+  }
+
   // Privileged operations answer 403 step_up_required until the password is
   // confirmed; ask for it once here and repeat the request, so no caller has to know.
   window.fetch = async (url, init) => {
+    const meta = requestMeta(url, init);
+    const hadToken = !!getTok();
+    const readMethod = meta.method === 'GET' || meta.method === 'HEAD' || meta.method === 'OPTIONS';
+    const viewerSelfService = meta.path === '/api/v1/auth/logout' || meta.path === '/api/v1/auth/change-password';
+    if (currentRole === 'viewer' && !readMethod && !viewerSelfService) {
+      return new Response(JSON.stringify({ error: 'read_only' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
     const retryInput = url instanceof Request ? url.clone() : url;
     const r = await nativeFetch(url, init);
-    if (r.status !== 403) return r;
+    if (r.status !== 403) return finalizeAuthenticatedResponse(r, meta, hadToken);
     const j = await r.clone().json().catch(() => null);
-    if (!j || j.error !== 'step_up_required' || !(await confirmStepUp())) return r;
+    if (!j || j.error !== 'step_up_required' || !(await confirmStepUp())) {
+      return finalizeAuthenticatedResponse(r, meta, hadToken);
+    }
     const retryHeaders = new Headers((init && init.headers) || (url instanceof Request ? url.headers : undefined));
     retryHeaders.set('Authorization', 'Bearer ' + getTok());
-    return nativeFetch(retryInput, { ...init, headers: retryHeaders });
+    const retried = await nativeFetch(retryInput, { ...init, headers: retryHeaders });
+    return finalizeAuthenticatedResponse(retried, meta, true);
   };
 
   const HASH_TO_PANEL = {
@@ -1134,61 +1386,27 @@
 
   function confirmDialog(message, opts) {
     const o = opts || {};
-    return new Promise((resolve) => {
-      const previousFocus = document.activeElement;
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      const box = document.createElement('div');
-      box.className = 'modal-box';
-      box.setAttribute('role', 'dialog');
-      box.setAttribute('aria-modal', 'true');
-      box.setAttribute('aria-label', String(message));
-      const p = document.createElement('p');
-      p.className = 'modal-message';
-      p.textContent = String(message);
-      const actions = document.createElement('div');
-      actions.className = 'modal-actions row';
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'secondary';
-      cancel.textContent = 'Cancel';
-      const ok = document.createElement('button');
-      ok.type = 'button';
-      if (o.danger) ok.className = 'modal-ok-danger';
-      ok.textContent = o.okLabel || 'OK';
-      let closed = false;
-      const close = (val) => {
-        if (closed) return;
-        closed = true;
-        overlay.remove();
-        if (previousFocus && previousFocus.isConnected) previousFocus.focus();
-        resolve(val);
-      };
-      overlay.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          close(false);
-        } else if (e.key === 'Tab') {
-          if (e.shiftKey && document.activeElement === cancel) {
-            e.preventDefault();
-            ok.focus();
-          } else if (!e.shiftKey && document.activeElement === ok) {
-            e.preventDefault();
-            cancel.focus();
-          }
-        }
-      });
-      cancel.onclick = () => close(false);
-      ok.onclick = () => close(true);
-      overlay.onclick = (e) => { if (e.target === overlay) close(false); };
-      actions.appendChild(cancel);
-      actions.appendChild(ok);
-      box.appendChild(p);
-      box.appendChild(actions);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      (o.danger ? cancel : ok).focus();
+    return modalDialog({
+      title: o.title || 'Confirm action',
+      message: String(message),
+      cancelValue: false,
+      render: ({ actions, addFocusable, close }) => {
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'secondary';
+        cancel.textContent = 'Cancel';
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        if (o.danger) ok.className = 'modal-ok-danger';
+        ok.textContent = o.okLabel || 'OK';
+        cancel.onclick = () => close(false);
+        ok.onclick = () => close(true);
+        actions.appendChild(cancel);
+        actions.appendChild(ok);
+        addFocusable(cancel);
+        addFocusable(ok);
+        return o.danger ? cancel : ok;
+      }
     });
   }
 
@@ -1204,6 +1422,21 @@
       btn.disabled = prevDisabled;
       btn.textContent = prevText;
     }
+  }
+
+  function statusBadge(label, tone) {
+    const safeTone = ['success', 'warning', 'danger', 'info', 'neutral', 'unknown'].includes(tone) ? tone : 'unknown';
+    return '<span class="status-badge status-badge-' + safeTone + '">' + esc(label) + '</span>';
+  }
+
+  function alertView(tone, title, message) {
+    const safeTone = ['success', 'warning', 'danger', 'info', 'unknown'].includes(tone) ? tone : 'unknown';
+    return '<div class="alert alert-' + safeTone + '"><strong class="alert-title">' + esc(title) +
+      '</strong><p>' + esc(message) + '</p></div>';
+  }
+
+  function stateView(state, message) {
+    return '<div class="state-view" data-state="' + esc(state || 'unknown') + '">' + esc(message || 'Unavailable') + '</div>';
   }
 
   function tableState(box, state, opts) {
@@ -1394,7 +1627,10 @@
 
   function setActiveNav(panel) {
     document.querySelectorAll('.nav-link').forEach((a) => {
-      a.classList.toggle('active', a.getAttribute('data-tab') === panel);
+      const active = a.getAttribute('data-tab') === panel;
+      a.classList.toggle('active', active);
+      if (active) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
     });
   }
 
@@ -1405,8 +1641,23 @@
     setActiveNav(panel);
   }
 
-  function closeMobileNav() {
+  let mobileNavReturnFocus = null;
+
+  function openMobileNav() {
+    mobileNavReturnFocus = document.activeElement;
+    document.body.classList.add('nav-open');
+    document.getElementById('nav-toggle').setAttribute('aria-expanded', 'true');
+    document.getElementById('nav-overlay').setAttribute('aria-hidden', 'false');
+    const current = document.querySelector('.nav-link[aria-current="page"]') || document.querySelector('.nav-link');
+    if (current) current.focus();
+  }
+
+  function closeMobileNav(restoreFocus) {
     document.body.classList.remove('nav-open');
+    document.getElementById('nav-toggle').setAttribute('aria-expanded', 'false');
+    document.getElementById('nav-overlay').setAttribute('aria-hidden', 'true');
+    if (restoreFocus !== false && mobileNavReturnFocus && mobileNavReturnFocus.isConnected) mobileNavReturnFocus.focus();
+    mobileNavReturnFocus = null;
   }
 
   function showTabFromHash() {
@@ -1480,12 +1731,22 @@
   }
 
   document.getElementById('nav-toggle').onclick = () => {
-    document.body.classList.toggle('nav-open');
+    if (document.body.classList.contains('nav-open')) closeMobileNav(true);
+    else openMobileNav();
   };
-  document.getElementById('nav-overlay').onclick = closeMobileNav;
+  document.getElementById('nav-overlay').onclick = () => closeMobileNav(true);
   document.getElementById('sidebar-nav').onclick = (e) => {
-    if (e.target.closest('a.nav-link')) closeMobileNav();
+    if (e.target.closest('a.nav-link')) {
+      closeMobileNav(false);
+      document.getElementById('main-content').focus();
+    }
   };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('nav-open')) {
+      e.preventDefault();
+      closeMobileNav(true);
+    }
+  });
 
   window.addEventListener('hashchange', () => {
     showTabFromHash();
@@ -1494,7 +1755,7 @@
   function renderApplicationVersion(value) {
     const version = typeof value === 'string' ? value.trim() : '';
     document.getElementById('header-version').textContent = version ? 'v' + version : 'Version unavailable';
-    document.getElementById('dash-version').textContent = version || '—';
+    document.getElementById('dash-version').textContent = version || 'Unknown';
   }
 
   async function loadApplicationVersion() {
@@ -1504,6 +1765,25 @@
     } catch (_) {
       renderApplicationVersion('');
     }
+  }
+
+  const VIEWER_SAFE_ACTIONS = new Set([
+    'btn-dashboard-refresh', 'btn-apps-refresh', 'btn-certs', 'btn-cs-dec', 'btn-cs-ping',
+    'btn-f2b-refresh', 'btn-geoip-lookup', 'btn-ipbl-load', 'btn-ipwl-load',
+    'btn-revisions-refresh', 'btn-settings-load', 'btn-ua-load', 'btn-blocked-refresh',
+    'btn-audit-refresh', 'btn-audit-more'
+  ]);
+
+  function applyRoleCapabilities(role) {
+    currentRole = role === 'viewer' ? 'viewer' : 'admin';
+    const viewer = currentRole === 'viewer';
+    document.body.classList.toggle('role-viewer', viewer);
+    const banner = document.getElementById('viewer-banner');
+    if (banner) banner.classList.toggle('hidden', !viewer);
+    document.querySelectorAll('main button[id]').forEach((button) => {
+      if (VIEWER_SAFE_ACTIONS.has(button.id)) button.setAttribute('data-viewer-action', 'true');
+      else button.removeAttribute('data-viewer-action');
+    });
   }
 
   async function refreshSession() {
@@ -1518,10 +1798,19 @@
       return;
     }
     show('view-enroll', false);
-    const r = await fetch('/api/v1/auth/me', { headers: hdr() });
-    if (r.status === 401) { setTok(''); refreshSession(); return; }
-    const me = await r.json();
+    let r;
+    try {
+      r = await fetch('/api/v1/auth/me', { headers: hdr() });
+    } catch (_) {
+      show('view-app', false);
+      show('view-login', true);
+      document.getElementById('login-err').textContent = 'The API is unavailable. Check the appliance and try again.';
+      return;
+    }
+    if (r.status === 401) return;
+    const me = await r.json().catch(() => ({}));
     if (!r.ok) { show('view-login', true); return; }
+    sessionExpired = false;
     const hu = document.getElementById('header-user');
     if (hu) {
       hu.textContent = '';
@@ -1535,7 +1824,7 @@
         hu.textContent = String(me.username) + (me.role === 'viewer' ? ' (read-only)' : '');
         hu.classList.remove('hidden');
       }
-      document.body.classList.toggle('role-viewer', me.role === 'viewer');
+      applyRoleCapabilities(me.role);
       renderTOTPStatus(!!me.totp_enabled);
       void loadApplicationVersion();
       await loadSettingsPanel();
@@ -1591,12 +1880,8 @@
     if (j.must_change_password) {
       show('view-login', false); show('view-pass', true); show('view-app', false);
     } else {
-      show('view-login', false); show('view-pass', false); show('view-app', true);
-      await loadSettingsPanel();
-      loadProfileSelect();
-      initRestrictedPathRows();
       location.hash = '#dashboard';
-      showTabFromHash();
+      await refreshSession();
     }
   };
 
@@ -1648,12 +1933,8 @@
     document.getElementById('old-pass').value = '';
     document.getElementById('new-pass').value = '';
     document.getElementById('new-pass2').value = '';
-    show('view-pass', false); show('view-app', true);
-    await loadSettingsPanel();
-    loadProfileSelect();
-    initRestrictedPathRows();
     location.hash = '#dashboard';
-    showTabFromHash();
+    await refreshSession();
   };
 
   document.getElementById('btn-logout').onclick = async () => {
@@ -1666,7 +1947,10 @@
       /* offline or already revoked — still clear the local token below */
     }
     setTok('');
-    closeMobileNav();
+    currentRole = '';
+    sessionExpired = false;
+    document.body.classList.remove('role-viewer');
+    closeMobileNav(false);
     refreshSession();
   };
 
@@ -2864,266 +3148,337 @@
     if (moreBtn) moreBtn.disabled = !hasMore;
   }
 
+  async function dashboardRequest(path) {
+    try {
+      return await fetch(path, { headers: hdr() });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function dashboardJSON(response) {
+    if (!response || !response.ok) return null;
+    try {
+      return await response.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function responseLabel(response) {
+    if (!response) return 'offline';
+    return 'HTTP ' + response.status;
+  }
+
+  function resetDashboardView() {
+    document.getElementById('dash-apps-stat').textContent = 'Unknown';
+    document.getElementById('dash-certs-stat').textContent = 'Unknown';
+    document.getElementById('dash-certs-sub').textContent = 'API summary';
+    document.getElementById('dash-cs-stat').textContent = 'Unknown';
+    document.getElementById('dash-cs-sub').textContent = 'LAPI reachability probe';
+    document.getElementById('dash-ipbl-stat').textContent = 'Unknown';
+    document.getElementById('dash-req-rate').textContent = 'Unknown';
+    document.getElementById('dash-active-sessions').textContent = 'Unknown';
+    document.getElementById('dash-sec-line').textContent = 'Unknown';
+    document.getElementById('dash-http-line').textContent = 'Unknown';
+    document.getElementById('dash-revision-line').textContent = 'Unknown';
+    document.getElementById('dash-last-apply').textContent = 'Unknown';
+    document.getElementById('dash-backends').innerHTML = stateView('loading', 'Loading saved applications…');
+    document.getElementById('dash-services').innerHTML = stateView('loading', 'Loading systemd state…');
+    document.getElementById('dash-haproxy-table').innerHTML = stateView('loading', 'Loading HAProxy runtime…');
+    document.getElementById('dash-haproxy-err').textContent = '';
+    document.getElementById('dash-attention-list').innerHTML = stateView('loading', 'Checking current data…');
+    document.getElementById('dash-status').dataset.state = 'loading';
+    document.getElementById('dash-status').textContent = 'Loading dashboard…';
+    for (const id of ['dash-cert-warn', 'dash-sec-warn', 'dash-http-warn']) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('hidden');
+        el.textContent = '';
+      }
+    }
+  }
+
   async function loadDashTraffic() {
-    if (document.getElementById('view-app').classList.contains('hidden')) return;
-    if (panelFromHash() !== 'dashboard') return;
+    if (document.getElementById('view-app').classList.contains('hidden')) return { success: 0, failures: [] };
+    if (panelFromHash() !== 'dashboard') return { success: 0, failures: [] };
     const errEl = document.getElementById('dash-haproxy-err');
-    if (errEl) errEl.textContent = '';
-    const sumR = await fetch('/api/v1/stats/summary', { headers: hdr() });
-    const haR = await fetch('/api/v1/stats/haproxy', { headers: hdr() });
-    if (sumR.status === 401 || sumR.status === 403) {
-      if (sumR.status === 401) setTok('');
-      refreshSession();
-      return;
-    }
-    if (!sumR.ok || !haR.ok) {
-      if (errEl) errEl.textContent = 'Stats unavailable (HAProxy running? Check stats socket path in global settings / DB).';
-      return;
-    }
-    const sum = await sumR.json().catch(() => ({}));
-    const ha = await haR.json().catch(() => ({}));
-    if (errEl && sum.error) errEl.textContent = String(sum.error);
+    const table = document.getElementById('dash-haproxy-table');
     const rr = document.getElementById('dash-req-rate');
-    const as = document.getElementById('dash-active-sessions');
-    if (rr) rr.textContent = sum.req_rate != null ? Number(sum.req_rate).toFixed(1) : '—';
-    if (as) as.textContent = sum.active_sessions != null ? String(sum.active_sessions) : '—';
-    const tab = document.getElementById('dash-haproxy-table');
-    if (!tab) return;
-    const backends = Array.isArray(ha.backends) ? ha.backends : [];
-    const rows = backends.map((b) => {
-      const srv = (Array.isArray(b.servers) ? b.servers : []).map((s) => {
-        const ok = String(s.status || '').toUpperCase().startsWith('UP');
-        return `${esc(s.name)}: <span class="${ok ? 'ok' : 'warn'}">${esc(s.status || '')}</span>`;
-      }).join(', ') || '—';
-      return `<tr><td><code>${esc(b.name || '')}</code></td><td>${esc(b.status || '')}</td><td>${esc(b.health || '—')}</td><td>${b.sessions_cur != null ? esc(String(b.sessions_cur)) : '—'}</td><td style="font-size:0.85rem">${srv}</td></tr>`;
-    }).join('');
-    tab.innerHTML = rows
-      ? `<table><thead><tr><th>Backend</th><th>Status</th><th>Health</th><th>Sess</th><th>Servers</th></tr></thead><tbody>${rows}</tbody></table>`
-      : '<p class="dash-note">No backend rows yet.</p>';
+    const active = document.getElementById('dash-active-sessions');
+    rr.textContent = 'Unknown';
+    active.textContent = 'Unknown';
+    if (errEl) errEl.textContent = '';
+    if (table) table.innerHTML = stateView('loading', 'Loading HAProxy runtime…');
+
+    const [summaryResponse, runtimeResponse] = await Promise.all([
+      dashboardRequest('/api/v1/stats/summary'),
+      dashboardRequest('/api/v1/stats/haproxy')
+    ]);
+    if (sessionExpired) return { success: 0, failures: [] };
+
+    const failures = [];
+    let success = 0;
+    const summary = await dashboardJSON(summaryResponse);
+    if (summaryResponse && summaryResponse.ok && summary) {
+      success++;
+      rr.textContent = summary.req_rate != null && Number.isFinite(Number(summary.req_rate))
+        ? Number(summary.req_rate).toFixed(1)
+        : 'Unknown';
+      active.textContent = summary.active_sessions != null ? String(summary.active_sessions) : 'Unknown';
+      if (summary.error && errEl) errEl.textContent = String(summary.error);
+    } else {
+      failures.push('HAProxy summary (' + responseLabel(summaryResponse) + ')');
+    }
+
+    const runtime = await dashboardJSON(runtimeResponse);
+    if (runtimeResponse && runtimeResponse.ok && runtime) {
+      success++;
+      const backends = Array.isArray(runtime.backends) ? runtime.backends : [];
+      if (!backends.length) {
+        table.innerHTML = stateView('empty', 'No HAProxy backend rows were returned.');
+      } else {
+        const rows = backends.map((backend) => {
+          const servers = (Array.isArray(backend.servers) ? backend.servers : []).map((server) => {
+            const serverStatus = String(server.status || 'unknown');
+            const tone = serverStatus.toUpperCase().startsWith('UP') ? 'success' : (serverStatus ? 'warning' : 'unknown');
+            return esc(server.name || 'server') + ': ' + statusBadge(serverStatus || 'Unknown', tone);
+          }).join(' ') || 'Unknown';
+          const backendStatus = String(backend.status || 'unknown');
+          const backendTone = backendStatus.toUpperCase().startsWith('UP') ? 'success' : (backendStatus ? 'warning' : 'unknown');
+          return '<tr><td><code>' + esc(backend.name || '') + '</code></td><td>' +
+            statusBadge(backendStatus || 'Unknown', backendTone) + '</td><td>' +
+            esc(backend.health || 'Unknown') + '</td><td>' +
+            (backend.sessions_cur != null ? esc(String(backend.sessions_cur)) : 'Unknown') +
+            '</td><td style="font-size:0.85rem">' + servers + '</td></tr>';
+        }).join('');
+        table.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Backend</th><th>Runtime status</th><th>Health field</th><th>Sessions</th><th>Servers</th></tr></thead><tbody>' +
+          rows + '</tbody></table></div>';
+      }
+    } else {
+      failures.push('HAProxy runtime (' + responseLabel(runtimeResponse) + ')');
+      table.innerHTML = stateView('offline', 'HAProxy runtime is unavailable. Use Refresh after checking the stats socket and API logs.');
+    }
+
+    if (failures.length && errEl) errEl.textContent = failures.join(' · ');
+    return { success, failures };
   }
 
   async function loadDashboard() {
-    const stEl = document.getElementById('dash-status');
-    stEl.textContent = '';
-    const [stR, appsR, certSumR, revR, csR, decR, ipblR, srcR, svcR] = await Promise.all([
-      fetch('/api/v1/status', { headers: hdr() }),
-      fetch('/api/v1/applications', { headers: hdr() }),
-      fetch('/api/v1/certificates/summary', { headers: hdr() }),
-      fetch('/api/v1/revisions?limit=30', { headers: hdr() }),
-      fetch('/api/v1/integrations/crowdsec', { headers: hdr() }),
-      fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() }),
-      fetch('/api/v1/ipbl/local', { headers: hdr() }),
-      fetch('/api/v1/ipbl/sources', { headers: hdr() }),
-      fetch('/api/v1/system/services', { headers: hdr() })
+    const loadedAt = document.getElementById('dash-loaded-at');
+    resetDashboardView();
+
+    const requests = [
+      ['API status', '/api/v1/status'],
+      ['Applications', '/api/v1/applications'],
+      ['Certificate summary', '/api/v1/certificates/summary'],
+      ['Revision history', '/api/v1/revisions?limit=30'],
+      ['CrowdSec LAPI', '/api/v1/integrations/crowdsec'],
+      ['CrowdSec decisions', '/api/v1/integrations/crowdsec/decisions'],
+      ['Local IP blacklist', '/api/v1/ipbl/local'],
+      ['IP blacklist sources', '/api/v1/ipbl/sources'],
+      ['systemd services', '/api/v1/system/services']
+    ];
+    const responses = await Promise.all(requests.map((item) => dashboardRequest(item[1])));
+    if (sessionExpired) return;
+
+    const failedSources = [];
+    let successCount = 0;
+    responses.forEach((response, index) => {
+      if (response && response.ok) successCount++;
+      else failedSources.push(requests[index][0] + ' (' + responseLabel(response) + ')');
+    });
+
+    const [statusResponse, appsResponse, certResponse, revisionResponse, crowdsecResponse,
+      decisionsResponse, localResponse, sourcesResponse, servicesResponse] = responses;
+    const [status, appsData, certSummary, revisions, crowdsec, localEntries, sourceEntries, servicesData] = await Promise.all([
+      dashboardJSON(statusResponse), dashboardJSON(appsResponse), dashboardJSON(certResponse),
+      dashboardJSON(revisionResponse), dashboardJSON(crowdsecResponse), dashboardJSON(localResponse),
+      dashboardJSON(sourcesResponse), dashboardJSON(servicesResponse)
     ]);
+    if (sessionExpired) return;
 
-    if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 || svcR.status === 401 ||
-      stR.status === 403 || appsR.status === 403 || certSumR.status === 403 || svcR.status === 403) {
-      if (stR.status === 401 || appsR.status === 401 || certSumR.status === 401 || svcR.status === 401) setTok('');
-      refreshSession();
-      return;
+    const attention = [];
+    if (status) {
+      renderApplicationVersion(status.version);
+      document.getElementById('dash-state-dir').textContent = status.state_dir ? 'State directory reported' : '';
+    } else {
+      renderApplicationVersion('');
+      document.getElementById('dash-state-dir').textContent = 'Status endpoint unavailable';
     }
 
-    try {
+    let apps = null;
+    if (Array.isArray(appsData)) {
+      apps = appsData;
+      const enabled = apps.filter((app) => app.enabled).length;
+      document.getElementById('dash-apps-stat').textContent = enabled + ' / ' + apps.length;
 
-    let status = {};
-    try { status = await stR.json(); } catch (_) {}
-    renderApplicationVersion(status.version);
-    document.getElementById('dash-state-dir').textContent = status.state_dir ? `State: ${status.state_dir}` : '';
-
-    let apps = [];
-    try {
-      if (appsR.ok) apps = await appsR.json();
-    } catch (_) {}
-    if (!Array.isArray(apps)) apps = [];
-    const en = apps.filter((a) => a.enabled).length;
-    document.getElementById('dash-apps-stat').textContent = `${en} / ${apps.length}`;
-    let prot = 0;
-    let cust = 0;
-    let rpo = 0;
-    const rpoNames = [];
-    for (const a of apps) {
-      const m = (a.security && a.security.mode) || 'balanced';
-      if (m === 'reverse-proxy-only') {
-        rpo++;
-        rpoNames.push(a.name || a.public_host || a.id);
-      } else if (m === 'custom') cust++;
-      else prot++;
-    }
-    const dsec = document.getElementById('dash-sec-line');
-    if (dsec) {
-      dsec.textContent = `Applications: ${apps.length} total · 🟢 Protected presets: ${prot} · 🟡 Custom: ${cust} · 🔴 Reverse proxy only: ${rpo}`;
-    }
-    const dsw = document.getElementById('dash-sec-warn');
-    if (dsw) {
-      if (rpo > 0) {
-        dsw.classList.remove('hidden');
-        dsw.innerHTML = '⚠️ ' + rpo + ' application(s) running without protections: <strong>' + esc(rpoNames.join(', ')) + '</strong>. Review security mode before production.';
-      } else {
-        dsw.classList.add('hidden');
-        dsw.textContent = '';
+      let savedPreset = 0;
+      let custom = 0;
+      let reverseProxyOnly = 0;
+      let httpOnly = 0;
+      const reverseProxyNames = [];
+      const httpOnlyNames = [];
+      for (const app of apps) {
+        const mode = (app.security && app.security.mode) || 'balanced';
+        if (mode === 'reverse-proxy-only') {
+          reverseProxyOnly++;
+          reverseProxyNames.push(app.name || app.public_host || app.id || 'Unnamed application');
+        } else if (mode === 'custom') {
+          custom++;
+        } else {
+          savedPreset++;
+        }
+        if (String(app.listen_mode || 'https_only').toLowerCase() === 'http_only') {
+          httpOnly++;
+          httpOnlyNames.push(app.name || app.public_host || app.id || 'Unnamed application');
+        }
       }
-    }
-
-    let httpOnly = 0;
-    const httpOnlyNames = [];
-    for (const a of apps) {
-      const lm = String(a.listen_mode || 'https_only').toLowerCase();
-      if (lm === 'http_only') {
-        httpOnly++;
-        httpOnlyNames.push(a.name || a.public_host || a.id);
+      document.getElementById('dash-sec-line').textContent = 'Saved preset modes: ' + savedPreset +
+        ' · Custom: ' + custom + ' · Reverse proxy only: ' + reverseProxyOnly;
+      document.getElementById('dash-http-line').textContent = 'Saved HTTP-only listen mode: ' + httpOnly;
+      if (reverseProxyOnly > 0) {
+        attention.push(alertView('warning', 'Saved mode requires review',
+          reverseProxyOnly + ' application(s) use reverse-proxy-only in saved configuration: ' +
+          reverseProxyNames.join(', ') + '. This does not report applied state.'));
       }
-    }
-    const dhLine = document.getElementById('dash-http-line');
-    if (dhLine) {
-      dhLine.textContent = httpOnly > 0
-        ? ('HTTP-only apps: ' + httpOnly + ' ⚠ — review before production')
-        : ('HTTP-only apps: ' + httpOnly);
-    }
-    const dhw = document.getElementById('dash-http-warn');
-    if (dhw) {
       if (httpOnly > 0) {
-        dhw.classList.remove('hidden');
-        dhw.innerHTML = '⚠️ ' + httpOnly + ' application(s) publish plain HTTP (no TLS at the edge): <strong>' + esc(httpOnlyNames.join(', ')) + '</strong>. Intended for LAN, IoT, or debugging — not for untrusted networks.';
-      } else {
-        dhw.classList.add('hidden');
-        dhw.textContent = '';
+        attention.push(alertView('warning', 'Plain HTTP is configured',
+          httpOnly + ' application(s) have HTTP-only saved configuration: ' + httpOnlyNames.join(', ') + '.'));
       }
+
+      const rows = apps.map((app) => {
+        const configured = app.enabled ? statusBadge('Enabled', 'info') : statusBadge('Disabled', 'neutral');
+        const mode = (app.security && app.security.mode) || 'balanced';
+        return '<tr><td>' + esc(app.name || '') + '</td><td>' + esc(app.public_host || '') +
+          '</td><td><code>' + esc(app.backend_host || '') + ':' + esc(String(app.backend_port || '')) +
+          '</code></td><td>' + statusBadge('Saved: ' + mode, 'neutral') + '</td><td>' + configured + '</td></tr>';
+      }).join('');
+      document.getElementById('dash-backends').innerHTML = apps.length
+        ? '<div class="table-scroll"><table><thead><tr><th>Name</th><th>Public hostname</th><th>Saved backend</th><th>Saved policy</th><th>Configured state</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : stateView('empty', 'No applications are configured.');
+    } else {
+      document.getElementById('dash-backends').innerHTML = stateView('error', 'Saved applications are unavailable. Use Refresh to retry.');
     }
 
-    let certSum = null;
-    try {
-      if (certSumR.ok) certSum = await certSumR.json();
-    } catch (_) {}
-    const certAttention = ((certSum && certSum.certificates) || []).filter((c) => c.attention);
-    const dcw = document.getElementById('dash-cert-warn');
-    dcw.classList.toggle('hidden', certAttention.length === 0);
-    dcw.textContent = certAttention.length === 0 ? '' :
-      '⚠️ Certificates need attention: ' +
-      certAttention.map((c) => `${c.primary_domain || c.id} (${c.attention})`).join(', ') +
-      '. Details are on the Certificates tab.';
-    if (certSum && typeof certSum.valid === 'number') {
-      document.getElementById('dash-certs-stat').textContent =
-        `${certSum.valid} / ${certSum.expiring_soon} / ${certSum.expired}`;
-      const failed = certSum.failed || 0;
-      const pend = certSum.total - certSum.valid - certSum.expiring_soon - certSum.expired - failed;
-      const sub = document.getElementById('dash-certs-sub');
-      if (sub) {
-        sub.textContent = `total ${certSum.total}` + (pend > 0 ? ` · pending ${pend}` : '') +
-          (failed > 0 ? ` · failed ${failed}` : '');
+    if (certSummary && typeof certSummary.valid === 'number') {
+      const expiring = Number(certSummary.expiring_soon || 0);
+      const expired = Number(certSummary.expired || 0);
+      const failed = Number(certSummary.failed || 0);
+      document.getElementById('dash-certs-stat').textContent = certSummary.valid + ' / ' + expiring + ' / ' + expired;
+      document.getElementById('dash-certs-sub').textContent = 'valid · expiring · expired · total ' + Number(certSummary.total || 0) +
+        (failed > 0 ? ' · failed ' + failed : '');
+      const certAttention = (Array.isArray(certSummary.certificates) ? certSummary.certificates : []).filter((cert) => cert.attention);
+      if (certAttention.length) {
+        attention.push(alertView('danger', 'Certificates need attention',
+          certAttention.map((cert) => (cert.primary_domain || cert.id || 'Certificate') + ': ' + cert.attention).join(', ') + '.'));
       }
     } else {
-      document.getElementById('dash-certs-stat').textContent = '—';
-      const sub = document.getElementById('dash-certs-sub');
-      if (sub) sub.textContent = 'summary unavailable';
+      document.getElementById('dash-certs-sub').textContent = 'Summary unavailable';
     }
 
-    let cs = {};
-    try { if (csR.ok) cs = await csR.json(); } catch (_) {}
-    const connected = !!cs.reachable;
-    document.getElementById('dash-cs-stat').innerHTML = connected
-      ? '<span class="ok">● connected</span>'
-      : '<span class="warn">○ disconnected</span>';
-    document.getElementById('dash-cs-sub').textContent = cs.last_message || '';
-
-    let decN = null;
-    const decTxt = await decR.text();
-    if (decR.ok) {
-      decN = decisionsCount(decTxt);
-    }
-    if (decN != null) {
-      document.getElementById('dash-cs-sub').textContent =
-        (document.getElementById('dash-cs-sub').textContent || '') +
-        (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') +
-        `decisions (sample): ${decN}`;
-    } else if (decR && !decR.ok) {
-      let decErr = 'decisions unavailable';
-      try {
-        const ej = JSON.parse(decTxt);
-        if (ej && (ej.error || ej.message)) decErr = humanizeCrowdSecErr(ej.error || ej.message);
-      } catch (_) {
-        if (decTxt && decTxt.trim()) decErr = humanizeCrowdSecErr(decTxt.trim().slice(0, 200));
-      }
-      document.getElementById('dash-cs-sub').textContent =
-        (document.getElementById('dash-cs-sub').textContent || '') + ' · ' + decErr;
-    }
-
-    let revs = [];
-    try {
-      if (revR.ok) revs = await revR.json();
-    } catch (_) {}
-    if (Array.isArray(revs) && revs.length) {
-      const cur = revs.find((r) => r.is_current);
-      if (cur) {
-        document.getElementById('dash-revision-line').textContent =
-          `SHA ${shortSha(cur.sha)} · recorded ${cur.created_at || '—'}`;
+    if (crowdsec && typeof crowdsec.reachable === 'boolean') {
+      if (crowdsec.reachable) {
+        document.getElementById('dash-cs-stat').innerHTML = statusBadge('LAPI reachable', 'success');
       } else {
-        document.getElementById('dash-revision-line').textContent = 'No row marked current (live file may be newer than DB).';
+        document.getElementById('dash-cs-stat').innerHTML = statusBadge('LAPI unreachable', 'danger');
+        attention.push(alertView('danger', 'CrowdSec LAPI is unreachable',
+          crowdsec.last_message || 'The LAPI probe failed. Check the CrowdSec integration settings and service.'));
       }
-      const top = revs[0];
-      const lab = (top.label || '').trim();
-      const isRb = lab.toLowerCase().startsWith('rollback from');
-      document.getElementById('dash-last-apply').textContent =
-        `${top.created_at || '—'} · ${lab || '(no label)'} · SHA ${shortSha(top.sha)}` +
-        (isRb ? ' · note: rollback entry' : '');
-    } else {
-      document.getElementById('dash-revision-line').textContent = 'No revisions yet.';
-      document.getElementById('dash-last-apply').textContent = '—';
+      document.getElementById('dash-cs-sub').textContent = crowdsec.last_message || 'Reachability probe completed';
     }
 
-    const rowsHtml = (apps || []).map((a) => {
-      const st = a.enabled ? '<span class="ok">● enabled</span>' : '<span class="warn">○ disabled</span>';
-      return `<tr><td>${esc(a.name)}</td><td>${esc(a.public_host)}</td><td><code>${esc(a.backend_host)}:${a.backend_port}</code></td><td>${st}</td></tr>`;
-    }).join('');
-    document.getElementById('dash-backends').innerHTML = apps.length
-      ? `<table><thead><tr><th>Name</th><th>Public</th><th>Backend</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>`
-      : '<p class="dash-note">No applications yet.</p>';
+    if (decisionsResponse && decisionsResponse.ok) {
+      const decisionsText = await decisionsResponse.text().catch(() => '');
+      const count = decisionsCount(decisionsText);
+      if (count != null) {
+        document.getElementById('dash-cs-sub').textContent +=
+          (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') + 'sample decisions: ' + count;
+      }
+    }
 
-    let locals = [];
-    try {
-      if (ipblR.ok) locals = await ipblR.json();
-    } catch (_) {}
-    let srcs = [];
-    try {
-      if (srcR.ok) srcs = await srcR.json();
-    } catch (_) {}
-    const localN = Array.isArray(locals) ? locals.length : 0;
-    const srcN = Array.isArray(srcs) ? srcs.length : 0;
-    document.getElementById('dash-ipbl-stat').textContent = `${localN} · ${srcN}`;
+    if (Array.isArray(localEntries) || Array.isArray(sourceEntries)) {
+      const localText = Array.isArray(localEntries) ? String(localEntries.length) : 'Unknown';
+      const sourceText = Array.isArray(sourceEntries) ? String(sourceEntries.length) : 'Unknown';
+      document.getElementById('dash-ipbl-stat').textContent = localText + ' · ' + sourceText;
+    }
 
-    const svcBox = document.getElementById('dash-services');
-    if (svcBox) {
-      let svcData = null;
-      try {
-        if (svcR.ok) svcData = await svcR.json();
-      } catch (_) {}
-      if (svcData && Array.isArray(svcData.services) && svcData.services.length) {
-        const srows = svcData.services.map((s) => {
-          const st = String(s.active_state || 'unknown');
-          const pill = st === 'active' ? '<span class="ok">' + esc(st) + '</span>' : '<span class="warn">' + esc(st) + '</span>';
-          return '<tr><td><code>' + esc(s.unit || '') + '</code></td><td>' + esc(s.label || '') + '</td><td>' + pill + '</td></tr>';
+    if (Array.isArray(revisions)) {
+      if (revisions.length) {
+        const current = revisions.find((revision) => revision.is_current);
+        document.getElementById('dash-revision-line').textContent = current
+          ? 'Recorded current SHA ' + shortSha(current.sha) + ' · ' + (current.created_at || 'time unavailable') + ' · applied state after reload: unknown'
+          : 'No revision is marked current. Applied state is unknown.';
+        const latest = revisions[0];
+        document.getElementById('dash-last-apply').textContent =
+          (latest.created_at || 'Time unavailable') + ' · ' + ((latest.label || '').trim() || 'No label') +
+          ' · SHA ' + shortSha(latest.sha);
+        if (!current) attention.push(alertView('unknown', 'Recorded revision is unclear', 'No revision row is marked current. Runtime state is not inferred.'));
+      } else {
+        document.getElementById('dash-revision-line').textContent = 'No recorded revisions. Applied state is unknown.';
+        document.getElementById('dash-last-apply').textContent = 'No config activity recorded.';
+      }
+    }
+
+    const servicesBox = document.getElementById('dash-services');
+    if (servicesData && Array.isArray(servicesData.services)) {
+      if (!servicesData.services.length) {
+        servicesBox.innerHTML = stateView('empty', 'No systemd service rows were returned.');
+      } else {
+        const unhealthy = [];
+        const rows = servicesData.services.map((service) => {
+          const state = String(service.active_state || 'unknown');
+          const tone = state === 'active' ? 'success' : (state === 'unknown' ? 'unknown' : 'warning');
+          if (state !== 'active') unhealthy.push((service.label || service.unit || 'Service') + ': ' + state);
+          return '<tr><td><code>' + esc(service.unit || '') + '</code></td><td>' +
+            esc(service.label || '') + '</td><td>' + statusBadge(state, tone) + '</td></tr>';
         }).join('');
-        svcBox.innerHTML = '<table><thead><tr><th>Unit</th><th>Role</th><th>Active</th></tr></thead><tbody>' + srows + '</tbody></table>';
+        servicesBox.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Unit</th><th>Role</th><th>systemd ActiveState</th></tr></thead><tbody>' +
+          rows + '</tbody></table></div>';
+        if (unhealthy.length) attention.push(alertView('warning', 'Component state needs review', unhealthy.join(' · ')));
+      }
+    } else {
+      servicesBox.innerHTML = stateView('error', 'systemd service state is unavailable. Use Refresh after checking API host access to systemd.');
+    }
+
+    const trafficResult = await loadDashTraffic();
+    if (sessionExpired) return;
+    successCount += trafficResult.success;
+    failedSources.push(...trafficResult.failures);
+
+    if (failedSources.length) {
+      attention.unshift(alertView('unknown', 'Dashboard data is incomplete',
+        failedSources.join(' · ') + '. Unknown values are not replaced with zero.'));
+    }
+    if (!attention.length) {
+      attention.push(alertView('success', 'No attention items in loaded data',
+        'All requested sources responded and no loaded item currently reports a warning.'));
+    }
+    document.getElementById('dash-attention-list').innerHTML = attention.join('');
+
+    const statusEl = document.getElementById('dash-status');
+    if (successCount === 0) {
+      statusEl.dataset.state = 'offline';
+      statusEl.textContent = 'Dashboard unavailable. Use Refresh after checking the API and network.';
+      loadedAt.textContent = 'Not loaded';
+    } else {
+      const stamp = new Date().toLocaleTimeString();
+      if (failedSources.length) {
+        statusEl.dataset.state = 'error';
+        statusEl.textContent = 'Partial data loaded. Unavailable sources remain Unknown.';
+        loadedAt.textContent = 'Partial data at ' + stamp;
       } else {
-        const http = svcR && typeof svcR.status === 'number' ? ' HTTP ' + svcR.status : '';
-        svcBox.innerHTML =
-          '<p class="dash-note">Service status unavailable or empty response.' +
-          http +
-          '. If you see <strong>404</strong>, rebuild and restart <code>easy-waf-api</code> (old binary has no <code>/api/v1/system/services</code>).</p>';
+        statusEl.dataset.state = 'ready';
+        statusEl.textContent = 'Dashboard data loaded.';
+        loadedAt.textContent = 'Loaded at ' + stamp;
       }
     }
-
-    const bad = [stR, appsR, certSumR, revR, svcR].filter((x) => !x.ok);
-    if (bad.length) stEl.textContent = 'Some dashboard requests failed — check session or API logs.';
-
-    await loadDashTraffic();
-    startDashStatsTimer();
-    } catch (e) {
-      console.error('loadDashboard', e);
-      stEl.textContent = 'Dashboard script error — open DevTools (F12) Console. ' + (e && e.message ? e.message : String(e));
-    }
+    if (panelFromHash() === 'dashboard') startDashStatsTimer();
   }
 
+  document.getElementById('btn-dashboard-refresh').onclick = () => {
+    void withBusy(document.getElementById('btn-dashboard-refresh'), loadDashboard);
+  };
   document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
 
   const btnPromSave = document.getElementById('btn-prometheus-save');
