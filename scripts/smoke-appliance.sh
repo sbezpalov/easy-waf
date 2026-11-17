@@ -9,7 +9,7 @@
 # Usage (as root on the appliance):
 #   sudo bash scripts/smoke-appliance.sh
 #   sudo EASY_WAF_SMOKE_MMDB=/root/GeoLite2-Country.tar.gz bash scripts/smoke-appliance.sh
-#   sudo EASY_WAF_SMOKE_USER=admin EASY_WAF_SMOKE_PASSWORD=… bash scripts/smoke-appliance.sh
+#   For operator credentials, use the root-shell example in docs/ACCEPTANCE.md.
 #
 # Read-mostly: the only state-changing steps are a local easy-waf-admin apply-edge
 # (what an operator does anyway) and, when a database file is supplied, a GeoIP
@@ -28,6 +28,9 @@
 #   EASY_WAF_SMOKE_SKIP_APPLY=1  do not call easy-waf-admin apply-edge
 
 set -uo pipefail
+umask 077
+# These inputs are needed by this shell only.
+export -n EASY_WAF_ADMIN_TOKEN EASY_WAF_SMOKE_PASSWORD EASY_WAF_SMOKE_TOTP_CODE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/env-file.sh
@@ -77,7 +80,10 @@ command -v curl &>/dev/null || {
   exit 2
 }
 
-SMOKE_TMPDIR="$(mktemp -d)"
+if ! SMOKE_TMPDIR="$(mktemp -d)"; then
+  echo "ERROR: cannot create private smoke scratch directory" >&2
+  exit 2
+fi
 trap 'rm -rf "$SMOKE_TMPDIR"' EXIT
 
 # The systemd EnvironmentFile is data, not shell code. Import only the token
@@ -107,19 +113,27 @@ smoke_curl() {
   curl "${CURL_TLS[@]}" --connect-timeout 5 --max-time 30 -sS "$@" 2>/dev/null
 }
 
+# curl reads the bearer from a private file rather than its process arguments.
+smoke_curl_auth() {
+  local token="$1" header="$SMOKE_TMPDIR/authorization"
+  shift
+  [[ -n "$token" && "$token" != *[[:cntrl:]]* ]] || return 1
+  printf 'Authorization: Bearer %s\n' "$token" >"$header" || return 1
+  smoke_curl -H "@$header" "$@"
+}
+
 # api <method> <path> [data] — prints "<status>\n<body>".
 # curl can print an HTTP status even when the response transfer failed.
 api() {
   local method="$1" path="$2" data="${3:-}"
   local args=(-o "${SMOKE_TMPDIR}/body" -w '%{http_code}'
     -X "$method" "${BASE}${path}"
-    -H "Authorization: Bearer ${api_token}"
     -H "X-Requested-With: XMLHttpRequest")
   if [[ -n "$data" ]]; then
     args+=(-H "Content-Type: application/json" -d "$data")
   fi
   local code
-  if ! code="$(smoke_curl "${args[@]}")"; then
+  if ! code="$(smoke_curl_auth "$api_token" "${args[@]}")"; then
     printf '000\n'
     return
   fi
@@ -157,9 +171,8 @@ operator_login() {
   pass "operator session established"
 
   confirm_json="$(printf '{\"password\":\"%s\"}' "$(json_escape "${EASY_WAF_SMOKE_PASSWORD}")")"
-  if ! confirm_code="$(smoke_curl -o "${SMOKE_TMPDIR}/confirm" -w '%{http_code}' \
+  if ! confirm_code="$(smoke_curl_auth "$session_jwt" -o "${SMOKE_TMPDIR}/confirm" -w '%{http_code}' \
     -X POST "${BASE}/api/v1/auth/confirm" \
-    -H "Authorization: Bearer ${session_jwt}" \
     -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
     --data-binary @- <<<"$confirm_json")"; then
     fail "password confirmation request failed"
@@ -410,9 +423,8 @@ if [[ -n "${EASY_WAF_SMOKE_MMDB:-}" ]]; then
   elif [[ -z "$step_up_jwt" ]]; then
     skip "GeoIP upload needs EASY_WAF_SMOKE_USER/EASY_WAF_SMOKE_PASSWORD and a confirmed session"
   else
-    if ! code="$(smoke_curl --max-time 120 -o "${SMOKE_TMPDIR}/geoip" -w '%{http_code}' \
+    if ! code="$(smoke_curl_auth "$step_up_jwt" --max-time 120 -o "${SMOKE_TMPDIR}/geoip" -w '%{http_code}' \
       -X POST "${BASE}/api/v1/geoip/database" \
-      -H "Authorization: Bearer ${step_up_jwt}" \
       -H "X-Requested-With: XMLHttpRequest" \
       -H "Content-Type: application/octet-stream" \
       --data-binary "@${EASY_WAF_SMOKE_MMDB}")"; then
@@ -442,12 +454,12 @@ if [[ -n "${EASY_WAF_SMOKE_USER:-}" && -n "${EASY_WAF_SMOKE_PASSWORD:-}" ]]; the
     skip "operator session was not established"
   else
     me() {
-      smoke_curl -o /dev/null -w '%{http_code}' "${BASE}/api/v1/auth/me" \
-        -H "Authorization: Bearer ${session_jwt}" -H 'X-Requested-With: XMLHttpRequest'
+      smoke_curl_auth "$session_jwt" -o /dev/null -w '%{http_code}' "${BASE}/api/v1/auth/me" \
+        -H 'X-Requested-With: XMLHttpRequest'
     }
     before="$(me)" || before=000
-    logout="$(smoke_curl -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/auth/logout" \
-      -H "Authorization: Bearer ${session_jwt}" -H 'X-Requested-With: XMLHttpRequest' \
+    logout="$(smoke_curl_auth "$session_jwt" -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/auth/logout" \
+      -H 'X-Requested-With: XMLHttpRequest' \
       -H 'Content-Type: application/json' -d '{}')" || logout=000
     after="$(me)" || after=000
     if [[ "$before" == "200" && "$logout" == "200" && "$after" == "401" ]]; then

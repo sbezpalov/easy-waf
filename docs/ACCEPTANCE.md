@@ -87,6 +87,18 @@ exact database/state recovery is required. Record cleanup and independent checks
 - Smoke checks the daily backup timer when it is enabled. The timer must be
   active with a scheduled run or a backup in progress. A disabled or masked
   timer is reported as skipped.
+- For authenticated smoke, enter the password in a root Bash shell in the
+  checkout. Set `EASY_WAF_SMOKE_TOTP_CODE` for the run if the account uses TOTP.
+
+  ```bash
+  read -rp 'Smoke operator username: ' smoke_user
+  read -rsp 'Smoke operator password: ' smoke_password
+  printf '\n'
+  EASY_WAF_SMOKE_USER="$smoke_user" EASY_WAF_SMOKE_PASSWORD="$smoke_password" \
+    bash scripts/smoke-appliance.sh
+  unset smoke_user smoke_password
+  ```
+
 - Upgrade an appliance that is actually running 1.6.0. Record its API version,
   installed binary hashes and, for package installations, dpkg version before
   starting. Authenticate the candidate input and retain a matched backup.

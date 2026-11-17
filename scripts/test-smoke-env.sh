@@ -7,9 +7,14 @@ trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/bin" "$ROOT/state"
 export SMOKE_TEST_ARGS="$ROOT/curl-args"
 export SMOKE_TEST_ADMIN_ARGS="$ROOT/admin-args"
+export SMOKE_TEST_HEADERS="$ROOT/headers"
+export SMOKE_TEST_CHILD_CREDENTIALS="$ROOT/child-credentials"
 cat >"$ROOT/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >>"$SMOKE_TEST_ARGS"
+if [[ -v EASY_WAF_ADMIN_TOKEN || -v EASY_WAF_SMOKE_PASSWORD || -v EASY_WAF_SMOKE_TOTP_CODE ]]; then
+  : >"$SMOKE_TEST_CHILD_CREDENTIALS"
+fi
 body='{}'
 code=200
 url=''
@@ -25,12 +30,17 @@ for arg in "$@"; do
   fi
 done
 case "$url" in
-  */api/v1/auth/login|*/api/v1/auth/confirm) body='{"token":"fixture-session"}' ;;
+  */api/v1/auth/login) body='{"token":"fixture-session"}' ;;
+  */api/v1/auth/confirm) body='{"token":"fixture-step-up"}' ;;
   */api/v1/auth/logout) : >"$SMOKE_TEST_LOGOUT_MARKER" ;;
   */api/v1/auth/me) if [[ -e "$SMOKE_TEST_LOGOUT_MARKER" ]]; then code=401; fi ;;
 esac
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == -o ]]; then shift; printf '%s\n' "$body" >"$1"; fi
+  if [[ "$1" == -H && "$2" == @* ]]; then
+    IFS= read -r authorization <"${2#@}" || exit 90
+    printf '%s|%s\n' "$url" "$authorization" >>"$SMOKE_TEST_HEADERS"
+  fi
   shift
 done
 printf '%s' "$code"
@@ -90,7 +100,11 @@ assert_timer $'LoadState=not-found\nActiveState=inactive' \
 # Appliance checks intentionally fail in this non-appliance fixture.
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 [[ ! -e "$marker" ]] || { echo 'FAIL: env file executed shell code' >&2; exit 1; }
-grep -qxF "Authorization: Bearer $expected" "$SMOKE_TEST_ARGS" || { echo 'FAIL: token not preserved literally' >&2; exit 1; }
+if grep -qF "Authorization: Bearer $expected" "$SMOKE_TEST_ARGS"; then
+  echo 'FAIL: bearer token is present in curl command arguments' >&2; exit 1
+fi
+grep -qxF "https://fixture.example/api/v1/status|Authorization: Bearer $expected" "$SMOKE_TEST_HEADERS" ||
+  { echo 'FAIL: file token not preserved literally' >&2; exit 1; }
 if ! grep -qxF -- '-env-file' "$SMOKE_TEST_ADMIN_ARGS" ||
   ! grep -qxF "$EASY_WAF_ENV_FILE" "$SMOKE_TEST_ADMIN_ARGS" ||
   ! grep -qxF "$EASY_WAF_STATE_DIR" "$SMOKE_TEST_ADMIN_ARGS"; then
@@ -98,15 +112,16 @@ if ! grep -qxF -- '-env-file' "$SMOKE_TEST_ADMIN_ARGS" ||
 fi
 printf 'EASY_WAF_ADMIN_TOKEN=\n' >"$EASY_WAF_ENV_FILE"
 export EASY_WAF_ADMIN_TOKEN='stale-process-token-123456789'
-: >"$SMOKE_TEST_ARGS"
+: >"$SMOKE_TEST_HEADERS"
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
-if grep -qF 'Authorization: Bearer stale-process-token' "$SMOKE_TEST_ARGS"; then
+if grep -qF 'Authorization: Bearer stale-process-token' "$SMOKE_TEST_HEADERS"; then
   echo 'FAIL: empty file token used stale process token' >&2; exit 1
 fi
 : >"$EASY_WAF_ENV_FILE"
-: >"$SMOKE_TEST_ARGS"
+: >"$SMOKE_TEST_HEADERS"
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
-grep -qxF "Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" "$SMOKE_TEST_ARGS" || { echo 'FAIL: missing-key fallback lost' >&2; exit 1; }
+grep -qxF "https://fixture.example/api/v1/status|Authorization: Bearer $EASY_WAF_ADMIN_TOKEN" "$SMOKE_TEST_HEADERS" ||
+  { echo 'FAIL: missing-key fallback lost' >&2; exit 1; }
 grep -qF 'PASS  HAProxy runtime stats available after reload' "$ROOT/output" || { echo 'FAIL: valid runtime stats rejected' >&2; exit 1; }
 export SMOKE_TEST_STATS='{"frontends":[],"backends":[],"error":"fixture socket missing"}'
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
@@ -138,12 +153,21 @@ assert_failed_transfer '/api/v1/status' 'FAIL  GET /api/v1/status -> 000'
 assert_failed_transfer '/api/v1/stats/haproxy' 'FAIL  HAProxy runtime stats unavailable after reload'
 assert_failed_transfer '/api/v1/geoip/lookup?ip=8.8.8.8&nocache=1' 'FAIL  GeoIP lookup -> 000'
 
-export EASY_WAF_SMOKE_USER=fixture EASY_WAF_SMOKE_PASSWORD=fixture
+export EASY_WAF_SMOKE_USER=fixture EASY_WAF_SMOKE_PASSWORD=fixture-password EASY_WAF_SMOKE_TOTP_CODE=123456
 export EASY_WAF_SMOKE_MMDB="$ROOT/fixture.mmdb"
 : >"$EASY_WAF_SMOKE_MMDB"
 : >"$SMOKE_TEST_ARGS"
+: >"$SMOKE_TEST_HEADERS"
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 grep -qF 'PASS  logout revokes the session server-side' "$ROOT/output"
+grep -qxF 'https://fixture.example/api/v1/auth/confirm|Authorization: Bearer fixture-session' "$SMOKE_TEST_HEADERS"
+grep -qxF 'https://fixture.example/api/v1/geoip/database|Authorization: Bearer fixture-step-up' "$SMOKE_TEST_HEADERS"
+grep -qxF 'https://fixture.example/api/v1/auth/logout|Authorization: Bearer fixture-session' "$SMOKE_TEST_HEADERS"
+if grep -qE 'Authorization: Bearer|fixture-password|fixture-session|fixture-step-up' "$SMOKE_TEST_ARGS" ||
+   [[ -e "$SMOKE_TEST_CHILD_CREDENTIALS" ]]; then
+  echo 'FAIL: credentials passed in arguments or environment of curl' >&2
+  exit 1
+fi
 for expected_arg in --connect-timeout --max-time 5 30 120; do
   grep -qxF -- "$expected_arg" "$SMOKE_TEST_ARGS" || { echo "FAIL: missing HTTP timeout argument $expected_arg" >&2; exit 1; }
 done
