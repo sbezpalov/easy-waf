@@ -25,8 +25,10 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   previous package. Use APT for a package-managed appliance; use the script
   upgrade path only for an installation without a package. See
   [the upgrade procedure](docs/ACCEPTANCE.md#install-and-upgrade).
-- API startup applies the current migrations through 027. A binary downgrade
-  does not rewind PostgreSQL or certificate state. Recover with the matching
+- API startup applies migrations through 028, which adds persistent tracking
+  of saved and applied edge configuration. After this migration, older
+  binaries that only support schema 027 will refuse to start against the
+  upgraded database. Recover with the matching
   package and [matched backup/restore](docs/BACKUP_RESTORE.md), tested on a copy.
   Revision rollback changes edge artifacts, not saved applications/settings;
   a later Apply or API startup reconciliation can replace that runtime rollback.
@@ -37,6 +39,13 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
 
 ### Changed
 
+- **Clearer publication and apply status.** The dashboard distinguishes missing
+  data from service failures. The application flow guides first publication,
+  shows whether saved changes reached HAProxy, and reports application-specific
+  diagnostics.
+- **Safer appliance controls.** Network and firewall rollback status survives
+  a page reload. The panel shows a scoped service journal and improves keyboard
+  focus and accessible labels for high-risk actions.
 - **Remove unused OpenPGP advisory.** Update `golang.org/x/crypto` to v0.59.0, where deprecated OpenPGP is split out of the parent module, with its required x/sys, x/sync and x/text versions. The unsafe standalone OpenPGP module is not added.
 - **ACME contact validation.** Settings reject malformed, list and display-name contacts before persistence; the standalone Save ACME button checks its email field before sending. Rejected updates preserve saved configuration.
 - **Visible ACME configuration gaps.** Certificates warns when a missing contact pauses issuance/renewal or global staging selects untrusted certificates. The saved-state notice updates after load/save and remains unknown on settings-load failures.
