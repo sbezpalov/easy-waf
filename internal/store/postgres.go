@@ -18,8 +18,8 @@ import (
 	"github.com/easy-waf/easy-waf/internal/audit"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/google/uuid"
-	// Register pgx stdlib driver for database/sql.
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // Store is the PostgreSQL-backed configuration store (SME / future HA).
@@ -29,20 +29,37 @@ type Store struct {
 
 // OpenPostgres connects using DATABASE_URL (postgres://user:pass@host:port/db?sslmode=disable).
 func OpenPostgres(dsn string) (*Store, error) {
-	return openPostgres("pgx", dsn, true)
+	return openPostgres(dsn, true)
 }
 
 // OpenPostgresForDiagnostics connects without applying migrations.
 // Diagnostic callers should issue their queries in a read-only transaction.
 func OpenPostgresForDiagnostics(dsn string) (*Store, error) {
-	return openPostgres("pgx", dsn, false)
+	return openPostgres(dsn, false)
 }
 
-func openPostgres(driverName, dsn string, runMigrations bool) (*Store, error) {
-	db, err := sql.Open(driverName, dsn)
+var errInvalidPostgresSettings = errors.New("invalid PostgreSQL connection settings (check DATABASE_URL)")
+
+type postgresConnector struct {
+	dsn string
+}
+
+func (c postgresConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	// Parse on each new connection so updated PostgreSQL service and TLS files
+	// continue to take effect as database/sql replaces pooled connections.
+	connConfig, err := pgx.ParseConfig(c.dsn)
 	if err != nil {
-		return nil, err
+		// pgx redacts recognizable credentials on a best-effort basis. Never
+		// propagate the parser error from a configuration that may be malformed.
+		return nil, errInvalidPostgresSettings
 	}
+	return stdlib.GetConnector(*connConfig).Connect(ctx)
+}
+
+func (postgresConnector) Driver() driver.Driver { return stdlib.GetDefaultDriver() }
+
+func openPostgres(dsn string, runMigrations bool) (*Store, error) {
+	db := sql.OpenDB(postgresConnector{dsn: dsn})
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)

@@ -48,17 +48,18 @@ func ParsePostgresURL(dsn string) (PostgresConnParts, error) {
 	var z PostgresConnParts
 	u, err := url.Parse(strings.TrimSpace(dsn))
 	if err != nil {
-		return z, err
+		// url.Error quotes its input, including any credentials in the URL.
+		return z, fmt.Errorf("invalid PostgreSQL URL syntax")
 	}
 	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-		return z, fmt.Errorf("expected postgres URL scheme, got %q", u.Scheme)
+		return z, fmt.Errorf("expected postgres or postgresql URL scheme")
 	}
 	if u.User == nil {
 		return z, fmt.Errorf("postgres URL missing user")
 	}
 	user := u.User.Username()
 	if !isSimplePGIdent(user) {
-		return z, fmt.Errorf("unsupported postgres user name %q (use letters, digits, underscore)", user)
+		return z, fmt.Errorf("unsupported postgres user name (use letters, digits, underscore)")
 	}
 	z.User = user
 	host := u.Hostname()
@@ -75,7 +76,7 @@ func ParsePostgresURL(dsn string) (PostgresConnParts, error) {
 		return z, fmt.Errorf("postgres URL missing database name in path")
 	}
 	if !isSimplePGIdent(db) {
-		return z, fmt.Errorf("unsupported database name %q", db)
+		return z, fmt.Errorf("unsupported database name (use letters, digits, underscore)")
 	}
 	z.DBName = db
 	q := u.Query()

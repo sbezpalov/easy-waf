@@ -38,6 +38,14 @@ func TestRandomAlphanumericPassword_lengthAndAlphabet(t *testing.T) {
 	}
 }
 
+func TestParsePostgresURLReportsMalformedInputWithoutCredentials(t *testing.T) {
+	const dsn = "postgres://fixture:fixture-password%zz@localhost/easywaf"
+	_, err := ParsePostgresURL(dsn)
+	if err == nil || err.Error() != "invalid PostgreSQL URL syntax" {
+		t.Fatal("expected a fixed diagnostic for malformed PostgreSQL URLs")
+	}
+}
+
 func TestParseAndBuildPostgresURL_roundTrip(t *testing.T) {
 	raw := "postgres://easywaf:oldpass@127.0.0.1:5432/easywaf?sslmode=disable"
 	parts, err := ParsePostgresURL(raw)

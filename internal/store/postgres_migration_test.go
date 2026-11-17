@@ -4,58 +4,41 @@
 package store
 
 import (
-	"context"
-	"database/sql"
-	"database/sql/driver"
-	"fmt"
+	"errors"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
-type migrationCountingDriver struct {
-	execs atomic.Int64
-}
-
-var diagnosticDriverSequence atomic.Uint64
-
-func (d *migrationCountingDriver) Open(string) (driver.Conn, error) {
-	return &migrationCountingConn{execs: &d.execs}, nil
-}
-
-type migrationCountingConn struct {
-	execs *atomic.Int64
-}
-
-func (c *migrationCountingConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
-func (c *migrationCountingConn) Close() error                        { return nil }
-func (c *migrationCountingConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
-func (c *migrationCountingConn) Ping(context.Context) error          { return nil }
-
-func (c *migrationCountingConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
-	c.execs.Add(1)
-	return driver.RowsAffected(0), nil
-}
-
 func TestDiagnosticStoreOpenSkipsMigrations(t *testing.T) {
-	t.Parallel()
-
-	// sql.Register is process-global and has no unregister operation. Each
-	// -count iteration needs its own driver and isolated execution counter.
-	driverName := fmt.Sprintf("easy-waf-test-diagnostic-no-migrations-%d", diagnosticDriverSequence.Add(1))
-	drv := &migrationCountingDriver{}
-	sql.Register(driverName, drv)
-
-	st, err := openPostgres(driverName, "ignored", false)
+	st, err := OpenPostgresForDiagnostics(freshSchemaDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	if err := st.Ping(context.Background()); err != nil {
+	var migrationsAbsent bool
+	if err := st.db.QueryRowContext(t.Context(), "SELECT to_regclass('schema_migrations') IS NULL").Scan(&migrationsAbsent); err != nil {
 		t.Fatal(err)
 	}
-	if got := drv.execs.Load(); got != 0 {
-		t.Fatalf("diagnostic store open executed %d migration statements", got)
+	if !migrationsAbsent {
+		t.Fatal("diagnostic store created the migration ledger")
+	}
+}
+
+func TestInvalidConnectionSettingsReportOnlySafeDiagnostic(t *testing.T) {
+	for _, dsn := range []string{
+		"postgres://fixture:fixture-password%zz@localhost/easywaf",
+		"host=localhost password='fixture-password",
+	} {
+		for _, open := range []func(string) (*Store, error){OpenPostgres, OpenPostgresForDiagnostics} {
+			st, err := open(dsn)
+			if st != nil {
+				err = st.Ping(t.Context())
+				_ = st.Close()
+			}
+			if !errors.Is(err, errInvalidPostgresSettings) || strings.Contains(err.Error(), "fixture-password") {
+				t.Fatal("expected invalid connection settings to return a fixed diagnostic")
+			}
+		}
 	}
 }
 
