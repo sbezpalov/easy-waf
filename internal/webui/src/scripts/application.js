@@ -1,8 +1,3 @@
-    </main>
-  </div>
-</div>
-
-<script>
   const TOK = 'easy_waf_token';
   const getTok = () => sessionStorage.getItem(TOK) || '';
   const setTok = (t) => { if (t) sessionStorage.setItem(TOK, t); else sessionStorage.removeItem(TOK); };
@@ -5198,7 +5193,3 @@
   };
 
   refreshSession();
-</script>
-<div id="toast-host" class="toast-host" aria-live="polite" aria-relevant="additions"></div>
-</body>
-</html>

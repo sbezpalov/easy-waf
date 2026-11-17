@@ -99,7 +99,7 @@ Full appliance installation and external ACME/WAN acceptance remain manual.
 | High-risk interaction consistency | **Done** | Contextual confirmations for protective-rule and user deletion/reset actions; accessible SSH-key editor; temporary panel passwords use explicit reveal/copy/acknowledge and are cleared when the dialog closes |
 | Cross-screen reflow and accessibility | **Done** | All 12 screens verified at 390/768/1440 px and a 200% reflow equivalent; visible form controls have accessible names, mobile navigation restores focus, warnings have semantic toast variants, and sign-in guidance is HTTPS-first |
 | Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh`; System explicitly discloses that backup/restore are CLI-only and shows the packaged commands without fake GUI actions |
-| Web UI maintainability | **In progress** | `docs/WEBUI_MAINTAINABILITY.md`; deterministic generation and completed Phase 2 screen partials cover every route while preserving byte-identical `dist/index.html`, the single inline script and exact CSP hash; JavaScript separation remains Phase 3 |
+| Web UI maintainability | **In progress** | `docs/WEBUI_MAINTAINABILITY.md`; deterministic generation and completed Phase 2 screen partials cover every route; Phase 3a extracts the monolithic JavaScript source while preserving byte-identical `dist/index.html`, one inline script and the exact CSP hash |
 
 ## Platform constraints
 
