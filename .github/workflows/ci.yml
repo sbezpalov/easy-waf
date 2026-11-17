@@ -100,7 +100,7 @@ jobs:
             ca-certificates curl \
             bash bzip2 coreutils diffutils findutils \
             git grep gzip make openssl procps sed shellcheck tar tzdata unzip \
-            nodejs npm debianutils
+            nodejs npm python3 debianutils
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 

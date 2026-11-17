@@ -124,4 +124,7 @@ fi
 [[ ! -e "$TEMP_DIR/failed" ]]
 [[ -z "$(find "$TEMP_DIR" -maxdepth 1 -name '.crowdsec-snapshot.*' -print -quit)" ]]
 
+if command -v python3 >/dev/null; then
+  python3 -I "$SCRIPT_DIR/test-offline-crowdsec-snapshot.py"
+fi
 echo "test-offline-bundle: PASS"

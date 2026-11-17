@@ -18,6 +18,7 @@ Environment:
   EASY_WAF_DEB=/path/easy-waf_<version>_<arch>.deb
   EASY_WAF_OFFLINE_OUTPUT_DIR=dist
   EASY_WAF_OFFLINE_INCLUDE_CROWDSEC=1|0  (default: 1)
+  EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/path/to/private-snapshot
   EASY_WAF_OFFLINE_FORMAT=iso|tar.gz|both (default: iso)
 EOF
 }
@@ -49,8 +50,21 @@ VERSION="$(head -1 "${REPO_ROOT}/VERSION" | tr -d '[:space:]')"
 ARCH="$(dpkg --print-architecture)"
 OUTPUT_DIR="${EASY_WAF_OFFLINE_OUTPUT_DIR:-${REPO_ROOT}/dist}"
 INCLUDE_CROWDSEC="${EASY_WAF_OFFLINE_INCLUDE_CROWDSEC:-1}"
+CROWDSEC_SNAPSHOT="${EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR:-}"
 FORMAT="${EASY_WAF_OFFLINE_FORMAT:-iso}"
 DEB="${EASY_WAF_DEB:-${REPO_ROOT}/dist/easy-waf_${VERSION}_${ARCH}.deb}"
+
+if [[ -n "$CROWDSEC_SNAPSHOT" ]]; then
+  [[ "$INCLUDE_CROWDSEC" == "1" ]] || {
+    echo '[offline-build] a CrowdSec snapshot requires the full profile' >&2
+    exit 1
+  }
+  command -v python3 >/dev/null || {
+    echo '[offline-build] python3 is required to validate the CrowdSec snapshot' >&2
+    exit 1
+  }
+  umask 077
+fi
 
 case "$FORMAT" in
   iso)
@@ -153,6 +167,18 @@ echo "[offline-build] downloaded ${#downloaded_debs[@]} packages"
 cp -a "$DEB" "$APT_REPO/"
 cp -a "$DEB" "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"
 git -C "$REPO_ROOT" archive --format=tar HEAD -- "${tracked_inputs[@]}" | tar -xf - -C "$PAYLOAD"
+if [[ -n "$CROWDSEC_SNAPSHOT" ]]; then
+  crowdsec_debs=("$APT_REPO"/crowdsec_*.deb)
+  if [[ "${#crowdsec_debs[@]}" != 1 || ! -f "${crowdsec_debs[0]}" ]] ||
+    [[ "$(dpkg-deb -f "${crowdsec_debs[0]}" Package)" != crowdsec ]]; then
+    echo '[offline-build] expected exactly one CrowdSec agent DEB for the snapshot' >&2
+    exit 1
+  fi
+  crowdsec_deb_version="$(dpkg-deb -f "${crowdsec_debs[0]}" Version)"
+  python3 -I "$SCRIPT_DIR/lib/offline-crowdsec-snapshot.py" \
+    "$CROWDSEC_SNAPSHOT" "$PAYLOAD/crowdsec-snapshot" "$crowdsec_deb_version"
+  echo "[offline-build] staged verified private CrowdSec snapshot for $crowdsec_deb_version"
+fi
 cp -a "${PAYLOAD}/scripts/install-offline-bundle.sh" "${STAGE}/install.sh"
 chmod 0755 "${STAGE}/install.sh"
 
@@ -236,6 +262,7 @@ write_bundle_checksums() {
 write_bundle_checksums
 
 BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
+[[ -z "$CROWDSEC_SNAPSHOT" ]] || BASE+="_private"
 if [[ "$FORMAT" == "iso" || "$FORMAT" == "both" ]]; then
   ISO="${OUTPUT_DIR}/${BASE}.iso"
   xorriso -as mkisofs -quiet -r -J -V "EASYWAF_${VERSION}_${ARCH}" -o "$ISO" "$STAGE"

@@ -112,6 +112,15 @@ integration. The ISO installer still requires that integration for a fresh
 full-profile install. The cache contains GeoLite data and is intended for
 private use under the applicable [MaxMind terms](https://www.maxmind.com/en/geolite/eula).
 
+To include a prepared snapshot in a private evaluation image on Ubuntu,
+use `EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/path/to/new-snapshot` with
+`scripts/build-offline-bundle.sh`. The builder requires Python 3 for
+this option and checks the snapshot against the selected CrowdSec DEB.
+The image contains the verified files under `payload/crowdsec-snapshot`
+and its filename ends in `_private.iso`. This verifies delivery of the
+snapshot. A clean offline CrowdSec installation still requires installer
+support for staging and activating it.
+
 ## Updates and support boundary
 
 An offline ISO is a frozen package snapshot. Install the newest verified bundle,
