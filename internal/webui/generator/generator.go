@@ -32,6 +32,8 @@ var defaultManifest = []string{
 	"screens/settings.html",
 	"screens/events-audit.html",
 	"document-before-script.html",
+	"scripts/application-before-renderers.js",
+	"scripts/renderers.js",
 	"scripts/application.js",
 	"document-after-script.html",
 }

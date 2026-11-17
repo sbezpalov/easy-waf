@@ -2,7 +2,8 @@
 
 Status: **active phased refactor**. Phase 1 added a deterministic, manifest-based
 Go generator. Phase 2 is complete: shared CSS and every routed screen have
-separate source. Phase 3a extracts the existing JavaScript into a source file,
+separate source. Phase 3a extracts the existing JavaScript into a source file;
+Phase 3b starts responsibility-based separation with the shared leaf renderers,
 still without changing the delivered `dist/index.html` bytes. This document
 does not authorize a runtime, dependency, CSP, API, or permission change.
 
@@ -104,6 +105,8 @@ internal/webui/src/
     events-audit.html
   document-before-script.html
   scripts/
+    application-before-renderers.js
+    renderers.js
     application.js
   document-after-script.html
 ```
@@ -111,10 +114,12 @@ internal/webui/src/
 `internal/webui/generate.go` invokes the repository-owned generator with
 `go generate ./internal/webui`. The manifest is explicit, source newlines are
 normalized to LF, and `generator_test.go` requires the assembled bytes to equal
-the committed `dist/index.html`. Phase 3a keeps the JavaScript monolithic but
-separates it from the document wrapper; later Phase 3 commits split it by
-responsibility while the generator continues to emit one inline script. The
-script's narrow `whitespace=-trailing-space` Git attribute preserves six
+the committed `dist/index.html`. Phase 3a separates the JavaScript from the
+document wrapper. Phase 3b extracts the first responsibility-owned region,
+shared leaf renderers, between temporary before/after application fragments;
+later Phase 3 commits retire those transitional fragments as more regions move.
+The generator continues to emit one inline script. The remaining application's
+narrow `whitespace=-trailing-space` Git attribute preserves six
 pre-existing end-of-line spaces for byte identity; remove that exception when
 the affected regions are split and regenerated together. Source partials also
 retain separator blank lines at their boundaries; the scoped
@@ -160,9 +165,10 @@ each small group. Do not combine this phase with navigation redesign.
 ### 3. Split JavaScript by responsibility
 
 **In progress:** Phase 3a extracts the unchanged monolithic JavaScript source
-from its document wrapper and verifies that generation still produces exactly
-one plain inline script. Responsibility-based source modules follow in small
-commits.
+from its document wrapper. Phase 3b isolates `statusBadge`, `alertView`,
+`stateView`, and `tableState` as the first leaf-renderer module. Generation
+still produces exactly one plain inline script; further responsibility-owned
+regions follow in small commits.
 
 Concatenate source modules into the existing single script in a fixed order.
 First isolate leaf renderers, then screen loaders, then shared state/API code.
