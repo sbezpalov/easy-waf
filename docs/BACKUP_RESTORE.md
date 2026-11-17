@@ -57,7 +57,16 @@ Environment:
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `EASY_WAF_STATE_DIR` | `/var/lib/easy-waf` | State tree to archive |
-| `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Source of `DATABASE_URL` for `pg_dump` |
+| `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Source of the database setting for both `pg_dump` and the archive |
+
+Backup captures the env file before stopping writers. An alternate file
+contributes its last `DATABASE_URL` entry. The archive stores that entry in
+`etc/easy-waf.env` alongside the other canonical appliance settings. Restore
+uses this file for both the database restore and subsequent edge Apply.
+
+For an archive made by an older backup with an alternate env file, verify
+that its archived `etc/easy-waf.env` identifies the intended database
+before running restore.
 
 Requires **`pg_dump`** (PostgreSQL client packages) and **`flock`** (`util-linux`)
 on `PATH`. Missing or unavailable locking fails before any writer is stopped.
@@ -153,7 +162,6 @@ Environment:
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `EASY_WAF_STATE_DIR` | `/var/lib/easy-waf` | Restore target for state |
-| `EASY_WAF_ENV_FILE` | `/etc/easy-waf/easy-waf.env` | Restored env file used by `easy-waf-admin apply-edge` |
 | `EASY_WAF_ADMIN_BIN` | `/usr/sbin/easy-waf-admin` | Console CLI used for apply |
 | `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip `easy-waf-admin apply-edge` |
 
@@ -203,7 +211,9 @@ Without **`RUN_BACKUP_RESTORE_E2E=1`**, the script exits **0** immediately (safe
 If a run fails after creating its backup, the script **keeps the recovery archive** and prints its path. By default it remains in a private temporary directory; set **`EASY_WAF_E2E_BACKUP_PATH`** to an unused path outside the appliance state tree on persistent storage when recovery must survive a reboot. Restore it manually with `scripts/restore.sh` after diagnosing the failure. The archive contains the E2E application and certificate as well as the original data. Only a fully successful verification and cleanup removes the archive.
 
 The E2E driver reads only `DATABASE_URL` from `EASY_WAF_ENV_FILE` as literal
-data, without executing or exporting other entries. Test options and operator
+data. Backup and factory reset use the same private copy of that entry. The
+driver checks that the panel saved the test application in the selected
+database before starting the backup or reset. Test options and operator
 credentials come from the invoking environment or the prompts above. File
 entries cannot change the selected state directory or recovery flags.
 

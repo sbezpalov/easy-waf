@@ -51,9 +51,9 @@ cleanup() {
   if [[ "$BACKUP_CREATED" == "1" && "$RUN_SUCCEEDED" != "1" ]]; then
     echo "[e2e] FAILED — recovery backup retained: $BACKUP_PATH" >&2
     # The default archive lives inside this private temporary directory. Keep
-    # it on failure, but discard the temporary login response and test keys.
+    # it on failure, but discard temporary credentials and test keys.
     if [[ "$BACKUP_PATH" == "$E2E_TMPDIR/backup.tar.gz" ]]; then
-      rm -f "$E2E_TMPDIR/auth-response"
+      rm -f "$E2E_TMPDIR/auth-response" "$E2E_TMPDIR/database.env"
       rm -rf "$E2E_TMPDIR/cert"
       return "$status"
     fi
@@ -78,7 +78,10 @@ json_escape() {
 command -v curl &>/dev/null || die "curl required"
 command -v psql &>/dev/null || die "psql required"
 [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE"
-easy_waf_export_env_keys "$ENV_FILE" DATABASE_URL || die "cannot read DATABASE_URL from env file"
+database_assignment="$(easy_waf_read_env_assignment "$ENV_FILE" DATABASE_URL)" || die "cannot read DATABASE_URL from env file"
+database_env="$E2E_TMPDIR/database.env"
+printf '%s\n' "$database_assignment" >"$database_env"
+DATABASE_URL="$(easy_waf_read_env_value "$database_env" DATABASE_URL)"
 [[ -n "${DATABASE_URL:-}" ]] || die "DATABASE_URL not set in $ENV_FILE"
 [[ ! -e "$BACKUP_PATH" && ! -L "$BACKUP_PATH" ]] \
   || die "refusing to overwrite existing backup path: $BACKUP_PATH"
@@ -194,17 +197,21 @@ APP_JSON="$(printf '{"id":"%s","name":"E2E Backup","public_host":"%s","backend_h
 echo "[e2e] upsert certificate + application"
 api_post "${BASE}/api/v1/certificates" "$CERT_JSON"
 api_post "${BASE}/api/v1/applications" "$APP_JSON"
+seeded_count="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT COUNT(*) FROM applications WHERE id = '$APP_ID' AND certificate_id = '$CERT_ID'")" \
+  || die "could not verify the test application in the selected database"
+[[ "$seeded_count" == "1" ]] || die "the panel application is absent from the selected database"
 api_post "${BASE}/api/v1/apply" '{"label":"e2e-before-backup"}'
 
 echo "[e2e] backup → $BACKUP_PATH"
-bash "${SCRIPT_DIR}/backup.sh" "$BACKUP_PATH"
+EASY_WAF_ENV_FILE="$database_env" bash "${SCRIPT_DIR}/backup.sh" "$BACKUP_PATH"
 BACKUP_CREATED=1
 
 echo "[e2e] stop API, factory reset (DB + state dirs)"
 systemctl stop easy-waf-api.service 2>/dev/null || true
 systemctl stop easy-waf-acmed.service 2>/dev/null || true
 [[ -x "$ADMIN_BIN" ]] || die "missing $ADMIN_BIN"
-env DATABASE_URL="$DATABASE_URL" "$ADMIN_BIN" factory-reset -i-am-sure=true -state-dir="$STATE"
+"$ADMIN_BIN" factory-reset -i-am-sure=true -state-dir="$STATE" -env-file "$database_env"
 
 echo "[e2e] verify application removed directly in PostgreSQL"
 removed_count="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc \

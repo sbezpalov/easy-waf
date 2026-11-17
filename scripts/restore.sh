@@ -5,7 +5,7 @@
 #
 # Usage: sudo bash scripts/restore.sh /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
 #        sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz
-# Env: EASY_WAF_STATE_DIR, EASY_WAF_ENV_FILE (defaults as in backup.sh)
+# Env: EASY_WAF_STATE_DIR (defaults as in backup.sh)
 #      EASY_WAF_ADMIN_BIN — default /usr/sbin/easy-waf-admin
 #      EASY_WAF_SKIP_APPLY=1 — do not run easy-waf-admin apply-edge
 
@@ -24,7 +24,6 @@ if [[ "$ARCHIVE" != /* ]]; then
 fi
 STATE="${EASY_WAF_STATE_DIR:-/var/lib/easy-waf}"
 CFG="/etc/easy-waf"
-ENV_FILE="${EASY_WAF_ENV_FILE:-${CFG}/easy-waf.env}"
 ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -206,7 +205,7 @@ elif [[ ! -x "$ADMIN_BIN" ]]; then
   post_restore_failed=1
 else
   echo "[easy-waf-restore] easy-waf-admin apply-edge (regenerate HAProxy)…"
-  if "$ADMIN_BIN" apply-edge -env-file "$ENV_FILE" -state-dir "$STATE" -label restore; then
+  if "$ADMIN_BIN" apply-edge -env-file "$CFG/easy-waf.env" -state-dir "$STATE" -label restore; then
     echo "[easy-waf-restore] apply OK"
   else
     echo "ERROR: apply-edge failed — run it manually after fixing the reported problem" >&2

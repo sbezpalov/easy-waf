@@ -99,17 +99,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-DATABASE_URL="$(easy_waf_read_env_value "$ENV_FILE" DATABASE_URL)"
-export DATABASE_URL
-if [[ -z "$DATABASE_URL" ]]; then
-  echo "ERROR: DATABASE_URL not set in $ENV_FILE" >&2
-  exit 1
-fi
-
-if [[ -n "$DIR" && ! -d "$DIR" ]]; then
-  install -d -m 0700 "$DIR"
-fi
-
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
 OUTPUT_WORKDIR=""
 BACKUP_PUBLISHED=0
@@ -143,6 +132,33 @@ trap cleanup EXIT
 TOP="easy-waf-backup-${STAMP}"
 ROOT="$WORKDIR/$TOP"
 mkdir -p "$ROOT/state" "$ROOT/etc"
+
+# Pin the exact configuration used by this dump before stopping any writers.
+# An alternate source selects only DATABASE_URL. Retain the other settings
+# from the canonical appliance file.
+archived_env="$ROOT/etc/easy-waf.env"
+canonical_env="$CFG/easy-waf.env"
+if [[ -f "$canonical_env" ]]; then
+  install -m 0600 -- "$canonical_env" "$archived_env"
+elif [[ -e "$canonical_env" || -L "$canonical_env" ]]; then
+  echo "ERROR: not a regular config file: $canonical_env" >&2
+  exit 1
+else
+  : >"$archived_env"
+fi
+if [[ ! "$ENV_FILE" -ef "$canonical_env" ]]; then
+  assignment="$(easy_waf_read_env_assignment "$ENV_FILE" DATABASE_URL)"
+  sed -i '/^[[:blank:]]*DATABASE_URL[[:blank:]]*=/d' "$archived_env"
+  printf '\n%s\n' "$assignment" >>"$archived_env"
+fi
+DATABASE_URL="$(easy_waf_read_env_value "$archived_env" DATABASE_URL)"
+if [[ -z "$DATABASE_URL" ]]; then
+  echo "ERROR: DATABASE_URL not set in $ENV_FILE" >&2
+  exit 1
+fi
+if [[ -n "$DIR" && ! -d "$DIR" ]]; then
+  install -d -m 0700 "$DIR"
+fi
 
 {
   echo "easy-waf-backup-format v1"
@@ -202,9 +218,10 @@ echo "[easy-waf-backup] archiving state: $STATE"
 tar -C "$STATE" -cf - . | tar -C "$ROOT/state" -xf -
 
 echo "[easy-waf-backup] archiving: $CFG"
-# Recovery candidates belong to the interrupted installer operation, not to
-# the running configuration. Keep the live env and unrelated operator files.
+# Preserve the pinned env above. Recovery candidates belong to the interrupted
+# installer operation rather than the running configuration.
 tar --anchored --no-wildcards-match-slash \
+  --exclude='./easy-waf.env' \
   --exclude='./easy-waf.env.rotation.??????' --exclude='./easy-waf.env.new-db-password' \
   -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
 

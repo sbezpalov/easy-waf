@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 
-# Read one exact KEY=value entry without executing the env file as shell code.
-easy_waf_read_env_value() {
-  local file="$1" key="$2" line value found=""
+# Read the last exact KEY=value line without evaluating its contents.
+easy_waf_read_env_assignment() {
+  local file="$1" key="$2" line found=""
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ "$line" == "${key}="* ]] || continue
-    value="${line#*=}"
-    if [[ ${#value} -ge 2 ]]; then
-      if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]] || \
-         [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-    fi
-    found="$value"
-  done <"$file"
+    found="$line"
+  done <"$file" || return
   printf '%s' "$found"
+}
+
+easy_waf_read_env_value() {
+  local assignment value
+  assignment="$(easy_waf_read_env_assignment "$@")" || return
+  value="${assignment#*=}"
+  if [[ ${#value} -ge 2 ]]; then
+    if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]] || \
+       [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+  fi
+  printf '%s' "$value"
 }
 
 # Import only explicitly requested keys. Missing entries preserve the invoking

@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or its credentials.
 - Read the last database setting from the appliance env file in administration
   commands. An explicit empty setting stops inherited database fallback.
+- Keep the database selected by backup in the archive's appliance settings.
+  Restore uses those settings for edge Apply as well as the database restore.
 
 ## [1.6.1] - Unreleased
 

@@ -58,7 +58,10 @@ MOCK
 cat >"$ROOT/bin/pg_dump" <<'MOCK'
 #!/usr/bin/env bash
 touch "$BACKUP_TEST_ROOT/dump-called"
-[[ "$1" == postgres://fixture.invalid/never-connected ]] || exit 90
+[[ "$1" == "${BACKUP_TEST_EXPECTED_DSN:-postgres://fixture.invalid/never-connected}" ]] || exit 90
+if [[ "$BACKUP_TEST_MODE" == change-source ]]; then
+  printf 'DATABASE_URL=postgres://changed.invalid/db\n' >"$EASY_WAF_ENV_FILE"
+fi
 [[ "$BACKUP_TEST_MODE" != dump-fail ]] || exit 21
 if [[ -n "${BACKUP_TEST_RUN:-}" ]]; then
   touch "$BACKUP_TEST_ROOT/entered-$BACKUP_TEST_RUN"
@@ -240,4 +243,29 @@ if grep -q '^second ' "$ROOT/concurrent-services"; then fail 'rejected backup to
 "$BACKUP_TEST_REAL_TAR" -tzf "$ROOT/output/first.tar.gz" >/dev/null
 backup pass "$ROOT/output/retry.tar.gz"
 echo 'OK: overlapping backup rejected before writer or dump access; retry succeeds'
+
+printf 'CANONICAL_SETTING=keep\n' >>/etc/easy-waf/easy-waf.env
+alternate="$ROOT/alternate env"
+alternate_dsn='postgres://alternate.invalid/selected?sslmode=require'
+printf 'DATABASE_URL=postgres://older.invalid/db\r\nDATABASE_URL="%s"\r\nIGNORED_SETTING=alternate\r\n' "$alternate_dsn" >"$alternate"
+EASY_WAF_ENV_FILE="$alternate" BACKUP_TEST_MODE=change-source BACKUP_TEST_EXPECTED_DSN="$alternate_dsn" backup pass "$out"
+"$BACKUP_TEST_REAL_TAR" -tzf "$out" >"$ROOT/members"
+top="$(head -n 1 "$ROOT/members")"
+"$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}etc/easy-waf.env" >"$ROOT/archived.env"
+grep -qxF "DATABASE_URL=\"$alternate_dsn\"" "$ROOT/archived.env"
+[[ "$(grep -c '^DATABASE_URL=' "$ROOT/archived.env")" == 1 ]] || fail 'archived stale database settings'
+grep -qxF 'CANONICAL_SETTING=keep' "$ROOT/archived.env"
+if grep -q '^IGNORED_SETTING=' "$ROOT/archived.env"; then fail 'copied unrelated settings from alternate env'; fi
+grep -qxF 'DATABASE_URL=postgres://changed.invalid/db' "$alternate"
+grep -qxF 'DATABASE_URL=postgres://fixture.invalid/never-connected' /etc/easy-waf/easy-waf.env
+echo 'OK: backup pins the selected database and keeps the canonical settings'
+
+printf 'DATABASE_URL=""\n' >"$alternate"
+: >"$ROOT/services"
+rm -f "$ROOT/dump-called"
+if EASY_WAF_ENV_FILE="$alternate" bash "$BACKUP_SCRIPT" --dir "$ROOT/unselected" >"$ROOT/log" 2>&1; then
+  fail 'backup fell back to the canonical database after an explicit clear'
+fi
+grep -Fq 'DATABASE_URL not set' "$ROOT/log"
+[[ ! -s "$ROOT/services" && ! -e "$ROOT/dump-called" && ! -e "$ROOT/unselected" ]]
 echo 'OK: real backup preserves targets, previous archives and writer restarts'

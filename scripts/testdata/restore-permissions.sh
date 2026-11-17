@@ -42,7 +42,8 @@ MOCK
 cat >"$ROOT/bin/admin" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
-[[ "$1" == apply-edge && "$RESTORE_TEST_FAILURE" != apply ]]
+[[ "$1" == apply-edge && "$2" == -env-file && "$3" == /etc/easy-waf/easy-waf.env &&
+   "$RESTORE_TEST_FAILURE" != apply ]]
 MOCK
 export RESTORE_TEST_STARTS="$ROOT/starts" RESTORE_TEST_FAILURE=''
 chmod 0700 "$ROOT/bin/"*
@@ -91,6 +92,7 @@ for selection in success skip missing apply reload hostd api acmed; do
   : >"$RESTORE_TEST_STARTS"
   rc=0
   PATH="$ROOT/bin:$PATH" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_ADMIN_BIN="$admin" EASY_WAF_SKIP_APPLY="$skip" \
+    EASY_WAF_ENV_FILE="$ROOT/unrestored.env" \
     "$ROOT/operator commands/easy-waf-restore" "$ROOT/archive.tar.gz" >"$ROOT/log" 2>&1 || rc=$?
   if [[ "$selection" == success || "$selection" == skip ]]; then
     [[ "$rc" == 0 ]] || fail "$selection should succeed"
