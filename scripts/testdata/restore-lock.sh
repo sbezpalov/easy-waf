@@ -131,7 +131,7 @@ fi
 if [[ "$mode" != preflight ]]; then
   for holder in backup restore; do
     for phase in database startup; do
-      rm -f "$ROOT/entered" "$ROOT/release"
+      rm -f "$ROOT/entered" "$ROOT/release" "$ROOT/stop-attempt"
       : >"$ROOT/services"; : >"$ROOT/database"
       script="$BACKUP_SCRIPT"; argument="$ROOT/held-backup.tar.gz"; hold=pg_dump
       if [[ "$holder" == restore ]]; then script="$RESTORE_SCRIPT"; argument="$ROOT/valid.tar.gz"; hold=pg_restore; fi

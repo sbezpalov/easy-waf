@@ -112,18 +112,31 @@ fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
 OUTPUT_WORKDIR=""
+BACKUP_PUBLISHED=0
 # Track which writers we stopped so cleanup can restart them even on failure.
 BACKUP_STOPPED_UNITS=()
 # A failed run leaves no truncated archive for rotation to count.
 cleanup() {
-  local u
+  local result=$? u restart_failed=0
   for u in "${BACKUP_STOPPED_UNITS[@]}"; do
-    systemctl start "$u" 2>/dev/null || true
+    if ! systemctl start "$u"; then
+      echo "ERROR: could not resume $u — check journalctl -u $u" >&2
+      restart_failed=1
+    fi
   done
   rm -rf "$WORKDIR"
   if [[ -n "$OUTPUT_WORKDIR" ]]; then
     rm -rf "$OUTPUT_WORKDIR"
   fi
+  if ((restart_failed)); then
+    if ((BACKUP_PUBLISHED)); then
+      echo "ERROR: backup archive saved at $OUT, but writer recovery is incomplete" >&2
+    fi
+    if ((result == 0)); then result=1; fi
+  elif ((result == 0 && BACKUP_PUBLISHED)); then
+    echo "[easy-waf-backup] done: $OUT (size $SIZE)"
+  fi
+  exit "$result"
 }
 trap cleanup EXIT
 
@@ -148,11 +161,37 @@ fi
 # consistent. Without this, ACME/apply/rotation between steps can pair a dump
 # with PEMs/env that do not match. Edge (HAProxy) keeps serving.
 echo "[easy-waf-backup] quiescing writers (easy-waf-api, easy-waf-acmed)…"
-for u in easy-waf-api.service easy-waf-acmed.service; do
-  if systemctl is-active --quiet "$u" 2>/dev/null; then
-    # Record before stop so cleanup restarts even if stop/dump fails mid-way.
-    BACKUP_STOPPED_UNITS+=("$u")
-    systemctl stop "$u"
+writers=(easy-waf-api.service easy-waf-acmed.service)
+declare -A initial_states=()
+for u in "${writers[@]}"; do
+  if ! state="$(systemctl show --property=ActiveState --value "$u")"; then
+    echo "ERROR: cannot determine initial state of $u — backup aborted before pg_dump" >&2
+    exit 1
+  fi
+  case "$state" in
+    active|activating|reloading|refreshing|deactivating|inactive|failed) initial_states[$u]="$state" ;;
+    *)
+      echo "ERROR: unexpected state for $u — backup aborted before pg_dump" >&2
+      exit 1
+      ;;
+  esac
+done
+for u in "${writers[@]}"; do
+  case "${initial_states[$u]}" in
+    inactive|failed) continue ;;
+    deactivating) ;;
+    *) BACKUP_STOPPED_UNITS+=("$u") ;;
+  esac
+  if ! systemctl stop "$u"; then
+    echo "ERROR: failed to stop $u — backup aborted before pg_dump" >&2
+    exit 1
+  fi
+done
+for u in "${writers[@]}"; do
+  if ! state="$(systemctl show --property=ActiveState --value "$u")" ||
+    [[ "$state" != inactive && "$state" != failed ]]; then
+    echo "ERROR: cannot confirm $u is stopped — backup aborted before pg_dump" >&2
+    exit 1
   fi
 done
 
@@ -175,9 +214,9 @@ ARCHIVE="$OUTPUT_WORKDIR/bundle.tar.gz"
 tar -czf "$ARCHIVE" -C "$WORKDIR" "$TOP"
 chmod 0600 "$ARCHIVE"
 mv -fT -- "$ARCHIVE" "$OUT"
+BACKUP_PUBLISHED=1
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
-echo "[easy-waf-backup] done: $OUT (size $SIZE)"
 
 if [[ -n "$DIR" ]]; then
   easy_waf_rotate_backups "$DIR" "$KEEP"

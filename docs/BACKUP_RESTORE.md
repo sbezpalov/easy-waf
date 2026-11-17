@@ -26,7 +26,12 @@ replaced rather than followed, and other hardlink names keep their old contents.
 Failed packing leaves the previous backup intact. Cleanup removes only this
 run's temporary directories; existing `<output>.partial` files are left alone.
 
-The script **stops `easy-waf-api` and `easy-waf-acmed`** for the dump/archive window so PostgreSQL and on-disk secrets/certs stay consistent, then starts them again (including on failure). HAProxy keeps serving the last applied edge config during the pause.
+The script checks `easy-waf-api` and `easy-waf-acmed` and confirms both are
+stopped before running `pg_dump`. It aborts if systemd cannot report or stop
+the writers. Cleanup attempts to resume the services it paused, including
+when backup fails. HAProxy keeps serving the last applied configuration during
+the pause. If resuming a writer fails after publication, the command exits
+nonzero and reports the path to the complete archive, which remains usable.
 
 Only one backup or restore invocation can own that pause. A nonblocking `flock` on the
 existing `/etc/easy-waf` directory is held until cleanup restarts the writers,

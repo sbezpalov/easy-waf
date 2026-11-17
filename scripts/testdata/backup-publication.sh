@@ -28,19 +28,27 @@ cat >"$ROOT/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash
 if [[ -n "${BACKUP_TEST_RUN:-}" ]]; then
   printf '%s %s\n' "$BACKUP_TEST_RUN" "$*" >>"$BACKUP_TEST_ROOT/concurrent-services"
-  case "$1" in
-    is-active) [[ ! -f "$BACKUP_TEST_ROOT/inactive-${@: -1}" ]]; exit $? ;;
-    stop) touch "$BACKUP_TEST_ROOT/inactive-$2" ;;
-    start)
-      if [[ -f "$BACKUP_TEST_ROOT/entered-second" && ! -f "$BACKUP_TEST_ROOT/release-second" ]]; then
-        touch "$BACKUP_TEST_ROOT/resumed-during-dump"
-      fi
-      rm -f "$BACKUP_TEST_ROOT/inactive-$2"
-      ;;
-  esac
-  exit 0
+else
+  printf '%s\n' "$*" >>"$BACKUP_TEST_ROOT/services"
 fi
-printf '%s\n' "$*" >>"$BACKUP_TEST_ROOT/services"
+case "$1" in
+  show)
+    if [[ "$BACKUP_TEST_MODE" == query-fail && "${@: -1}" == easy-waf-acmed.service ]]; then exit 25; fi
+    if [[ -f "$BACKUP_TEST_ROOT/inactive-${@: -1}" ]]; then echo inactive; else echo active; fi
+    ;;
+  stop)
+    if [[ "$BACKUP_TEST_MODE" != still-active || "$2" != easy-waf-acmed.service ]]; then
+      touch "$BACKUP_TEST_ROOT/inactive-$2"
+    fi
+    ;;
+  start)
+    if [[ -f "$BACKUP_TEST_ROOT/entered-second" && ! -f "$BACKUP_TEST_ROOT/release-second" ]]; then
+      touch "$BACKUP_TEST_ROOT/resumed-during-dump"
+    fi
+    rm -f "$BACKUP_TEST_ROOT/inactive-$2"
+    if [[ "$BACKUP_TEST_MODE" == restart-fail && "$2" == easy-waf-api.service ]]; then exit 26; fi
+    ;;
+esac
 MOCK
 cat >"$ROOT/bin/pg_dump" <<'MOCK'
 #!/usr/bin/env bash
@@ -119,6 +127,27 @@ for mode in dump-fail pack-fail; do
   [[ "$(cat "$out")" == previous-backup ]] || fail 'failure damaged previous backup'
   [[ -f "$out.partial" && "$(cat "$out.partial")" == unowned-partial ]] || fail 'failure removed unowned partial'
 done
+for mode in query-fail still-active; do
+  rm -f "$ROOT/dump-called"
+  : >"$ROOT/services"
+  rc=0
+  BACKUP_TEST_MODE="$mode" bash "$BACKUP_SCRIPT" "$out" >"$ROOT/log" 2>&1 || rc=$?
+  [[ "$rc" == 1 ]] || fail "$mode did not abort backup"
+  grep -Fq 'backup aborted before pg_dump' "$ROOT/log" || fail "$mode not diagnosed"
+  [[ ! -e "$ROOT/dump-called" && "$(<"$out")" == previous-backup ]] || fail "$mode touched dump or prior archive"
+  if [[ "$mode" == query-fail ]]; then
+    if grep -Eq '^(start|stop) ' "$ROOT/services"; then fail 'initial query failure changed services'; fi
+  else
+    grep -qxF 'start easy-waf-api.service' "$ROOT/services" || fail 'quiescence failure left API stopped'
+    grep -qxF 'start easy-waf-acmed.service' "$ROOT/services" || fail 'quiescence failure did not attempt ACME recovery'
+  fi
+done
+echo 'OK: backup requires confirmed writer quiescence before pg_dump'
+BACKUP_TEST_MODE=restart-fail backup fail "$out"
+grep -Fq 'but writer recovery is incomplete' "$ROOT/log" || fail 'restart failure did not state archive was retained'
+if grep -q '^\[easy-waf-backup\] done:' "$ROOT/log"; then fail 'restart failure printed success'; fi
+"$BACKUP_TEST_REAL_TAR" -tzf "$out" >/dev/null || fail 'restart failure lost the complete archive'
+echo 'OK: backup keeps the complete archive and reports restart failure'
 export BACKUP_TEST_MODE=ok
 mkdir "$ROOT/output/directory"
 backup fail "$ROOT/output/directory"
