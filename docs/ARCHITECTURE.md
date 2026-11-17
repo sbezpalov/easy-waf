@@ -258,7 +258,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 
 - `backup.sh`: one **`.tar.gz`** (format v1) — `pg_dump -Fc` → `easywaf.dump`, plus `state/` (`/var/lib/easy-waf`) and `etc/` (`/etc/easy-waf`). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 - `restore.sh`: extract → `pg_restore` → restore state + `/etc/easy-waf` → optional console **`easy-waf-admin apply-edge`** → start services.
-- `upgrade.sh`: **re-runs `install.sh`** with `EASY_WAF_DIST_DIR` set and local PostgreSQL install disabled, then restarts `easy-waf-api` and `easy-waf-acmed`. It is a full installer pass, not a binary swap: OS packages, CrowdSec bootstrap, nftables and the HAProxy drop-in are all re-applied. Migrations are not run by the script — whichever service opens the store first applies the ones not yet recorded in `schema_migrations`, each in its own transaction, under a PostgreSQL advisory lock so api, acmed and admin starting together never migrate at the same time (`internal/store/migrate.go`).
+- `upgrade.sh` **re-runs `install.sh`** with `EASY_WAF_DIST_DIR` set and local PostgreSQL installation disabled by default. The full installer pass reapplies OS packages, CrowdSec bootstrap, nftables and the HAProxy drop-in. The wrapper then runs the package-safe APT/broker restart helper and submits asynchronous, active-only API and ACME restarts. It returns a nonzero status if the helper fails or systemd rejects either request. The installer may already have changed the system when that happens. After the jobs finish, check readiness and run appliance smoke checks. The first process to open the store applies pending migrations in individual transactions under a shared PostgreSQL advisory lock (`internal/store/migrate.go`).
 
 ## GeoIP architecture
 

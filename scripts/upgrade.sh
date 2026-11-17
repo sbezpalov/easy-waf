@@ -62,7 +62,20 @@ bash "${SCRIPT_DIR}/install.sh"
 
 # This outer installer has finished its own package work. Use the same lock
 # helper directly: do not cancel another maintenance service during its job.
-/usr/sbin/easy-waf-hostd restart-after-packages || echo "WARNING: APT/broker restart failed; inspect the error above before accepting this upgrade" >&2
-systemctl try-restart --no-block easy-waf-api.service 2>/dev/null || true
-systemctl try-restart --no-block easy-waf-acmed.service 2>/dev/null || true
-echo "Requested package-safe APT/broker restart; queued active API/ACME restarts"
+restart_failed=0
+if ! /usr/sbin/easy-waf-hostd restart-after-packages; then
+  echo 'ERROR: package-safe APT/broker restart failed' >&2
+  restart_failed=1
+fi
+for unit in easy-waf-api.service easy-waf-acmed.service; do
+  if ! systemctl try-restart --no-block "$unit"; then
+    echo "ERROR: could not queue restart for $unit" >&2
+    restart_failed=1
+  fi
+done
+if (( restart_failed )); then
+  echo 'ERROR: installer completed, but post-upgrade restart requests did not all succeed' >&2
+  exit 1
+fi
+echo 'Requested package-safe APT/broker restart; systemd accepted active-only API/ACME restart requests'
+echo 'Check service readiness and run appliance smoke checks to verify the upgrade.'
