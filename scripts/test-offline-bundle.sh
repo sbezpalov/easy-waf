@@ -81,4 +81,47 @@ FIXTURE
   fi
 fi
 
+# Exercise the connected snapshot preparer with a CLI fixture and no downloads.
+cat >"$TEMP_DIR/cscli fixture" <<'CLI'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  version) echo 'version: v1.8.2-fixture' ;;
+  '-c cscli.yaml hub branch') echo master ;;
+  '-c cscli.yaml hub update --with-content')
+    grep -q 'hub_branch: "master"' cscli.yaml
+    printf '{}\n' >snapshot/hub/.index.json
+    ;;
+  '-c cscli.yaml setup install-hub snapshot/setup.yaml --color no')
+    grep -q 'crowdsecurity/haproxy' snapshot/setup.yaml
+    grep -q 'crowdsecurity/pgsql' snapshot/setup.yaml
+    printf 'fixture parser\n' >snapshot/hub/parser.yaml
+    printf 'fixture data\n' >snapshot/data/fixture.txt
+    printf 'working config\n' >working/private.yaml
+    [[ "${CSCLI_FIXTURE_FAIL:-0}" != 1 ]]
+    ;;
+  *) exit 2 ;;
+esac
+CLI
+chmod +x "$TEMP_DIR/cscli fixture"
+preparer="$SCRIPT_DIR/prepare-offline-crowdsec.sh"
+output="$TEMP_DIR/local snapshot"
+CSCLI="$TEMP_DIR/cscli fixture" "${BASH}" "$preparer" "$output" >/dev/null
+(
+  cd "$output"
+  sha256sum -c SHA256SUMS >/dev/null
+  grep -q '^CROWDSEC_CLI_VERSION=v1.8.2-fixture$' SNAPSHOT.env
+  [[ -f hub/.index.json && -f hub/parser.yaml && -f data/fixture.txt && ! -e working ]]
+)
+if CSCLI="$TEMP_DIR/cscli fixture" "${BASH}" "$preparer" "$output" >/dev/null 2>&1; then
+  echo 'test-offline-bundle: existing snapshot was accepted as output' >&2
+  exit 1
+fi
+if CSCLI_FIXTURE_FAIL=1 CSCLI="$TEMP_DIR/cscli fixture" "${BASH}" "$preparer" "$TEMP_DIR/failed" >/dev/null 2>&1; then
+  echo 'test-offline-bundle: a failed snapshot preparation returned success' >&2
+  exit 1
+fi
+[[ ! -e "$TEMP_DIR/failed" ]]
+[[ -z "$(find "$TEMP_DIR" -maxdepth 1 -name '.crowdsec-snapshot.*' -print -quit)" ]]
+
 echo "test-offline-bundle: PASS"

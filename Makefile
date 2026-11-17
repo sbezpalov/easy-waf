@@ -67,6 +67,7 @@ check-version-docs:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck -x -P SCRIPTDIR scripts/prepare-offline-crowdsec.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-haproxy-working-dir.sh scripts/testdata/haproxy-working-dir.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-conffiles.sh scripts/testdata/installer-conffiles.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-crowdsec-keys.sh scripts/test-installer-units.sh && \

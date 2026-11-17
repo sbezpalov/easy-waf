@@ -95,6 +95,23 @@ texts remain inside each `.deb`; exact Ubuntu source packages are available from
 the corresponding Ubuntu archive snapshot, and CrowdSec sources from its
 upstream repository.
 
+### Prepare a private CrowdSec snapshot
+
+On a connected Ubuntu build host, run the following with `cscli` from the same
+CrowdSec version as the target DEB:
+
+```bash
+bash scripts/prepare-offline-crowdsec.sh /path/to/new-snapshot
+```
+
+The parent directory must already exist. The tool uses a temporary CrowdSec
+configuration, downloads the Hub cache and data for the Linux, HAProxy, SSH
+and PostgreSQL collections, and writes the selection, CLI version, branch and
+SHA-256 manifest alongside them. This prepares the input for offline CrowdSec
+integration. The ISO installer still requires that integration for a fresh
+full-profile install. The cache contains GeoLite data and is intended for
+private use under the applicable [MaxMind terms](https://www.maxmind.com/en/geolite/eula).
+
 ## Updates and support boundary
 
 An offline ISO is a frozen package snapshot. Install the newest verified bundle,
