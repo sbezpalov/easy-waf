@@ -5,6 +5,8 @@
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 **Latest VMware delivery:** [ecadad2, schema 028](release-evidence/1.6.1-vmware-schema-028.md).
 The upgraded UI bundle, CSP, reconciled edge status and smoke passed on the clone.
+A same-version restore on the clone recovered the original edge generation,
+persisted state and HTTPS 200 after a verified maintenance 503.
 GitHub CI passed for the runtime source commit `e7b2fad`. The local full race
 run reported two failures that did not recur in focused tests. Their cause
 remains open.
