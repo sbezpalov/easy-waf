@@ -25,6 +25,20 @@ Changes after the prepared 1.6.1 candidate will be recorded here.
   previous package. Use APT for a package-managed appliance; use the script
   upgrade path only for an installation without a package. See
   [the upgrade procedure](docs/ACCEPTANCE.md#install-and-upgrade).
+- `install.sh` returns the first systemd error if enabling or starting the
+  control-plane services fails. `upgrade.sh` also reports failed broker
+  restarts or rejected API/ACME restart requests. API and ACME restarts after
+  an unpackaged upgrade are asynchronous. Check service readiness and run
+  appliance smoke before accepting the upgrade.
+- Installer reruns preserve local CrowdSec keys that LAPI accepts. Missing
+  or rejected keys are replaced individually. The installer stops credential
+  setup on a transport error or unexpected HTTP response.
+- The full installer starts the enabled daily backup timer after provisioning
+  a packaged appliance. Smoke requires an enabled timer to be active with a
+  scheduled run or a backup in progress, and respects a disabled or masked timer.
+- Smoke bounds management HTTP transfers and fails on incomplete responses
+  even when the server sends HTTP 200. The GeoIP database upload has a longer
+  transfer deadline than ordinary probes.
 - Backup and restore now abort before database work if they cannot confirm
   the required services have stopped. A backup can return a failure after
   saving a complete archive if a writer could not resume. A restore can return
