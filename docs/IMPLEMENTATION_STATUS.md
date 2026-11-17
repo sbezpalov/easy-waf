@@ -3,6 +3,11 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest VMware delivery:** [ecadad2, schema 028](release-evidence/1.6.1-vmware-schema-028.md).
+The upgraded UI bundle, CSP, reconciled edge status and smoke passed on the clone.
+GitHub CI passed for the runtime source commit `e7b2fad`. The local full race
+run reported two failures that did not recur in focused tests. Their cause
+remains open.
 **Latest full local candidate / VMware delivery:** [6e1fb75](release-evidence/1.6.1-local-gates-6e1fb75.md):
 eight Linux gates, 821 race passes, fresh clean govulncheck, both-architecture
 release-artifact checks, successful GitHub CI and an actual APT installation on
