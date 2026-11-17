@@ -3,6 +3,10 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest unpackaged upgrade:** [published 1.6.0 through upgrade.sh on VMware](release-evidence/1.6.1-source-upgrade-7a1499b.md).
+The wrapper returned 0, restarted all three daemons and migrated schema 019 to
+028. The publication retained its certificate and trusted HTTPS. HAProxy stats,
+API Apply and authenticated smoke passed. The installer reran CrowdSec bootstrap.
 **Latest direct APT upgrade:** [published 1.6.0 to bccbf26 on VMware](release-evidence/1.6.1-upgrade-160-bccbf26.md).
 The migration ledger advanced from 019 to 028. The existing HTTPS publication,
 certificate and HAProxy statistics passed after upgrade. The clone's prior state
