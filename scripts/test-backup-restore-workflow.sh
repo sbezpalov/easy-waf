@@ -9,9 +9,17 @@ TEST_ROOT="$(command mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 id() { printf '0\n'; }
+python3() {
+  local dsn
+  [[ "$1" == -I && "$2" == */lib/pg-archive.py && -d "$3" && "$4" == psql ]] || return 92
+  dsn="$(cat)"
+  [[ "$dsn" == "$TEST_EXPECTED_DSN" ]] || return 92
+  shift 4
+  psql --dbname=service=easy-waf-archive "$@"
+}
 psql() {
   local query="${!#}"
-  [[ "$1" == "$TEST_EXPECTED_DSN" && -z "${E2E_UNUSED_SECRET+x}" ]] || return 92
+  [[ "$1" == --dbname=service=easy-waf-archive && -z "${E2E_UNUSED_SECRET+x}" ]] || return 92
   if [[ "$query" == *' AND certificate_id = '* && "$FAIL_AT" != wrong-db ]]; then
     printf '1\n'
     return
@@ -88,7 +96,7 @@ curl() {
       ;;
   esac
 }
-export -f id psql systemctl chown sleep mktemp install bash curl
+export -f id python3 psql systemctl chown sleep mktemp install bash curl
 
 for destination in default explicit; do
   for FAIL_AT in none wrong-db reset restore verify cleanup; do
@@ -146,7 +154,7 @@ MOCK
       }
       grep -Fq "recovery backup retained: $backup" "$TEST_CASE/output"
       [[ ! -f "$temp_dir/auth-response" ]]
-      [[ ! -f "$temp_dir/database.env" ]]
+      [[ ! -d "$temp_dir/pg-client" ]]
     fi
     expected_cert="$(printf '{"id":"e2e-backup-restore-cert","primary_domain":"backup-restore-e2e.example.local","mode":"self-signed","pem_crt_path":"%s/certs/_e2e/e2e-bundle.pem"}' "$EASY_WAF_STATE_DIR")"
     [[ "$(<"$TEST_CASE/certificate.json")" == "$expected_cert" ]]

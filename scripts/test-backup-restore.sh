@@ -53,8 +53,8 @@ cleanup() {
     # The default archive lives inside this private temporary directory. Keep
     # it on failure, but discard temporary credentials and test keys.
     if [[ "$BACKUP_PATH" == "$E2E_TMPDIR/backup.tar.gz" ]]; then
-      rm -f "$E2E_TMPDIR/auth-response" "$E2E_TMPDIR/database.env"
-      rm -rf "$E2E_TMPDIR/cert"
+      rm -f "$E2E_TMPDIR/auth-response"
+      rm -rf "$E2E_TMPDIR/cert" "$E2E_TMPDIR/pg-client"
       return "$status"
     fi
   elif [[ "$BACKUP_CREATED" == "1" ]]; then
@@ -77,17 +77,24 @@ json_escape() {
 
 command -v curl &>/dev/null || die "curl required"
 command -v psql &>/dev/null || die "psql required"
+command -v python3 &>/dev/null || die "Python 3 required"
+[[ -r "$SCRIPT_DIR/lib/pg-archive.py" ]] || die "PostgreSQL client helper required"
 [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE"
 database_assignment="$(easy_waf_read_env_assignment "$ENV_FILE" DATABASE_URL)" || die "cannot read DATABASE_URL from env file"
-database_env="$E2E_TMPDIR/database.env"
+mkdir "$E2E_TMPDIR/pg-client"
+database_env="$E2E_TMPDIR/pg-client/database.env"
 printf '%s\n' "$database_assignment" >"$database_env"
 DATABASE_URL="$(easy_waf_read_env_value "$database_env" DATABASE_URL)"
 [[ -n "${DATABASE_URL:-}" ]] || die "DATABASE_URL not set in $ENV_FILE"
+query_database() {
+  python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$E2E_TMPDIR/pg-client" psql -X -w \
+    -v ON_ERROR_STOP=1 -Atqc "$1" <<<"$DATABASE_URL"
+}
 [[ ! -e "$BACKUP_PATH" && ! -L "$BACKUP_PATH" ]] \
   || die "refusing to overwrite existing backup path: $BACKUP_PATH"
 [[ ! -e "$BUNDLE_PATH" && ! -L "$BUNDLE_PATH" ]] \
   || die "reserved E2E PEM already exists: $BUNDLE_PATH"
-reserved_rows="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc \
+reserved_rows="$(query_database \
   "SELECT (SELECT COUNT(*) FROM applications WHERE id = '$APP_ID') + (SELECT COUNT(*) FROM certificates WHERE id = '$CERT_ID')")" \
   || die "could not check reserved E2E identifiers"
 [[ "$reserved_rows" == "0" ]] \
@@ -197,7 +204,7 @@ APP_JSON="$(printf '{"id":"%s","name":"E2E Backup","public_host":"%s","backend_h
 echo "[e2e] upsert certificate + application"
 api_post "${BASE}/api/v1/certificates" "$CERT_JSON"
 api_post "${BASE}/api/v1/applications" "$APP_JSON"
-seeded_count="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc \
+seeded_count="$(query_database \
   "SELECT COUNT(*) FROM applications WHERE id = '$APP_ID' AND certificate_id = '$CERT_ID'")" \
   || die "could not verify the test application in the selected database"
 [[ "$seeded_count" == "1" ]] || die "the panel application is absent from the selected database"
@@ -214,7 +221,7 @@ systemctl stop easy-waf-acmed.service 2>/dev/null || true
 "$ADMIN_BIN" factory-reset -i-am-sure=true -state-dir="$STATE" -env-file "$database_env"
 
 echo "[e2e] verify application removed directly in PostgreSQL"
-removed_count="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc \
+removed_count="$(query_database \
   "SELECT COUNT(*) FROM applications WHERE id = '$APP_ID'")" \
   || die "could not query applications after factory-reset"
 [[ "$removed_count" == "0" ]] || die "expected application $APP_ID to be removed after factory-reset"

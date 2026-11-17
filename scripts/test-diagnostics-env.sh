@@ -5,10 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COLLECTOR="${1:-$SCRIPT_DIR/diagnostics.sh}"
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
-real_psql="$(type -P psql || true)"
+real_python="$(type -P python3 || true)"
 real_tar="$(type -P tar)"
 mkdir -p "$ROOT/bin" "$ROOT/state"
 export DIAG_TEST_ARGS="$ROOT/psql-args"
+export DIAG_TEST_DSN="$ROOT/psql-dsn"
 export DIAG_TEST_PSQL_MODE=ok
 cat >"$ROOT/bin/id" <<'MOCK'
 #!/usr/bin/env bash
@@ -18,9 +19,7 @@ cat >"$ROOT/bin/psql" <<'MOCK'
 #!/usr/bin/env bash
 [[ -z "${DIAG_UNUSED_SECRET+x}" ]] || exit 91
 printf '%s\n' "$@" >"$DIAG_TEST_ARGS"
-if [[ "$DIAG_TEST_PSQL_MODE" == real ]]; then
-  exec "$DIAG_TEST_REAL_PSQL" "$@"
-fi
+printf '%s' "$MOCK_PG_DSN" >"$DIAG_TEST_DSN"
 if [[ "$DIAG_TEST_PSQL_MODE" == fail ]]; then
   printf 'fixture-sensitive-sql-stdout\n'
   printf 'fixture-sensitive-sql-stderr\n' >&2
@@ -29,6 +28,7 @@ fi
 printf 'fixture-revision-output\n'
 printf 'fixture-sensitive-sql-warning\n' >&2
 MOCK
+cp "$SCRIPT_DIR/testdata/pg-archive-mock.sh" "$ROOT/bin/python3"
 for probe in hostnamectl free df uptime ss aa-status systemctl journalctl haproxy nft; do
   printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/$probe"
 done
@@ -58,10 +58,14 @@ bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1 || collector_status
 [[ ! -e "$marker" ]] || { echo 'FAIL: diagnostics executed env file' >&2; exit 1; }
 [[ "$collector_status" == 0 ]] || { echo 'FAIL: collector did not finish' >&2; exit 1; }
 [[ -f "$DIAG_TEST_ARGS" ]] || { echo 'FAIL: SQL probe did not run or received unrelated secret' >&2; exit 1; }
-[[ "$(head -n 1 "$DIAG_TEST_ARGS")" == "$expected" ]] || { echo 'FAIL: DSN not preserved literally' >&2; exit 1; }
+[[ "$(<"$DIAG_TEST_DSN")" == "$expected" ]] || { echo 'FAIL: DSN not preserved literally' >&2; exit 1; }
+[[ "$(head -n 1 "$DIAG_TEST_ARGS")" == --dbname=service=easy-waf-archive ]] || { echo 'FAIL: SQL probe did not use the service name' >&2; exit 1; }
+if grep -Fq -- "$expected" "$DIAG_TEST_ARGS"; then
+  echo 'FAIL: SQL probe exposed the DSN in argv' >&2; exit 1
+fi
 tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
-if grep -Fq 'rotation.ABC123' "$ROOT/members"; then
-  echo 'FAIL: support bundle included a neighboring recovery file' >&2; exit 1
+if grep -Eq 'rotation\.ABC123|pg-service-fixture' "$ROOT/members"; then
+  echo 'FAIL: support bundle included a private connection or recovery file' >&2; exit 1
 fi
 tar -xOzf "$ROOT/bundle.tar.gz" >"$ROOT/bundle-content"
 if grep -Fq 'synthetic-recovery-secret' "$ROOT/bundle-content"; then
@@ -92,19 +96,21 @@ sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
 tar -xOzf "$ROOT/bundle.tar.gz" "$sql_member" >"$ROOT/sql-output"
 tar -xOzf "$ROOT/bundle.tar.gz" "$sql_err_member" >"$ROOT/sql-error"
 [[ ! -s "$ROOT/sql-output" ]] || { echo 'FAIL: failed SQL partial output retained' >&2; exit 1; }
-grep -qxF 'SQL revision query failed (psql exit 2); inspect the database connection locally.' "$ROOT/sql-error"
-if [[ -n "$real_psql" ]]; then
-  export DIAG_TEST_PSQL_MODE=real DIAG_TEST_REAL_PSQL="$real_psql"
+grep -qxF 'SQL revision query failed (exit 2). Inspect the database connection locally.' "$ROOT/sql-error"
+if [[ "$(uname -s)" == Linux && -n "$real_python" ]] && "$real_python" -I -c 'import ctypes; ctypes.CDLL("libpq.so.5")' 2>/dev/null; then
+  rm "$ROOT/bin/python3" "$DIAG_TEST_ARGS"
   printf 'DATABASE_URL=postgresql://fixture:fixture-sensitive-password%%ZZ@fixture.invalid/db\n' >"$EASY_WAF_ENV_FILE"
   bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
   tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
   sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
   tar -xOzf "$ROOT/bundle.tar.gz" "$sql_err_member" >"$ROOT/sql-error"
-  grep -qxF 'SQL revision query failed (psql exit 2); inspect the database connection locally.' "$ROOT/sql-error"
+  grep -qxF 'SQL revision query failed (exit 1). Inspect the database connection locally.' "$ROOT/sql-error"
+  [[ ! -e "$DIAG_TEST_ARGS" ]]
+  cp "$SCRIPT_DIR/testdata/pg-archive-mock.sh" "$ROOT/bin/python3"
+  chmod 0700 "$ROOT/bin/python3"
   echo 'OK: real libpq credential error omitted'
 fi
 export DIAG_TEST_PSQL_MODE=ok
-unset DIAG_TEST_REAL_PSQL
 fixture="$SCRIPT_DIR/../internal/diagnostics/testdata/environment-multiline"
 cp "$fixture.env.example" "$EASY_WAF_ENV_FILE"
 unset DATABASE_URL
@@ -118,12 +124,22 @@ fi
 cmp "$fixture.masked.example" "$ROOT/masked" || { echo 'FAIL: multiline secret masking differs' >&2; exit 1; }
 export DATABASE_URL='postgres://process-fixture/db'
 printf 'DATABASE_URL=\n' >"$EASY_WAF_ENV_FILE"
-rm "$DIAG_TEST_ARGS"
+rm -f "$DIAG_TEST_ARGS"
 bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
 [[ ! -e "$DIAG_TEST_ARGS" ]] || { echo 'FAIL: empty file DSN used process fallback' >&2; exit 1; }
 : >"$EASY_WAF_ENV_FILE"
 bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
-[[ "$(head -n 1 "$DIAG_TEST_ARGS")" == "$DATABASE_URL" ]] || { echo 'FAIL: missing-key process fallback lost' >&2; exit 1; }
+[[ "$(<"$DIAG_TEST_DSN")" == "$DATABASE_URL" ]] || { echo 'FAIL: missing-key process fallback lost' >&2; exit 1; }
+
+mkdir -p "$ROOT/no-helper/lib"
+cp "$COLLECTOR" "$ROOT/no-helper/diagnostics.sh"
+cp "$SCRIPT_DIR/lib/env-file.sh" "$ROOT/no-helper/lib/"
+rm "$DIAG_TEST_ARGS"
+bash "$ROOT/no-helper/diagnostics.sh" "$ROOT/no-helper.tar.gz" >"$ROOT/output" 2>&1
+[[ ! -e "$DIAG_TEST_ARGS" ]]
+tar -xOzf "$ROOT/no-helper.tar.gz" --wildcards '*/sql/config_revisions.err' >"$ROOT/sql-error"
+grep -qxF 'Python 3 or PostgreSQL client helper missing' "$ROOT/sql-error"
+
 # Publishing replaces the chosen pathname, never the inode behind a link.
 printf 'private-target\n' >"$ROOT/protected"
 cp "$ROOT/protected" "$ROOT/protected.expected"

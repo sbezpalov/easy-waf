@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Restore uses those settings for edge Apply as well as the database restore.
 - Pass backup and restore connection settings through a private libpq
   service file so PostgreSQL client arguments contain no database credentials.
+- Use the same private connection transport in root diagnostics and the
+  backup/restore acceptance driver.
 
 ## [1.6.1] - Unreleased
 

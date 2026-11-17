@@ -40,6 +40,8 @@ chmod 0700 "$work/bin/"*
 export PATH="$work/bin:$PATH"
 export DATABASE_URL='fixture inherited connection settings'
 dsn='postgresql://fixture:fixture%3Aspecial%40value@127.0.0.1:55477/archive_source?sslmode=disable'
+[[ "$(python3 -I "$SCRIPT_DIR/../lib/pg-archive.py" "$work/private" psql -XwAt \
+  -c 'SELECT value FROM evidence' <<<"$dsn")" == fixture ]]
 python3 -I "$SCRIPT_DIR/../lib/pg-archive.py" "$work/private" pg_dump -Fc -f "$work/data.pg" <<<"$dsn"
 service="$work/operator-service.conf"
 printf '[selected]\nhost=127.0.0.1\nport=55477\nuser=fixture\ndbname=archive_target\npassword=overridden\nsslmode=disable\n' >"$service"

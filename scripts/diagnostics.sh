@@ -186,10 +186,14 @@ else
 fi
 
 # --- (f) SQL via psql ---
-if command -v psql &>/dev/null && [[ -f "$ENV_FILE" ]]; then
+if ! command -v psql &>/dev/null || [[ ! -f "$ENV_FILE" ]]; then
+  echo "psql not installed or env file missing" >"$ROOT/sql/config_revisions.err"
+elif ! command -v python3 &>/dev/null || [[ ! -r "$SCRIPT_DIR/lib/pg-archive.py" ]]; then
+  echo "Python 3 or PostgreSQL client helper missing" >"$ROOT/sql/config_revisions.err"
+else
   database_url="${DATABASE_URL:-}"
   if grep -q '^DATABASE_URL=' "$ENV_FILE"; then
-    database_url="$(easy_waf_read_env_value "$ENV_FILE" DATABASE_URL)"
+    database_url="$(easy_waf_read_env_value "$ENV_FILE" DATABASE_URL)" || database_url=""
   elif [[ "$?" != 1 ]]; then
     echo "Cannot read env file" >"$ROOT/sql/config_revisions.err"
     database_url=""
@@ -197,19 +201,19 @@ if command -v psql &>/dev/null && [[ -f "$ENV_FILE" ]]; then
   if [[ -n "$database_url" ]]; then
     # libpq errors can echo credential-bearing URI tokens. Do not put raw
     # errors/warnings or failed partial output into a support archive.
-    if psql "$database_url" -X -w -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
+    if python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" psql -X -w \
+      -c "SELECT id, haproxy_sha256 AS sha256, at AS created_at FROM config_revisions ORDER BY id DESC LIMIT 5" \
+      <<<"$database_url" \
       >"$ROOT/sql/config_revisions.txt" 2>/dev/null; then
       : >"$ROOT/sql/config_revisions.err"
     else
       sql_status=$?
       : >"$ROOT/sql/config_revisions.txt"
-      printf 'SQL revision query failed (psql exit %s); inspect the database connection locally.\n' "$sql_status" >"$ROOT/sql/config_revisions.err"
+      printf 'SQL revision query failed (exit %s). Inspect the database connection locally.\n' "$sql_status" >"$ROOT/sql/config_revisions.err"
     fi
   else
     echo "DATABASE_URL unavailable or empty" >>"$ROOT/sql/config_revisions.err"
   fi
-else
-  echo "psql not installed or env file missing" >"$ROOT/sql/config_revisions.err"
 fi
 
 # --- (g) Host firewall (nftables) ---

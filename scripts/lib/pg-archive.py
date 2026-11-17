@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Sergey Bezpalov
 # SPDX-License-Identifier: Apache-2.0
-"""Launch a PostgreSQL archive client with connection settings off argv."""
+"""Launch a PostgreSQL client with connection settings off argv."""
 
 import ctypes
 import os
@@ -75,8 +75,8 @@ def private_service_file(directory, options, environment):
 
 def main():
     directory, command, *args = sys.argv[1:]
-    if command not in ("pg_dump", "pg_restore"):
-        raise ValueError("expected pg_dump or pg_restore")
+    if command not in ("pg_dump", "pg_restore", "psql"):
+        raise ValueError("expected pg_dump, pg_restore or psql")
     dsn = sys.stdin.buffer.read().removesuffix(b"\n")
     if not dsn or b"\0" in dsn:
         raise ValueError("invalid PostgreSQL connection settings")
@@ -94,4 +94,4 @@ if __name__ == "__main__":
     except ValueError as error:
         sys.exit(f"ERROR: {error}")
     except OSError:
-        sys.exit("ERROR: could not launch PostgreSQL archive client (check libpq and client installation)")
+        sys.exit("ERROR: could not launch PostgreSQL client (check libpq and client installation)")
