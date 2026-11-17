@@ -81,6 +81,9 @@ exact database/state recovery is required. Record cleanup and independent checks
 
 - Clean Ubuntu 24.04: `sudo bash scripts/install.sh`, then
   `sudo bash scripts/smoke-appliance.sh`.
+- Smoke HTTP probes allow up to 5 seconds to connect and 30 seconds for the
+  transfer. The optional MMDB upload allows 120 seconds. An incomplete
+  response fails the probe even when the server has sent HTTP 200.
 - Upgrade an appliance that is actually running 1.6.0. Record its API version,
   installed binary hashes and, for package installations, dpkg version before
   starting. Authenticate the candidate input and retain a matched backup.

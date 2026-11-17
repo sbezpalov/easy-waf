@@ -103,10 +103,15 @@ if [[ "$BASE" == https://* ]]; then
   fi
 fi
 
+smoke_curl() {
+  curl "${CURL_TLS[@]}" --connect-timeout 5 --max-time 30 -sS "$@" 2>/dev/null
+}
+
 # api <method> <path> [data] — prints "<status>\n<body>".
+# curl can print an HTTP status even when the response transfer failed.
 api() {
   local method="$1" path="$2" data="${3:-}"
-  local args=("${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/body" -w '%{http_code}'
+  local args=(-o "${SMOKE_TMPDIR}/body" -w '%{http_code}'
     -X "$method" "${BASE}${path}"
     -H "Authorization: Bearer ${api_token}"
     -H "X-Requested-With: XMLHttpRequest")
@@ -114,7 +119,10 @@ api() {
     args+=(-H "Content-Type: application/json" -d "$data")
   fi
   local code
-  code="$(curl "${args[@]}" 2>/dev/null)"
+  if ! code="$(smoke_curl "${args[@]}")"; then
+    printf '000\n'
+    return
+  fi
   printf '%s\n' "$code"
   cat "${SMOKE_TMPDIR}/body" 2>/dev/null
 }
@@ -129,10 +137,10 @@ operator_login() {
   fi
   login_json+='}'
 
-  if ! login_code="$(curl "${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/login" -w '%{http_code}' \
+  if ! login_code="$(smoke_curl -o "${SMOKE_TMPDIR}/login" -w '%{http_code}' \
     -X POST "${BASE}/api/v1/auth/login" \
     -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
-    --data-binary @- <<<"$login_json" 2>/dev/null)"; then
+    --data-binary @- <<<"$login_json")"; then
     fail "operator login request failed"
     return 1
   fi
@@ -149,11 +157,11 @@ operator_login() {
   pass "operator session established"
 
   confirm_json="$(printf '{\"password\":\"%s\"}' "$(json_escape "${EASY_WAF_SMOKE_PASSWORD}")")"
-  if ! confirm_code="$(curl "${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/confirm" -w '%{http_code}' \
+  if ! confirm_code="$(smoke_curl -o "${SMOKE_TMPDIR}/confirm" -w '%{http_code}' \
     -X POST "${BASE}/api/v1/auth/confirm" \
     -H "Authorization: Bearer ${session_jwt}" \
     -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
-    --data-binary @- <<<"$confirm_json" 2>/dev/null)"; then
+    --data-binary @- <<<"$confirm_json")"; then
     fail "password confirmation request failed"
     return 1
   fi
@@ -223,7 +231,7 @@ else
 fi
 
 section "management API"
-health="$(curl "${CURL_TLS[@]}" -sS -o /dev/null -w '%{http_code}' "${BASE}/health" 2>/dev/null)"
+health="$(smoke_curl -o /dev/null -w '%{http_code}' "${BASE}/health")" || health=000
 if [[ "$health" == "200" ]]; then
   pass "GET /health -> 200"
 else
@@ -363,13 +371,14 @@ if [[ -n "${EASY_WAF_SMOKE_MMDB:-}" ]]; then
   elif [[ -z "$step_up_jwt" ]]; then
     skip "GeoIP upload needs EASY_WAF_SMOKE_USER/EASY_WAF_SMOKE_PASSWORD and a confirmed session"
   else
-    code="$(curl "${CURL_TLS[@]}" -sS -o "${SMOKE_TMPDIR}/geoip" -w '%{http_code}' \
+    if ! code="$(smoke_curl --max-time 120 -o "${SMOKE_TMPDIR}/geoip" -w '%{http_code}' \
       -X POST "${BASE}/api/v1/geoip/database" \
       -H "Authorization: Bearer ${step_up_jwt}" \
       -H "X-Requested-With: XMLHttpRequest" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary "@${EASY_WAF_SMOKE_MMDB}" 2>/dev/null)"
-    if [[ "$code" == "200" ]]; then
+      --data-binary "@${EASY_WAF_SMOKE_MMDB}")"; then
+      fail "GeoIP upload request failed"
+    elif [[ "$code" == "200" ]]; then
       pass "GeoIP upload -> 200: $(tr -d '\n' <"${SMOKE_TMPDIR}/geoip" | head -c 200)"
     else
       fail "GeoIP upload -> $code: $(head -c 300 "${SMOKE_TMPDIR}/geoip")"
@@ -394,18 +403,18 @@ if [[ -n "${EASY_WAF_SMOKE_USER:-}" && -n "${EASY_WAF_SMOKE_PASSWORD:-}" ]]; the
     skip "operator session was not established"
   else
     me() {
-      curl "${CURL_TLS[@]}" -sS -o /dev/null -w '%{http_code}' "${BASE}/api/v1/auth/me" \
-        -H "Authorization: Bearer ${session_jwt}" -H 'X-Requested-With: XMLHttpRequest' 2>/dev/null
+      smoke_curl -o /dev/null -w '%{http_code}' "${BASE}/api/v1/auth/me" \
+        -H "Authorization: Bearer ${session_jwt}" -H 'X-Requested-With: XMLHttpRequest'
     }
-    before="$(me)"
-    curl "${CURL_TLS[@]}" -sS -o /dev/null -X POST "${BASE}/api/v1/auth/logout" \
+    before="$(me)" || before=000
+    logout="$(smoke_curl -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/auth/logout" \
       -H "Authorization: Bearer ${session_jwt}" -H 'X-Requested-With: XMLHttpRequest' \
-      -H 'Content-Type: application/json' -d '{}' 2>/dev/null
-    after="$(me)"
-    if [[ "$before" == "200" && "$after" == "401" ]]; then
+      -H 'Content-Type: application/json' -d '{}')" || logout=000
+    after="$(me)" || after=000
+    if [[ "$before" == "200" && "$logout" == "200" && "$after" == "401" ]]; then
       pass "logout revokes the session server-side (200 -> 401)"
     else
-      fail "logout did not revoke: /auth/me was $before, after logout $after"
+      fail "logout verification failed: /auth/me $before -> /auth/logout $logout -> /auth/me $after"
     fi
   fi
 else

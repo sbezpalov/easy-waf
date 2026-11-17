@@ -12,7 +12,9 @@ cat >"$ROOT/bin/curl" <<'MOCK'
 printf '%s\n' "$@" >>"$SMOKE_TEST_ARGS"
 body='{}'
 code=200
+url=''
 for arg in "$@"; do
+  if [[ "$arg" == https://fixture.example/* ]]; then url="$arg"; fi
   if [[ "$arg" == */api/v1/stats/haproxy ]]; then
     body="${SMOKE_TEST_STATS:-}"
     if [[ -z "$body" ]]; then body='{"frontends":[],"backends":[]}'; fi
@@ -22,11 +24,19 @@ for arg in "$@"; do
     body='{"ip":"8.8.8.8","country":"US","cached":false}'
   fi
 done
+case "$url" in
+  */api/v1/auth/login|*/api/v1/auth/confirm) body='{"token":"fixture-session"}' ;;
+  */api/v1/auth/logout) : >"$SMOKE_TEST_LOGOUT_MARKER" ;;
+  */api/v1/auth/me) if [[ -e "$SMOKE_TEST_LOGOUT_MARKER" ]]; then code=401; fi ;;
+esac
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == -o ]]; then shift; printf '%s\n' "$body" >"$1"; fi
   shift
 done
 printf '%s' "$code"
+if [[ -n "${SMOKE_TEST_TRANSPORT_PATH:-}" && "$url" == *"$SMOKE_TEST_TRANSPORT_PATH" ]]; then
+  exit 18
+fi
 MOCK
 cat >"$ROOT/bin/admin" <<'MOCK'
 #!/usr/bin/env bash
@@ -41,6 +51,7 @@ export EASY_WAF_STATE_DIR="$ROOT/state"
 export EASY_WAF_ADMIN_BIN="$ROOT/bin/admin"
 export EASY_WAF_API_BASE='https://fixture.example'
 export EASY_WAF_SMOKE_SKIP_APPLY=1
+export SMOKE_TEST_LOGOUT_MARKER="$ROOT/logged-out"
 unset EASY_WAF_SMOKE_USER EASY_WAF_SMOKE_PASSWORD EASY_WAF_SMOKE_MMDB
 marker="$ROOT/executed"
 expected="literal-token-\$not_expanded;still-data-123456789"
@@ -82,4 +93,30 @@ for code in 502 401 000; do
   fi
 done
 unset SMOKE_TEST_GEOIP_STATUS
-echo 'OK: smoke env stays data; GeoIP failures are not skipped'
+
+assert_failed_transfer() {
+  local route="$1" message="$2"
+  SMOKE_TEST_TRANSPORT_PATH="$route" bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+  if ! grep -qF "$message" "$ROOT/output"; then
+    echo "FAIL: incomplete response accepted for $route" >&2
+    exit 1
+  fi
+}
+assert_failed_transfer '/health' 'FAIL  GET /health -> 000'
+assert_failed_transfer '/api/v1/status' 'FAIL  GET /api/v1/status -> 000'
+assert_failed_transfer '/api/v1/stats/haproxy' 'FAIL  HAProxy runtime stats unavailable after reload'
+assert_failed_transfer '/api/v1/geoip/lookup?ip=8.8.8.8&nocache=1' 'FAIL  GeoIP lookup -> 000'
+
+export EASY_WAF_SMOKE_USER=fixture EASY_WAF_SMOKE_PASSWORD=fixture
+export EASY_WAF_SMOKE_MMDB="$ROOT/fixture.mmdb"
+: >"$EASY_WAF_SMOKE_MMDB"
+: >"$SMOKE_TEST_ARGS"
+bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+grep -qF 'PASS  logout revokes the session server-side' "$ROOT/output"
+for expected_arg in --connect-timeout --max-time 5 30 120; do
+  grep -qxF -- "$expected_arg" "$SMOKE_TEST_ARGS" || { echo "FAIL: missing HTTP timeout argument $expected_arg" >&2; exit 1; }
+done
+rm -f "$SMOKE_TEST_LOGOUT_MARKER"
+assert_failed_transfer '/api/v1/auth/logout' 'FAIL  logout verification failed: /auth/me 200 -> /auth/logout 000 -> /auth/me 401'
+assert_failed_transfer '/api/v1/geoip/database' 'FAIL  GeoIP upload request failed'
+echo 'OK: smoke env stays data; HTTP failures are not skipped'
