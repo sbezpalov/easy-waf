@@ -228,6 +228,14 @@
     .app-badge-ok { background: #1a3326; color: #56d364; }
     .app-badge-warn { background: #3d2a1a; color: #e3b341; }
     .app-card-warn { font-size: 0.78rem; color: #f85149; margin-top: 0.35rem; font-weight: 600; }
+    .app-diagnostics { border-top: 1px solid var(--border); margin-top: var(--space-3); padding-top: var(--space-3); }
+    .app-diagnostics-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+    .app-diagnostics-summary p { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
+    .app-diagnostics-list { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-2); }
+    .app-diagnostic-step { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); background: var(--color-surface-2); }
+    .app-diagnostic-step-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+    .app-diagnostic-step p { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
+    .app-diagnostic-evidence { margin: var(--space-1) 0 0; padding-left: 1.1rem; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
     .publication-flow { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
     .publication-step {
       border: 1px solid var(--color-border); border-radius: var(--radius-lg);
@@ -2923,6 +2931,7 @@
       const ws = a.websocket ? ' <span class="app-badge">WS</span>' : '';
       const lmb = ' ' + listenModeBadge(a.listen_mode);
       const rpoWarn = mode === 'reverse-proxy-only' ? '<div class="app-card-warn">⚠ DEBUG MODE — no WAF protections</div>' : '';
+      const diagnosticsID = appDiagnosticsDOMID(a.id);
       return `<div class="${appModeCardClass(mode)}">
   <div class="app-card-head">
     <div>
@@ -2930,6 +2939,7 @@
       <p class="app-card-sub">${esc(a.public_host)} → <code>${esc(a.backend_host)}:${a.backend_port}</code>${(a.backend_servers || []).length ? ' <span class="app-badge">+' + a.backend_servers.length + ' server(s)</span>' : ''}${ws}${lmb}${a.maintenance ? ' <span class="app-badge" style="background:#9a6700;color:#fff">MAINTENANCE</span>' : ''}</p>
     </div>
     <div class="row" style="margin:0;gap:0.35rem">
+      <button type="button" class="secondary btn-app-diagnostics" data-viewer-action="true" data-id="${esc(a.id)}" aria-expanded="false" aria-controls="${esc(diagnosticsID)}">Diagnose</button>
       <button type="button" class="secondary btn-app-maint" data-id="${esc(a.id)}" data-on="${a.maintenance ? '1' : ''}">${a.maintenance ? 'End maintenance' : 'Maintenance'}</button>
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
       <button type="button" class="secondary btn-app-delete admin-only" data-id="${esc(a.id)}">Delete</button>
@@ -2948,8 +2958,12 @@
   </div>
   <div class="app-badges">${appSecurityBadges(sec)}</div>
   ${rpoWarn}
+  <div class="app-diagnostics hidden" id="${esc(diagnosticsID)}" data-app-diagnostics="${esc(a.id)}" aria-live="polite"></div>
 </div>`;
     }).join('');
+    box.querySelectorAll('.btn-app-diagnostics').forEach((btn) => {
+      btn.onclick = async () => toggleApplicationDiagnostics(btn);
+    });
     box.querySelectorAll('.btn-app-edit').forEach((btn) => {
       btn.onclick = () => fillAppFormFromApp(btn.getAttribute('data-id'));
     });
@@ -2962,6 +2976,82 @@
     box.querySelectorAll('.app-mode-sel').forEach((sel) => {
       sel.addEventListener('change', () => postAppModeChange(sel.getAttribute('data-id'), sel.value, sel));
     });
+  }
+
+  function appDiagnosticsDOMID(id) {
+    return 'app-diagnostics-' + String(id || '').replace(/[^A-Za-z0-9_-]/g, '_');
+  }
+
+  function applicationDiagnosticPresentation(status) {
+    switch (status) {
+    case 'ok': return {label: 'OK', tone: 'success'};
+    case 'failed': return {label: 'Failed', tone: 'danger'};
+    case 'not_applicable': return {label: 'Not applicable', tone: 'neutral'};
+    default: return {label: 'Unknown', tone: 'unknown'};
+    }
+  }
+
+  function renderApplicationDiagnostics(payload) {
+    const overall = applicationDiagnosticPresentation(payload && payload.status);
+    const overallLabel = payload && payload.status === 'ok' ? 'Checks passed' :
+      payload && payload.status === 'failed' ? 'Issue found' : 'Incomplete';
+    const steps = payload && Array.isArray(payload.steps) ? payload.steps : [];
+    const rows = steps.map((step) => {
+      const state = applicationDiagnosticPresentation(step && step.status);
+      const evidence = step && Array.isArray(step.evidence) ? step.evidence : [];
+      const evidenceHTML = evidence.length ? '<ul class="app-diagnostic-evidence">' +
+        evidence.map((fact) => '<li>' + esc(fact) + '</li>').join('') + '</ul>' : '';
+      return '<li class="app-diagnostic-step" data-diagnostic-state="' + esc(step && step.status || 'unknown') + '">' +
+        '<div class="app-diagnostic-step-head"><strong>' + esc(step && step.label || 'Check') + '</strong>' +
+        statusBadge(state.label, state.tone) + '</div><p>' + esc(step && step.summary || 'No result was reported.') + '</p>' +
+        evidenceHTML + '</li>';
+    }).join('');
+    const checked = payload && payload.checked_at ? formatAuditTime(payload.checked_at) : 'Unknown';
+    return '<div class="app-diagnostics-summary"><div><strong>Availability diagnosis</strong><p>' +
+      esc(payload && payload.summary || 'Some checks could not be verified.') + '</p></div>' +
+      statusBadge(overallLabel, overall.tone) + '</div>' +
+      '<p class="dash-note">Server facts checked at ' + esc(checked) + '. DNS resolution does not prove that an address points to this appliance.</p>' +
+      (rows ? '<ol class="app-diagnostics-list">' + rows + '</ol>' : stateView('error', 'No diagnostic steps were returned.'));
+  }
+
+  async function loadApplicationDiagnostics(id, panel) {
+    panel.innerHTML = stateView('loading', 'Checking DNS, certificate material, applied edge state, and HAProxy runtime…');
+    let response;
+    try {
+      response = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/diagnostics', {headers: hdr()});
+    } catch (_) {
+      panel.innerHTML = stateView('offline', 'Diagnostics are unavailable because the API could not be reached.');
+      return;
+    }
+    const text = await response.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch (_) { /* invalid response handled below */ }
+    if (!response.ok) {
+      panel.innerHTML = stateView('error', payload && (payload.error || payload.message) || text || ('HTTP ' + response.status));
+      return;
+    }
+    if (!payload || !Array.isArray(payload.steps)) {
+      panel.innerHTML = stateView('error', 'The diagnostics API returned an invalid response.');
+      return;
+    }
+    panel.innerHTML = renderApplicationDiagnostics(payload);
+  }
+
+  async function toggleApplicationDiagnostics(button) {
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    if (!panel) return;
+    const opening = button.getAttribute('aria-expanded') !== 'true';
+    if (opening && button.getAttribute('aria-busy') === 'true') return;
+    button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    button.textContent = opening ? 'Hide diagnostics' : 'Diagnose';
+    panel.classList.toggle('hidden', !opening);
+    if (!opening) return;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      await loadApplicationDiagnostics(button.getAttribute('data-id'), panel);
+    } finally {
+      button.removeAttribute('aria-busy');
+    }
   }
 
   document.getElementById('btn-totp-setup').onclick = async () => {

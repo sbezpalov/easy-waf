@@ -94,6 +94,7 @@ Full appliance installation and external ACME/WAN acceptance remain manual.
 |-------------|--------|-------|
 | Web UI (LAN): 12 tabs — dashboard, apps, certs, config, network, security, crowdsec, fail2ban, logs, system, users, settings | **Done** | see **7.7**; `internal/webui/dist/index.html` |
 | Certificates, logs, stats, health | **Done** | see **7.7**, **7.8**; audit, `/health` (liveness), `/health/ready` (503 without PostgreSQL), `/status` |
+| Per-application availability diagnosis | **Done** | Applications → **Diagnose**; read-only `GET /applications/{id}/diagnostics` separates DNS, actual TLS material, applied route, HAProxy runtime and backend health, with explicit unknown/not-applicable states |
 | Backup/restore | **Done** | **AC-10**; `scripts/backup.sh`, `restore.sh`, E2E `scripts/test-backup-restore.sh` |
 
 ## Platform constraints
