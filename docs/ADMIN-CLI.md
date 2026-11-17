@@ -2,7 +2,13 @@
 
 Root-only maintenance tool installed as `/usr/sbin/easy-waf-admin` (see `Makefile` / `scripts/install.sh`).
 
-Requires **`DATABASE_URL`** in the environment (e.g. `export $(grep -v '^#' /etc/easy-waf/easy-waf.env | xargs)` before running, or `sudo -E` with env set) — **except** for **`doctor`**, **`apply-edge`**, **`reset-appliance -bootstrap-credentials`**, **`management-config`**, and **`reset-control-panel-access`**, which read **`DATABASE_URL`** from **`/etc/easy-waf/easy-waf.env`** (or **`-env-file`**) when it is not passed as **`-database-url`** and not exported. `reset-control-panel-access` has no `-database-url`, only `-env-file` and `-state-dir`. **`print-enrollment`** does not use the database at all.
+Commands that use PostgreSQL read `DATABASE_URL` directly from
+`/etc/easy-waf/easy-waf.env` or the file selected by `-env-file`.
+An explicit `-database-url` takes precedence on commands that support it.
+The last matching file entry wins, including quoted values. The CLI uses
+the inherited `DATABASE_URL` only when the file or the entry is absent.
+An explicitly empty entry stops database access. Use a private env file for
+credentialed URLs.
 
 ## `print-enrollment`
 
@@ -139,15 +145,16 @@ Review **nftables** (`/etc/nftables/easy-waf.nft`) afterwards if management port
 Confirmation must be the literal token **`RESET`** (avoids accidental one-flag typos):
 
 ```bash
-sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin reset-appliance -confirm RESET'
+sudo /usr/sbin/easy-waf-admin reset-appliance -confirm RESET
 sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
 
-With a one-shot DSN when **`DATABASE_URL` in the env file is wrong** (do not source `easy-waf.env` for `DATABASE_URL` in that case, or export the correct URL after sourcing):
+For a one-time recovery, put the verified `DATABASE_URL` in a root-owned
+0600 file and select it explicitly.
 
 ```bash
 sudo /usr/sbin/easy-waf-admin reset-appliance -confirm RESET \
-  -database-url 'postgres://easywaf:REAL_PASSWORD@127.0.0.1:5432/easywaf?sslmode=disable'
+  -env-file /root/easy-waf-recovery.env
 ```
 
 Optional state path (default `/var/lib/easy-waf`):
@@ -158,11 +165,13 @@ Optional state path (default `/var/lib/easy-waf`):
 
 ### Wrong password in `easy-waf.env` (cannot connect to PostgreSQL)
 
-If **`DATABASE_URL`** in the env file is stale but you know the real password (e.g. after `ALTER USER` as `postgres`), run the wipe **without** sourcing the broken URL — pass a one-shot DSN (quote carefully; URL-encode `@` and other special characters in the password):
+If the file contains a stale password after role rotation, verify the target
+database and update the private configuration before retrying. URL-encode
+reserved characters in the password when constructing a PostgreSQL URL.
 
 ```bash
 sudo /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true \
-  -database-url 'postgres://easywaf:REAL_PASSWORD@127.0.0.1:5432/easywaf?sslmode=disable'
+  -env-file /root/easy-waf-recovery.env
 ```
 
 Then update **`/etc/easy-waf/easy-waf.env`** so **`DATABASE_URL`** matches that password, or services will fail again on restart.
@@ -193,7 +202,7 @@ With **`-bootstrap-credentials`**, **`DATABASE_URL`** is already updated; only r
 Same effect as **`reset-appliance`**. Kept for scripts and older docs.
 
 ```bash
-sudo sh -c 'set -a; . /etc/easy-waf/easy-waf.env; set +a; /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true'
+sudo /usr/sbin/easy-waf-admin factory-reset -i-am-sure=true
 sudo systemctl restart easy-waf-api.service easy-waf-acmed.service
 ```
 

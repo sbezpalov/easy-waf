@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -43,11 +44,12 @@ func UpsertEnvKey(path, key, value string) error {
 	return os.WriteFile(path, []byte(out), 0o600)
 }
 
-// ReadEnvKey returns the value for KEY in a line-oriented env file (first match). Empty if missing or unreadable.
-func ReadEnvKey(path, key string) (string, error) {
+// LookupEnvKey reads the last KEY=value entry from a line-oriented appliance
+// env file. Matching outer quotes are removed without evaluating the value.
+func LookupEnvKey(path, key string) (value string, found bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	prefix := key + "="
 	raw := strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n")
@@ -57,10 +59,36 @@ func ReadEnvKey(path, key string) (string, error) {
 			continue
 		}
 		if strings.HasPrefix(trimmed, prefix) {
-			return strings.TrimSpace(trimmed[len(prefix):]), nil
+			value = strings.TrimSpace(trimmed[len(prefix):])
+			if len(value) >= 2 && (value[0] == '\'' || value[0] == '"') && value[len(value)-1] == value[0] {
+				value = value[1 : len(value)-1]
+			}
+			found = true
 		}
 	}
-	return "", nil
+	return value, found, nil
+}
+
+// ResolveDatabaseURL applies the CLI override, the appliance file, then the
+// inherited environment. An explicit empty file entry disables the fallback.
+func ResolveDatabaseURL(envFile, override string) (string, error) {
+	if value := strings.TrimSpace(override); value != "" {
+		return value, nil
+	}
+	value, found, err := LookupEnvKey(envFile, "DATABASE_URL")
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("read %s: %w", envFile, err)
+	}
+	if found {
+		if strings.TrimSpace(value) == "" {
+			return "", fmt.Errorf("DATABASE_URL is empty in %s", envFile)
+		}
+		return value, nil
+	}
+	if value := strings.TrimSpace(os.Getenv("DATABASE_URL")); value != "" {
+		return value, nil
+	}
+	return "", fmt.Errorf("DATABASE_URL not set: put DATABASE_URL in %s, set it in the environment, or use -database-url", envFile)
 }
 
 // RemoveEnvKey drops KEY=value lines (e.g. deprecated EASY_WAF_LISTEN after split HTTP/HTTPS).

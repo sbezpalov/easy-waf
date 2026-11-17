@@ -10,26 +10,18 @@ import (
 	"testing"
 )
 
-func TestResetDatabaseDSNReadsEnvFile(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
+func TestOpenStoreRefusesAnEmptyConfiguredDatabaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "fixture malformed inherited conninfo")
 	path := filepath.Join(t.TempDir(), "easy-waf.env")
-	const want = "postgres://from-file/db"
-	if err := os.WriteFile(path, []byte("DATABASE_URL="+want+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("DATABASE_URL=fixture malformed older conninfo\nDATABASE_URL=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resolveDSNForWipe(path, "")
-	if err != nil {
-		t.Fatal(err)
+	st, err := openStoreFromEnvFile(path, "")
+	if st != nil {
+		_ = st.Close()
 	}
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-	got, err = resolveDSNForWipe(path, "postgres://from-flag/db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "postgres://from-flag/db" {
-		t.Fatalf("flag override: got %q", got)
+	if st != nil || err == nil || !strings.Contains(err.Error(), "DATABASE_URL is empty") {
+		t.Fatal("a cleared file entry must stop the CLI before opening a database")
 	}
 }
 

@@ -70,14 +70,7 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) DoctorReport {
 	if envFile == "" {
 		envFile = "/etc/easy-waf/easy-waf.env"
 	}
-	dbURL := strings.TrimSpace(opts.DatabaseURL)
-	if dbURL == "" {
-		if v, err := ReadEnvKey(envFile, "DATABASE_URL"); err == nil && strings.TrimSpace(v) != "" {
-			dbURL = strings.TrimSpace(v)
-		} else if v := strings.TrimSpace(os.Getenv("DATABASE_URL")); v != "" {
-			dbURL = v
-		}
-	}
+	dbURL, _ := ResolveDatabaseURL(envFile, opts.DatabaseURL)
 
 	report := DoctorReport{
 		Timestamp: time.Now().UTC(),

@@ -21,7 +21,7 @@ import (
 
 // openStoreFromEnvFile resolves DATABASE_URL from -database-url, then env file, then the environment.
 func openStoreFromEnvFile(envFile, databaseURL string) (*store.Store, error) {
-	dsn, err := resolveDSNForWipe(envFile, databaseURL)
+	dsn, err := admin.ResolveDatabaseURL(envFile, databaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -214,16 +214,16 @@ func readListenFromEnvFile(envFile string) (httpListen, httpsListen, stateDir, l
 		msg := fmt.Sprintf("(cannot read %s: %v)", envFile, err)
 		return msg, msg, "", ""
 	}
-	if v, err := admin.ReadEnvKey(envFile, "EASY_WAF_LISTEN_HTTP"); err == nil && strings.TrimSpace(v) != "" {
+	if v, _, err := admin.LookupEnvKey(envFile, "EASY_WAF_LISTEN_HTTP"); err == nil && strings.TrimSpace(v) != "" {
 		httpListen = strings.TrimSpace(v)
 	}
-	if v, err := admin.ReadEnvKey(envFile, "EASY_WAF_LISTEN_HTTPS"); err == nil && strings.TrimSpace(v) != "" {
+	if v, _, err := admin.LookupEnvKey(envFile, "EASY_WAF_LISTEN_HTTPS"); err == nil && strings.TrimSpace(v) != "" {
 		httpsListen = strings.TrimSpace(v)
 	}
-	if v, err := admin.ReadEnvKey(envFile, "EASY_WAF_STATE_DIR"); err == nil && strings.TrimSpace(v) != "" {
+	if v, _, err := admin.LookupEnvKey(envFile, "EASY_WAF_STATE_DIR"); err == nil && strings.TrimSpace(v) != "" {
 		stateDir = strings.TrimSpace(v)
 	}
-	if v, err := admin.ReadEnvKey(envFile, "EASY_WAF_LISTEN"); err == nil && strings.TrimSpace(v) != "" {
+	if v, _, err := admin.LookupEnvKey(envFile, "EASY_WAF_LISTEN"); err == nil && strings.TrimSpace(v) != "" {
 		legacyListen = strings.TrimSpace(v)
 	}
 	return httpListen, httpsListen, stateDir, legacyListen

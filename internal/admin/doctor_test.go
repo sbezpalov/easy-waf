@@ -83,18 +83,27 @@ func TestDoctorReportOutput(t *testing.T) {
 }
 
 func TestRunDoctorBasic(t *testing.T) {
+	t.Setenv("DATABASE_URL", "fixture malformed inherited conninfo")
 	dir := t.TempDir()
 	opts := DoctorOptions{
 		StateDir: dir,
 		EnvFile:  filepath.Join(dir, "easy-waf.env"),
 	}
 
-	_ = os.WriteFile(opts.EnvFile, []byte("DATABASE_URL=\n"), 0o600)
+	if err := os.WriteFile(opts.EnvFile, []byte("DATABASE_URL=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	rep := RunDoctor(context.Background(), opts)
 
-	if len(rep.Checks) == 0 {
-		t.Fatal("expected diagnostic checks to be executed")
+	for _, check := range rep.Checks {
+		if check.Name == "PostgreSQL Connection" {
+			if check.Status != StatusFail || !strings.Contains(check.Message, "DATABASE_URL is not configured") {
+				t.Fatal("doctor must report the empty file setting")
+			}
+			return
+		}
 	}
+	t.Fatal("expected the PostgreSQL diagnostic check")
 }
 
 func TestCheckEnvFilePermissions(t *testing.T) {

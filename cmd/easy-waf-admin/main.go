@@ -82,29 +82,12 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Environment: DATABASE_URL (required unless -database-url is passed or readable from -env-file; management-config reads -env-file by default)")
 }
 
-func resolveDSNForWipe(envFile, databaseURL string) (string, error) {
-	if strings.TrimSpace(databaseURL) != "" {
-		return strings.TrimSpace(databaseURL), nil
-	}
-	v, err := admin.ReadEnvKey(envFile, "DATABASE_URL")
-	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("read %s: %w", envFile, err)
-	}
-	if strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v), nil
-	}
-	if v := strings.TrimSpace(os.Getenv("DATABASE_URL")); v != "" {
-		return v, nil
-	}
-	return "", fmt.Errorf("DATABASE_URL not set: use -database-url, put DATABASE_URL in %s, or export it", envFile)
-}
-
 // performBootstrapAndWipe rotates the PostgreSQL role password and EASY_WAF_ADMIN_TOKEN, writes env file, then wipes appliance tables/state.
 func performBootstrapAndWipe(ctx context.Context, envFile, stateDir, credOut, databaseURL string) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("bootstrap-credentials requires root (run with sudo)")
 	}
-	dsnIn, err := resolveDSNForWipe(envFile, databaseURL)
+	dsnIn, err := admin.ResolveDatabaseURL(envFile, databaseURL)
 	if err != nil {
 		return err
 	}

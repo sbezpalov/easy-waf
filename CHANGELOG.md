@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   publications with Gateway authentication and a rebuilt forwarded address.
 - Report malformed PostgreSQL connection settings without logging the input
   or its credentials.
+- Read the last database setting from the appliance env file in administration
+  commands. An explicit empty setting stops inherited database fallback.
 
 ## [1.6.1] - Unreleased
 
