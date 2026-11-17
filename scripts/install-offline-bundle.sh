@@ -61,11 +61,11 @@ bundle_value() {
   sed -n "s/^${key}=//p" BUNDLE.env | head -1
 }
 
-VERSION="$(bundle_value EASY_WAF_BUNDLE_VERSION)"
+BUNDLE_VERSION="$(bundle_value EASY_WAF_BUNDLE_VERSION)"
 UBUNTU_VERSION="$(bundle_value EASY_WAF_BUNDLE_UBUNTU)"
 ARCH="$(bundle_value EASY_WAF_BUNDLE_ARCH)"
 CROWDSEC="$(bundle_value EASY_WAF_BUNDLE_CROWDSEC)"
-[[ "$VERSION" =~ ^[0-9A-Za-z.+~-]+$ ]] || {
+[[ "$BUNDLE_VERSION" =~ ^[0-9A-Za-z.+~-]+$ ]] || {
   echo "[offline-install] invalid bundle version" >&2
   exit 1
 }
@@ -127,7 +127,7 @@ echo "[offline-install] using only the verified local repository"
 export APT_CONFIG="${TEMP_DIR}/apt.conf"
 export EASY_WAF_OFFLINE=1
 export EASY_WAF_REPO_ROOT="${SCRIPT_DIR}/payload"
-export EASY_WAF_RELEASE_VERSION="$VERSION"
+export EASY_WAF_RELEASE_VERSION="$BUNDLE_VERSION"
 export EASY_WAF_INSTALL_BUILD_DEPS=0
 export EASY_WAF_BUILD_FROM_SOURCE=0
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
