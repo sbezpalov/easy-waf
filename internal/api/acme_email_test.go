@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/engine"
 )
 
 func TestValidateRuntimeSettingsACMEEmail(t *testing.T) {
@@ -45,6 +46,17 @@ func TestValidateRuntimeSettingsACMEEmail(t *testing.T) {
 
 func TestSettingsRejectInvalidACMEContactWithoutPersisting(t *testing.T) {
 	s := applyFailingServer(t)
+	// The settings API intentionally validates appliance paths with POSIX
+	// semantics. Keep the engine's native temporary state directory for any
+	// filesystem work, but seed this settings-only test with target paths so it
+	// exercises ACME contact validation on Windows and macOS too.
+	targetSettings := config.DefaultSettings("/var/lib/easy-waf")
+	targetSettings.HAProxyBinary = "/bin/false"
+	targetSettings.IPBLExternalEnabled = false
+	s.Eng = engine.New(s.Eng.StateDir, s.Eng.Store, targetSettings)
+	if err := s.Eng.SaveSettings(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	before, err := s.Eng.Store.GetSetting(t.Context(), "global_settings_json")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +94,7 @@ func TestSettingsRejectInvalidACMEContactWithoutPersisting(t *testing.T) {
 	response := httptest.NewRecorder()
 	s.patchSettings(response, httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(`{"acme_email":"ops+alerts@example.test","acme_staging":false}`)))
 	if response.Code != http.StatusOK {
-		t.Fatalf("valid contact status %d", response.Code)
+		t.Fatalf("valid contact status %d: %s", response.Code, response.Body.String())
 	}
 	stored, err := s.Eng.Store.GetSetting(t.Context(), "global_settings_json")
 	if err != nil {

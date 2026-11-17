@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/easy-waf/easy-waf/internal/engine"
 )
 
 func TestApplicationMutationApplyOutcome(t *testing.T) {
@@ -25,14 +23,10 @@ func TestApplicationMutationApplyOutcome(t *testing.T) {
 				case "manual":
 					t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
 				case "applied":
-					// Validate successfully without reloading a host service. The
-					// real apply still renders, publishes and records its revision.
-					cfg := s.Eng.Settings()
-					cfg.HAProxyBinary = "/bin/true"
-					s.Eng = engine.New(s.Eng.StateDir, s.Eng.Store, cfg)
-					if err := s.Eng.SaveSettings(t.Context()); err != nil {
-						t.Fatal(err)
-					}
+					// Skip the external HAProxy executable without skipping render,
+					// promotion or revision bookkeeping. /bin/true made this fixture
+					// Linux-only even though the behavior under test is portable.
+					t.Setenv("EASY_WAF_SKIP_VALIDATE", "1")
 				}
 				a := testApp(fmt.Sprintf("feedback%d", time.Now().UnixNano()))
 				if err := s.Eng.Store.UpsertApplication(t.Context(), &a); err != nil {
