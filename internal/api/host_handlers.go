@@ -47,6 +47,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 
 		r.Get("/network", s.hostGetNetwork)
 		r.Get("/firewall", s.hostGetFirewall)
+		r.Get("/changes/pending", s.hostGetPendingChanges)
 		r.Get("/services", s.hostListServices)
 		r.Get("/journal", s.hostGetJournal)
 		r.Get("/updates", s.hostGetUpdates)
@@ -146,9 +147,41 @@ func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
 		"expires_at":       expires.UTC().Format(time.RFC3339),
 	}, true)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token":      tok,
-		"expires_at": expires.UTC().Format(time.RFC3339),
+		"token":        tok,
+		"operation_id": auditRollbackTokenDigest(tok),
+		"expires_at":   expires.UTC().Format(time.RFC3339),
 	})
+}
+
+func (s *Server) hostGetPendingChanges(w http.ResponseWriter, r *http.Request) {
+	status, err := rollback.PendingChanges(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	type pendingChange struct {
+		OperationID string     `json:"operation_id"`
+		Kind        string     `json:"kind"`
+		Phase       string     `json:"phase"`
+		ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+		Confirmable bool       `json:"confirmable"`
+	}
+	changes := make([]pendingChange, 0, len(status.Changes))
+	for _, change := range status.Changes {
+		kind := change.Kind
+		if kind == "nft" {
+			kind = "firewall"
+		}
+		changes = append(changes, pendingChange{
+			OperationID: change.OperationID,
+			Kind:        kind,
+			Phase:       change.Phase,
+			ExpiresAt:   change.ExpiresAt,
+			Confirmable: change.Confirmable,
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"changes": changes})
 }
 
 func (s *Server) hostNetplanCommit(w http.ResponseWriter, r *http.Request) {
@@ -219,8 +252,9 @@ func (s *Server) hostFirewallApplyRB(w http.ResponseWriter, r *http.Request) {
 		"expires_at":       expires.UTC().Format(time.RFC3339),
 	}, true)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token":      tok,
-		"expires_at": expires.UTC().Format(time.RFC3339),
+		"token":        tok,
+		"operation_id": auditRollbackTokenDigest(tok),
+		"expires_at":   expires.UTC().Format(time.RFC3339),
 	})
 }
 

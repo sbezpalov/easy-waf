@@ -11,9 +11,25 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
 )
+
+// RollbackStatus is the broker's read-only view of confirm-or-revert changes.
+// It deliberately carries an operation digest, never the commit token.
+type RollbackStatus struct {
+	Changes []PendingRollback `json:"changes"`
+}
+
+// PendingRollback describes one root-owned rollback backup.
+type PendingRollback struct {
+	OperationID string     `json:"operation_id"`
+	Kind        string     `json:"kind"`
+	Phase       string     `json:"phase"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	Confirmable bool       `json:"confirmable"`
+}
 
 const (
 	StagingDirPrefix   = "/var/lib/easy-waf/staging/"

@@ -8,6 +8,7 @@ Authenticated routes under **`/api/v1/host/*`** (JWT; admin role; `X-Requested-W
 | Network (safe apply) | `POST /host/network/netplan/apply`, `POST /host/network/netplan/commit` | Body `{ "yaml", "rollback_seconds" }` (default/clamp 30–600s, default 90). Broker backs up YAML, applies, schedules **`systemd-run`** → **`easy-waf-hostd revert netplan <token>`** if not committed. Audit stores `token_sha256`, not the raw token. |
 | Firewall | `GET /host/firewall`; `PUT /host/firewall/ruleset` and `POST /host/firewall/apply` return **410 Gone** | Managed file `/etc/nftables/easy-waf.nft`. A ruleset that uses `include` is refused (the broker runs `nft -c -f` as root and echoes nft's errors, so an include could read root-only files back). After every load the broker reloads the root-owned `/etc/nftables/easy-waf-guard.nft`, so no ruleset can open the management ports beyond the configured networks; see [SECURITY.md](SECURITY.md). |
 | Firewall (safe apply) | `POST /host/firewall/apply-rollback`, `POST /host/firewall/commit` | Same rollback window via broker `nft-apply-confirm` / `nft-commit`. API runs `nft -c` **before** the broker (invalid ruleset → 4xx, no timer). Audit stores `token_sha256`. |
+| Pending safe changes | `GET /host/changes/pending` | Read-only server state for reload/two-tab recovery: `{"changes":[{"operation_id","kind","phase","expires_at","confirmable"}]}`. `kind` is `netplan` or `firewall`; `phase` is `pending`, `expired`, or `reverting`. The operation ID is a SHA-256 digest. The commit token is never returned by this endpoint. |
 | Services | `GET /host/services`, `POST /host/services/{unit}/{action}` | Whitelisted systemd units only. `stop` and `disable` of `nftables.service` are refused by the API and the broker. |
 | Journal | `GET /host/journal?unit=&lines=&since=&until=&priority=` | `journalctl` via broker; **`unit` required** (allowlisted); `-n` capped; no `verbose`/`export` |
 | Updates | `GET /host/updates`, `POST /host/updates/update`, `POST /host/updates/upgrade` (legacy), `POST /host/updates/upgrade/stream` (NDJSON live log), `POST /host/updates/attach/stream?run_id=…` (read-only observation), `GET /host/updates/upgrade/status`, `GET /host/updates/upgrade/log`, `GET /host/updates/autoremove/preview`, `POST /host/updates/autoremove/stream`, `POST /host/updates/clean` | broker proxies to the independent root APT service |
@@ -125,6 +126,13 @@ fallback recorded before the API's broker call. The UI does not start a new
 countdown or offer confirmation when the response already reports an expired
 window. This deadline does not claim to predict systemd scheduling latency;
 check the current configuration after expiry.
+
+The broker persists that deadline in its root-owned rollback state. Commit checks
+the persisted value, so delayed systemd scheduling cannot extend the confirmation
+window: an expired commit is rejected and the broker attempts the safety revert
+immediately. `GET /host/changes/pending` exposes only the deadline, phase and a
+non-secret digest used to correlate a browser-held capability. The raw commit
+token remains solely in the original apply response.
 
 Only one unconfirmed change per subsystem (network or firewall) is allowed. Another apply, including the legacy immediate broker operations, is rejected until the pending change is committed or reverted. Apply, commit and revert serialize access to the live configuration; an interactive request during another mutation returns a busy error and can be retried. On Linux the broker and standalone timer process share a kernel lock on the root-owned state directory. The timer waits for an in-progress mutation before restoring the backup.
 

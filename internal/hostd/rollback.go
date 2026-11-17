@@ -397,6 +397,14 @@ func beginConfirmedChange(ctx context.Context, r CommandRunner, kind, token, liv
 	if err != nil {
 		return time.Time{}, errors.Join(err, removePendingRollback(bak))
 	}
+	if err := writeRollbackDeadline(kind, token, deadline); err != nil {
+		cleanupErr := errors.Join(
+			stopRollbackUnit(ctx, r, kind, token),
+			removePendingRollback(bak),
+			stateRemoveFile(rollbackDeadlinePath(kind, token)),
+		)
+		return time.Time{}, errors.Join(fmt.Errorf("record rollback deadline: %w", err), cleanupErr)
+	}
 	return deadline, nil
 }
 
@@ -456,6 +464,21 @@ func commitConfirmedChange(ctx context.Context, r CommandRunner, kind, token str
 		}
 		return fmt.Errorf("change is not pending and has no confirmation receipt; it may have been reverted; check current configuration")
 	}
+	deadline, err := readRollbackDeadline(kind, token)
+	if err != nil {
+		return fmt.Errorf("read rollback deadline: %w", err)
+	}
+	if deadline != nil && !time.Now().UTC().Before(*deadline) {
+		stopErr := stopRollbackUnit(ctx, r, kind, token)
+		revertErr := runRevert(kind, token)
+		if revertErr != nil {
+			return fmt.Errorf("safety window expired; rollback failed: %w", errors.Join(stopErr, revertErr))
+		}
+		if stopErr != nil {
+			return fmt.Errorf("safety window expired; change reverted, but timer cleanup failed: %w", stopErr)
+		}
+		return fmt.Errorf("safety window expired; change reverted; check current configuration")
+	}
 	if err := stopRollbackUnit(ctx, r, kind, token); err != nil {
 		return recoverFailedConfirmation(kind, token, err)
 	}
@@ -485,6 +508,16 @@ func recoverFailedConfirmation(kind, token string, cause error) error {
 func removePendingRollback(backup string) error {
 	if err := stateRemoveFile(backup); err != nil {
 		return fmt.Errorf("remove pending rollback: %w", err)
+	}
+	name := filepath.Base(backup)
+	kind, token, _, ok := parseRollbackBackupName(name)
+	if ok {
+		// The backup is the authority for whether a change is pending. A stale
+		// metadata file cannot make a completed operation appear active, so
+		// cleanup failure is logged but must not undo a successful recovery.
+		if err := stateRemoveFile(rollbackDeadlinePath(kind, token)); err != nil {
+			logOp("remove rollback deadline for %s %s: %v", kind, token, err)
+		}
 	}
 	return nil
 }
