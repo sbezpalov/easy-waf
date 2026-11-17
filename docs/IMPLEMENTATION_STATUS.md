@@ -3,6 +3,10 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest full local Linux run:** [8c860d3](release-evidence/1.6.1-linux-race-8c860d3.md).
+Seven gates passed. The full race gate remains open with one PBKDF2 report.
+The earlier Scanner/UTF-8 pattern recurred in a standalone Go program in
+Docker/WSL2. The same binary passed on VMware.
 **Latest VMware boot recovery:** [2b025f6, schema 028](release-evidence/1.6.1-edge-generation-reboot.md).
 The corrected settings upsert preserved the applied generation and HAProxy
 revision over an actual boot. All ten checked services recovered automatically.
