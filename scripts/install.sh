@@ -498,8 +498,8 @@ setup_local_postgres_database() {
 # upgrade instead of silently overwritten), `apt remove` and `apt purge` become
 # real operations, and `dpkg -l easy-waf` answers "what is installed".
 #
-# Returns 0 only when the package is installed; every failure is non-fatal and
-# falls through to the tarball path.
+# Returns 1 when no verified package is selected. Once APT attempts installation,
+# failures are fatal because dpkg may already own a partial installation.
 install_release_package() {
   if [[ "${EASY_WAF_INSTALL_FROM_PACKAGE:-1}" != "1" ]]; then
     return 1
@@ -562,25 +562,36 @@ install_release_package() {
     fi
   fi
 
-  local rc=0
+  local apt_status=0
   easy_waf_apt_get_update
   # debconf's noninteractive frontend does not answer dpkg conffile prompts.
   # Adopt source-installed/operator files without replacing their credentials.
-  if DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y "$deb"; then
-    EASY_WAF_PKG_INSTALLED=1
-    log "Installed easy-waf ${ver} from the Debian package"
-  else
-    rc=1
-    if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
-      die "offline package install failed — the local repository is incomplete or incompatible"
-    fi
-    log "apt-get install of the package failed — falling back to the release tarball"
-  fi
+  DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y "$deb" || apt_status=$?
 
   if [[ -n "$tmpd" ]]; then
     rm -rf "$tmpd"
   fi
-  return "$rc"
+  if (( apt_status != 0 )); then
+    if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+      die "offline package install failed (APT exit $apt_status); inspect sudo dpkg --audit and the local APT repository before retrying"
+    fi
+    die "APT failed to install the verified easy-waf package (exit $apt_status); inspect sudo dpkg --audit and resolve the APT error before retrying"
+  fi
+  EASY_WAF_PKG_INSTALLED=1
+  log "Installed easy-waf ${ver} from the Debian package"
+}
+
+require_unmanaged_install() {
+  [[ "${EASY_WAF_PKG_MGR:-}" == apt ]] || return 0
+  local status
+  if status="$(dpkg-query -W -f='${db:Status-Status}' easy-waf 2>/dev/null)"; then
+    case "$status" in
+      not-installed|config-files) return 0 ;;
+    esac
+    die "easy-waf is managed by dpkg (dpkg status: $status); install or repair a verified DEB through APT"
+  elif [[ "$?" -ne 1 ]]; then
+    die "could not determine the easy-waf package state; inspect sudo dpkg --audit"
+  fi
 }
 
 # Units installed into /etc/systemd/system by an older run of this script take
@@ -1084,7 +1095,7 @@ main() {
   # Before create_user_and_layout and install_env_file on purpose: dpkg ships
   # /etc/easy-waf/easy-waf.env as a conffile, and it can only take ownership of a
   # path that is not already occupied by a file it did not install.
-  install_release_package || true
+  install_release_package || require_unmanaged_install
   create_user_and_layout
   ensure_haproxy_run_dir
   install_env_file

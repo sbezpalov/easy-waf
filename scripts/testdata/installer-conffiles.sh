@@ -11,11 +11,17 @@ mkdir() {
   command mkdir "$@"
 }
 APT_REAL="$(type -P apt-get)"
-export APT_REAL
+DPKG_REAL="$(type -P dpkg)"
+export APT_REAL DPKG_REAL
 command mkdir -p "$ROOT/bin" "$ROOT/repo/dist"
 cat >"$ROOT/bin/apt-get" <<'MOCK'
 #!/usr/bin/env bash
 [[ "$1" != update ]] || exit 0
+if [[ "${CONFFILE_TEST_PARTIAL:-0}" == 1 ]]; then
+  "$DPKG_REAL" --root="$CONFFILE_TEST_ROOT" --log="$CONFFILE_TEST_ROOT/log/dpkg.log" \
+    --force-confold --unpack "$CONFFILE_TEST_DEB" || exit $?
+  exit 100
+fi
 args=()
 for arg in "$@"; do
   if [[ "$arg" == crowdsec-haproxy-spoa-bouncer ]]; then arg="$CONFFILE_TEST_DEB"; fi
@@ -101,10 +107,44 @@ check_installed 1.6.2 fixture-local-operator-value
 new_root fresh
 install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-vendor-two
+
+# Simulate APT failing after dpkg has unpacked the verified package.
+new_root partial
+if (
+  export CONFFILE_TEST_PARTIAL=1
+  install_release_package || printf 'unpackaged fallback reached\n'
+) >"$ROOT/partial.log" 2>&1 </dev/null; then
+  fail 'installer continued after a partial package transaction'
+fi
+[[ "$(dpkg-query --admindir="$CONFFILE_TEST_ROOT/var/lib/dpkg" -W -f='${db:Status-Status}' easy-waf)" == unpacked ]] ||
+  fail 'fixture did not leave an actual unpacked package'
+grep -Fq 'APT failed to install the verified easy-waf package' "$ROOT/partial.log" ||
+  fail 'partial package failure lacks an APT recovery diagnostic'
+
+function_source="$(sed -n '/^require_unmanaged_install() {$/,/^}$/p' "$SCRIPT_DIR/install.sh")"
+[[ -n "$function_source" ]] || fail 'missing unpackaged install guard'
+eval "$function_source"
+dpkg-query() { command dpkg-query --admindir="$CONFFILE_TEST_ROOT/var/lib/dpkg" "$@"; }
+if (require_unmanaged_install) >"$ROOT/retry.log" 2>&1; then
+  fail 'retry accepted an unpacked package on the unpackaged path'
+fi
+grep -Fq 'dpkg status: unpacked' "$ROOT/retry.log" || fail 'retry lacks package status'
+CONFFILE_TEST_ROOT="$ROOT/fresh"
+if (require_unmanaged_install) >"$ROOT/retry.log" 2>&1; then
+  fail 'unpackaged path accepted the configured package'
+fi
+grep -Fq 'dpkg status: installed' "$ROOT/retry.log" || fail 'installed package lacks status'
+"$DPKG_REAL" --root="$CONFFILE_TEST_ROOT" --log="$CONFFILE_TEST_ROOT/log/dpkg.log" --remove easy-waf >/dev/null
+[[ "$(dpkg-query -W -f='${db:Status-Status}' easy-waf)" == config-files ]] ||
+  fail 'fixture did not retain only conffiles'
+require_unmanaged_install
+new_root clean_unmanaged
+require_unmanaged_install
+
 new_root spoa
 printf 'fixture-spoa-operator-value\n' >"$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env"
 chmod 0600 "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env"
 # Actual APT/dpkg still runs; only its package-selection input is local/dummy.
 crowdsec_install_spoa_bouncer_package >"$ROOT/spoa.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-spoa-operator-value
-echo 'OK: real APT preserves source/packaged conffiles, installs fresh defaults and adopts SPOA config unattended'
+echo 'OK: real APT preserves conffiles and partial package installs block unpackaged fallback'

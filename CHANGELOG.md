@@ -197,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Package installation failure.** The installer stops when APT fails to
+  install a verified DEB. A retry with unpackaged binaries also stops if
+  dpkg still manages Easy WAF.
 - **Privileged confirmation.** Clicking Confirm submits the password form
   when applying HAProxy changes or confirming other privileged actions.
 - **Consistent backup and restore targets.** The archive records the same
