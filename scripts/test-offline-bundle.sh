@@ -126,5 +126,6 @@ fi
 
 if command -v python3 >/dev/null; then
   python3 -I "$SCRIPT_DIR/test-offline-crowdsec-snapshot.py"
+  python3 -I "$SCRIPT_DIR/test-install-offline-crowdsec.py"
 fi
 echo "test-offline-bundle: PASS"

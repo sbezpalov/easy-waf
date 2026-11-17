@@ -1,0 +1,77 @@
+"""Check safe installation behavior around the vendor package transaction."""
+
+import importlib.util
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+
+if os.name == "posix":
+    path = Path(__file__).with_name("lib") / "install-offline-crowdsec.py"
+    spec = importlib.util.spec_from_file_location("offline_installer", path)
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+
+
+@unittest.skipUnless(os.name == "posix", "requires POSIX file locking")
+class OfflineInstallTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+
+    def test_keeps_configured_agent_and_operator_override(self):
+        config = self.root / "config"
+        config.mkdir()
+        override = config / "config.yaml.local"
+        override.write_bytes(b"# operator override\n")
+        with patch.object(installer, "CONFIG", config), patch.object(
+            installer, "package_status", return_value=("installed", "1.8.1")
+        ), patch.object(installer.subprocess, "run") as command:
+            installer.prepare_agent(self.root / "missing-snapshot", self.root / "missing-repository")
+        command.assert_not_called()
+        self.assertEqual(override.read_bytes(), b"# operator override\n")
+
+    def test_copy_is_idempotent_and_rejects_conflicts(self):
+        source = self.root / "source"
+        source.write_bytes(b"snapshot")
+        target = self.root / "config" / "file"
+        installer.copy_verified(source, target)
+        installer.copy_verified(source, target)
+        target.write_bytes(b"operator data")
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            installer.copy_verified(source, target)
+        self.assertEqual(target.read_bytes(), b"operator data")
+
+    def test_copy_refuses_symlink_directory(self):
+        source = self.root / "source"
+        source.write_bytes(b"snapshot")
+        redirected = self.root / "elsewhere"
+        redirected.mkdir()
+        linked = self.root / "link"
+        linked.symlink_to(redirected, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink directory"):
+            installer.copy_verified(source, linked / "file")
+        self.assertFalse((redirected / "file").exists())
+
+    def test_mirror_serves_only_embedded_index(self):
+        index = b'{"fixture": {}}'
+        with installer.serve_index(index) as port:
+            endpoint = f"http://127.0.0.1:{port}"
+            index_url = endpoint + installer.INDEX_ROUTE + "?with_content=true"
+            with urlopen(Request(index_url, method="HEAD"), timeout=3) as response:
+                self.assertEqual(response.read(), b"")
+                self.assertEqual(int(response.headers["Content-Length"]), len(index))
+            with urlopen(index_url, timeout=3) as response:
+                self.assertEqual(response.read(), index)
+            with self.assertRaises(HTTPError) as rejected:
+                urlopen(endpoint + "/snapshot/other.yaml", timeout=3)
+            self.assertEqual(rejected.exception.code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()

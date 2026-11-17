@@ -132,4 +132,19 @@ export EASY_WAF_INSTALL_BUILD_DEPS=0
 export EASY_WAF_BUILD_FROM_SOURCE=0
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 export EASY_WAF_INSTALL_CROWDSEC
+unset EASY_WAF_OFFLINE_CROWDSEC_PREPARED
+snapshot="$SCRIPT_DIR/payload/crowdsec-snapshot"
+if [[ "$CROWDSEC" == 1 && "$EASY_WAF_INSTALL_CROWDSEC" == 1 && -d "$snapshot" ]]; then
+  command -v python3 >/dev/null || {
+    echo "[offline-install] Python 3 is required to activate the private CrowdSec snapshot" >&2
+    exit 1
+  }
+  status="$(dpkg-query -W -f='${db:Status-Status}' crowdsec 2>/dev/null || true)"
+  EASY_WAF_OFFLINE_CROWDSEC_PREPARED=new
+  if [[ "$status" == installed && ! -e /etc/crowdsec/.easy-waf-offline-install ]]; then
+    EASY_WAF_OFFLINE_CROWDSEC_PREPARED=existing
+  fi
+  python3 -I "$SCRIPT_DIR/payload/scripts/lib/install-offline-crowdsec.py" "$snapshot" "$SCRIPT_DIR/repository"
+  export EASY_WAF_OFFLINE_CROWDSEC_PREPARED
+fi
 bash "${SCRIPT_DIR}/payload/scripts/install.sh"

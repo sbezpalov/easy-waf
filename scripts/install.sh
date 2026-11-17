@@ -305,12 +305,17 @@ easy_waf_install_crowdsec_packages() {
 
   local had_crowdsec_agent=0
   easy_waf_pkg_installed crowdsec && had_crowdsec_agent=1
+  local agent_prepared=0
 
   # shellcheck source=lib/crowdsec-install.sh
   source "${SCRIPT_DIR}/lib/crowdsec-install.sh"
 
   if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
     log "Offline mode: installing CrowdSec from the configured local APT repository"
+    case "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" in
+      new) agent_prepared=1; had_crowdsec_agent=0 ;;
+      existing) agent_prepared=1 ;;
+    esac
   else
     if ! crowdsec_add_packagecloud_repo; then
       log "ERROR: CrowdSec packagecloud repo setup failed — appliance stack incomplete (need outbound HTTPS; see docs/CROWDSEC.md)"
@@ -325,7 +330,11 @@ easy_waf_install_crowdsec_packages() {
     unset EASY_WAF_CROWDSEC_AGENT_ALREADY_INSTALLED || true
   fi
 
-  if ! crowdsec_install_agent_package; then
+  if [[ "$agent_prepared" == 1 ]] && ! easy_waf_pkg_installed crowdsec; then
+    log "ERROR: the offline CrowdSec agent is not configured"
+    return 1
+  fi
+  if [[ "$agent_prepared" == 0 ]] && ! crowdsec_install_agent_package; then
     log "ERROR: CrowdSec agent package install failed — appliance stack incomplete (see docs/CROWDSEC.md)"
     return 1
   fi

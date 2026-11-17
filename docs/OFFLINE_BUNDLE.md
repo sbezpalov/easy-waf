@@ -107,9 +107,7 @@ bash scripts/prepare-offline-crowdsec.sh /path/to/new-snapshot
 The parent directory must already exist. The tool uses a temporary CrowdSec
 configuration, downloads the Hub cache and data for the Linux, HAProxy, SSH
 and PostgreSQL collections, and writes the selection, CLI version, branch and
-SHA-256 manifest alongside them. This prepares the input for offline CrowdSec
-integration. The ISO installer still requires that integration for a fresh
-full-profile install. The cache contains GeoLite data and is intended for
+SHA-256 manifest alongside them. The cache contains GeoLite data and is intended for
 private use under the applicable [MaxMind terms](https://www.maxmind.com/en/geolite/eula).
 
 To include a prepared snapshot in a private evaluation image on Ubuntu,
@@ -117,9 +115,16 @@ use `EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/path/to/new-snapshot` with
 `scripts/build-offline-bundle.sh`. The builder requires Python 3 for
 this option and checks the snapshot against the selected CrowdSec DEB.
 The image contains the verified files under `payload/crowdsec-snapshot`
-and its filename ends in `_private.iso`. This verifies delivery of the
-snapshot. A clean offline CrowdSec installation still requires installer
-support for staging and activating it.
+and its filename ends in `_private.iso`.
+
+The private ISO installer requires Python 3 on the appliance. On a clean
+host it configures the bundled CrowdSec package with a local API, serves the
+verified Hub index over loopback during setup, and enables the Linux,
+HAProxy, SSH and PostgreSQL collections from the cache. It disables the
+vendor Hub refresh timer on this installation. For an interrupted bootstrap,
+rerun the same private ISO to resume with the same snapshot. A configured
+CrowdSec agent already present on the host keeps its package version and
+Hub configuration during this step.
 
 ## Updates and support boundary
 
