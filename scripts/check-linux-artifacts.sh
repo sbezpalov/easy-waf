@@ -37,13 +37,29 @@ if [[ "$_sh_crlf" -ne 0 ]]; then
 fi
 echo "OK (shell files are LF-only)"
 
+go_source_files() {
+  local prefix
+  if prefix="$(git rev-parse --show-prefix 2>/dev/null)" && [[ -z "$prefix" ]]; then
+    git ls-files --cached --others --exclude-standard -z -- '*.go' ':!vendor/**'
+  else
+    find . \( -path ./.git -o -path ./.ai -o -path ./dist -o -path ./vendor \) -prune \
+      -o -type f -name '*.go' -print0
+  fi
+}
+
 echo "== gofmt (if go is installed) =="
 if command -v gofmt &>/dev/null; then
-  _fmt_out="$(gofmt -l . 2>/dev/null | grep -v '^vendor/' || true)"
+  if ! _fmt_out="$(go_source_files |
+    while IFS= read -r -d '' file; do
+      if [[ -f "$file" ]]; then printf '%s\0' "$file"; fi
+    done | xargs -0 -n 64 gofmt -l --)"; then
+    echo "ERROR: gofmt check failed" >&2
+    exit 1
+  fi
   if [[ -n "$_fmt_out" ]]; then
     echo "ERROR: gofmt needed on:" >&2
     echo "$_fmt_out" >&2
-    echo "Run: gofmt -w ." >&2
+    echo "Run gofmt -w on the listed files." >&2
     exit 1
   fi
   echo "OK"

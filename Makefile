@@ -59,6 +59,7 @@ offline-bundle: deb
 
 check-linux:
 	bash scripts/check-linux-artifacts.sh
+	bash scripts/test-check-linux-artifacts.sh
 
 check-version-docs:
 	bash scripts/check-version-docs.sh
