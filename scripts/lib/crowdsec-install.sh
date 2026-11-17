@@ -179,23 +179,44 @@ crowdsec_spoa_bouncer_unit() {
   printf '%s\n' crowdsec-spoa-bouncer.service
 }
 
+# Read the flat, top-level settings used by the packaged SPOA configuration.
+crowdsec_read_spoa_setting() {
+  local yaml="$1" setting="$2"
+  awk -v setting="$setting" '
+    $0 ~ "^" setting ":[[:space:]]*" {
+      value = substr($0, length(setting) + 2)
+      sub(/^[[:space:]]+/, "", value)
+      if (match(value, /^"[^"]*"|^\047[^\047]*\047/)) {
+        tail = substr(value, RLENGTH + 1)
+        if (tail !~ /^[[:space:]]*(#.*)?$/) exit 1
+        value = substr(value, 2, RLENGTH - 2)
+      } else {
+        if (value ~ /^["\047]/) exit 1
+        sub(/[[:space:]]+#.*/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+      }
+      found++
+    }
+    END { if (found != 1) exit 1; print value }
+  ' "$yaml"
+}
+
 crowdsec_inject_spoa_api_key() {
-  local key="$1"
-  local yaml="/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
+  local key="$1" yaml="$2"
   [[ -f "$yaml" ]] || {
     echo "[easy-waf] CrowdSec: missing $yaml" >&2
     return 1
   }
-  if ! grep -qE '^[[:space:]]*api_key:' "$yaml"; then
+  if ! grep -qE '^api_key:' "$yaml"; then
     echo "[easy-waf] CrowdSec: could not find api_key in $yaml — set key manually" >&2
     return 1
   fi
   if command -v perl &>/dev/null; then
-    KEY="$key" perl -i -pe 's/^(\s*)api_key:\s*.*/$1api_key: $ENV{KEY}/' "$yaml"
+    KEY="$key" perl -i -pe 's/^api_key:\s*.*/api_key: $ENV{KEY}/' "$yaml"
   else
     local esc
     esc=$(printf '%s\n' "$key" | sed 's/[&/\]/\\&/g')
-    sed -i "s/^[[:space:]]*api_key:.*/api_key: ${esc}/" "$yaml"
+    sed -i "s/^api_key:.*/api_key: ${esc}/" "$yaml"
   fi
 }
 

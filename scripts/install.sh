@@ -193,38 +193,44 @@ easy_waf_load_nft_env_from_file_if_unset() {
 
 # Upsert KEY=value in /etc/easy-waf/easy-waf.env (file must exist).
 easy_waf_env_upsert_kv() {
-  local key="$1" val="$2"
-  local env_file="$CFG_DIR/easy-waf.env"
+  local env_file="$1" key="$2" val="$3"
   if [[ ! -f "$env_file" ]]; then
     log "WARNING: missing $env_file — cannot set $key"
     return 1
   fi
   local tmp
-  tmp="$(mktemp)"
-  grep -vE "^${key}=" "$env_file" >"$tmp" || true
-  printf '%s=%s\n' "$key" "$val" >>"$tmp"
-  install -m 0600 "$tmp" "$env_file"
+  tmp="$(mktemp)" || return 1
+  if ! sed "/^${key}=/d" "$env_file" >"$tmp" ||
+     ! printf '%s=%s\n' "$key" "$val" >>"$tmp" ||
+     ! install -m 0600 "$tmp" "$env_file"; then
+    rm -f "$tmp"
+    return 1
+  fi
   rm -f "$tmp"
   easy_waf_secure_env_file "$env_file"
 }
 
-# GET /v1/decisions with bouncer key (CrowdSec expects X-Api-Key, not Bearer).
+# Return 0 for an accepted key, 1 for a missing/rejected key, and 2 when LAPI
+# could not establish whether it is usable. Only 1 permits replacement.
 easy_waf_crowdsec_decisions_check() {
-  local api_key="$1" attempt code lapi_url="http://127.0.0.1:8080"
-  api_key="$(printf '%s' "$api_key" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-  [[ -n "$api_key" ]] || return 1
+  local key="$1" attempt code
+  # Match the literal placeholder in the packaged SPOA configuration.
+  # shellcheck disable=SC2016
+  [[ -n "$key" && "$key" != '${API_KEY}' ]] || return 1
+  [[ "$key" != *[[:cntrl:]]* ]] || return 2
   for attempt in 1 2 3 4 5; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-      -H "X-Api-Key: ${api_key}" "${lapi_url}/v1/decisions?limit=1" 2>/dev/null || echo 000)"
-    if [[ "$code" == "200" ]]; then
-      return 0
+    if code="$(printf 'X-Api-Key: %s\n' "$key" | curl -q -s -o /dev/null -w '%{http_code}' \
+      --noproxy '*' --max-time 5 -H @- 'http://127.0.0.1:8080/v1/decisions?limit=1')"; then
+      case "$code" in
+        200) return 0 ;;
+        401|403) return 1 ;;
+      esac
     fi
     if [[ "$attempt" -lt 5 ]]; then
       sleep 2
     fi
   done
-  log "WARNING: LAPI decisions HTTP ${code} after ${attempt} attempts (expected 200); journalctl -u crowdsec -n 40"
-  return 1
+  return 2
 }
 
 # Delete CrowdSec bouncer if present, then add; print raw API key (one line).
@@ -232,6 +238,56 @@ easy_waf_cscli_bouncer_recreate_raw() {
   local name="$1"
   cscli bouncers delete "$name" 2>/dev/null || true
   cscli bouncers add "$name" -o raw
+}
+
+easy_waf_prepare_crowdsec_bouncers() {
+  local env_file="$1" spoa_yaml="$2" spoa_url spoa_key api_url api_key name key url
+  local -a repairs=()
+  if ! spoa_url="$(crowdsec_read_spoa_setting "$spoa_yaml" api_url)" ||
+     ! spoa_key="$(crowdsec_read_spoa_setting "$spoa_yaml" api_key)"; then
+    log 'ERROR: cannot read the SPOA LAPI settings; inspect the bouncer YAML'
+    return 1
+  fi
+  api_url="$(easy_waf_read_env_value "$env_file" CROWDSEC_LAPI_URL)" || return 1
+  api_key="$(easy_waf_read_env_value "$env_file" CROWDSEC_LAPI_KEY)" || return 1
+  for name in easy-waf-spoa easy-waf-api; do
+    if [[ "$name" == easy-waf-spoa ]]; then
+      key="$spoa_key"
+      url="$spoa_url"
+    else
+      key="$api_key"
+      url="$api_url"
+    fi
+    case "${url%/}" in
+      ''|http://127.0.0.1:8080|http://localhost:8080) ;;
+      *) log "Keeping configured LAPI settings for $name"; continue ;;
+    esac
+    if easy_waf_crowdsec_decisions_check "$key"; then
+      log "Reusing accepted local CrowdSec key for $name"
+    elif [[ "$?" == 1 ]]; then
+      repairs+=("$name")
+    else
+      log "ERROR: LAPI could not verify the existing key for $name"
+      return 1
+    fi
+  done
+
+  for name in "${repairs[@]}"; do
+    if ! key="$(easy_waf_cscli_bouncer_recreate_raw "$name" | tr -d '\r\n')" ||
+       ! easy_waf_crowdsec_decisions_check "$key"; then
+      log "ERROR: could not register and verify a local CrowdSec key for $name"
+      return 1
+    fi
+    if [[ "$name" == easy-waf-spoa ]]; then
+      crowdsec_inject_spoa_api_key "$key" "$spoa_yaml" || return 1
+    else
+      easy_waf_env_upsert_kv "$env_file" CROWDSEC_LAPI_KEY "$key" || return 1
+    fi
+    log "Configured a local CrowdSec key for $name"
+  done
+  if [[ -z "$api_url" ]]; then
+    easy_waf_env_upsert_kv "$env_file" CROWDSEC_LAPI_URL 'http://127.0.0.1:8080/' || return 1
+  fi
 }
 
 # Install CrowdSec + SPOA bouncer packages; on first agent install leave units disabled/stopped (idempotent re-runs do not stop a running LAPI).
@@ -333,22 +389,8 @@ easy_waf_bootstrap_crowdsec_lapi() {
     fi
   fi
 
-  local spoa_key api_key
-  spoa_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-spoa | tr -d '\r\n')" || spoa_key=""
-  api_key="$(easy_waf_cscli_bouncer_recreate_raw easy-waf-api | tr -d '\r\n')" || api_key=""
-  if [[ -z "$api_key" ]]; then
-    log "ERROR: could not register CrowdSec bouncer easy-waf-api (UI LAPI / decisions need this key)"
-    return 1
-  fi
-  if [[ -z "$spoa_key" ]]; then
-    log "ERROR: could not register CrowdSec bouncer easy-waf-spoa (HAProxy SPOE)"
-    return 1
-  fi
-
-  if ! crowdsec_inject_spoa_api_key "$spoa_key"; then
-    log "ERROR: could not inject SPOA api_key into /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"
-    return 1
-  fi
+  easy_waf_prepare_crowdsec_bouncers "$CFG_DIR/easy-waf.env" \
+    /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml || return 1
   crowdsec_bind_spoa_loopback || return 1
 
   local spoa_unit
@@ -357,17 +399,10 @@ easy_waf_bootstrap_crowdsec_lapi() {
     log "ERROR: could not enable $spoa_unit (package crowdsec-haproxy-spoa-bouncer)"
     return 1
   fi
-  systemctl restart "$spoa_unit" 2>/dev/null || true
-
-  easy_waf_env_upsert_kv "CROWDSEC_LAPI_URL" "http://127.0.0.1:8080/" || true
-  easy_waf_env_upsert_kv "CROWDSEC_LAPI_KEY" "$api_key" || true
-  log "Wrote CROWDSEC_LAPI_* to $CFG_DIR/easy-waf.env (bouncer easy-waf-api for UI; no manual cscli needed)"
-
-  if ! easy_waf_crowdsec_decisions_check "$api_key"; then
-    log "ERROR: LAPI decisions check failed after bootstrap (GET /v1/decisions with easy-waf-api key; need X-Api-Key)"
+  if ! systemctl restart "$spoa_unit"; then
+    log "ERROR: could not restart $spoa_unit with the configured listener and key"
     return 1
   fi
-  log "CrowdSec LAPI decisions API OK (out-of-box check passed)"
   return 0
 }
 

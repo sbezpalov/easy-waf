@@ -21,13 +21,13 @@ Easy Home WAF treats CrowdSec as part of the **appliance**: on **apt**, **`scrip
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `EASY_WAF_INSTALL_CROWDSEC` | `1` | Set to **`0`** to skip CrowdSec/SPOA packages entirely. |
-| `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL` | **`1`** | Set to **`0`** for staged install (packages only, units stopped until `scripts/crowdsec-bootstrap-lapi.sh`). When **`1`**, `install.sh` **starts** `crowdsec`, registers bouncers **`easy-waf-spoa`** / **`easy-waf-api`**, injects the SPOA key, **`enable --now`** the SPOA bouncer, and writes **`CROWDSEC_LAPI_*`** into **`/etc/easy-waf/easy-waf.env`**. |
+| `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL` | **`1`** | Set to **`0`** for staged install (packages only, units stopped until `scripts/crowdsec-bootstrap-lapi.sh`). When **`1`**, `install.sh` starts the agent and the SPOA service and configures local credentials as needed. |
 | `EASY_WAF_CROWDSEC_CONSOLE_TOKEN` | *(empty)* | If set, runs `cscli console enroll <token>` during the bootstrap step (when `AUTO_START_AFTER_INSTALL=1`). |
 | `EASY_WAF_FAIL2BAN_AUTO_START` | **`1`** | Set to **`0`** to only **`enable`** fail2ban at boot without immediate **`start`**. |
 
 **Phase 1 — packages (default every run when `INSTALL_CROWDSEC=1`):** add CrowdSec **packagecloud** repo, `apt` install **`crowdsec`** + **`crowdsec-haproxy-spoa-bouncer`**, then ensure the agent is **healthy** (LAPI on `127.0.0.1:8080`) before continuing.
 
-**Phase 2 — LAPI bootstrap (only when `EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`):** `systemctl enable --now crowdsec` (with retries if needed) → wait for LAPI → optional **`cscli console enroll`** → recreate bouncers → inject SPOA YAML → **`enable --now crowdsec-spoa-bouncer.service`** → **`CROWDSEC_LAPI_URL`** / **`CROWDSEC_LAPI_KEY`** in **`easy-waf.env`**.
+**Phase 2 — LAPI bootstrap** (`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=1`). The installer starts the agent, waits for LAPI, optionally enrolls the agent in the console, then checks both local bouncer keys. It retains any key accepted by LAPI. It replaces missing or rejected keys individually, writing the SPOA key to the bouncer YAML and the management key to `easy-waf.env`. Transport failures and unexpected HTTP responses stop credential setup before keys are replaced. Bootstrap leaves credentials for custom LAPI endpoints in place and enables the SPOA service with its local HAProxy listener.
 
 When **`EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0`**, packages are installed but **`crowdsec_leave_stopped_disabled`** leaves units stopped until **`scripts/crowdsec-bootstrap-lapi.sh`**.
 
