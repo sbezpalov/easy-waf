@@ -1,0 +1,194 @@
+      <div id="tab-apps" class="tab-panel">
+        <h2>◇ Applications</h2>
+        <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Application changes apply automatically by default. For pending changes, use <a href="#config">Edge changes</a> → <strong>Apply HAProxy</strong>.</small></p>
+        <div id="apps-pending-banner" class="apps-pending-banner hidden" data-state="pending" role="status" aria-live="polite">
+          Saved changes are not exactly applied. <a href="#config">Go to Edge changes → Apply HAProxy</a>
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-apps-refresh">Refresh</button>
+        </div>
+        <div id="apps" class="app-cards"></div>
+        <p id="apps-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+        <div class="row" style="margin-top:1rem">
+          <button type="button" id="btn-new-app">+ New application</button>
+        </div>
+        <div id="app-form-panel" class="hidden" style="margin-top:0.75rem">
+        <h3 id="app-form-title">Add or update application</h3>
+        <input type="hidden" id="app-edit-id" value="" />
+        <p id="apps-edit-hint" class="dash-note hidden" style="margin-top:0">Editing existing app — <button type="button" class="secondary" id="btn-cancel-edit">Cancel edit</button></p>
+        <div id="apps-form-error" role="alert" tabindex="-1" class="publication-form-error hidden"></div>
+        <div class="publication-flow">
+        <section class="publication-step" aria-labelledby="publication-routing-title">
+          <div class="publication-step-head"><span class="publication-step-number" aria-hidden="true">1</span><h4 id="publication-routing-title">Routing</h4></div>
+          <p class="dash-note">Name the publication and identify the local service. These values are saved only after the final review.</p>
+          <div class="publication-fields">
+            <div class="form-field" id="field-name"><label for="name">Application name</label><input id="name" autocomplete="off" placeholder="Home Assistant" aria-describedby="name-error" /><span class="field-hint">A recognizable label for operators.</span><span class="field-error" id="name-error"></span></div>
+            <div class="form-field" id="field-host"><label for="host">Public hostname</label><input id="host" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="ha.example.com" aria-describedby="host-error" /><span class="field-hint">Lowercase DNS hostname routed by HAProxy.</span><span class="field-error" id="host-error"></span></div>
+            <div class="form-field" id="field-backend"><label for="backend">Backend host or IP</label><input id="backend" autocapitalize="none" spellcheck="false" placeholder="192.168.1.10" aria-describedby="backend-error" /><span class="field-hint">Local address reachable from the appliance.</span><span class="field-error" id="backend-error"></span></div>
+            <div class="form-field" id="field-port"><label for="port">Backend port</label><input id="port" inputmode="numeric" placeholder="8123" type="number" min="1" max="65535" aria-describedby="port-error" /><span class="field-hint">1–65535.</span><span class="field-error" id="port-error"></span></div>
+          </div>
+          <div class="row" style="margin-top:var(--space-3)">
+            <label class="row" style="margin:0"><input id="behttps" type="checkbox" /> Backend uses HTTPS</label>
+            <label class="row" style="margin:0"><input id="ws" type="checkbox" checked /> WebSocket support</label>
+          </div>
+        </section>
+
+        <section class="publication-step" aria-labelledby="publication-tls-title">
+          <div class="publication-step-head"><span class="publication-step-number" aria-hidden="true">2</span><h4 id="publication-tls-title">TLS publication</h4></div>
+          <div class="publication-fields">
+            <div class="form-field"><label for="listen-mode">Public listen mode</label>
+              <select id="listen-mode">
+                <option value="https_only">HTTPS only (HTTP → redirect)</option>
+                <option value="http_only">HTTP only (no TLS)</option>
+                <option value="http_and_https">HTTP + HTTPS (both)</option>
+                <option value="redirect_to_https">HTTPS + redirect (explicit)</option>
+              </select>
+              <span id="listen-mode-hint" class="field-hint">—</span>
+              <span id="listen-mode-warn" class="field-error hidden">Traffic will not be encrypted. Use only for LAN services or deliberate debugging.</span>
+            </div>
+            <div class="form-field" id="field-certificate"><label for="app-cert">Certificate</label>
+              <select id="app-cert" aria-describedby="certificate-error app-cert-status"><option value="">— select a ready certificate —</option></select>
+              <span class="field-hint">Pending or failed certificates cannot be used for a new HTTPS publication.</span>
+              <span class="field-error" id="certificate-error"></span>
+            </div>
+          </div>
+          <p id="app-cert-status" class="certificate-status" data-state="unknown" aria-live="polite">Certificate readiness has not loaded.</p>
+          <div class="publication-actions">
+            <button type="button" class="secondary" id="btn-app-cert-refresh">Refresh certificates</button>
+            <button type="button" class="secondary" id="btn-app-cert-create-toggle" aria-expanded="false" aria-controls="app-cert-create-panel">Create certificate</button>
+          </div>
+          <div id="app-cert-create-panel" class="certificate-create hidden">
+            <p class="dash-note"><strong>ACME issuance is asynchronous.</strong> Creating a certificate does not publish the application. Application is not saved until the certificate is ready.</p>
+            <div class="publication-fields">
+              <div class="form-field"><label for="app-cert-domain">Primary domain</label><input id="app-cert-domain" autocapitalize="none" spellcheck="false" placeholder="ha.example.com" /></div>
+              <div class="form-field"><label for="app-cert-mode">Certificate source</label><select id="app-cert-mode">
+                <option value="http-01">Let's Encrypt HTTP-01</option>
+                <option value="dns-01">Let's Encrypt DNS-01</option>
+                <option value="manual">Existing certificate files</option>
+              </select></div>
+              <label class="row" style="margin:0"><input id="app-cert-staging" type="checkbox" checked /> Use Let's Encrypt staging</label>
+            </div>
+            <div id="app-cert-dns-fields" class="publication-fields hidden" style="margin-top:var(--space-3)">
+              <div class="form-field"><label for="app-cert-dns-provider">DNS provider</label><select id="app-cert-dns-provider"><option value="">Default (CloudNS)</option><option value="cloudflare">Cloudflare</option><option value="cloudns">CloudNS</option><option value="route53">Route53</option><option value="webhook">Webhook</option></select></div>
+              <div class="form-field"><label for="app-cert-dns-env">Credentials env file</label><input id="app-cert-dns-env" placeholder="/etc/easy-waf/dns-cloudflare.env" /></div>
+            </div>
+            <div id="app-cert-manual-fields" class="publication-fields hidden" style="margin-top:var(--space-3)">
+              <div class="form-field"><label for="app-cert-fullchain">Full chain path</label><input id="app-cert-fullchain" placeholder="/var/lib/easy-waf/certs/app/fullchain.pem" /></div>
+              <div class="form-field"><label for="app-cert-key">Private key path</label><input id="app-cert-key" placeholder="/var/lib/easy-waf/certs/app/privkey.pem" /></div>
+            </div>
+            <div class="publication-actions" style="margin-top:var(--space-3)">
+              <button type="button" id="btn-app-cert-create">Create certificate &amp; request issuance</button>
+            </div>
+            <p id="app-cert-create-status" class="certificate-status" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="publication-step" aria-labelledby="publication-protection-title">
+          <div class="publication-step-head"><span class="publication-step-number" aria-hidden="true">3</span><h4 id="publication-protection-title">Protection</h4></div>
+          <div class="publication-fields">
+            <div class="form-field"><label for="profile">Application profile</label><select id="profile">
+              <option value="home-assistant">home-assistant</option>
+              <option value="balanced">balanced</option>
+              <option value="strict">strict</option>
+              <option value="php-app">php-app</option>
+            </select><span class="field-hint">Controls timeouts and application-specific defaults.</span></div>
+            <div class="form-field"><label for="app-security-mode">Protection preset</label><select id="app-security-mode">
+              <option value="balanced">Balanced</option>
+              <option value="full">Full protection</option>
+              <option value="trusted-lan">Trusted LAN</option>
+              <option value="reverse-proxy-only">Reverse proxy only (no WAF layers)</option>
+              <option value="custom" class="hidden">Custom (existing configuration)</option>
+            </select><span id="app-security-mode-help" class="field-hint">Default home posture: all layers except GeoIP.</span></div>
+          </div>
+          <p id="profile-help" class="dash-note" aria-live="polite" style="white-space:pre-line">Select a profile to see its defaults.</p>
+          <p class="dash-note">A saved preset describes intended configuration. Applied and runtime state are reported separately.</p>
+        </section>
+
+        <details id="app-advanced" class="advanced-publication">
+          <summary>Advanced routing, access and request policies</summary>
+          <p class="dash-note">Optional controls for backend pools, maintenance, forward authentication and path/body policies.</p>
+        <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>More backend servers <span class="dash-note">(one per line: <code>host:port</code>; add <code>backup</code> for failover only)</span>
+            <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="width:100%;min-width:0"></textarea>
+          </label>
+          <label>Load balancing
+            <select id="backend-balance">
+              <option value="">Round robin</option>
+              <option value="leastconn">Least connections</option>
+              <option value="source">Same client, same server (source IP)</option>
+            </select>
+          </label>
+          <label class="row" style="margin:0"><input id="app-maint" type="checkbox" /> Maintenance mode</label>
+          <label>Maintenance bypass <span class="dash-note">(IPs/CIDRs that still reach the app)</span>
+            <input id="app-maint-bypass" placeholder="192.168.1.0/24, 10.0.0.5" style="min-width:16rem" />
+          </label>
+          <label>Forward auth URL <span class="dash-note">(Authelia: http://authelia-host:9091/api/authz/forward-auth; empty = off. While the auth service is down, this app is closed.)</span>
+            <input id="app-fwd-auth" placeholder="http://192.168.1.10:9091/api/authz/forward-auth" style="width:100%;min-width:0" />
+          </label>
+          <label>Forward auth bypass <span class="dash-note">(IPs/CIDRs that skip the login)</span>
+            <input id="app-fwd-auth-bypass" placeholder="192.168.1.0/24" style="min-width:16rem" />
+          </label>
+        </div>
+        <h4>Path exposure</h4>
+        <p><small>Leave this on <strong>profile default</strong> to keep a policy you did not edit. The <code>ha-mcp</code> profile then installs its preset (allowlist, Authorization on <code>/api/mcp</code>, a long SSE timeout). See the <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/HA-MCP.md">Home Assistant MCP guide</a>. Restricted paths and profile block lists still apply.</small></p>
+        <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>Mode
+            <select id="path-mode">
+              <option value="">profile default</option>
+              <option value="default">open (block lists only)</option>
+              <option value="allowlist">allowlist (other paths are 404)</option>
+            </select>
+          </label>
+          <label>Client timeout, seconds (0 = edge default)
+            <input id="path-client-timeout" type="number" min="0" max="86400" value="0" />
+          </label>
+          <label>Server timeout, seconds (0 = profile)
+            <input id="path-server-timeout" type="number" min="0" max="86400" value="0" />
+          </label>
+        </div>
+        <label>Allowed prefixes, one per line
+          <textarea id="path-allow" rows="4" placeholder="/api/mcp" style="width:100%;max-width:42rem;font-family:monospace;font-size:12px"></textarea>
+        </label>
+        <div id="path-rules"></div>
+        <div class="row"><button type="button" class="secondary" id="btn-path-rule-add">Add path rule</button></div>
+        <h4>Restricted paths</h4>
+        <p><small>Optionally limit a URL prefix to specific IPs/CIDRs. Restricting Home Assistant <code>/api</code> also restricts <code>/api/websocket</code> and can block the web UI, Companion and external API clients. New applications have no automatic LAN restriction. One CIDR per line.</small></p>
+        <div id="restricted-rows"></div>
+        <div class="row"><button type="button" class="secondary" id="btn-rp-add">Add restriction</button></div>
+        <h4>Request bodies</h4>
+        <p><small>Leave empty to use the profile. A limit also refuses bodies of unknown length (chunked uploads), and blocking multipart breaks file uploads outside the allowed paths. This reduces exposure to request-parsing flaws; it does not replace patching.</small></p>
+        <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
+          <label>Max body, MiB (0 = no limit)
+            <input id="body-max-mib" type="number" min="0" step="1" placeholder="profile" />
+          </label>
+          <label>Multipart
+            <select id="body-multipart">
+              <option value="">profile</option>
+              <option value="block">block</option>
+              <option value="allow">allow</option>
+            </select>
+          </label>
+          <label>Paths that may receive multipart (one per line)
+            <textarea id="body-mp-paths" rows="2" placeholder="/upload"></textarea>
+          </label>
+        </div>
+        </details>
+
+        <section class="publication-step" aria-labelledby="publication-review-title">
+          <div class="publication-step-head"><span class="publication-step-number" aria-hidden="true">4</span><h4 id="publication-review-title">Review and save</h4></div>
+          <dl id="app-publication-review" class="publication-review">
+            <div><dt>Public route</dt><dd>Enter a hostname and backend.</dd></div>
+            <div><dt>TLS</dt><dd>Choose a listen mode and ready certificate.</dd></div>
+            <div><dt>Protection</dt><dd>Balanced</dd></div>
+            <div><dt>Apply behavior</dt><dd>Application saves auto-apply unless disabled by the operator.</dd></div>
+          </dl>
+          <p class="dash-note">Save may validate and reload HAProxy. Do not retry a timeout until the reported edge state is checked.</p>
+          <div class="publication-actions">
+            <button type="button" class="secondary" id="btn-app-review">Review publication</button>
+            <button type="button" id="save">Save and apply application</button>
+          </div>
+        </section>
+        </div>
+        </div>
+      </div>
+

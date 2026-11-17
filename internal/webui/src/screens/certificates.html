@@ -1,0 +1,53 @@
+      <div id="tab-certs" class="tab-panel">
+        <h2>▤ Certificates</h2>
+        <p class="dash-note" style="margin-top:0">TLS material metadata from PostgreSQL, <strong>ACME</strong> for issuance (<code>acmed</code> picks up after <strong>Request issue</strong> / <strong>Renew</strong>), and <strong>management HTTPS</strong> for the UI.</p>
+
+        <div class="panel" style="max-width:100%">
+          <h3>ACME (Let's Encrypt)</h3>
+          <p><small>Registration email and staging flag. Use <a href="#settings">Settings</a> → <strong>Load from server</strong> if fields are empty.</small></p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+            <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
+            <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
+            <button type="button" id="btn-acme-settings-save">Save ACME</button>
+          </div>
+          <p id="acme-configuration-status" class="warn" aria-live="polite">Saved ACME configuration has not loaded. Automatic renewal readiness is unknown.</p>
+          <p id="certs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+        </div>
+
+        <div class="panel" style="max-width:100%">
+          <h3>Management TLS (UI on port 8443)</h3>
+          <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed cert (hot-applied).</small></p>
+          <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+          <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+          <div class="row" style="margin-top:0.5rem"><button type="button" id="btn-tls-save">Install management TLS</button></div>
+          <p id="tls-msg" class="warn"></p>
+        </div>
+
+        <h3>Inventory</h3>
+        <div class="row">
+          <button type="button" class="secondary" id="btn-certs">Refresh list</button>
+        </div>
+        <p id="cert-dash-msg" class="warn" style="min-height:1rem"></p>
+        <div class="cert-stat-grid">
+          <div class="cert-stat-card cert-stat-total"><div class="lab">Total</div><div class="num" id="cert-sum-total">—</div></div>
+          <div class="cert-stat-card cert-stat-valid"><div class="lab">Valid</div><div class="num" id="cert-sum-valid">—</div></div>
+          <div class="cert-stat-card cert-stat-expiring"><div class="lab">Expiring soon</div><div class="num" id="cert-sum-expiring">—</div></div>
+          <div class="cert-stat-card cert-stat-expired"><div class="lab">Expired</div><div class="num" id="cert-sum-expired">—</div></div>
+        </div>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Expires (UTC)</th>
+                <th>Days left</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cert-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+

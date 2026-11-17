@@ -17,7 +17,12 @@ import (
 var defaultManifest = []string{
 	"document-before-tokens.html",
 	"styles/tokens.css",
-	"document-after-tokens.html",
+	"styles/application.css",
+	"document-before-screens.html",
+	"screens/dashboard.html",
+	"screens/applications.html",
+	"screens/certificates.html",
+	"document-after-certificates.html",
 }
 
 // DefaultManifest returns the ordered source files used for the web UI bundle.

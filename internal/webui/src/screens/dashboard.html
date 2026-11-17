@@ -1,0 +1,80 @@
+      <div id="tab-dashboard" class="tab-panel">
+        <div class="page-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Saved configuration, component state, and HAProxy runtime are reported separately.</p>
+          </div>
+          <div class="page-header-actions">
+            <span class="freshness" id="dash-loaded-at" aria-live="polite">Not loaded</span>
+            <button type="button" class="secondary" id="btn-dashboard-refresh" data-viewer-action="true">Refresh</button>
+          </div>
+        </div>
+        <div id="viewer-banner" class="alert alert-info hidden" role="status">
+          <strong class="alert-title">Read-only access</strong>
+          <p>You can inspect current data. Change controls are hidden, and the client blocks write requests for this session.</p>
+        </div>
+        <div id="dash-status" class="state-view" data-state="loading" role="status" aria-live="polite">Loading dashboard…</div>
+        <section aria-labelledby="dash-attention-title">
+          <h3 class="section-heading" id="dash-attention-title">Needs attention</h3>
+          <div id="dash-attention-list" class="attention-list">
+            <div class="state-view" data-state="loading">Checking current data…</div>
+          </div>
+        </section>
+        <section aria-labelledby="dash-overview-title" style="margin-top:1.5rem">
+          <h3 class="section-heading" id="dash-overview-title">Overview</h3>
+        <div class="dash-grid">
+          <div class="dash-card"><h3>Configured applications</h3><div class="dash-stat" id="dash-apps-stat">Unknown</div><div class="dash-note">enabled / total · saved configuration</div></div>
+          <div class="dash-card"><h3>Certificates</h3><div class="dash-stat" id="dash-certs-stat">Unknown</div><div class="dash-note" id="dash-certs-sub">API summary</div></div>
+          <div class="dash-card"><h3>CrowdSec LAPI</h3><div class="dash-stat" id="dash-cs-stat">Unknown</div><div class="dash-note" id="dash-cs-sub">LAPI reachability probe</div></div>
+          <div class="dash-card"><h3>IP blacklist</h3><div class="dash-stat" id="dash-ipbl-stat">Unknown</div><div class="dash-note">local entries · external sources</div></div>
+          <div class="dash-card"><h3>HAProxy request rate</h3><div class="dash-stat" id="dash-req-rate">Unknown</div><div class="dash-note">runtime stats · requests/s</div></div>
+          <div class="dash-card"><h3>HAProxy sessions</h3><div class="dash-stat" id="dash-active-sessions">Unknown</div><div class="dash-note">runtime stats · auto-refresh 10s</div></div>
+          <div class="dash-card"><h3>API version</h3><div class="dash-stat" id="dash-version" style="font-size:1rem">Unknown</div><div class="dash-note" id="dash-state-dir"></div></div>
+        </div>
+        </section>
+        <div id="dash-sec-overview-wrap" class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Saved application policy</h3>
+          <p class="dash-note">These values describe saved presets and listen modes. They do not prove that a revision is applied or that a backend is healthy.</p>
+          <p id="dash-sec-line" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <p id="dash-http-line" class="dash-note" style="color:#e6edf3;margin-top:0.35rem">Unknown</p>
+        </div>
+        <div id="dash-cert-warn" class="dash-sec-warn hidden"></div>
+        <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
+        <div id="dash-http-warn" class="dash-sec-warn hidden"></div>
+        <div class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Edge configuration state</h3>
+          <p class="dash-note">Saved state, exact apply acknowledgement, and the observed managed file are separate signals. File presence does not prove HAProxy or backend health.</p>
+          <p id="dash-edge-state" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <p id="dash-edge-generation" class="dash-note">Saved and applied generations are unknown.</p>
+          <p id="dash-edge-runtime" class="dash-note">Managed runtime artifact is unknown.</p>
+          <h3 style="margin-top:1rem">Last edge operation</h3>
+          <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <h3 style="margin-top:1rem">Recorded revision evidence</h3>
+          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">Unknown</p>
+        </div>
+        <div class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Core services (systemd)</h3>
+          <p class="dash-note">Live systemd ActiveState reported by the API host. This is separate from CrowdSec LAPI reachability and HAProxy runtime stats.</p>
+          <div id="dash-services"><div class="state-view" data-state="loading">Loading systemd state…</div></div>
+        </div>
+        <div class="panel" style="max-width:100%;margin-top:1rem">
+          <h3>Support diagnostics</h3>
+          <p class="dash-note" style="margin-top:0">Download a gzip tarball the API can build from this host (masked <code>easy-waf.env</code>, HAProxy config snapshot, journals, systemd, firewall — see <code>docs/DIAGNOSTICS.md</code>). For a full root-collected bundle (AppArmor, all journals), use <code>sudo /usr/sbin/easy-waf-diagnostics</code> on the appliance.</p>
+          <p id="dash-diag-msg" class="warn" style="min-height:1rem"></p>
+          <div class="row" style="align-items:center;flex-wrap:wrap;gap:0.5rem">
+            <button type="button" class="secondary" id="btn-diagnostics-download">Download diagnostics</button>
+          </div>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>HAProxy backends (runtime)</h3>
+          <p class="dash-note">Live rows from the HAProxy stats endpoint; unavailable data is not inferred from saved application settings.</p>
+          <p id="dash-haproxy-err" class="warn" style="min-height:1rem"></p>
+          <div id="dash-haproxy-table"></div>
+        </div>
+        <div class="panel" style="max-width:100%">
+          <h3>Published applications</h3>
+          <p class="dash-note">Configured state comes from saved application data. Runtime backend state is shown only in the HAProxy table above.</p>
+          <div id="dash-backends"></div>
+        </div>
+      </div>
+

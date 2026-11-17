@@ -1,0 +1,90 @@
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<div id="view-login" class="login-wrap">
+  <div class="panel" style="max-width:420px">
+    <h2>Sign in</h2>
+    <p class="warn">Use <strong>https://this-host:8443</strong>. Your browser may warn until you install a trusted management certificate in the panel.</p>
+    <div class="row"><label>Username <input id="login-user" value="admin" autocomplete="username" /></label></div>
+    <div class="row"><label>Password <input id="login-pass" type="password" autocomplete="current-password" /></label></div>
+    <div class="row hidden" id="login-totp-row"><label>Code <input id="login-totp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456 or a recovery code" /></label></div>
+    <div class="row"><button type="button" id="btn-login">Sign in</button></div>
+    <p id="login-err" class="warn"></p>
+  </div>
+</div>
+
+<div id="view-enroll" class="login-wrap hidden">
+  <div class="panel" style="max-width:420px">
+    <h2>Create the operator account</h2>
+    <p>This appliance has no account yet. Get the one-time secret on the appliance:</p>
+    <p><code>sudo easy-waf-admin print-enrollment</code></p>
+    <div class="row"><label>Enrollment secret <input id="enroll-secret" type="password" autocomplete="off" /></label></div>
+    <div class="row"><label>Username <input id="enroll-user" value="admin" autocomplete="username" /></label></div>
+    <div class="row"><label>Password <input id="enroll-pass" type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label></div>
+    <div class="row"><label>Confirm password <input id="enroll-pass2" type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label></div>
+    <div class="row"><button type="button" id="btn-enroll">Create account</button></div>
+    <p id="enroll-err" class="warn"></p>
+  </div>
+</div>
+
+<div id="view-pass" class="login-wrap hidden">
+  <div class="panel" style="max-width:420px">
+    <h2>Change password</h2>
+    <p>You must set a new password (min 8 characters) before using the control plane.</p>
+    <p><small>Until this step is done, the main tabs stay hidden.</small></p>
+    <div class="row"><label>Current <input id="old-pass" type="password" autocomplete="current-password" /></label></div>
+    <div class="row"><label>New <input id="new-pass" type="password" minlength="8" autocomplete="new-password" /></label></div>
+    <div class="row"><label>Confirm new <input id="new-pass2" type="password" minlength="8" autocomplete="new-password" /></label></div>
+    <div class="row"><button type="button" id="btn-pass">Save</button></div>
+    <p id="pass-err" class="warn"></p>
+  </div>
+</div>
+
+<div id="view-app" class="app-shell hidden">
+  <header class="app-header">
+    <button type="button" class="nav-toggle secondary" id="nav-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="app-sidebar">☰</button>
+    <h1 class="app-title">◆ Easy Home WAF</h1>
+    <span class="dash-note" id="header-version" aria-label="Application version">Version unavailable</span>
+    <span class="header-user hidden" id="header-user"></span>
+    <button type="button" class="secondary header-logout" id="btn-logout">Sign out</button>
+  </header>
+  <button type="button" class="nav-overlay" id="nav-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"></button>
+  <div class="app-layout">
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Primary navigation">
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Control plane">
+        <div class="nav-group">
+          <p class="nav-group-label">Overview</p>
+          <a href="#dashboard" class="nav-link" data-tab="dashboard"><span aria-hidden="true">▣</span> Dashboard</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Publish</p>
+          <a href="#apps" class="nav-link" data-tab="apps"><span aria-hidden="true">◇</span> Applications</a>
+          <a href="#certs" class="nav-link" data-tab="certs"><span aria-hidden="true">▤</span> Certificates</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Protect</p>
+          <a href="#security" class="nav-link" data-tab="security"><span aria-hidden="true">◎</span> Security</a>
+          <a href="#crowdsec" class="nav-link" data-tab="crowdsec"><span aria-hidden="true">⚑</span> CrowdSec</a>
+          <a href="#fail2ban" class="nav-link" data-tab="fail2ban"><span aria-hidden="true">⛔</span> Fail2Ban</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Operate</p>
+          <a href="#system" class="nav-link" data-tab="system"><span aria-hidden="true">▦</span> System</a>
+          <a href="#network" class="nav-link" data-tab="network"><span aria-hidden="true">⇄</span> Network</a>
+          <a href="#users" class="nav-link" data-tab="users"><span aria-hidden="true">☺</span> Users</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Configure</p>
+          <a href="#config" class="nav-link" data-tab="config"><span aria-hidden="true">⚙</span> Edge changes<span class="pending-dot hidden" id="nav-config-pending" aria-hidden="true"></span></a>
+          <a href="#settings" class="nav-link" data-tab="settings"><span aria-hidden="true">✎</span> Settings</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-group-label">Observe</p>
+          <a href="#logs" class="nav-link" data-tab="logs"><span aria-hidden="true">◈</span> Events &amp; audit</a>
+        </div>
+      </nav>
+    </aside>
+    <main class="app-content" id="main-content" tabindex="-1">
+
