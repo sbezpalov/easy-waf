@@ -11,6 +11,28 @@ import (
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
+func TestEdgeStateIgnoresUnchangedSetting(t *testing.T) {
+	st := openFresh(t, freshSchemaDSN(t))
+	ctx := t.Context()
+	set := func(value string, wantGeneration int64) {
+		t.Helper()
+		if err := st.SetSetting(ctx, "edge-generation-test", value); err != nil {
+			t.Fatal(err)
+		}
+		status, err := st.GetEdgeStatus(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.SavedGeneration != wantGeneration {
+			t.Fatalf("setting %q: saved generation = %d, want %d", value, status.SavedGeneration, wantGeneration)
+		}
+	}
+	set("original", 2)
+	set("original", 2)
+	set("changed", 3)
+	set("changed", 3)
+}
+
 func TestEdgeStateTracksWritesAndApplyOutcomes(t *testing.T) {
 	st := openFresh(t, freshSchemaDSN(t))
 	ctx := context.Background()

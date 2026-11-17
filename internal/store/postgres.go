@@ -309,7 +309,8 @@ func (s *Store) DeleteSetting(ctx context.Context, key string) error {
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO settings(key, value) VALUES($1,$2)
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, key, value)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		WHERE settings.value IS DISTINCT FROM EXCLUDED.value`, key, value)
 	return err
 }
 
