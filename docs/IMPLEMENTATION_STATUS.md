@@ -3,6 +3,11 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest pristine VMware installation:** [9d7dbc8 and backup timer follow-up](release-evidence/1.6.1-pristine-vmware-9d7dbc8.md).
+The default amd64 package installer, fresh CrowdSec setup, enrollment and
+schema 028 passed. An installer rerun with the timer fix started scheduled
+backups before reboot. Both smoke runs passed 19/0/2 and the publication
+recovered automatically.
 **Latest unpackaged upgrade:** [published 1.6.0 through upgrade.sh on VMware](release-evidence/1.6.1-source-upgrade-7a1499b.md).
 The wrapper returned 0, restarted all three daemons and migrated schema 019 to
 028. The publication retained its certificate and trusted HTTPS. HAProxy stats,
