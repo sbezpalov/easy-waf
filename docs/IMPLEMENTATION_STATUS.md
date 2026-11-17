@@ -72,7 +72,13 @@ eight Linux gates, 821 race passes, fresh clean govulncheck, both-architecture
 release-artifact checks, successful GitHub CI and an actual APT installation on
 the independent clone. Strict preserved-state/runtime checks and smoke 19/0/2
 passed; fresh restore/reboot and final release approval for this commit remain open.
-**Latest PVE dev delivery:** [9cfc841 crypto dependency update](release-evidence/1.6.1-crypto-9cfc841.md),
+**Latest PVE dev delivery:** [dd27d74 UI and appliance package](release-evidence/1.6.1-pve-gui-dd27d74.md).
+The installed and running executables matched the verified package, the
+served UI and CSP matched the current assets, and schema 028, ten active
+services or timers, preserved application/certificate/settings state, and
+trusted HTTPS passed.
+
+**Earlier PVE delivery:** The [9cfc841 crypto dependency update](release-evidence/1.6.1-crypto-9cfc841.md) was
 installed through APT with a new matched backup. All eight local Linux gates,
 817 race passes, fresh clean govulncheck and both-arch artifact inspection passed.
 Running daemon/payload equality, existing-password authentication, broker RPC,
