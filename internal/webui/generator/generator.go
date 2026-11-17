@@ -28,7 +28,10 @@ var defaultManifest = []string{
 	"screens/system.html",
 	"screens/network.html",
 	"screens/users.html",
-	"document-after-users.html",
+	"screens/edge-changes.html",
+	"screens/settings.html",
+	"screens/events-audit.html",
+	"document-after-screens.html",
 }
 
 // DefaultManifest returns the ordered source files used for the web UI bundle.

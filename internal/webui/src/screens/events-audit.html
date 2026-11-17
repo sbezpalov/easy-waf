@@ -1,0 +1,114 @@
+      <div id="tab-logs" class="tab-panel">
+        <h2>◈ Events &amp; audit</h2>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <h3>Blocked requests</h3>
+          <p class="dash-note" style="margin-top:0">Requests the edge refused, read from the HAProxy journal: the rule, the client and what it asked for. Backend errors are not included.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.5rem 0">
+            <label>Period
+              <select id="blocked-period">
+                <option value="1h">Last hour</option>
+                <option value="24h" selected>Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-blocked-refresh">Refresh</button>
+            <span id="blocked-total" class="dash-note"></span>
+          </div>
+          <p id="blocked-err" class="warn" style="min-height:1rem"></p>
+          <div class="row" style="flex-wrap:wrap;gap:1.5rem;align-items:flex-start">
+            <div><h4 style="margin:0.3rem 0">By rule</h4><table><tbody id="blocked-rules"></tbody></table></div>
+            <div><h4 style="margin:0.3rem 0">Top clients</h4><table><tbody id="blocked-ips"></tbody></table></div>
+            <div><h4 style="margin:0.3rem 0">Top hosts</h4><table><tbody id="blocked-hosts"></tbody></table></div>
+          </div>
+          <table style="margin-top:0.75rem">
+            <thead>
+              <tr><th>Time (UTC)</th><th>Client</th><th>Host</th><th>Request</th><th>Status</th><th>Rule</th></tr>
+            </thead>
+            <tbody id="blocked-tbody"></tbody>
+          </table>
+        </div>
+        <section class="panel admin-only" id="host-journal-panel" style="max-width:100%;margin-top:0.75rem" aria-labelledby="host-journal-title">
+          <h3 id="host-journal-title">Service journal</h3>
+          <p class="dash-note" id="host-journal-help" style="margin-top:0">Read-only snapshot from one allowlisted appliance service. The browser cannot request arbitrary units or journalctl flags. Output may contain operational details; review it before sharing.</p>
+          <div class="journal-controls">
+            <label for="host-journal-unit">Service
+              <select id="host-journal-unit">
+                <option value="easy-waf-api.service">Management API</option>
+                <option value="easy-waf-acmed.service">ACME worker</option>
+                <option value="haproxy.service">HAProxy edge</option>
+                <option value="crowdsec.service">CrowdSec agent</option>
+                <option value="crowdsec-spoa-bouncer.service">CrowdSec bouncer</option>
+                <option value="fail2ban.service">Fail2Ban</option>
+                <option value="nftables.service">nftables</option>
+                <option value="postgresql.service">PostgreSQL</option>
+              </select>
+            </label>
+            <label for="host-journal-since">Time window
+              <select id="host-journal-since">
+                <option value="30m">Last 30 minutes</option>
+                <option value="1h" selected>Last hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+            <label for="host-journal-priority">Priority
+              <select id="host-journal-priority">
+                <option value="">All priorities</option>
+                <option value="err">Error or more severe</option>
+                <option value="warning">Warning or more severe</option>
+                <option value="notice">Notice or more severe</option>
+                <option value="info">Info or more severe</option>
+              </select>
+            </label>
+            <label for="host-journal-lines">Maximum lines
+              <select id="host-journal-lines">
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="500">500</option>
+                <option value="1000">1,000</option>
+                <option value="2000">2,000</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-host-journal-load">Load journal</button>
+          </div>
+          <p id="host-journal-status" class="dash-note" role="status" aria-live="polite">Choose filters and load a journal snapshot.</p>
+          <pre id="host-journal-output" class="journal-output" tabindex="0" aria-label="Service journal output" aria-describedby="host-journal-help host-journal-status">Not loaded.</pre>
+        </section>
+        <p class="dash-note" style="margin-top:0">Append-only administrative audit (mutating HTTP requests and engine events). Request bodies are not stored.</p>
+        <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.75rem 0">
+          <label>Action filter
+            <select id="audit-filter-action">
+              <option value="all">All</option>
+              <option value="apply">apply (engine / URL)</option>
+              <option value="rollback">rollback</option>
+              <option value="settings">settings</option>
+              <option value="/applications">applications</option>
+              <option value="/certificates">certificates</option>
+              <option value="ipbl">ipbl</option>
+              <option value="ipwl">ipwl</option>
+            <option value="blocked-ua">blocked-ua</option>
+            <option value="change-password">change-password</option>
+            <option value="crowdsec">crowdsec (decisions / LAPI)</option>
+            <option value="fail2ban">fail2ban (unban)</option>
+            <option value="diagnostics">diagnostics (support bundle)</option>
+          </select>
+          </label>
+          <label><input type="checkbox" id="audit-auto-refresh" /> Auto-refresh (15s)</label>
+          <button type="button" class="secondary" id="btn-audit-refresh">Refresh</button>
+        </div>
+        <p id="audit-err" class="warn" style="min-height:1rem"></p>
+        <div class="panel" style="max-width:100%;overflow-x:auto">
+          <table>
+            <thead>
+              <tr><th>Date (UTC)</th><th>User</th><th>Action</th><th>IP</th><th>Details</th></tr>
+            </thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+          <div class="row" style="margin-top:0.75rem;align-items:center">
+            <button type="button" class="secondary" id="btn-audit-more">Load more</button>
+            <span id="audit-shown" class="dash-note"></span>
+          </div>
+        </div>
+      </div>
+
