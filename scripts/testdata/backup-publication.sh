@@ -20,6 +20,11 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir -p "$ROOT/bin" "$ROOT/state" "$ROOT/output"
 printf 'fixture-state\n' >"$ROOT/state/data"
 printf 'DATABASE_URL=postgres://fixture.invalid/never-connected\n' >/etc/easy-waf/easy-waf.env
+printf 'fixture-recovery-candidate\n' >/etc/easy-waf/easy-waf.env.rotation.ABC123
+printf 'fixture-legacy-recovery\n' >/etc/easy-waf/easy-waf.env.new-db-password
+printf 'fixture-operator-file\n' >/etc/easy-waf/operator.rotation.ABC123
+mkdir /etc/easy-waf/operator
+printf 'fixture-nested-file\n' >/etc/easy-waf/operator/easy-waf.env.rotation.ABC123
 export BACKUP_TEST_ROOT="$ROOT" BACKUP_TEST_MODE=ok
 BACKUP_TEST_REAL_TAR="$(type -P tar)"
 export BACKUP_TEST_REAL_TAR
@@ -161,6 +166,16 @@ top="$(head -n 1 "$ROOT/members")"
 [[ "$("$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}easywaf.dump")" == fixture-dump ]] || fail 'dump missing'
 [[ "$("$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}state/data")" == fixture-state ]] || fail 'state missing'
 "$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}etc/easy-waf.env" | cmp - /etc/easy-waf/easy-waf.env
+if grep -E -q '/etc/easy-waf\.env\.(rotation\.[[:alnum:]]{6}|new-db-password)$' "$ROOT/members"; then
+  fail 'backup copied a transient password recovery file'
+fi
+[[ "$(< /etc/easy-waf/easy-waf.env.rotation.ABC123)" == fixture-recovery-candidate &&
+   "$(< /etc/easy-waf/easy-waf.env.new-db-password)" == fixture-legacy-recovery ]] ||
+  fail 'backup removed or changed a local recovery file'
+[[ "$("$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}etc/operator.rotation.ABC123")" == fixture-operator-file ]] ||
+  fail 'backup omitted unrelated operator file'
+[[ "$("$BACKUP_TEST_REAL_TAR" -xOzf "$out" "${top}etc/operator/easy-waf.env.rotation.ABC123")" == fixture-nested-file ]] ||
+  fail 'backup omitted nested operator file'
 mkdir "$ROOT/rotated"
 : >"$ROOT/rotated/easy-waf-backup-20200101-000000.tar.gz"
 backup pass --dir "$ROOT/rotated" --keep 1

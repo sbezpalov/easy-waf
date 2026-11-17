@@ -202,7 +202,11 @@ echo "[easy-waf-backup] archiving state: $STATE"
 tar -C "$STATE" -cf - . | tar -C "$ROOT/state" -xf -
 
 echo "[easy-waf-backup] archiving: $CFG"
-tar -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
+# Recovery candidates belong to the interrupted installer operation, not to
+# the running configuration. Keep the live env and unrelated operator files.
+tar --anchored --no-wildcards-match-slash \
+  --exclude='./easy-waf.env.rotation.??????' --exclude='./easy-waf.env.new-db-password' \
+  -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
 
 mkdir -p "$(dirname "$OUT")"
 echo "[easy-waf-backup] packing → $OUT"

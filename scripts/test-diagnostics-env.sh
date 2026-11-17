@@ -51,6 +51,8 @@ token =fixture-lowercase-token
 FOO=public-value
 # TOKEN=comment-example
 ENV
+printf 'DATABASE_URL=postgres://fixture:synthetic-recovery-secret@fixture.invalid/db\n' \
+  >"${EASY_WAF_ENV_FILE}.rotation.ABC123"
 collector_status=0
 bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1 || collector_status=$?
 [[ ! -e "$marker" ]] || { echo 'FAIL: diagnostics executed env file' >&2; exit 1; }
@@ -58,6 +60,13 @@ bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1 || collector_status
 [[ -f "$DIAG_TEST_ARGS" ]] || { echo 'FAIL: SQL probe did not run or received unrelated secret' >&2; exit 1; }
 [[ "$(head -n 1 "$DIAG_TEST_ARGS")" == "$expected" ]] || { echo 'FAIL: DSN not preserved literally' >&2; exit 1; }
 tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
+if grep -Fq 'rotation.ABC123' "$ROOT/members"; then
+  echo 'FAIL: support bundle included a neighboring recovery file' >&2; exit 1
+fi
+tar -xOzf "$ROOT/bundle.tar.gz" >"$ROOT/bundle-content"
+if grep -Fq 'synthetic-recovery-secret' "$ROOT/bundle-content"; then
+  echo 'FAIL: support bundle included the recovery credential' >&2; exit 1
+fi
 grep -q '/sql/config_revisions.txt$' "$ROOT/members"
 masked_member="$(grep '/config/easy-waf.env.masked$' "$ROOT/members")"
 tar -xOzf "$ROOT/bundle.tar.gz" "$masked_member" >"$ROOT/masked"

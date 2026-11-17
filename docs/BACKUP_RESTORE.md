@@ -5,6 +5,8 @@ Full appliance backup includes:
 1. **PostgreSQL** — `pg_dump` in **custom** format (`-Fc`) → `easywaf.dump` inside the archive (role-agnostic restore with `pg_restore --no-owner`).
 2. **`/var/lib/easy-waf`** — state tree (HAProxy generated configs, revisions, certs, ACME webroot, secrets, …) under `state/` in the archive.
 3. **`/etc/easy-waf`** — including `easy-waf.env` under `etc/` in the archive.
+   The installer's temporary `easy-waf.env.rotation.*` and legacy
+   `easy-waf.env.new-db-password` recovery files stay on the appliance.
 
 Everything is packed into a **single gzip tarball**: `easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz` (format **v1**; see `MANIFEST.txt` inside).
 
