@@ -1708,7 +1708,7 @@
     const raw = await r.json();
     const list = Array.isArray(raw) ? raw : [];
     box.innerHTML = '<table><thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
-      list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select class="pu-role" data-user="' + esc(u.username) + '">' +
+      list.map((u) => '<tr><td>' + esc(u.username) + '</td><td><select name="panel_user_role" class="pu-role" data-user="' + esc(u.username) + '">' +
         '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
         '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>viewer</option></select></td><td>' +
         (u.must_change_password ? 'must change password' : 'active') + (u.totp_enabled ? ', 2FA on' : '') + '</td><td>' +
@@ -2246,15 +2246,15 @@
     const tokenNote = row.edge_token_configured ? 'A token is already stored. Leave the field empty to keep it.' : 'Optional. Stored outside the database and removed before the backend.';
     wrap.innerHTML = `
       <div class="row" style="flex-wrap:wrap;align-items:flex-start;gap:0.5rem">
-        <label>Path<br /><input class="pr-path" type="text" value="${esc(row.path_prefix || '')}" placeholder="/api/mcp" /></label>
-        <label>Require header<br /><input class="pr-header" type="text" value="${esc(row.require_header || '')}" placeholder="Authorization" /></label>
-        <label>Value prefix<br /><input class="pr-prefix" type="text" value="${esc(row.require_value_prefix || '')}" placeholder="Bearer " /></label>
-        <label>Client timeout<br /><input class="pr-client" type="number" min="0" max="86400" value="${esc(String(row.client_timeout_sec || 0))}" /></label>
-        <label>Server timeout<br /><input class="pr-server" type="number" min="0" max="86400" value="${esc(String(row.server_timeout_sec || 0))}" /></label>
-        <label>Requests / 10s<br /><input class="pr-rate" type="number" min="0" value="${esc(String(row.rate_per_10s || 0))}" /></label>
-        <label>Edge token header<br /><input class="pr-edge-header" type="text" value="${esc(row.edge_token_header || '')}" placeholder="X-Edge-Token" /></label>
-        <label>Edge token<br /><input class="pr-edge-token" type="password" autocomplete="new-password" value="" /></label>
-        <label><input class="pr-edge-clear" type="checkbox" /> Clear stored token</label>
+        <label>Path<br /><input name="path_policy_prefix" class="pr-path" type="text" value="${esc(row.path_prefix || '')}" placeholder="/api/mcp" /></label>
+        <label>Require header<br /><input name="path_policy_require_header" class="pr-header" type="text" value="${esc(row.require_header || '')}" placeholder="Authorization" /></label>
+        <label>Value prefix<br /><input name="path_policy_value_prefix" class="pr-prefix" type="text" value="${esc(row.require_value_prefix || '')}" placeholder="Bearer " /></label>
+        <label>Client timeout<br /><input name="path_policy_client_timeout" class="pr-client" type="number" min="0" max="86400" value="${esc(String(row.client_timeout_sec || 0))}" /></label>
+        <label>Server timeout<br /><input name="path_policy_server_timeout" class="pr-server" type="number" min="0" max="86400" value="${esc(String(row.server_timeout_sec || 0))}" /></label>
+        <label>Requests / 10s<br /><input name="path_policy_rate" class="pr-rate" type="number" min="0" value="${esc(String(row.rate_per_10s || 0))}" /></label>
+        <label>Edge token header<br /><input name="path_policy_edge_token_header" class="pr-edge-header" type="text" value="${esc(row.edge_token_header || '')}" placeholder="X-Edge-Token" /></label>
+        <label>Edge token<br /><input name="path_policy_edge_token" class="pr-edge-token" type="password" autocomplete="new-password" value="" /></label>
+        <label><input name="path_policy_clear_edge_token" class="pr-edge-clear" type="checkbox" /> Clear stored token</label>
         <button type="button" class="secondary btn-pr-remove">Remove</button>
       </div>
       <p class="dash-note">${esc(tokenNote)}</p>`;
@@ -2303,8 +2303,8 @@
     wrap.style.maxWidth = '100%';
     wrap.innerHTML = `
       <div class="row" style="align-items:flex-start">
-        <label>Path prefix<br /><input class="rp-prefix" type="text" placeholder="/api" value="${esc(prefix || '')}" style="min-width:8rem" /></label>
-        <label style="flex:1">Allowed CIDRs (one per line)<br /><textarea class="rp-cidrs" rows="4" style="width:100%;min-width:14rem;font-family:monospace;font-size:12px" placeholder="192.168.0.0/16">${esc(cidrsText || '')}</textarea></label>
+        <label>Path prefix<br /><input name="restricted_path_prefix" class="rp-prefix" type="text" placeholder="/api" value="${esc(prefix || '')}" style="min-width:8rem" /></label>
+        <label style="flex:1">Allowed CIDRs (one per line)<br /><textarea name="restricted_path_allowed_cidrs" class="rp-cidrs" rows="4" style="width:100%;min-width:14rem;font-family:monospace;font-size:12px" placeholder="192.168.0.0/16">${esc(cidrsText || '')}</textarea></label>
         <button type="button" class="secondary btn-rp-remove">Remove</button>
       </div>`;
     wrap.querySelector('.btn-rp-remove').onclick = () => wrap.remove();
@@ -2937,7 +2937,7 @@
   </div>
   <div class="row" style="margin:0;align-items:center;gap:0.5rem">
     <label style="font-size:0.82rem;color:var(--muted)">Security mode
-      <select class="app-mode-sel" data-id="${esc(a.id)}" style="font-size:0.85rem">
+      <select name="application_security_mode" class="app-mode-sel" data-id="${esc(a.id)}" style="font-size:0.85rem">
         <option value="full" ${mode === 'full' ? 'selected' : ''}>Full</option>
         <option value="balanced" ${mode === 'balanced' ? 'selected' : ''}>Balanced</option>
         <option value="trusted-lan" ${mode === 'trusted-lan' ? 'selected' : ''}>Trusted LAN</option>
