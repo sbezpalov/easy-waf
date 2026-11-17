@@ -42,7 +42,7 @@ const elements = new Map();
 function element(id) {
   if (!elements.has(id)) {
     const classes = new Set();
-    elements.set(id, {value: '', checked: false, disabled: false, textContent: '',
+    elements.set(id, {value: '', checked: false, disabled: false, textContent: '', dataset: {}, innerHTML: '',
       classList: {toggle: (name, on) => on ? classes.add(name) : classes.delete(name), contains: name => classes.has(name)}});
   }
   return elements.get(id);
@@ -55,9 +55,14 @@ const requests = [], notices = [];
 let cleared = 0, collapsed = 0, refreshed = 0;
 const context = {pendingApply: true, document: {getElementById: element},
   appsListCache: [{id: 'fixture-app', security: {mode: 'balanced'}}],
-  hdr: () => ({}), encodeURIComponent,
+  hdr: () => ({}), encodeURIComponent, esc: value => String(value),
   fetch: async (path, init) => {
     requests.push([path, init]);
+    if (path === '/api/v1/edge/status') {
+      const pending = !scenario.endsWith('_success');
+      return {ok: true, json: async () => ({saved_generation: 9, applied_generation: pending ? 8 : 9,
+        pending, last_apply: null, runtime: {state: 'known'}})};
+    }
     return {ok: !scenario.endsWith('_rejected'), headers: {get: name => {assert.equal(name, 'X-Easy-Waf-Applied'); return scenario.endsWith('_legacy') ? null : scenario.endsWith('_manual') ? 'false' : 'true'}}};
   },
   withBusy: async (button, operation) => operation(),
@@ -95,15 +100,17 @@ async function run() {
     if (scenario === 'mode_cancelled') assert.equal(select.value, 'balanced');
     return;
   }
-  assert.equal(requests.length, 1, 'one mutation; no extra explicit Apply request');
-  assert.equal(requests[0][1].method, 'POST');
-  assert.equal(requests[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' : '/api/v1/applications/fixture-app/maintenance');
+  const mutations = requests.filter(([path]) => path !== '/api/v1/edge/status');
+  assert.equal(mutations.length, 1, 'one mutation; no extra explicit Apply request');
+  assert.equal(mutations[0][1].method, 'POST');
+  assert.equal(mutations[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' : '/api/v1/applications/fixture-app/maintenance');
   if (scenario.endsWith('_rejected')) {
     assert.equal(context.pendingApply, true, 'rejected mutation must preserve pending state');
     assert.equal(cleared + collapsed + refreshed, 0, 'keep rejected form for correction');
     assert.ok(notices.some(([, kind]) => kind === 'err'));
     if (scenario === 'mode_rejected') assert.equal(select.value, 'balanced');
   } else {
+    assert.equal(requests.filter(([path]) => path === '/api/v1/edge/status').length, 1, 'successful mutation must refresh persistent edge truth');
     const applied = scenario.endsWith('_success');
     assert.equal(context.pendingApply, !applied, 'pending must match server Apply outcome');
     for (const id of ['nav-config-pending', 'apps-pending-banner']) {

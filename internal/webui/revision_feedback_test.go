@@ -43,11 +43,12 @@ function element(id) {
     querySelectorAll: () => [button]});
   return elements.get(id);
 }
-let lists = 0, pending = null;
+let lists = 0, pending = null, edgeRefreshes = 0;
 const context = {document: {getElementById: element}, hdr: () => ({}), encodeURIComponent,
   esc: text => String(text), shortSha: text => String(text).slice(0, 12), copyBtn: () => '',
   tableState: (_box, state) => tableStates.push(state), refreshSession: () => {throw Error('unexpected auth refresh')},
   toast: (...args) => notices.push(args), markPendingApply: on => {pending = on},
+  refreshEdgeStatus: async () => {edgeRefreshes++; pending = null},
   confirmDialog: async (...args) => {confirmations.push(args); return scenario !== 'cancelled'},
   apiMessage: async response => response.kind === 'list' ? 'Revision list unavailable' : 'Rollback failed',
   fetch: async (path, init) => {
@@ -74,7 +75,7 @@ async function run() {
   for (let i = 0; i < 5; i++) await Promise.resolve();
   const mutations = calls.filter(([path]) => path.endsWith('/rollback'));
   if (scenario === 'cancelled') {
-    assert.equal(mutations.length, 0); assert.equal(lists, 1); assert.equal(pending, null);
+    assert.equal(mutations.length, 0); assert.equal(lists, 1); assert.equal(pending, null); assert.equal(edgeRefreshes, 0);
     assert.equal(notices.length, 0);
     return;
   }
@@ -82,12 +83,14 @@ async function run() {
   assert.equal(lists, 2, 'refresh revision list after operation');
   if (scenario === 'rejected') {
     assert.equal(message.textContent, 'Rollback failed', 'rejection must survive list refresh');
-    assert.equal(message.className, 'warn'); assert.equal(pending, null);
+    assert.equal(message.className, 'warn'); assert.equal(pending, null); assert.equal(edgeRefreshes, 0);
     assert.ok(notices.some(([, kind]) => kind === 'err'));
   } else {
     assert.match(message.textContent, /restored/i, 'success must survive list refresh');
     assert.match(message.textContent, /saved applications and settings/i);
-    assert.equal(pending, true, 'database still differs from restored edge');
+    assert.match(message.textContent, /unknown/i);
+    assert.equal(pending, null, 'rollback must not claim which saved generation is applied');
+    assert.equal(edgeRefreshes, 1, 'rollback must refresh persistent edge truth');
     assert.ok(notices.some(([, kind]) => kind === 'ok'));
     if (scenario === 'refresh_failed') assert.equal(tableStates.at(-1), 'error');
   }

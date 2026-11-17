@@ -40,7 +40,7 @@ function include(context, from, until) {
 async function run() {
   for (const scenario of ['auto', 'manual', 'legacy', 'cancel', 'reject', 'other_editor']) {
     const id = 'fixture/app', notices = [], calls = [];
-    let cleared = 0, collapsed = 0, refreshed = 0;
+    let cleared = 0, collapsed = 0, refreshed = 0, edgeRefreshes = 0;
     const context = {appsListCache: [{id, name: 'Fixture', public_host: 'fixture.invalid'}],
       document: {getElementById: () => ({value: scenario === 'other_editor' ? 'other' : id})},
       confirmDialog: async (text, options) => {
@@ -56,6 +56,7 @@ async function run() {
           json: () => {throw Error('204 has no JSON body')}};
       },
       markPendingApply: on => {context.pending = on}, pending: true,
+      refreshEdgeStatus: async () => {edgeRefreshes++},
       toast: (...args) => notices.push(args), apiMessage: async () => 'Apply failed',
       clearAppFormFields: () => {cleared++}, setAppFormCollapsed: on => {if (on) collapsed++},
       loadApps: async () => {refreshed++}};
@@ -71,6 +72,7 @@ async function run() {
     } else {
       const applied = scenario === 'auto' || scenario === 'other_editor';
       assert.equal(context.pending, !applied); assert.equal(refreshed, 1);
+      assert.equal(edgeRefreshes, 1, 'successful delete must refresh persistent edge truth');
       assert.equal(cleared, scenario === 'other_editor' ? 0 : 1); assert.equal(collapsed, cleared);
       assert.ok(notices.some(([text, kind]) => kind === 'ok' && /deleted/i.test(text) &&
         (applied ? /applied/i.test(text) : /Apply on Config/i.test(text))));

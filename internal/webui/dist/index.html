@@ -281,6 +281,7 @@
       background: #2d2710; border: 1px solid #9e6a03; border-radius: 8px;
       padding: 0.65rem 1rem; margin: 0.75rem 0; font-size: 0.9rem;
     }
+    .apps-pending-banner[data-state="unknown"] { background: var(--color-surface-2); border-color: var(--color-border); }
 
     .toast-host {
       position: fixed; right: 1rem; bottom: 1rem; z-index: 100;
@@ -453,11 +454,15 @@
         <div id="dash-sec-warn" class="dash-sec-warn hidden"></div>
         <div id="dash-http-warn" class="dash-sec-warn hidden"></div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
-          <h3>Recorded HAProxy revision</h3>
-          <p class="dash-note">Revision records come from the API. Applied state after a reload remains unknown without a persistent edge-status contract.</p>
-          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">Unknown</p>
-          <h3 style="margin-top:1rem">Last config activity</h3>
+          <h3>Edge configuration state</h3>
+          <p class="dash-note">Saved state, exact apply acknowledgement, and the observed managed file are separate signals. File presence does not prove HAProxy or backend health.</p>
+          <p id="dash-edge-state" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <p id="dash-edge-generation" class="dash-note">Saved and applied generations are unknown.</p>
+          <p id="dash-edge-runtime" class="dash-note">Managed runtime artifact is unknown.</p>
+          <h3 style="margin-top:1rem">Last edge operation</h3>
           <p id="dash-last-apply" class="dash-note" style="color:#e6edf3">Unknown</p>
+          <h3 style="margin-top:1rem">Recorded revision evidence</h3>
+          <p id="dash-revision-line" class="dash-note" style="color:#e6edf3">Unknown</p>
         </div>
         <div class="panel" style="max-width:100%;margin-top:1rem">
           <h3>Core services (systemd)</h3>
@@ -488,8 +493,8 @@
       <div id="tab-apps" class="tab-panel">
         <h2>◇ Applications</h2>
         <p><small>Per-hostname <strong>security layers</strong> (WAF, GeoIP, CrowdSec, …). Application changes apply automatically by default. For pending changes, use <a href="#config">Edge changes</a> → <strong>Apply HAProxy</strong>.</small></p>
-        <div id="apps-pending-banner" class="apps-pending-banner hidden" role="status">
-          You have unapplied changes. <a href="#config">Go to Edge changes → Apply HAProxy</a>
+        <div id="apps-pending-banner" class="apps-pending-banner hidden" data-state="pending" role="status" aria-live="polite">
+          Saved changes are not exactly applied. <a href="#config">Go to Edge changes → Apply HAProxy</a>
         </div>
         <div class="row">
           <button type="button" class="secondary" id="btn-apps-refresh">Refresh</button>
@@ -1451,6 +1456,7 @@
   function show(el, on) { document.getElementById(el).classList.toggle('hidden', !on); }
 
   let pendingApply = false;
+  let edgeStatusCache = null;
 
   function toast(message, kind, timeoutMs) {
     const host = document.getElementById('toast-host');
@@ -1569,18 +1575,62 @@
     }
   }
 
-  function markPendingApply(on) {
-    pendingApply = !!on;
+  function markPendingApply(on, status) {
+    pendingApply = on === true;
     const dot = document.getElementById('nav-config-pending');
-    if (dot) dot.classList.toggle('hidden', !on);
+    if (dot) dot.classList.toggle('hidden', on === false);
     const banner = document.getElementById('apps-pending-banner');
-    if (banner) banner.classList.toggle('hidden', !on);
+    if (!banner) return;
+    banner.classList.toggle('hidden', on === false);
+    banner.dataset.state = on === true ? 'pending' : 'unknown';
+    if (on === true) {
+      const saved = status && Number.isSafeInteger(status.saved_generation) ? status.saved_generation : null;
+      const applied = status && Number.isSafeInteger(status.applied_generation) ? status.applied_generation : null;
+      const detail = saved == null ? '' : ' Saved generation ' + saved + (applied == null ? '; applied generation unknown.' : '; applied generation ' + applied + '.');
+      banner.innerHTML = 'Saved changes are not exactly applied.' + esc(detail) + ' <a href="#config">Go to Edge changes → Apply HAProxy</a>';
+    } else {
+      banner.innerHTML = 'The saved/applied relationship is unknown. Apply HAProxy or wait for startup reconciliation to establish it. <a href="#config">Open Edge changes</a>';
+    }
   }
 
-  function reportApplicationSaved(response, subject) {
+  function renderPersistentEdgeStatus(status) {
+    const pending = status && status.pending;
+    const applied = status && status.applied_generation;
+    const relationshipIsValid = pending === null ? applied === null :
+      pending === false ? Number.isSafeInteger(applied) && applied === status.saved_generation :
+      pending === true ? Number.isSafeInteger(applied) && applied !== status.saved_generation : false;
+    if (!status || typeof status !== 'object' || !Number.isSafeInteger(status.saved_generation) ||
+        !Object.prototype.hasOwnProperty.call(status, 'pending') || !relationshipIsValid) {
+      edgeStatusCache = null;
+      markPendingApply(null, null);
+      return false;
+    }
+    edgeStatusCache = status;
+    markPendingApply(status.pending === true ? true : status.pending === false ? false : null, status);
+    return true;
+  }
+
+  async function refreshEdgeStatus() {
+    let response;
+    try {
+      response = await fetch('/api/v1/edge/status', { headers: hdr(), cache: 'no-store' });
+    } catch (_) {
+      renderPersistentEdgeStatus(null);
+      return null;
+    }
+    if (!response.ok) {
+      renderPersistentEdgeStatus(null);
+      return null;
+    }
+    const status = await response.json().catch(() => null);
+    return renderPersistentEdgeStatus(status) ? status : null;
+  }
+
+  async function reportApplicationSaved(response, subject) {
     const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
     markPendingApply(!applied);
     toast(subject + (applied ? ' applied.' : ' saved. Apply on Config tab to activate.'), 'ok');
+    await refreshEdgeStatus();
   }
 
   function copyBtn(value) {
@@ -1812,6 +1862,7 @@
         break;
       case 'apps':
         loadApps();
+        void refreshEdgeStatus();
         loadProfileSelect();
         loadSecurityModesForApps();
         void loadCertOptionsForApps().then(() => syncListenModeUI());
@@ -1852,6 +1903,7 @@
         break;
       case 'config':
         loadRevisions();
+        void refreshEdgeStatus();
         break;
       case 'settings':
         loadSettingsPanel();
@@ -2745,6 +2797,7 @@
       const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
       markPendingApply(!applied);
       toast(applied ? 'Application deleted and removal applied.' : 'Application deleted. Apply on Config tab to activate removal.', 'ok');
+      await refreshEdgeStatus();
       if (document.getElementById('app-edit-id').value === id) {
         clearAppFormFields();
         setAppFormCollapsed(true);
@@ -2760,7 +2813,7 @@
         method: 'POST', headers: hdr(), body: JSON.stringify({ enabled })
       });
       if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
-      reportApplicationSaved(r, enabled ? 'Maintenance enabled' : 'Maintenance disabled');
+      await reportApplicationSaved(r, enabled ? 'Maintenance enabled' : 'Maintenance disabled');
       await loadApps();
     });
   }
@@ -2783,7 +2836,7 @@
       selEl.value = prevMode;
       return;
     }
-    reportApplicationSaved(r, 'Security mode');
+    await reportApplicationSaved(r, 'Security mode');
     await loadApps();
   }
 
@@ -2951,9 +3004,7 @@
   };
 
   document.getElementById('btn-apps-refresh').onclick = async () => {
-    await loadApps();
-    await loadProfileSelect();
-    await loadCertOptionsForApps();
+    await Promise.all([loadApps(), loadProfileSelect(), loadCertOptionsForApps(), refreshEdgeStatus()]);
   };
 
   document.getElementById('apply').onclick = async () => {
@@ -2962,7 +3013,7 @@
       const r = await fetch('/api/v1/apply', { method: 'POST', headers: hdr(), body: JSON.stringify({ label: 'ui' }) });
       if (r.ok) {
         toast('HAProxy config applied', 'ok');
-        markPendingApply(false);
+        await refreshEdgeStatus();
         if (panelFromHash() === 'config') loadRevisions();
       } else {
         toast(await apiMessage(r), 'err');
@@ -3016,8 +3067,9 @@
         const rr = await fetch(`/api/v1/revisions/${encodeURIComponent(id)}/rollback`, { method: 'POST', headers: hdr() });
         if (rr.ok) {
           toast('Previous edge configuration restored.', 'ok');
-          markPendingApply(true);
-          msg.textContent = 'Previous edge configuration restored. Saved applications and settings are unchanged. Review them before the next Apply; Apply or a restart can replace this configuration.';
+          markPendingApply(null);
+          await refreshEdgeStatus();
+          msg.textContent = 'Previous edge configuration restored. Saved applications and settings are unchanged. Their relationship to the restored edge is unknown until Apply or startup reconciliation.';
           msg.className = 'warn';
         } else {
           { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; }
@@ -3643,6 +3695,9 @@
     document.getElementById('dash-active-sessions').textContent = 'Unknown';
     document.getElementById('dash-sec-line').textContent = 'Unknown';
     document.getElementById('dash-http-line').textContent = 'Unknown';
+    document.getElementById('dash-edge-state').textContent = 'Unknown';
+    document.getElementById('dash-edge-generation').textContent = 'Saved and applied generations are unknown.';
+    document.getElementById('dash-edge-runtime').textContent = 'Managed runtime artifact is unknown.';
     document.getElementById('dash-revision-line').textContent = 'Unknown';
     document.getElementById('dash-last-apply').textContent = 'Unknown';
     document.getElementById('dash-backends').innerHTML = stateView('loading', 'Loading saved applications…');
@@ -3658,6 +3713,64 @@
         el.classList.add('hidden');
         el.textContent = '';
       }
+    }
+  }
+
+  function renderDashboardEdgeStatus(edge, attention) {
+    const stateEl = document.getElementById('dash-edge-state');
+    const generationEl = document.getElementById('dash-edge-generation');
+    const runtimeEl = document.getElementById('dash-edge-runtime');
+    const lastEl = document.getElementById('dash-last-apply');
+    if (!renderPersistentEdgeStatus(edge)) {
+      stateEl.innerHTML = statusBadge('Unknown', 'unknown');
+      generationEl.textContent = 'Saved/applied state is unavailable.';
+      runtimeEl.textContent = 'Managed runtime artifact is unknown.';
+      lastEl.textContent = 'Last edge operation is unknown.';
+      return;
+    }
+
+    const applied = Number.isSafeInteger(edge.applied_generation) ? edge.applied_generation : null;
+    if (edge.pending === true) {
+      stateEl.innerHTML = statusBadge('Saved changes pending', 'warning');
+      generationEl.textContent = 'Saved generation ' + edge.saved_generation +
+        (applied == null ? ' · applied generation unknown' : ' · applied generation ' + applied) + '.';
+      attention.push(alertView('warning', 'Saved edge changes are pending',
+        'Saved generation ' + edge.saved_generation +
+        (applied == null ? ' has no exact applied acknowledgement.' : ' is newer than applied generation ' + applied + '.') +
+        ' Use Edge changes → Apply HAProxy.'));
+    } else if (edge.pending === false) {
+      stateEl.innerHTML = statusBadge('Saved and applied match', 'success');
+      generationEl.textContent = 'Saved and applied generation ' + edge.saved_generation + '. This is an exact apply acknowledgement, not a health check.';
+    } else {
+      stateEl.innerHTML = statusBadge('Apply relationship unknown', 'unknown');
+      generationEl.textContent = 'Saved generation ' + edge.saved_generation + ' · applied generation unknown.';
+      attention.push(alertView('unknown', 'Applied generation is unknown',
+        'Apply HAProxy or wait for startup reconciliation before treating saved state as live.'));
+    }
+
+    const runtime = edge.runtime && typeof edge.runtime === 'object' ? edge.runtime : null;
+    if (runtime && runtime.state === 'known' && runtime.revision_sha) {
+      runtimeEl.textContent = 'Managed haproxy.cfg observed · SHA ' + shortSha(runtime.revision_sha) +
+        (runtime.checked_at ? ' · checked ' + formatAuditTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
+    } else {
+      runtimeEl.textContent = 'Managed haproxy.cfg could not be identified' +
+        (runtime && runtime.checked_at ? ' at ' + formatAuditTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
+      attention.push(alertView('unknown', 'Managed edge artifact is unknown',
+        'The API could not identify the current managed haproxy.cfg. Check the state path and API logs.'));
+    }
+
+    const last = edge.last_apply && typeof edge.last_apply === 'object' ? edge.last_apply : null;
+    if (!last) {
+      lastEl.textContent = 'No persistent edge operation has been recorded yet.';
+      return;
+    }
+    lastEl.textContent = (last.at ? formatAuditTime(last.at) : 'Time unavailable') + ' · ' +
+      String(last.outcome || 'unknown') +
+      (last.revision_sha ? ' · SHA ' + shortSha(last.revision_sha) : '') +
+      (last.error_code ? ' · ' + String(last.error_code) : '');
+    if (last.outcome === 'failed' || last.outcome === 'unknown') {
+      attention.push(alertView(last.outcome === 'failed' ? 'danger' : 'unknown', 'Last edge operation was not confirmed',
+        'Outcome ' + String(last.outcome) + (last.error_code ? ' · ' + String(last.error_code) : '') + '.'));
     }
   }
 
@@ -3732,6 +3845,7 @@
 
     const requests = [
       ['API status', '/api/v1/status'],
+      ['Edge state', '/api/v1/edge/status'],
       ['Applications', '/api/v1/applications'],
       ['Certificate summary', '/api/v1/certificates/summary'],
       ['Revision history', '/api/v1/revisions?limit=30'],
@@ -3751,10 +3865,10 @@
       else failedSources.push(requests[index][0] + ' (' + responseLabel(response) + ')');
     });
 
-    const [statusResponse, appsResponse, certResponse, revisionResponse, crowdsecResponse,
+    const [statusResponse, edgeResponse, appsResponse, certResponse, revisionResponse, crowdsecResponse,
       decisionsResponse, localResponse, sourcesResponse, servicesResponse] = responses;
-    const [status, appsData, certSummary, revisions, crowdsec, localEntries, sourceEntries, servicesData] = await Promise.all([
-      dashboardJSON(statusResponse), dashboardJSON(appsResponse), dashboardJSON(certResponse),
+    const [status, edge, appsData, certSummary, revisions, crowdsec, localEntries, sourceEntries, servicesData] = await Promise.all([
+      dashboardJSON(statusResponse), dashboardJSON(edgeResponse), dashboardJSON(appsResponse), dashboardJSON(certResponse),
       dashboardJSON(revisionResponse), dashboardJSON(crowdsecResponse), dashboardJSON(localResponse),
       dashboardJSON(sourcesResponse), dashboardJSON(servicesResponse)
     ]);
@@ -3770,6 +3884,7 @@
     }
 
     let apps = null;
+    renderDashboardEdgeStatus(edge, attention);
     if (Array.isArray(appsData)) {
       apps = appsData;
       const enabled = apps.filter((app) => app.enabled).length;
@@ -3869,16 +3984,11 @@
       if (revisions.length) {
         const current = revisions.find((revision) => revision.is_current);
         document.getElementById('dash-revision-line').textContent = current
-          ? 'Recorded current SHA ' + shortSha(current.sha) + ' · ' + (current.created_at || 'time unavailable') + ' · applied state after reload: unknown'
-          : 'No revision is marked current. Applied state is unknown.';
-        const latest = revisions[0];
-        document.getElementById('dash-last-apply').textContent =
-          (latest.created_at || 'Time unavailable') + ' · ' + ((latest.label || '').trim() || 'No label') +
-          ' · SHA ' + shortSha(latest.sha);
-        if (!current) attention.push(alertView('unknown', 'Recorded revision is unclear', 'No revision row is marked current. Runtime state is not inferred.'));
+          ? 'Revision row matches managed SHA ' + shortSha(current.sha) + ' · ' + (current.created_at || 'time unavailable') + '.'
+          : 'No revision row matches the managed live config checksum.';
+        if (!current) attention.push(alertView('unknown', 'Recorded revision does not match', 'No revision row matches the managed live config checksum. Persistent generations remain the apply source of truth.'));
       } else {
-        document.getElementById('dash-revision-line').textContent = 'No recorded revisions. Applied state is unknown.';
-        document.getElementById('dash-last-apply').textContent = 'No config activity recorded.';
+        document.getElementById('dash-revision-line').textContent = 'No revision snapshots have been recorded.';
       }
     }
 
@@ -4846,7 +4956,7 @@
         return;
       }
       if (r.ok) {
-        reportApplicationSaved(r, 'Application');
+        await reportApplicationSaved(r, 'Application');
         clearAppFormFields();
         setAppFormCollapsed(true);
         loadApps();

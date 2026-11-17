@@ -33,6 +33,10 @@ func TestStageASemanticShellAndTruthfulDashboard(t *testing.T) {
 		`LAPI reachable`,
 		`Configured state`,
 		`HAProxy backends (runtime)`,
+		`/api/v1/edge/status`,
+		`Saved and applied match`,
+		`Apply relationship unknown`,
+		`Process and backend health are separate`,
 		`Unknown values are not replaced with zero.`,
 		`:focus-visible`,
 		`@media (prefers-reduced-motion: reduce)`,
@@ -44,7 +48,7 @@ func TestStageASemanticShellAndTruthfulDashboard(t *testing.T) {
 			t.Errorf("Stage A UI missing %q", want)
 		}
 	}
-	forbidden := []string{`Protected presets`, `● connected`, `○ disconnected`}
+	forbidden := []string{`Protected presets`, `● connected`, `○ disconnected`, `Applied state after a reload remains unknown without a persistent edge-status contract.`}
 	for _, bad := range forbidden {
 		if strings.Contains(html, bad) {
 			t.Errorf("Stage A UI still contains misleading wording %q", bad)
@@ -102,13 +106,16 @@ function response(body, status = 200) {
 async function scenario(mode) {
   const ids = ['dash-apps-stat', 'dash-certs-stat', 'dash-certs-sub', 'dash-cs-stat', 'dash-cs-sub',
     'dash-ipbl-stat', 'dash-req-rate', 'dash-active-sessions', 'dash-sec-line', 'dash-http-line',
-    'dash-revision-line', 'dash-last-apply', 'dash-backends', 'dash-services', 'dash-haproxy-table',
+    'dash-edge-state', 'dash-edge-generation', 'dash-edge-runtime', 'dash-revision-line', 'dash-last-apply', 'dash-backends', 'dash-services', 'dash-haproxy-table',
     'dash-haproxy-err', 'dash-attention-list', 'dash-status', 'dash-cert-warn', 'dash-sec-warn',
     'dash-http-warn', 'dash-loaded-at', 'view-app', 'dash-state-dir', 'dash-version', 'header-version',
     'btn-dashboard-refresh'];
   const elements = Object.fromEntries(ids.map(id => [id, makeElement(id)]));
   const successful = {
     '/api/v1/status': {version: 'fixture'},
+    '/api/v1/edge/status': {saved_generation: 7, applied_generation: 7, pending: false,
+      last_apply: {outcome: 'success', at: '2026-11-17T10:00:00Z', revision_sha: 'abcdef0123456789'},
+      runtime: {state: 'known', checked_at: '2026-11-17T10:01:00Z', revision_sha: 'abcdef0123456789'}},
     '/api/v1/applications': [],
     '/api/v1/certificates/summary': {valid: 0, expiring_soon: 0, expired: 0, failed: 0, total: 0, certificates: []},
     '/api/v1/revisions?limit=30': [],
@@ -128,6 +135,7 @@ async function scenario(mode) {
     alertView: (tone, title, message) => '<alert data-tone="' + tone + '">' + title + ': ' + message + '</alert>',
     stateView: (state, message) => '<state data-state="' + state + '">' + message + '</state>',
     renderApplicationVersion: value => { elements['dash-version'].textContent = value || 'Unknown'; },
+    renderPersistentEdgeStatus: status => status != null, formatAuditTime: value => value,
     decisionsCount: text => JSON.parse(text).length, shortSha: value => String(value || '').slice(0, 8),
     withBusy: async (_button, fn) => fn(), setTimeout, clearTimeout};
   vm.createContext(context);
@@ -145,6 +153,8 @@ async function scenario(mode) {
     assert.equal(elements['dash-apps-stat'].textContent, '0 / 0');
     assert.equal(elements['dash-ipbl-stat'].textContent, '0 · 0');
     assert.match(elements['dash-cs-stat'].innerHTML, /LAPI reachable/);
+    assert.match(elements['dash-edge-state'].innerHTML, /Saved and applied match/);
+    assert.match(elements['dash-edge-runtime'].textContent, /Process and backend health are separate/);
     assert.match(elements['dash-loaded-at'].textContent, /^Loaded at /);
     assert.equal(elements['dash-status'].dataset.state, 'ready');
   }
