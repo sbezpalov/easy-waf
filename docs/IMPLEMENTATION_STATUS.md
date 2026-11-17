@@ -3,6 +3,11 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Offline ISO:** [3ef58b7 on VMware](release-evidence/1.6.1-offline-iso-3ef58b7.md).
+The amd64 ISO passed its dependency solve and both manifests. Offline APT
+configured Easy WAF on a clean guest. The full profile then stopped in
+CrowdSec 1.8.2's online Hub refresh during dpkg configuration.
+
 **Latest local Linux verification:** [39742bd](release-evidence/1.6.1-linux-gates-39742bd.md).
 The full race suite with PostgreSQL, live HAProxy integration, fresh
 govulncheck and repository verification passed. The local nightly scenarios
