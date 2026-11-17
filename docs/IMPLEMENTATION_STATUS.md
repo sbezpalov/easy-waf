@@ -3,6 +3,10 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest VMware package and restore:** [d5f7475](release-evidence/1.6.1-restore-d5f7475.md).
+The installed command rejected a real systemd stop refusal before database work,
+reported incomplete recovery when Apply was unavailable, and restored trusted
+HTTPS after a verified maintenance 503.
 **Latest local appliance E2E:** [218b833](release-evidence/1.6.1-appliance-e2e-218b833.md).
 Six scenarios passed, covering installer conffiles, HAProxy working directory,
 backup/restore, systemd/APT, nftables rollback and CrowdSec.
