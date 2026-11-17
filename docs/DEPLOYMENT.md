@@ -76,6 +76,12 @@ It then verifies that the `easywaf` database accepts a connection and that its
 its final service-start step. Check the local cluster and the database and role
 settings before retrying.
 
+The installer also synchronizes application settings and migrations using the
+configured `DATABASE_URL`. A failure prevents its final service-start step.
+With `EASY_WAF_ENABLE_SYSTEMD_UNITS=0`, the installer can stage the appliance while the
+database is unconfigured or unavailable. Configure PostgreSQL before starting
+the services and the API will synchronize on startup.
+
 If **local PostgreSQL** is installed and `DATABASE_URL` still uses the example passwords **`easywaf:secret`** or **`easywaf:easywaf`**, the installer stages a private configuration with a random password. It then changes the role password and atomically publishes that configuration. Set `EASY_WAF_ROTATE_WEAK_DB_PASSWORD=0` to opt out. Always use a strong password for external databases.
 
 If rotation stops after the database operation or publication fails, the

@@ -409,21 +409,37 @@ easy_waf_bootstrap_crowdsec_lapi() {
 # Merge easy-waf.env (CrowdSec keys, etc.) into PostgreSQL before first systemctl start — UI works without Settings → Load.
 easy_waf_sync_settings_to_db() {
   (
-    local api="$API_BIN"
+    local api="$API_BIN" status=0 failure
     [[ -x "$api" ]] || api="${DIST_DIR}/easy-waf-api"
-    [[ -x "$api" ]] || return 0
-    [[ -f "$CFG_DIR/easy-waf.env" ]] || return 0
-    if ! easy_waf_export_env_keys "$CFG_DIR/easy-waf.env" DATABASE_URL \
-      CROWDSEC_LAPI_URL CROWDSEC_LAPI_KEY CROWDSEC_LAPI_ALLOWED_ORIGINS; then
-      log "WARNING: cannot read settings environment — skipping DB sync"
+    if [[ ! -x "$api" ]]; then
+      log "ERROR: easy-waf-api is unavailable for settings sync" >&2
       return 1
     fi
-    grep -q '^DATABASE_URL=' "$CFG_DIR/easy-waf.env" 2>/dev/null || return 0
-    if DATABASE_URL="$DATABASE_URL" EASY_WAF_STATE_DIR="$STATE_DIR" timeout 25 "$api" -sync-settings-only; then
-      log "Synced settings from $CFG_DIR/easy-waf.env into PostgreSQL (UI ready without manual import)"
-    else
-      log "WARNING: settings DB sync failed — easy-waf-api will merge env on first start"
+    unset DATABASE_URL
+    if ! easy_waf_export_env_keys "$CFG_DIR/easy-waf.env" DATABASE_URL \
+      CROWDSEC_LAPI_URL CROWDSEC_LAPI_KEY CROWDSEC_LAPI_ALLOWED_ORIGINS; then
+      log "ERROR: cannot read settings from $CFG_DIR/easy-waf.env" >&2
+      return 1
     fi
+    if [[ -z "${DATABASE_URL:-}" ]]; then
+      status=1
+      failure="DATABASE_URL is missing or empty in $CFG_DIR/easy-waf.env"
+    else
+      # The API allows up to 60 seconds for migrations. Raw output can contain
+      # a malformed DSN, so report the stage and exit status instead.
+      EASY_WAF_STATE_DIR="$STATE_DIR" timeout -k 5s 75s "$api" -sync-settings-only >/dev/null 2>&1 || status=$?
+      if (( status == 0 )); then
+        log "Synced settings from $CFG_DIR/easy-waf.env into PostgreSQL"
+        return 0
+      fi
+      failure="PostgreSQL settings sync failed (exit $status) — check DATABASE_URL and database availability"
+    fi
+    if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" != "1" || "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
+      log "WARNING: $failure; settings sync deferred because service startup is disabled" >&2
+      return 0
+    fi
+    log "ERROR: $failure" >&2
+    return "$status"
   )
 }
 

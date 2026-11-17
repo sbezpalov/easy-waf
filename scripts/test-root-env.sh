@@ -13,6 +13,10 @@ cat >"$ROOT/bin/api" <<'MOCK'
 #!/usr/bin/env bash
 [[ "$1" == -sync-settings-only ]] || exit 90
 [[ -z "${ROOT_ENV_UNUSED_SECRET+x}" ]] || exit 91
+if [[ "${ROOT_ENV_TEST_SYNC_EXIT:-0}" != 0 ]]; then
+  printf 'fixture-private-api-error\n' >&2
+  exit "$ROOT_ENV_TEST_SYNC_EXIT"
+fi
 printf '%s\n' "$DATABASE_URL" "$CROWDSEC_LAPI_URL" "$CROWDSEC_LAPI_KEY" \
   "$CROWDSEC_LAPI_ALLOWED_ORIGINS" "$EASY_WAF_STATE_DIR" >"$ROOT_ENV_TEST_RESULT"
 MOCK
@@ -20,8 +24,8 @@ chmod 0700 "$ROOT/bin/api"
 function_source="$(sed -n '/^easy_waf_sync_settings_to_db() {$/,/^}$/p' "$SCRIPT_DIR/install.sh")"
 [[ -n "$function_source" ]] || fail 'missing installer sync function'
 eval "$function_source"
-log() { :; }
-timeout() { [[ "$1" == 25 ]] || fail 'sync lost timeout'; shift; "$@"; }
+log() { printf '%s\n' "$*"; }
+timeout() { [[ "$1 $2 $3" == '-k 5s 75s' ]] || fail 'sync lost timeout'; shift 3; "$@"; }
 API_BIN="$ROOT/bin/api"
 DIST_DIR="$ROOT/missing-dist"
 export API_BIN DIST_DIR # Consumed by the actual function loaded above.
@@ -42,6 +46,30 @@ easy_waf_sync_settings_to_db >"$ROOT/sync-log" 2>&1 || sync_status=$?
 printf '%s\n' "$dsn" 'http://127.0.0.1:8080' "$key" 'https://fixture.invalid:8443' "$original_state" >"$ROOT/expected"
 cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'sync changed literal values or selected state'
 [[ "$STATE_DIR" == "$original_state" && -z "${DATABASE_URL+x}${CROWDSEC_LAPI_KEY+x}" ]] || fail 'sync changed installer environment'
+sync_status=0
+ROOT_ENV_TEST_SYNC_EXIT=12 easy_waf_sync_settings_to_db >"$ROOT/db-failure-log" 2>&1 || sync_status=$?
+[[ "$sync_status" == 12 ]] || fail 'installer did not propagate a database sync failure'
+grep -Fq 'ERROR: PostgreSQL settings sync failed (exit 12)' "$ROOT/db-failure-log"
+if grep -Fq 'fixture-private-api-error' "$ROOT/db-failure-log"; then
+  fail 'installer exposed raw settings sync output'
+fi
+EASY_WAF_ENABLE_SYSTEMD_UNITS=0 ROOT_ENV_TEST_SYNC_EXIT=12 easy_waf_sync_settings_to_db >"$ROOT/staged-log" 2>&1 ||
+  fail 'staged installer could not defer a failed sync'
+grep -Fq 'settings sync deferred' "$ROOT/staged-log"
+EASY_WAF_SKIP_SYSTEMD=1 ROOT_ENV_TEST_SYNC_EXIT=12 easy_waf_sync_settings_to_db >"$ROOT/skipped-log" 2>&1 ||
+  fail 'installer that skips systemd could not defer a failed sync'
+(
+  : >"$CFG_DIR/easy-waf.env"
+  rm "$ROOT_ENV_TEST_RESULT"
+  if DATABASE_URL="$dsn" easy_waf_sync_settings_to_db >"$ROOT/missing-dsn-log" 2>&1; then
+    fail 'installer used a process DSN missing from the appliance env'
+  fi
+  EASY_WAF_ENABLE_SYSTEMD_UNITS=0 easy_waf_sync_settings_to_db >"$ROOT/staged-no-dsn-log" 2>&1 ||
+    fail 'staged installer rejected an unconfigured database'
+  [[ ! -e "$ROOT_ENV_TEST_RESULT" ]] || fail 'unconfigured database remained accessible through ambient env'
+)
+printf 'DATABASE_URL="%s"\n' "$dsn" >"$CFG_DIR/easy-waf.env"
+easy_waf_sync_settings_to_db >"$ROOT/restored-fixture-log" 2>&1
 (
   rm "$ROOT_ENV_TEST_RESULT"
   # Called by the real sync function loaded through eval above.
