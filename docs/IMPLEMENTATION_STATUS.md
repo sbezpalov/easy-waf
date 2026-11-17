@@ -3,6 +3,10 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest direct APT upgrade:** [published 1.6.0 to bccbf26 on VMware](release-evidence/1.6.1-upgrade-160-bccbf26.md).
+The migration ledger advanced from 019 to 028. The existing HTTPS publication,
+certificate and HAProxy statistics passed after upgrade. The clone's prior state
+was verified after restore. The run exercised APT directly.
 **Latest VMware package and backup:** [2bdeca3](release-evidence/1.6.1-backup-2bdeca3.md).
 The installed backup preserved the previous archive on stop refusal. It retained
 a usable private archive on restart refusal, and packaged restore verified it.
