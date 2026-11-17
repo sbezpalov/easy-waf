@@ -514,8 +514,6 @@ install_release_package() {
   if [[ "${EASY_WAF_PKG_MGR:-}" != "apt" ]] || ! command -v dpkg &>/dev/null; then
     return 1
   fi
-  command -v curl &>/dev/null || return 1
-
   local ver
   ver="$(easy_waf_target_version)"
   [[ -n "$ver" ]] || return 1
@@ -524,30 +522,40 @@ install_release_package() {
   source "${SCRIPT_DIR}/lib/release-arch.sh"
   local arch
   arch="$(easy_waf_release_arch)"
-  local deb="${REPO_ROOT}/dist/easy-waf_${ver}_${arch}.deb"
+  local name="easy-waf_${ver}_${arch}.deb"
+  local deb="${REPO_ROOT}/dist/${name}"
+  local sums="${REPO_ROOT}/dist/SHA256SUMS"
+  local allow_unverified="${EASY_WAF_ALLOW_UNVERIFIED_RELEASE:-0}"
   local tmpd=""
+  if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+    allow_unverified=0
+  fi
   # shellcheck source=lib/github-repo.sh
   source "${SCRIPT_DIR}/lib/github-repo.sh"
   # shellcheck source=lib/release-verify.sh
   source "${SCRIPT_DIR}/lib/release-verify.sh"
-  local gh base name
+  local gh base
   gh="$(easy_waf_github_repo "$REPO_ROOT" "${EASY_WAF_GITHUB_REPO:-}")"
   base="https://github.com/${gh}/releases/download/v${ver}"
-  name="easy-waf_${ver}_${arch}.deb"
   if [[ -f "$deb" ]]; then
     log "Using local package: $deb"
     # Local dist/*.deb used to skip verification. A substituted package is root
     # RCE via dpkg maintainer scripts — same fail-closed rule as downloads.
     # Prefer dist/SHA256SUMS when present (offline/dev builds); else the release sums.
-    local sums="${REPO_ROOT}/dist/SHA256SUMS"
     if [[ ! -f "$sums" ]]; then
+      [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline installation requires $sums"
       sums="${base}/SHA256SUMS"
     fi
-    if ! easy_waf_verify_release_artifact "$deb" "$name" "$sums"; then
+    if ! EASY_WAF_ALLOW_UNVERIFIED_RELEASE="$allow_unverified" easy_waf_verify_release_artifact "$deb" "$name" "$sums"; then
+      if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+        die "offline package failed local checksum verification"
+      fi
       log "Local package failed verification (set EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 to override)"
       return 1
     fi
   else
+    [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline installation requires $deb"
+    command -v curl &>/dev/null || return 1
     local url="${base}/${name}"
     tmpd="$(mktemp -d)" || return 1
     deb="${tmpd}/${name}"
@@ -1095,7 +1103,10 @@ main() {
   # Before create_user_and_layout and install_env_file on purpose: dpkg ships
   # /etc/easy-waf/easy-waf.env as a conffile, and it can only take ownership of a
   # path that is not already occupied by a file it did not install.
-  install_release_package || require_unmanaged_install
+  if ! install_release_package; then
+    [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline mode requires the verified local easy-waf package"
+    require_unmanaged_install
+  fi
   create_user_and_layout
   ensure_haproxy_run_dir
   install_env_file

@@ -197,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Offline ISO installation.** The bundle contains the local DEB manifest
+  required by the installer. Missing or invalid offline inputs stop
+  installation without a GitHub download.
 - **Package installation failure.** The installer stops when APT fails to
   install a verified DEB. A retry with unpackaged binaries also stops if
   dpkg still manages Easy WAF.

@@ -94,6 +94,7 @@ fi
 # Signature check, with a stand-in cosign and bundle download.
 GH_URL="https://github.com/acme/easy-waf/releases/download/v9.9.9/SHA256SUMS"
 easy_waf_curl_https() { # -o <file> <url>
+  : >"${TMPD}/curl.called"
   [[ "${FAKE_BUNDLE:-1}" == "1" ]] && : >"$2"
 }
 mkdir -p "${TMPD}/bin"
@@ -139,5 +140,11 @@ fi
 if PATH="${TMPD}/bin:$PATH" FAKE_RC=0 FAKE_BUNDLE=0 easy_waf_verify_sums_signature "$SUMS" "$GH_URL" >/dev/null; then
   fail "missing signature accepted with cosign installed"
 fi
+
+rm -f "${TMPD}/curl.called"
+if easy_waf_verify_release_artifact "$ART" "$NAME" "${TMPD}/missing-local-sums" >/dev/null; then
+  fail "missing local manifest accepted"
+fi
+[[ ! -e "${TMPD}/curl.called" ]] || fail "missing local manifest attempted a curl transfer"
 
 echo "OK: release-verify checks passed"

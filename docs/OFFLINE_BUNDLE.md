@@ -53,7 +53,11 @@ Ubuntu 24.04, the architecture differs, or there is insufficient free space. It
 does not modify `/etc/apt/sources.list*`; the local-only APT configuration exists
 only for the installer process.
 
-All normal installer overrides still apply. For example, an external database:
+The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
+The outer manifest also covers this file. Offline package installation requires
+both files and rejects a checksum mismatch. No GitHub download is needed.
+
+Provisioning overrides still apply. For example, an external database:
 
 ```bash
 sudo EASY_WAF_INSTALL_POSTGRES=0 bash install.sh

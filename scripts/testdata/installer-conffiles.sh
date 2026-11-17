@@ -44,7 +44,13 @@ exec "$APT_REAL" \
   -o 'APT::Sandbox::User=root' \
   -o "DPkg::Options::=--root=$CONFFILE_TEST_ROOT" "${args[@]}"
 MOCK
-printf '#!/bin/sh\nexit 99\n' >"$ROOT/bin/curl"
+cat >"$ROOT/bin/curl" <<'MOCK'
+#!/bin/sh
+: >"$CONFFILE_TEST_CURL_CALLED"
+exit 99
+MOCK
+CONFFILE_TEST_CURL_CALLED="$ROOT/curl-called"
+export CONFFILE_TEST_CURL_CALLED
 chmod 0700 "$ROOT/bin/"*
 export PATH="$ROOT/bin:$PATH"
 REPO_ROOT="$ROOT/repo"
@@ -141,10 +147,44 @@ require_unmanaged_install
 new_root clean_unmanaged
 require_unmanaged_install
 
+new_root offline
+sums="$REPO_ROOT/dist/SHA256SUMS"
+mv "$sums" "$ROOT/original-sums"
+if (EASY_WAF_OFFLINE=1 install_release_package) >"$ROOT/offline.log" 2>&1; then
+  fail 'offline install accepted a missing manifest'
+fi
+[[ ! -e "$CONFFILE_TEST_CURL_CALLED" ]] || fail 'offline installation requested a remote manifest'
+mv "$ROOT/original-sums" "$sums"
+mv "$CONFFILE_TEST_DEB" "$ROOT/held.deb"
+if (EASY_WAF_OFFLINE=1 install_release_package) >"$ROOT/offline.log" 2>&1; then
+  fail 'offline install accepted a missing DEB'
+fi
+[[ ! -e "$CONFFILE_TEST_CURL_CALLED" ]] || fail 'offline installation requested a remote DEB'
+mv "$ROOT/held.deb" "$CONFFILE_TEST_DEB"
+cp "$sums" "$ROOT/original-sums"
+printf '%064d  %s\n' 0 "${CONFFILE_TEST_DEB##*/}" >"$sums"
+if (EASY_WAF_OFFLINE=1 EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 install_release_package) >"$ROOT/offline.log" 2>&1; then
+  fail 'offline install accepted a corrupt manifest with the online override'
+fi
+[[ ! -s "$CONFFILE_TEST_ROOT/var/lib/dpkg/status" ]] || fail 'offline verification failure reached dpkg'
+mv "$ROOT/original-sums" "$sums"
+# The installer functions are loaded by eval.
+# shellcheck disable=SC2317,SC2329
+command() {
+  if [[ "${1:-}" == -v && "${2:-}" == curl ]]; then return 1; fi
+  builtin command "$@"
+}
+if command -v curl; then fail 'fixture did not hide curl'; fi
+EASY_WAF_OFFLINE=1 install_release_package >"$ROOT/offline.log" 2>&1 </dev/null ||
+  fail 'offline installation rejected a verified local DEB without curl'
+unset -f command
+check_installed 1.6.2 fixture-vendor-two
+[[ ! -e "$CONFFILE_TEST_CURL_CALLED" ]] || fail 'verified local DEB used curl'
+
 new_root spoa
 printf 'fixture-spoa-operator-value\n' >"$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env"
 chmod 0600 "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env"
 # Actual APT/dpkg still runs; only its package-selection input is local/dummy.
 crowdsec_install_spoa_bouncer_package >"$ROOT/spoa.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-spoa-operator-value
-echo 'OK: real APT preserves conffiles and partial package installs block unpackaged fallback'
+echo 'OK: real APT preserves conffiles, blocks partial fallback and installs the verified offline DEB without curl'

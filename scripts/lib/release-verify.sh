@@ -114,8 +114,12 @@ easy_waf_verify_release_artifact() {
   local file="${1:?}" name="${2:?}" sums_url="${3:?}"
   local sums expected rc=0 sums_tmp=0
 
-  if [[ "$sums_url" == /* && -f "$sums_url" ]]; then
+  if [[ "$sums_url" == /* ]]; then
     sums="$sums_url"
+    if [[ ! -f "$sums" ]]; then
+      log_relv "local SHA256SUMS is missing: $sums"
+      rc=1
+    fi
   else
     sums="$(mktemp)" || return 1
     sums_tmp=1
