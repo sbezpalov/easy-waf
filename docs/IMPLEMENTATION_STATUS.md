@@ -3,6 +3,11 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Latest local artifact and packaged recovery:** [3f039d9 on VMware](release-evidence/1.6.1-reinstall-backup-3f039d9.md).
+Both architectures passed artifact verification. The amd64 package passed a
+same-version APT reinstall, packaged backup and restore, authenticated smoke
+and an independent Windows publication check.
+
 **Latest pristine VMware installation:** [4f64bc4](release-evidence/1.6.1-pristine-vmware-4f64bc4.md).
 The default amd64 installer, fresh CrowdSec setup, enrollment and schema 028
 passed. The backup timer started on the first installation. Both smoke runs
