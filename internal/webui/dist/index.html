@@ -158,6 +158,14 @@
     .state-view { margin: var(--space-2) 0; padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--muted); }
     .state-view[data-state="error"], .state-view[data-state="offline"] { color: var(--color-warning); border-color: #9e6a03; }
     .table-scroll { max-width: 100%; overflow-x: auto; }
+    .journal-controls { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; margin: var(--space-3) 0; }
+    .journal-controls label { display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+    .journal-output {
+      max-height: 32rem; overflow: auto; margin: var(--space-2) 0 0; padding: var(--space-3);
+      border: 1px solid var(--border); border-radius: var(--radius-md); background: #090d12;
+      color: var(--color-text); font: 0.78rem/1.5 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+    }
 
     .tab-panel h2 { margin-top: 0; font-size: 1.15rem; }
     .tab-panel h3 { font-size: 1rem; }
@@ -1180,6 +1188,54 @@
             <tbody id="blocked-tbody"></tbody>
           </table>
         </div>
+        <section class="panel admin-only" id="host-journal-panel" style="max-width:100%;margin-top:0.75rem" aria-labelledby="host-journal-title">
+          <h3 id="host-journal-title">Service journal</h3>
+          <p class="dash-note" id="host-journal-help" style="margin-top:0">Read-only snapshot from one allowlisted appliance service. The browser cannot request arbitrary units or journalctl flags. Output may contain operational details; review it before sharing.</p>
+          <div class="journal-controls">
+            <label for="host-journal-unit">Service
+              <select id="host-journal-unit">
+                <option value="easy-waf-api.service">Management API</option>
+                <option value="easy-waf-acmed.service">ACME worker</option>
+                <option value="haproxy.service">HAProxy edge</option>
+                <option value="crowdsec.service">CrowdSec agent</option>
+                <option value="crowdsec-spoa-bouncer.service">CrowdSec bouncer</option>
+                <option value="fail2ban.service">Fail2Ban</option>
+                <option value="nftables.service">nftables</option>
+                <option value="postgresql.service">PostgreSQL</option>
+              </select>
+            </label>
+            <label for="host-journal-since">Time window
+              <select id="host-journal-since">
+                <option value="30m">Last 30 minutes</option>
+                <option value="1h" selected>Last hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+            <label for="host-journal-priority">Priority
+              <select id="host-journal-priority">
+                <option value="">All priorities</option>
+                <option value="err">Error or more severe</option>
+                <option value="warning">Warning or more severe</option>
+                <option value="notice">Notice or more severe</option>
+                <option value="info">Info or more severe</option>
+              </select>
+            </label>
+            <label for="host-journal-lines">Maximum lines
+              <select id="host-journal-lines">
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="500">500</option>
+                <option value="1000">1,000</option>
+                <option value="2000">2,000</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-host-journal-load">Load journal</button>
+          </div>
+          <p id="host-journal-status" class="dash-note" role="status" aria-live="polite">Choose filters and load a journal snapshot.</p>
+          <pre id="host-journal-output" class="journal-output" tabindex="0" aria-label="Service journal output" aria-describedby="host-journal-help host-journal-status">Not loaded.</pre>
+        </section>
         <p class="dash-note" style="margin-top:0">Append-only administrative audit (mutating HTTP requests and engine events). Request bodies are not stored.</p>
         <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0.75rem 0">
           <label>Action filter
@@ -1401,6 +1457,7 @@
     document.body.classList.remove('role-viewer');
     stopDashStatsTimer();
     stopAuditRefreshTimer();
+    if (typeof clearHostJournalSnapshot === 'function') clearHostJournalSnapshot('Sign in as an administrator to load a journal snapshot.');
     closeMobileNav(false);
     show('view-enroll', false);
     show('view-pass', false);
@@ -1974,6 +2031,9 @@
     currentRole = role === 'viewer' ? 'viewer' : 'admin';
     const viewer = currentRole === 'viewer';
     document.body.classList.toggle('role-viewer', viewer);
+    if (viewer && typeof clearHostJournalSnapshot === 'function') {
+      clearHostJournalSnapshot('Administrator access is required for service journals.');
+    }
     const banner = document.getElementById('viewer-banner');
     if (banner) banner.classList.toggle('hidden', !viewer);
     document.querySelectorAll('main button[id]').forEach((button) => {
@@ -2146,6 +2206,7 @@
     currentRole = '';
     sessionExpired = false;
     document.body.classList.remove('role-viewer');
+    clearHostJournalSnapshot('Sign in as an administrator to load a journal snapshot.');
     closeMobileNav(false);
     refreshSession();
   };
@@ -2159,6 +2220,10 @@
   };
   document.getElementById('btn-audit-more').onclick = () => { loadAuditPage(false); };
   document.getElementById('audit-filter-action').onchange = () => { loadAuditPage(true); syncAuditAutoRefresh(); };
+  document.getElementById('btn-host-journal-load').onclick = () => { loadHostJournal(); };
+  ['host-journal-unit', 'host-journal-since', 'host-journal-priority', 'host-journal-lines'].forEach((id) => {
+    document.getElementById(id).onchange = markHostJournalFiltersChanged;
+  });
 
   const btnDiag = document.getElementById('btn-diagnostics-download');
   if (btnDiag) {
@@ -3591,6 +3656,95 @@
     bad_request: 'malformed request', other: 'other',
   };
   let blockedGen = 0;
+  let hostJournalGen = 0;
+  let hostJournalLoaded = false;
+
+  function clearHostJournalSnapshot(message) {
+    hostJournalGen++;
+    hostJournalLoaded = false;
+    const button = document.getElementById('btn-host-journal-load');
+    const output = document.getElementById('host-journal-output');
+    const status = document.getElementById('host-journal-status');
+    if (button) button.removeAttribute('aria-busy');
+    if (output) {
+      output.removeAttribute('aria-busy');
+      output.textContent = 'Not loaded.';
+    }
+    if (status) status.textContent = message || 'Choose filters and load a journal snapshot.';
+  }
+
+  function hostJournalRequest() {
+    const unit = document.getElementById('host-journal-unit').value;
+    const since = document.getElementById('host-journal-since').value;
+    const priority = document.getElementById('host-journal-priority').value;
+    const lines = document.getElementById('host-journal-lines').value;
+    const params = new URLSearchParams({unit, since, lines});
+    if (priority) params.set('priority', priority);
+    return {unit, since, priority, lines, query: params.toString()};
+  }
+
+  function markHostJournalFiltersChanged() {
+    hostJournalGen++;
+    const button = document.getElementById('btn-host-journal-load');
+    const output = document.getElementById('host-journal-output');
+    const status = document.getElementById('host-journal-status');
+    if (button) button.removeAttribute('aria-busy');
+    if (output) output.removeAttribute('aria-busy');
+    if (status && hostJournalLoaded) status.textContent = 'Filters changed. Load a new snapshot to refresh the output.';
+  }
+
+  function hostJournalLineCount(log) {
+    if (!log) return 0;
+    return String(log).replace(/\r\n/g, '\n').split('\n').filter((line) => line.length > 0).length;
+  }
+
+  async function loadHostJournal() {
+    const button = document.getElementById('btn-host-journal-load');
+    const output = document.getElementById('host-journal-output');
+    const status = document.getElementById('host-journal-status');
+    if (!button || !output || !status || button.getAttribute('aria-busy') === 'true' || panelFromHash() !== 'logs') return;
+    const request = hostJournalRequest();
+    const gen = ++hostJournalGen;
+    button.setAttribute('aria-busy', 'true');
+    output.setAttribute('aria-busy', 'true');
+    status.textContent = 'Loading ' + request.unit + '…';
+    let response, text;
+    try {
+      response = await fetch('/api/v1/host/journal?' + request.query, {headers: hdr()});
+      text = await response.text();
+    } catch (_) {
+      if (gen !== hostJournalGen) return;
+      output.textContent = 'Journal unavailable.';
+      status.textContent = 'The journal could not be loaded because the API is unavailable.';
+      button.removeAttribute('aria-busy');
+      output.removeAttribute('aria-busy');
+      return;
+    }
+    if (gen !== hostJournalGen) return;
+    button.removeAttribute('aria-busy');
+    output.removeAttribute('aria-busy');
+    let payload = null;
+    try { payload = JSON.parse(text); } catch (_) { /* invalid response handled below */ }
+    if (!response.ok) {
+      output.textContent = 'Journal unavailable.';
+      status.textContent = payload && (payload.error || payload.message) || text || ('HTTP ' + response.status);
+      return;
+    }
+    if (!payload || typeof payload.log !== 'string') {
+      output.textContent = 'Journal unavailable.';
+      status.textContent = 'The journal API returned an invalid response.';
+      return;
+    }
+    hostJournalLoaded = true;
+    const count = hostJournalLineCount(payload.log);
+    if (count === 0) {
+      output.textContent = 'No journal entries matched these filters.';
+      status.textContent = 'Loaded ' + request.unit + ': no matching entries.';
+      return;
+    }
+    output.textContent = payload.log;
+    status.textContent = 'Loaded ' + count + ' line' + (count === 1 ? '' : 's') + ' from ' + request.unit + '. This is a read-only snapshot.';
+  }
 
   function blockedRuleLabel(r) {
     return BLOCKED_RULES[r] || r;
