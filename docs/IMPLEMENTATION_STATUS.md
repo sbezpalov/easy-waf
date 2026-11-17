@@ -3,10 +3,11 @@
 **Last updated:** 2026-11-17
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Latest full local Linux run:** [8c860d3](release-evidence/1.6.1-linux-race-8c860d3.md).
-Seven gates passed. The full race gate remains open with one PBKDF2 report.
-The earlier Scanner/UTF-8 pattern recurred in a standalone Go program in
-Docker/WSL2. The same binary passed on VMware.
+**Latest full native Linux race:** [24bfc42 on Ubuntu VMware](release-evidence/1.6.1-native-linux-race-24bfc42.md).
+858 tests passed in 49 packages with PostgreSQL 16. The separate golden gate also
+passed. The earlier [8c860d3 WSL2 run](release-evidence/1.6.1-linux-race-8c860d3.md)
+still records one PBKDF2 report and seven passing gates. The earlier Scanner/UTF-8
+pattern recurred in a standalone program in WSL2. Its binary passed on VMware.
 **Latest VMware boot recovery:** [2b025f6, schema 028](release-evidence/1.6.1-edge-generation-reboot.md).
 The corrected settings upsert preserved the applied generation and HAProxy
 revision over an actual boot. All ten checked services recovered automatically.
