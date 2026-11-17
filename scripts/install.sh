@@ -1001,6 +1001,30 @@ ensure_haproxy_systemd_enabled() {
   fi
 }
 
+start_appliance_units() {
+  if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" != "1" ]] || [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
+    log "Services not started (EASY_WAF_ENABLE_SYSTEMD_UNITS=0 or EASY_WAF_SKIP_SYSTEMD=1)"
+    log "Run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
+    return 0
+  fi
+  if ! systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; then
+    log "WARNING: systemctl enable --now failed — run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
+    log "Then: sudo journalctl -u easy-waf-hostd -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager"
+    return 0
+  fi
+  log "Enabled and started easy-waf-hostd, easy-waf-api, easy-waf-acmed"
+
+  # The package enables the timer on first install. Now that the installer
+  # has provisioned the appliance, start it without re-enabling an opted-out timer.
+  if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]] && systemctl is-enabled --quiet easy-waf-backup.timer; then
+    if ! systemctl start easy-waf-backup.timer; then
+      log "ERROR: could not start enabled backup timer — check: systemctl status easy-waf-backup.timer"
+      return 1
+    fi
+    log "Daily backup timer is running: easy-waf-backup.timer"
+  fi
+}
+
 main() {
   require_root
   detect_os
@@ -1046,17 +1070,7 @@ main() {
   source "${SCRIPT_DIR}/lib/management-listen.sh"
   easy_waf_fixup_management_listen_addrs "$CFG_DIR/easy-waf.env"
 
-  if [[ "${EASY_WAF_ENABLE_SYSTEMD_UNITS:-1}" == "1" ]] && [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]]; then
-    if systemctl enable --now easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service; then
-      log "Enabled and started easy-waf-hostd, easy-waf-api, easy-waf-acmed"
-    else
-      log "WARNING: systemctl enable --now failed — run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
-      log "Then: sudo journalctl -u easy-waf-hostd -u easy-waf-api -u easy-waf-acmed -n 40 --no-pager"
-    fi
-  else
-    log "Services not started (EASY_WAF_ENABLE_SYSTEMD_UNITS=0 or EASY_WAF_SKIP_SYSTEMD=1)"
-    log "Run: sudo systemctl enable --now easy-waf-hostd easy-waf-api easy-waf-acmed"
-  fi
+  start_appliance_units
 
   if [[ "${EASY_WAF_INSTALL_POSTGRES:-1}" != "1" ]]; then
     log "Using external DB — ensure $CFG_DIR/easy-waf.env DATABASE_URL is correct"

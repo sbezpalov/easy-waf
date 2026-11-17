@@ -70,7 +70,7 @@ stop services on the host. The nightly E2E workflow runs this regression.
 
 ## Scheduled backups
 
-The package installs **`easy-waf-backup.timer`** and enables it once, on the first install or on the upgrade that brings it (disable it with `sudo systemctl disable --now easy-waf-backup.timer` and it stays off across upgrades). Every day at about 03:30 (randomized by up to 30 minutes; a missed run happens at the next boot) `easy-waf-backup.service` runs, as root:
+The package installs **`easy-waf-backup.timer`** and enables it once, on the first install or the upgrade that brings it. A standalone first DEB install schedules it at boot. The full `install.sh` starts an enabled timer after provisioning and starting the appliance. Disable it with `sudo systemctl disable --now easy-waf-backup.timer` to opt out across packaged upgrades and installer reruns. Every day at about 03:30 (randomized by up to 30 minutes; a missed run happens at the next boot) `easy-waf-backup.service` runs, as root:
 
 ```bash
 /usr/share/easy-waf/scripts/backup.sh --dir /var/backups/easy-waf --keep 7
