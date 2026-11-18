@@ -23,6 +23,10 @@ CrowdSec snapshot, isolated APT state, appliance readiness after reboot and
 repeat installation without the snapshot on a VMware guest with no network
 adapter.
 
+The [local release archives on 441e499](release-evidence/1.6.1-release-assets-441e499.md)
+passed the workflow build step, checksum verification and binary comparison
+between the tarball and DEB for each architecture.
+
 **Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
 configured Easy WAF on a clean guest. The full profile then stopped in
