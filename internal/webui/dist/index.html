@@ -4372,8 +4372,9 @@
     }
   }
 
-  function responseLabel(response) {
+  function responseLabel(response, payload) {
     if (!response) return 'offline';
+    if (response.ok) return payload?.error || 'invalid response';
     return 'HTTP ' + response.status;
   }
 
@@ -4483,24 +4484,24 @@
       dashboardRequest('/api/v1/stats/summary'),
       dashboardRequest('/api/v1/stats/haproxy')
     ]);
+    const [summary, runtime] = await Promise.all([
+      dashboardJSON(summaryResponse), dashboardJSON(runtimeResponse)
+    ]);
     if (sessionExpired) return { success: 0, failures: [] };
 
     const failures = [];
     let success = 0;
-    const summary = await dashboardJSON(summaryResponse);
-    if (summaryResponse && summaryResponse.ok && summary) {
+    if (summary && !summary.error) {
       success++;
       rr.textContent = summary.req_rate != null && Number.isFinite(Number(summary.req_rate))
         ? Number(summary.req_rate).toFixed(1)
         : 'Unknown';
       active.textContent = summary.active_sessions != null ? String(summary.active_sessions) : 'Unknown';
-      if (summary.error && errEl) errEl.textContent = String(summary.error);
     } else {
-      failures.push('HAProxy summary (' + responseLabel(summaryResponse) + ')');
+      failures.push('HAProxy summary (' + responseLabel(summaryResponse, summary) + ')');
     }
 
-    const runtime = await dashboardJSON(runtimeResponse);
-    if (runtimeResponse && runtimeResponse.ok && runtime) {
+    if (runtime && !runtime.error) {
       success++;
       const backends = Array.isArray(runtime.backends) ? runtime.backends : [];
       if (!backends.length) {
@@ -4524,7 +4525,7 @@
           rows + '</tbody></table></div>';
       }
     } else {
-      failures.push('HAProxy runtime (' + responseLabel(runtimeResponse) + ')');
+      failures.push('HAProxy runtime (' + responseLabel(runtimeResponse, runtime) + ')');
       table.innerHTML = stateView('offline', 'HAProxy runtime is unavailable. Use Refresh after checking the stats socket and API logs.');
     }
 

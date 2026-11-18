@@ -159,6 +159,15 @@ async function scenario(mode) {
       if (mode === 'decisions_denied' && path === '/api/v1/integrations/crowdsec/decisions') {
         return response({error: 'CrowdSec LAPI denied access. Check the configured API key and permissions.'}, 502);
       }
+      if ((mode === 'stats_error' || mode === 'summary_error') && path === '/api/v1/stats/summary') {
+        return response({req_rate: 0, active_sessions: 0, error: 'Stats socket unavailable'});
+      }
+      if ((mode === 'stats_error' || mode === 'runtime_error') && path === '/api/v1/stats/haproxy') {
+        return response({backends: null, error: 'Stats socket unavailable'});
+      }
+      if (mode === 'summary_error' && path === '/api/v1/stats/haproxy') {
+        return response({backends: [{name: 'be_fixture', status: 'UP', health: 'healthy', sessions_cur: 2}]});
+      }
       return response(successful[path]);
     },
     hdr: () => ({}), panelFromHash: () => 'dashboard', startDashStatsTimer: () => {},
@@ -190,19 +199,35 @@ async function scenario(mode) {
     assert.match(elements['dash-cs-stat'].innerHTML, /LAPI reachable/);
     assert.match(elements['dash-edge-state'].innerHTML, /Saved and applied match/);
     assert.match(elements['dash-edge-runtime'].textContent, /Process and backend health are separate/);
-    assert.match(elements['dash-loaded-at'].textContent, mode === 'decisions_denied' ? /^Partial data at / : /^Loaded at /);
+    assert.match(elements['dash-loaded-at'].textContent, mode === 'success' ? /^Loaded at / : /^Partial data at /);
     if (mode === 'decisions_denied') {
       assert.match(elements['dash-cs-stat'].innerHTML, /warning.*LAPI reachable/);
       assert.match(elements['dash-cs-sub'].textContent, /Decisions unavailable/);
       assert.match(elements['dash-attention-list'].innerHTML, /configured API key and permissions/);
       assert.equal(elements['dash-status'].dataset.state, 'error');
-    } else {
+    } else if (mode === 'success') {
       assert.match(elements['dash-cs-sub'].textContent, /sample decisions: 0/);
       assert.equal(elements['dash-status'].dataset.state, 'ready');
+      assert.equal(elements['dash-req-rate'].textContent, '0.0');
+      assert.equal(elements['dash-active-sessions'].textContent, '0');
+      assert.match(elements['dash-haproxy-table'].innerHTML, /data-state="empty"/);
+    } else {
+      const summaryFailed = mode !== 'runtime_error';
+      const runtimeFailed = mode !== 'summary_error';
+      assert.equal(elements['dash-status'].dataset.state, 'error');
+      assert.equal(elements['dash-req-rate'].textContent, summaryFailed ? 'Unknown' : '0.0');
+      assert.equal(elements['dash-active-sessions'].textContent, summaryFailed ? 'Unknown' : '0');
+      assert.match(elements['dash-haproxy-table'].innerHTML, runtimeFailed ? /data-state="offline"/ : /be_fixture/);
+      assert.match(elements['dash-haproxy-err'].textContent, /Stats socket unavailable/);
+      assert.match(elements['dash-attention-list'].innerHTML, /Dashboard data is incomplete/);
     }
   }
 }
-(async () => { await scenario('offline'); await scenario('success'); await scenario('decisions_denied'); })()
+(async () => {
+  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error']) {
+    await scenario(mode);
+  }
+})()
   .catch(error => {console.error(error); process.exitCode = 1});
 `
 
