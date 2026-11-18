@@ -6,6 +6,8 @@
 **Current local release artifacts:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
+The amd64 ISO also passed a clean full-profile install, reboot and repeat
+install in VMware without a network adapter.
 
 **Local pre-tag verification:** [e066d3f](release-evidence/1.6.1-pre-tag-e066d3f.md).
 Both DEBs, tarballs and offline ISOs built and passed verification. The
