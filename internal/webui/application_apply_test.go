@@ -20,7 +20,7 @@ func TestApplicationApplyFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_end_maintenance_success", "save_clear_bypass_success", "save_manual", "save_legacy", "save_rejected", "save_conflict", "save_missing_revision", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
+	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_end_maintenance_success", "save_clear_bypass_success", "save_manual", "save_legacy", "save_rejected", "save_conflict", "save_missing_revision", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_conflict", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_conflict", "maintenance_cancelled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
@@ -73,8 +73,9 @@ element('publication-rules').children = policyDraft.map(rule => ({
 }));
 const requests = [], notices = [], errors = [];
 let cleared = 0, collapsed = 0, refreshed = 0;
+const listedApp = {id: 'fixture-app', enabled: false, updated_at: editedAt, security: {mode: 'balanced'}};
 const context = {pendingApply: true, document: {getElementById: element},
-  appsListCache: [{id: 'fixture-app', enabled: false, security: {mode: 'balanced'}}],
+  appsListCache: [listedApp],
   hdr: () => ({}), encodeURIComponent, esc: value => String(value),
   fetch: async (path, init) => {
     requests.push([path, init]);
@@ -83,12 +84,15 @@ const context = {pendingApply: true, document: {getElementById: element},
       return {ok: true, json: async () => ({saved_generation: 9, applied_generation: pending ? 8 : 9,
         pending, last_apply: null, runtime: {state: 'known'}})};
     }
-    if (scenario === 'save_conflict') return {ok: false, status: 409};
+    if (scenario.endsWith('_conflict')) return {ok: false, status: 409};
     return {ok: !scenario.endsWith('_rejected'), headers: {get: name => {assert.equal(name, 'X-Easy-Waf-Applied'); return scenario.endsWith('_legacy') ? null : scenario.endsWith('_manual') ? 'false' : 'true'}}};
   },
   withBusy: async (button, operation) => operation(),
   toast: (...args) => notices.push(args), apiMessage: async () => 'Apply rejected',
-  confirmDialog: async () => !scenario.endsWith('_cancelled'), loadApps: async () => {refreshed++},
+  confirmDialog: async () => {
+    if (scenario.endsWith('_conflict')) listedApp.updated_at = '2026-11-01T12:13:15Z';
+    return !scenario.endsWith('_cancelled');
+  }, loadApps: async () => {refreshed++},
   parseBackendServers: () => [], collectRestrictedPaths: () => [], collectPathPolicy: () => null,
   readPublicationBasics: () => ({name: element('name').value, public_host: element('host').value,
     backend_host: element('backend').value, backend_port: Number(element('port').value),
@@ -109,10 +113,10 @@ function include(from, until) {
 }
 include('  function markPendingApply(', '  function copyBtn(');
 include('  function collectPublicationRules(', '  function fillPathPolicy(');
-include('  async function setAppMaintenance(', '  function fillAppFormFromApp(');
+include('  function versionedPublicationURL(', '  function fillAppFormFromApp(');
 include("  document.getElementById('save').onclick =", '  const HOST_CRITICAL_UNITS');
 async function run() {
-  const select = {value: scenario === 'mode_cancelled' ? 'reverse-proxy-only' : 'full'};
+  const select = {value: ['mode_cancelled', 'mode_conflict'].includes(scenario) ? 'reverse-proxy-only' : 'full'};
   if (scenario.startsWith('save_')) await element('save').onclick();
   else if (scenario.startsWith('mode_')) await context.postAppModeChange('fixture-app', select.value, select);
   else await context.setAppMaintenance('fixture-app', true, {});
@@ -127,7 +131,8 @@ async function run() {
   const mutations = requests.filter(([path]) => path !== '/api/v1/edge/status');
   assert.equal(mutations.length, 1, 'one mutation; no extra explicit Apply request');
   assert.equal(mutations[0][1].method, 'POST');
-  assert.equal(mutations[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' : '/api/v1/applications/fixture-app/maintenance');
+  const revisionQuery = '?expected_updated_at=' + encodeURIComponent(editedAt);
+  assert.equal(mutations[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' + revisionQuery : '/api/v1/applications/fixture-app/maintenance' + revisionQuery);
   if (scenario.startsWith('save_')) {
     const body = JSON.parse(mutations[0][1].body);
     assert.equal(body.id, scenario === 'save_new_success' ? undefined : 'fixture-app');
@@ -146,6 +151,12 @@ async function run() {
     assert.equal(cleared + collapsed, 0, 'keep draft open on conflict');
     assert.equal(refreshed, 1, 'refresh the publication list');
     assert.ok(errors.some(message => /changed or was deleted.*draft/i.test(message)));
+  } else if (scenario.endsWith('_conflict')) {
+    assert.equal(context.pendingApply, true, 'a conflict must preserve pending Apply state');
+    assert.equal(cleared + collapsed, 0, 'a card action must keep the open editor');
+    assert.equal(refreshed, 1, 'refresh the publication list');
+    assert.ok(notices.some(([text, kind]) => kind === 'err' && /changed or was deleted/i.test(text)));
+    if (scenario === 'mode_conflict') assert.equal(select.value, 'balanced');
   } else if (scenario.endsWith('_rejected')) {
     assert.equal(context.pendingApply, true, 'rejected mutation must preserve pending state');
     assert.equal(cleared + collapsed + refreshed, 0, 'keep rejected form for correction');

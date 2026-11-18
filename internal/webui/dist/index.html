@@ -3230,23 +3230,30 @@
       : '<span class="app-badge">(layers off)</span>';
   }
 
+  function versionedPublicationURL(app, suffix = '') {
+    if (!app || !app.updated_at) {
+      toast('Refresh the publication list before changing this publication.', 'err');
+      return '';
+    }
+    return '/api/v1/applications/' + encodeURIComponent(app.id) + suffix +
+      '?expected_updated_at=' + encodeURIComponent(app.updated_at);
+  }
+
+  async function reportPublicationConflict(response) {
+    if (response.status !== 409) return false;
+    toast('The publication changed or was deleted. Review the current list before trying again.', 'err');
+    await loadApps();
+    return true;
+  }
+
   async function deleteApplication(id, btn) {
     const app = appsListCache.find((item) => item.id === id);
-    if (!app) return;
-    const revision = app.updated_at;
-    if (!revision) {
-      toast('Refresh the publication list before deleting this publication.', 'err');
-      return;
-    }
+    const url = versionedPublicationURL(app);
+    if (!url) return;
     if (!(await confirmDialog('Delete publication "' + (app.name || app.public_host) + '" (' + app.public_host + ')?\n\nThe backend service and certificates are kept. This removes the publication from Easy Home WAF.', { danger: true, okLabel: 'Delete publication' }))) return;
     await withBusy(btn, async () => {
-      const response = await fetch('/api/v1/applications/' + encodeURIComponent(id) +
-        '?expected_updated_at=' + encodeURIComponent(revision), { method: 'DELETE', headers: hdr() });
-      if (response.status === 409) {
-        toast('The publication changed or was deleted. Review the current list before trying again.', 'err');
-        await loadApps();
-        return;
-      }
+      const response = await fetch(url, { method: 'DELETE', headers: hdr() });
+      if (await reportPublicationConflict(response)) return;
       if (!response.ok) { toast(await apiMessage(response), 'err'); return; }
       const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
       markPendingApply(!applied);
@@ -3261,11 +3268,14 @@
   }
 
   async function setAppMaintenance(id, enabled, btn) {
+    const url = versionedPublicationURL(appsListCache.find((app) => app.id === id), '/maintenance');
+    if (!url) return;
     if (enabled && !(await confirmDialog('Put this application into maintenance?\n\nVisitors get a 503 maintenance page until you end it; the bypass sources set in the form still reach the app.', { okLabel: 'Start maintenance' }))) return;
     await withBusy(btn, async () => {
-      const r = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/maintenance', {
+      const r = await fetch(url, {
         method: 'POST', headers: hdr(), body: JSON.stringify({ enabled })
       });
+      if (await reportPublicationConflict(r)) return;
       if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
       await reportApplicationSaved(r, enabled ? 'Maintenance enabled' : 'Maintenance disabled');
       await loadApps();
@@ -3273,8 +3283,11 @@
   }
 
   async function postAppModeChange(id, mode, selEl) {
-    const prev = (appsListCache.find((x) => x.id === id) || {}).security;
+    const app = appsListCache.find((item) => item.id === id);
+    const prev = app && app.security;
     const prevMode = (prev && prev.mode) || 'balanced';
+    const url = versionedPublicationURL(app, '/security/mode');
+    if (!url) { selEl.value = prevMode; return; }
     if (mode === 'reverse-proxy-only') {
       const ok = await confirmDialog(
         '⚠ Switch to Reverse Proxy Only?\n\nThis DISABLES all security protections for this application:\n  • Rate limiting\n  • Basic WAF (SQLi/XSS)\n  • CrowdSec\n  • IP blacklist\n  • Bot protection\n  • GeoIP filter\n\nUse ONLY for debugging. Not suitable for production.\n\nContinue?',
@@ -3282,12 +3295,12 @@
       );
       if (!ok) { selEl.value = prevMode; return; }
     }
-    const r = await fetch('/api/v1/applications/' + encodeURIComponent(id) + '/security/mode', {
+    const r = await fetch(url, {
       method: 'POST', headers: hdr(), body: JSON.stringify({ mode })
     });
     if (!r.ok) {
-      toast(await apiMessage(r), 'err');
       selEl.value = prevMode;
+      if (!(await reportPublicationConflict(r))) toast(await apiMessage(r), 'err');
       return;
     }
     await reportApplicationSaved(r, 'Security mode');

@@ -64,7 +64,7 @@ async function run() {
       clearAppFormFields: () => {cleared++}, setAppFormCollapsed: on => {if (on) collapsed++},
       loadApps: async () => {refreshed++}};
     vm.createContext(context);
-    include(context, '  async function deleteApplication(', '  async function setAppMaintenance(');
+    include(context, '  function versionedPublicationURL(', '  async function setAppMaintenance(');
     await context.deleteApplication(id, {});
     if (scenario === 'cancel') { assert.equal(calls.length, 0); assert.equal(refreshed, 0); continue; }
     if (scenario === 'missing_revision') { assert.equal(calls.length, 0); assert.ok(notices.some(([, kind]) => kind === 'err')); continue; }

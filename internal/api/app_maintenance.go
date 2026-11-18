@@ -6,8 +6,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/easy-waf/easy-waf/internal/config"
 )
 
@@ -20,21 +18,16 @@ type maintenanceBody struct {
 // postAppMaintenance serves POST /applications/{id}/maintenance: switch one
 // application's maintenance page on or off and apply.
 func (s *Server) postAppMaintenance(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
 	var body maintenanceBody
 	if err := decodeJSONRequest(r, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	r, a, releaseMutation, ok := s.beginExistingApplicationMutation(w, r)
 	if !ok {
 		return
 	}
 	defer releaseMutation()
-	a, ok := s.loadApplication(w, r, id)
-	if !ok {
-		return
-	}
 	before, err := cloneApplication(a)
 	if err != nil {
 		writeInternalError(w, err)

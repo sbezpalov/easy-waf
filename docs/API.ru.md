@@ -386,6 +386,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 
 ## Безопасность приложений
 
+Запросы `PUT` и `PATCH` к `/security` и `POST` к `/security/mode` принимают необязательный параметр `expected_updated_at`. Передайте точное значение `updated_at` из API публикации. При некорректном времени API возвращает `400`. Если публикацию изменили или удалили, API возвращает `409` с кодом `application_changed` до изменения записи и Apply.
+
 У `config.ApplicationSecurity` (`internal/config/types.go`) такие поля:
 - `mode`: одно из `full`, `balanced`, `trusted-lan`, `reverse-proxy-only` или `custom`.
 - Переключатели (все булевы): `rate_limit_enabled`, `path_acl_enabled`, `method_filter_enabled`, `basic_waf_enabled`, `bot_protection_enabled`, `ip_blacklist_enabled`, `ip_allowlist_enabled`, `geoip_enabled` и `crowdsec_enabled`.
@@ -439,6 +441,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Ошибки:** `400` (text/plain) при некорректном JSON, `unknown mode` или неизвестном профиле. `404`, если приложения не существует. `422` / `503`, если apply не удался и изменение отменено. `500` при ошибке базы данных.
 
 ### `POST /api/v1/applications/{id}/maintenance`
+Параметр `expected_updated_at` и ответ при конфликте работают так же, как при изменении настроек защиты.
 Включает или выключает режим обслуживания и применяет конфиг. Тело: `{"enabled": true, "bypass_cidrs": ["192.168.1.0/24"]}`; `bypass_cidrs` необязателен и, если передан, заменяет сохранённый `maintenance_bypass_cidrs`. Аудит: `app_maintenance_changed`.
 - **Ответ:** `200`, сохранённое приложение.
 - **Ошибки:** `400` при неверном теле или записи обхода, `404` для неизвестного ID, `422`, если HAProxy отклонил изменение (прежнее состояние восстанавливается).

@@ -535,6 +535,8 @@ Deletes an application and applies the result to HAProxy (audit label `api-appli
 
 ## Application security
 
+Security writes (`PUT` and `PATCH` on `/security` and `POST` on `/security/mode`) accept the optional `expected_updated_at` query parameter. Send the exact `updated_at` value from the application API. An invalid timestamp returns `400`. A changed or deleted publication returns `409` with code `application_changed` before any change or Apply.
+
 `config.ApplicationSecurity` (`internal/config/types.go`) has these fields:
 - `mode`: one of `full`, `balanced`, `trusted-lan`, `reverse-proxy-only` or `custom`.
 - Toggles (all boolean): `rate_limit_enabled`, `path_acl_enabled`, `method_filter_enabled`, `basic_waf_enabled`, `bot_protection_enabled`, `ip_blacklist_enabled`, `ip_allowlist_enabled`, `geoip_enabled` and `crowdsec_enabled`.
@@ -588,6 +590,7 @@ are never changed by a preset.
 - **Errors:** `400` (text/plain) for invalid JSON, `unknown mode`, or an unknown profile. `404` if the application does not exist. `422` / `503` if the apply failed and the change was undone. `500` on a database error.
 
 ### `POST /api/v1/applications/{id}/maintenance`
+This operation accepts the same `expected_updated_at` query parameter and conflict response as the security writes.
 Switches maintenance mode on or off and applies. Body: `{"enabled": true, "bypass_cidrs": ["192.168.1.0/24"]}`; `bypass_cidrs` is optional and replaces the stored `maintenance_bypass_cidrs` when present. Audit: `app_maintenance_changed`.
 - **Response:** `200`, the stored application.
 - **Errors:** `400` for an invalid body or bypass entry, `404` for an unknown ID, `422` when HAProxy rejected the change (the previous state is restored).

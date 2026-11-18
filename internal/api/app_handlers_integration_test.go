@@ -128,6 +128,70 @@ func TestDeleteApplicationRequiresConfirmedRevisionWhenSupplied(t *testing.T) {
 	}
 }
 
+func TestExistingApplicationActionsRequireCurrentRevisionWhenSupplied(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	app := testApp(fmt.Sprintf("actionrev%d", time.Now().UnixNano()))
+	rec := putApp(t, s, app)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &app); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), app.ID) })
+	olderRevision := app.UpdatedAt
+	app.Name = "Updated publication"
+	rec = putApp(t, s, app)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &app); err != nil {
+		t.Fatal(err)
+	}
+	reviewedRevision := app.UpdatedAt
+	security, err := json.Marshal(app.Security)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := []struct {
+		name, method, body string
+		handler            http.HandlerFunc
+	}{
+		{"maintenance", http.MethodPost, `{"enabled":true}`, s.postAppMaintenance},
+		{"mode", http.MethodPost, `{"mode":"full"}`, s.postAppSecurityMode},
+		{"put security", http.MethodPut, string(security), s.putAppSecurity},
+		{"patch security", http.MethodPatch, `{"basic_waf_enabled":false}`, s.patchAppSecurity},
+	}
+	for _, action := range actions {
+		t.Run(action.name, func(t *testing.T) {
+			call := func(revision time.Time) *httptest.ResponseRecorder {
+				path := "/?expected_updated_at=" + url.QueryEscape(revision.Format(time.RFC3339Nano))
+				req := withURLParam(httptest.NewRequest(action.method, path, strings.NewReader(action.body)), "id", app.ID)
+				rec := httptest.NewRecorder()
+				action.handler(rec, req)
+				return rec
+			}
+			rec := call(olderRevision)
+			if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"code":"application_changed"`) {
+				t.Fatalf("stale action: %d %s", rec.Code, rec.Body)
+			}
+			stored, err := s.Eng.Store.GetApplication(t.Context(), app.ID)
+			if err != nil || !stored.UpdatedAt.Equal(reviewedRevision) {
+				t.Fatalf("conflict changed the publication: revision %s, error %v", stored.UpdatedAt, err)
+			}
+			if rec := call(reviewedRevision); rec.Code != http.StatusOK {
+				t.Fatalf("reviewed action: %d %s", rec.Code, rec.Body)
+			}
+			fresh, err := s.Eng.Store.GetApplication(t.Context(), app.ID)
+			if err != nil || !fresh.UpdatedAt.After(reviewedRevision) {
+				t.Fatalf("reviewed action failed to advance revision: %s, %v", fresh.UpdatedAt, err)
+			}
+			reviewedRevision = fresh.UpdatedAt
+		})
+	}
+}
+
 func TestGetUnknownApplicationIs404(t *testing.T) {
 	s := applyFailingServer(t)
 	req := withURLParam(httptest.NewRequest(http.MethodGet, "/api/v1/applications/x", nil), "id", "00000000-0000-0000-0000-000000000000")

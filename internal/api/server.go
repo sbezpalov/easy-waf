@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -483,33 +482,12 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	query, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		http.Error(w, "invalid query string", http.StatusBadRequest)
-		return
-	}
-	var expected *time.Time
-	if values, supplied := query["expected_updated_at"]; supplied {
-		rev, err := time.Parse(time.RFC3339Nano, query.Get("expected_updated_at"))
-		if len(values) != 1 || err != nil || rev.IsZero() {
-			http.Error(w, "expected_updated_at must be one nonzero RFC3339 timestamp", http.StatusBadRequest)
-			return
-		}
-		expected = &rev
-	}
-	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	r, old, releaseMutation, ok := s.beginExistingApplicationMutation(w, r)
 	if !ok {
 		return
 	}
 	defer releaseMutation()
-	// An unknown id is a 404, not a successful no-op delete followed by a
-	// full HAProxy apply and a new revision.
-	old, ok := s.loadApplicationVersion(w, r, id, expected)
-	if !ok {
-		return
-	}
-	if err := s.Eng.Store.DeleteApplication(r.Context(), id); err != nil {
+	if err := s.Eng.Store.DeleteApplication(r.Context(), old.ID); err != nil {
 		writeInternalError(w, err)
 		return
 	}

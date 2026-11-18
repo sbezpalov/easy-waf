@@ -35,7 +35,6 @@ var appSecurityPUTRequiredKeys = []string{
 }
 
 func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
 	raw, ok := readJSONBody(w, r)
 	if !ok {
 		return
@@ -58,15 +57,11 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	r, a, releaseMutation, ok := s.beginExistingApplicationMutation(w, r)
 	if !ok {
 		return
 	}
 	defer releaseMutation()
-	a, ok := s.loadApplication(w, r, id)
-	if !ok {
-		return
-	}
 	before, err := cloneApplication(a)
 	if err != nil {
 		writeInternalError(w, err)
@@ -90,20 +85,15 @@ func (s *Server) putAppSecurity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchAppSecurity(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
 	body, ok := readJSONBody(w, r)
 	if !ok {
 		return
 	}
-	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	r, a, releaseMutation, ok := s.beginExistingApplicationMutation(w, r)
 	if !ok {
 		return
 	}
 	defer releaseMutation()
-	a, ok := s.loadApplication(w, r, id)
-	if !ok {
-		return
-	}
 	before, err := cloneApplication(a)
 	if err != nil {
 		writeInternalError(w, err)
@@ -136,7 +126,6 @@ type securityModeBody struct {
 }
 
 func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
 	var body securityModeBody
 	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
@@ -147,15 +136,11 @@ func (s *Server) postAppSecurityMode(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown mode"})
 		return
 	}
-	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
+	r, a, releaseMutation, ok := s.beginExistingApplicationMutation(w, r)
 	if !ok {
 		return
 	}
 	defer releaseMutation()
-	a, ok := s.loadApplication(w, r, id)
-	if !ok {
-		return
-	}
 	before, err := cloneApplication(a)
 	if err != nil {
 		writeInternalError(w, err)
