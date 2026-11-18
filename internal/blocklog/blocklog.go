@@ -32,7 +32,9 @@ type Event struct {
 // %ci:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/... %sq/%bq {%hr} "%r"
 const httplogPrefix = `^(\S+):\d+ \[[^\]]+\] (\S+) ([^/\s]+)/\S+ \S+ (\d{3}) \S+ \S+ \S+ (\S{4}) \S+ \S+`
 
-var httplogRE = regexp.MustCompile(httplogPrefix + `(?: \{([^}]*)\})? "(.*)"$`)
+// HAProxy can clip the end of the request line after writing the refusal
+// metadata. The opening quote marks the point where that optional data starts.
+var httplogRE = regexp.MustCompile(httplogPrefix + `(?: \{([^}]*)\})? "(.*)$`)
 
 // The request line follows the captures. Keep matches even if HAProxy
 // truncates a long request target at the end of the log message.
@@ -67,11 +69,15 @@ func ParseLine(msg string) (Event, bool) {
 			ev.Rule = fields[1]
 		}
 	}
-	if f := strings.Fields(m[7]); len(f) >= 2 {
+	request, closed := strings.CutSuffix(m[7], `"`)
+	f := strings.Fields(request)
+	if len(f) >= 2 {
 		ev.Method, ev.Path = f[0], stripOrigin(f[1])
 	}
 	if len(ev.Path) > maxPath {
 		ev.Path = ev.Path[:maxPath] + "…"
+	} else if ev.Path != "" && !closed && len(f) == 2 {
+		ev.Path += "…"
 	}
 	if ev.Rule == "" {
 		ev.Rule = fallbackRule(ev)

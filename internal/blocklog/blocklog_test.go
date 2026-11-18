@@ -49,6 +49,30 @@ func TestParseLine(t *testing.T) {
 	}
 }
 
+func TestParseLineRetainsRefusalsWithTruncatedTargets(t *testing.T) {
+	refusal, _, _ := strings.Cut(lineDeny, " \"GET")
+	path := "/" + strings.Repeat("a", 300)
+	for _, tc := range []struct {
+		name, tail, method, path string
+	}{
+		{"long path", " \"GET " + path, "GET", path[:maxPath] + "…"},
+		{"short fragment", " \"GET /partial", "GET", "/partial…"},
+		{"method only", " \"GE", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev, ok := ParseLine(refusal + tc.tail)
+			if !ok || ev.Status != 403 || ev.Rule != "sqli" || ev.Host != "app.example" ||
+				ev.Method != tc.method || ev.Path != tc.path {
+				t.Fatalf("incorrect blocked event: %+v, parsed=%t", ev, ok)
+			}
+		})
+	}
+	success := strings.TrimSuffix(lineOK, ` HTTP/1.1"`)
+	if ev, ok := ParseLine(success); ok {
+		t.Fatalf("truncated backend success counted as a block: %+v", ev)
+	}
+}
+
 func TestParseJournal(t *testing.T) {
 	in := strings.Join([]string{
 		`{"MESSAGE":"` + strings.ReplaceAll(lineDeny, `"`, `\"`) + `","__REALTIME_TIMESTAMP":"1794426460418000"}`,

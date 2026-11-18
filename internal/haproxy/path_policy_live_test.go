@@ -65,6 +65,7 @@ func TestLivePublicationRules(t *testing.T) {
 	wide := app
 	wide.ID = "wide-rules"
 	wide.PublicHost = strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("b", 61)
+	wide.RestrictedPaths = []config.RestrictedPath{{PathPrefix: "/blocked", AllowedCIDRs: []string{"192.0.2.0/24"}}}
 	wide.PolicyRules = make([]config.PublicationRule, config.MaxPublicationRules)
 	for i := range wide.PolicyRules {
 		wide.PolicyRules[i] = config.PublicationRule{
@@ -104,6 +105,7 @@ func TestLivePublicationRules(t *testing.T) {
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	mustStatus(t, client, "http://"+edge+"/?q="+strings.Repeat("a", 3000), wide.PublicHost, "", 200)
+	mustStatus(t, client, "http://"+edge+"/blocked/"+strings.Repeat("a", 3000), wide.PublicHost, "", 403)
 	for _, tc := range []struct {
 		path, method, ua string
 		status           int
@@ -153,6 +155,11 @@ func TestLivePublicationRules(t *testing.T) {
 		}
 	}
 	events, _ := blocklog.ParseRuleJournal(strings.NewReader(journal.String()))
+	blocks, _ := blocklog.ParseJournal(strings.NewReader(journal.String()))
+	if len(blocks) == 0 || blocks[0].Host != wide.PublicHost || blocks[0].Status != 403 ||
+		!strings.HasPrefix(blocks[0].Path, "/blocked/") || !strings.HasSuffix(blocks[0].Path, "…") {
+		t.Fatalf("blocked request with long path missing from journal: %+v", blocks)
+	}
 	if len(events) == 0 || events[0].Host != wide.PublicHost || events[0].Status != 200 || len(events[0].Matches) != len(wide.PolicyRules) {
 		t.Fatal("journal lost the full hostname or rule list at the supported limits")
 	}
@@ -161,7 +168,10 @@ func TestLivePublicationRules(t *testing.T) {
 			t.Fatalf("rule %d in the journal: %+v", i, match)
 		}
 	}
-	events = events[1:]
+	if len(events) < 2 || events[1].Host != wide.PublicHost || events[1].Status != 403 || len(events[1].Matches) != len(wide.PolicyRules) {
+		t.Fatal("journal lost the rule list for the blocked request at the supported limits")
+	}
+	events = events[2:]
 	want := []string{"200 watch-api watch-client pass-health", "403 watch-api watch-client pass-health",
 		"403 watch-api watch-client deny-api", "403 watch-api deny-api",
 		"403 watch-api deny-api", "200 watch-status"}
