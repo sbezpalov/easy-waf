@@ -296,13 +296,21 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	var payload struct {
 		config.Application
-		Enabled *bool `json:"enabled"`
+		Enabled    *bool   `json:"enabled"`
+		HealthPath *string `json:"health_path"`
+		PathPrefix *string `json:"path_prefix"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	a := payload.Application
+	if payload.HealthPath != nil {
+		a.HealthPath = strings.TrimSpace(*payload.HealthPath)
+	}
+	if payload.PathPrefix != nil {
+		a.PathPrefix = *payload.PathPrefix
+	}
 	var present map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &present)
 	if _, err := profiles.Resolve(a.Profile); err != nil {
@@ -369,6 +377,12 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		// it); report that rather than whatever the client sent or omitted.
 		a.CreatedAt = old.CreatedAt
 		a.Enabled = old.Enabled
+		if payload.HealthPath == nil {
+			a.HealthPath = old.HealthPath
+		}
+		if payload.PathPrefix == nil {
+			a.PathPrefix = old.PathPrefix
+		}
 	}
 	if payload.Enabled != nil {
 		a.Enabled = *payload.Enabled

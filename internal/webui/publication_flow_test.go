@@ -34,7 +34,7 @@ func TestPublicationFlowStructure(t *testing.T) {
 			t.Errorf("publication flow missing %q", want)
 		}
 	}
-	for _, id := range []string{"name", "host", "backend", "port", "listen-mode", "app-cert", "profile", "app-security-mode"} {
+	for _, id := range []string{"name", "host", "backend", "port", "listen-mode", "app-cert", "profile", "app-security-mode", "app-health-path"} {
 		if !strings.Contains(html, `for="`+id+`"`) {
 			t.Errorf("publication field %q has no persistent label", id)
 		}

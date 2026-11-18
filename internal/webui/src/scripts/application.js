@@ -208,6 +208,9 @@
     document.getElementById('port').value = '';
     document.getElementById('backend-servers').value = '';
     document.getElementById('backend-balance').value = '';
+    const healthPath = document.getElementById('app-health-path');
+    healthPath.value = '';
+    healthPath.defaultValue = '';
     document.getElementById('app-maint').checked = false;
     document.getElementById('app-maint-bypass').value = '';
     document.getElementById('app-fwd-auth').value = '';
@@ -1424,6 +1427,9 @@
     document.getElementById('port').value = String(a.backend_port != null ? a.backend_port : 80);
     document.getElementById('backend-servers').value = formatBackendServers(a.backend_servers);
     document.getElementById('backend-balance').value = a.backend_balance || '';
+    const healthPath = document.getElementById('app-health-path');
+    healthPath.defaultValue = a.health_path || '';
+    healthPath.value = healthPath.defaultValue;
     document.getElementById('app-maint').checked = !!a.maintenance;
     document.getElementById('app-maint-bypass').value = (a.maintenance_bypass_cidrs || []).join(', ');
     document.getElementById('app-fwd-auth').value = a.forward_auth_url || '';
@@ -1453,7 +1459,7 @@
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
     if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
     document.getElementById('app-advanced').open = !!(
-      (a.backend_servers || []).length || a.maintenance || a.forward_auth_url ||
+      (a.backend_servers || []).length || a.health_path || a.maintenance || a.forward_auth_url ||
       (a.restricted_paths || []).some((rp) => rp.path_prefix || (rp.allowed_cidrs || []).length) ||
       a.path_policy
     );
@@ -3715,6 +3721,9 @@
         certificate_id: draft.certificate_id,
         restricted_paths: collectRestrictedPaths()
       };
+      const healthPath = document.getElementById('app-health-path');
+      const checkPath = healthPath.value.trim();
+      if (!editId || checkPath !== healthPath.defaultValue.trim()) body.health_path = checkPath;
       const pathPolicy = collectPathPolicy();
       if (pathPolicy) body.path_policy = pathPolicy;
       body.policy_rules = collectPublicationRules();

@@ -107,7 +107,7 @@
 
         <details id="app-advanced" class="advanced-publication">
           <summary>Advanced routing, access and request policies</summary>
-          <p class="dash-note">Optional controls for backend pools, maintenance, forward authentication and path/body policies.</p>
+          <p class="dash-note">Optional controls for backend pools, health checks, maintenance, forward authentication and path/body policies.</p>
         <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;align-items:flex-start;gap:0.75rem">
           <label>More backend servers <span class="dash-note">(one per line: <code>host:port</code>; add <code>backup</code> for failover only)</span>
             <textarea id="backend-servers" rows="2" placeholder="192.168.1.11:8123&#10;192.168.1.12:8123 backup" style="width:100%;min-width:0"></textarea>
@@ -118,6 +118,10 @@
               <option value="leastconn">Least connections</option>
               <option value="source">Same client, same server (source IP)</option>
             </select>
+          </label>
+          <label for="app-health-path">Backend health check path
+            <input id="app-health-path" placeholder="/health" maxlength="2048" aria-describedby="app-health-path-help" />
+            <span class="field-hint" id="app-health-path-help">HAProxy sends HTTP GET to this path on each backend server. Leave blank for a TCP check.</span>
           </label>
           <label class="row" style="margin:0"><input id="app-maint" type="checkbox" /> Maintenance mode</label>
           <label>Maintenance bypass <span class="dash-note">(IPs/CIDRs that still reach the app)</span>

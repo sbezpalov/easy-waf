@@ -20,7 +20,7 @@ func TestApplicationApplyFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"save_success", "save_new_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
+	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
@@ -52,6 +52,10 @@ Object.entries({'app-edit-id': 'fixture-app', 'listen-mode': 'http_only', name: 
   .forEach(([id, value]) => {element(id).value = value});
 if (scenario === 'save_missing_cert') element('listen-mode').value = 'https_only';
 if (scenario === 'save_new_success') element('app-edit-id').value = '';
+const healthPath = element('app-health-path');
+healthPath.defaultValue = scenario === 'save_new_success' ? '' : '/ready';
+const sentHealthPath = {save_new_success: '', save_clear_health_success: '', save_update_health_success: '/next'}[scenario];
+healthPath.value = ' ' + (sentHealthPath ?? healthPath.defaultValue) + ' ';
 const policyDraft = [
   {id: 'watch', action: 'count', path: '/api', methods: 'get, HEAD', sources: '192.0.2.0/24', header: 'User-Agent', prefix: 'App '},
   {id: 'deny', action: 'block', path: '/api', methods: 'POST'}
@@ -118,6 +122,7 @@ async function run() {
     const body = JSON.parse(mutations[0][1].body);
     assert.equal(body.id, scenario === 'save_new_success' ? undefined : 'fixture-app');
     assert.equal(body.enabled, scenario === 'save_new_success' ? true : undefined, 'editing a publication must preserve its stored state');
+    assert.equal(body.health_path, sentHealthPath);
     assert.deepEqual(body.policy_rules, [
       {id:'watch', action:'count', match:{path_prefix:'/api', methods:['GET', 'HEAD'], source_cidrs:['192.0.2.0/24'], header:'User-Agent', header_prefix:'App '}},
       {id:'deny', action:'block', match:{path_prefix:'/api', methods:['POST'], source_cidrs:[], header:'', header_prefix:''}}

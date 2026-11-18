@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/store"
 	"net/http"
 	"net/http/httptest"
@@ -144,6 +145,67 @@ func TestUpsertPreservesPublicationStateWhenOmitted(t *testing.T) {
 		stored, err := s.Eng.Store.GetApplication(t.Context(), a.ID)
 		if err != nil || stored.Enabled != tc.want {
 			t.Fatalf("enabled %q: stored %t, want %t, error %v", tc.field, stored.Enabled, tc.want, err)
+		}
+	}
+}
+
+func TestUpsertKeepsOmittedApplicationPaths(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("paths%d", time.Now().UnixNano()))
+	a.HealthPath, a.PathPrefix = "/ready", "/legacy"
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value          string
+		health, prefix string
+	}{
+		{"", "/ready", "/legacy"},
+		{"null", "/ready", "/legacy"},
+		{`"/new-health"`, "/new-health", "/new-health"},
+		{`""`, "", ""},
+	} {
+		for _, field := range []string{"health_path", "path_prefix"} {
+			delete(body, field)
+			if tc.value != "" {
+				body[field] = json.RawMessage(tc.value)
+			}
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec = httptest.NewRecorder()
+		s.upsertApp(rec, httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(raw)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("update with %q: %d %s", tc.value, rec.Code, rec.Body)
+		}
+		stored, err := s.Eng.Store.GetApplication(t.Context(), a.ID)
+		if err != nil || stored.HealthPath != tc.health || stored.PathPrefix != tc.prefix {
+			t.Fatalf("update with %q: health_path=%q, path_prefix=%q, error %v", tc.value, stored.HealthPath, stored.PathPrefix, err)
+		}
+		edge, err := haproxy.Render(haproxy.RenderInput{
+			StateDir: s.Eng.StateDir, Settings: s.Eng.Settings(), Applications: []config.Application{stored},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		httpCheck := "option httpchk GET "
+		if tc.health != "" {
+			httpCheck += tc.health
+		}
+		if strings.Contains(edge.HAProxyConfig, httpCheck) != (tc.health != "") {
+			t.Fatalf("health_path %q did not reach the HAProxy configuration", tc.health)
 		}
 	}
 }
