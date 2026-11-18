@@ -17,9 +17,10 @@
 
 log_relv() { echo "[easy-waf-release] $*"; }
 
-# Hardened curl options: never downgrade to plain HTTP, not even through a redirect.
+# Require HTTPS for every hop and bound stalled connections and transfers.
 easy_waf_curl_https() {
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$@"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 15 --speed-limit 1 --speed-time 60 "$@"
 }
 
 # easy_waf_sha256_file <path> — print the lowercase hex digest; rc=1 if no digest tool exists.

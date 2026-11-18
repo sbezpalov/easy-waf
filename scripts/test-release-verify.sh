@@ -16,6 +16,20 @@ fail() {
   exit 1
 }
 
+curl_status=0
+curl_args="$(
+  curl() {
+    printf '%s\n' "$@"
+    return 28
+  }
+  easy_waf_curl_https -o "$TMPD/download" 'https://fixture.invalid/package.deb'
+)" || curl_status=$?
+[[ "$curl_status" == 28 ]] || fail 'release download swallowed the curl timeout'
+expected_curl_args="$(printf '%s\n' -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 \
+  --connect-timeout 15 --speed-limit 1 --speed-time 60 \
+  -o "$TMPD/download" 'https://fixture.invalid/package.deb')"
+[[ "$curl_args" == "$expected_curl_args" ]] || fail 'release download must bound connection and transfer stalls'
+
 ART="${TMPD}/easy-waf_9.9.9_linux_amd64.tar.gz"
 printf 'easy-waf release payload\n' >"$ART"
 NAME="$(basename "$ART")"

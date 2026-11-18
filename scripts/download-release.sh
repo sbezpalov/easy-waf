@@ -79,7 +79,7 @@ TGZ="${TMPD}/${NAME}"
 
 echo "Trying $URL"
 easy_waf_curl_https -o "$TGZ" "$URL" || {
-  echo "Release URL not found — build from source with 'make build' or publish release assets."
+  echo "Release download failed. Check HTTPS connectivity and the published assets, or build from source with 'make build'." >&2
   exit 1
 }
 easy_waf_verify_release_artifact "$TGZ" "$NAME" "${BASE}/SHA256SUMS" || exit 1
