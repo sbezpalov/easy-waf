@@ -20,3 +20,10 @@ func (s *Server) beginApplicationMutation(w http.ResponseWriter, r *http.Request
 		}
 	}, true
 }
+
+func writeApplicationChanged(w http.ResponseWriter) {
+	writeJSON(w, http.StatusConflict, map[string]string{
+		"code":  "application_changed",
+		"error": "The publication changed or was deleted. Reload its settings before continuing.",
+	})
+}

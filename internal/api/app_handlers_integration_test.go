@@ -15,6 +15,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/store"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,73 @@ func TestDeleteUnknownApplicationIs404WithoutApply(t *testing.T) {
 	s.deleteApp(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteApplicationRejectsInvalidRevision(t *testing.T) {
+	s := &Server{} // validation must finish before touching the engine
+	for _, query := range []string{
+		"expected_updated_at=%ZZ",
+		"expected_updated_at=",
+		"expected_updated_at=not-a-timestamp",
+		"expected_updated_at=0001-01-01T00%3A00%3A00Z",
+		"expected_updated_at=2026-11-01T12%3A13%3A14Z&expected_updated_at=2026-11-01T12%3A13%3A15Z",
+	} {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/applications/x", nil)
+		req.URL.RawQuery = query
+		rec := httptest.NewRecorder()
+		s.deleteApp(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("query %q: %d %s", query, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestDeleteApplicationRequiresConfirmedRevisionWhenSupplied(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	app := testApp(fmt.Sprintf("deleteconflict%d", time.Now().UnixNano()))
+	save := func() config.Application {
+		t.Helper()
+		rec := putApp(t, s, app)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("save publication: %d %s", rec.Code, rec.Body)
+		}
+		var saved config.Application
+		if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	app = save()
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), app.ID) })
+	confirmed := app.UpdatedAt
+	app.Name = "Edited by another operator"
+	app = save()
+
+	remove := func(revision time.Time) *httptest.ResponseRecorder {
+		t.Helper()
+		path := "/api/v1/applications/x?expected_updated_at=" + url.QueryEscape(revision.Format(time.RFC3339Nano))
+		req := withURLParam(httptest.NewRequest(http.MethodDelete, path, nil), "id", app.ID)
+		rec := httptest.NewRecorder()
+		s.deleteApp(rec, req)
+		return rec
+	}
+	if rec := remove(confirmed); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"code":"application_changed"`) {
+		t.Fatalf("delete stale version: %d %s", rec.Code, rec.Body)
+	}
+	stored, err := s.Eng.Store.GetApplication(t.Context(), app.ID)
+	if err != nil || stored.Name != app.Name || !stored.UpdatedAt.Equal(app.UpdatedAt) {
+		t.Fatalf("conflict changed the stored publication: name=%q, updated_at=%s, error %v", stored.Name, stored.UpdatedAt, err)
+	}
+	if rec := remove(app.UpdatedAt); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete reviewed version: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := s.Eng.Store.GetApplication(t.Context(), app.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("confirmed publication was not deleted: %v", err)
+	}
+	if rec := remove(app.UpdatedAt); rec.Code != http.StatusConflict {
+		t.Fatalf("delete already removed publication: %d %s", rec.Code, rec.Body)
 	}
 }
 

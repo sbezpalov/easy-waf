@@ -1374,9 +1374,20 @@
   async function deleteApplication(id, btn) {
     const app = appsListCache.find((item) => item.id === id);
     if (!app) return;
+    const revision = app.updated_at;
+    if (!revision) {
+      toast('Refresh the publication list before deleting this publication.', 'err');
+      return;
+    }
     if (!(await confirmDialog('Delete publication "' + (app.name || app.public_host) + '" (' + app.public_host + ')?\n\nThe backend service and certificates are kept. This removes the publication from Easy Home WAF.', { danger: true, okLabel: 'Delete publication' }))) return;
     await withBusy(btn, async () => {
-      const response = await fetch('/api/v1/applications/' + encodeURIComponent(id), { method: 'DELETE', headers: hdr() });
+      const response = await fetch('/api/v1/applications/' + encodeURIComponent(id) +
+        '?expected_updated_at=' + encodeURIComponent(revision), { method: 'DELETE', headers: hdr() });
+      if (response.status === 409) {
+        toast('The publication changed or was deleted. Review the current list before trying again.', 'err');
+        await loadApps();
+        return;
+      }
       if (!response.ok) { toast(await apiMessage(response), 'err'); return; }
       const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
       markPendingApply(!applied);

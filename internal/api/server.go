@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -353,10 +354,7 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if expected := payload.ExpectedUpdatedAt; expected != nil && (!haveOld || !old.UpdatedAt.Equal(*expected)) {
-		writeJSON(w, http.StatusConflict, map[string]string{
-			"code":  "application_changed",
-			"error": "The publication changed or was deleted. Reload its settings before saving.",
-		})
+		writeApplicationChanged(w)
 		return
 	}
 
@@ -486,6 +484,20 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		http.Error(w, "invalid query string", http.StatusBadRequest)
+		return
+	}
+	var expected *time.Time
+	if values, supplied := query["expected_updated_at"]; supplied {
+		rev, err := time.Parse(time.RFC3339Nano, query.Get("expected_updated_at"))
+		if len(values) != 1 || err != nil || rev.IsZero() {
+			http.Error(w, "expected_updated_at must be one nonzero RFC3339 timestamp", http.StatusBadRequest)
+			return
+		}
+		expected = &rev
+	}
 	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
 	if !ok {
 		return
@@ -493,7 +505,7 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 	defer releaseMutation()
 	// An unknown id is a 404, not a successful no-op delete followed by a
 	// full HAProxy apply and a new revision.
-	old, ok := s.loadApplication(w, r, id)
+	old, ok := s.loadApplicationVersion(w, r, id, expected)
 	if !ok {
 		return
 	}

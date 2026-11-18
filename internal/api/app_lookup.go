@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/profiles"
@@ -17,13 +18,25 @@ import (
 // 404; any other store error is a 500 rather than a misleading "not found".
 // It reports false when it has already written the response.
 func (s *Server) loadApplication(w http.ResponseWriter, r *http.Request, id string) (config.Application, bool) {
+	return s.loadApplicationVersion(w, r, id, nil)
+}
+
+func (s *Server) loadApplicationVersion(w http.ResponseWriter, r *http.Request, id string, expected *time.Time) (config.Application, bool) {
 	a, err := s.Eng.Store.GetApplication(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "not found", http.StatusNotFound)
+		if expected != nil {
+			writeApplicationChanged(w)
+		} else {
+			http.Error(w, "not found", http.StatusNotFound)
+		}
 		return config.Application{}, false
 	}
 	if err != nil {
 		writeInternalError(w, err)
+		return config.Application{}, false
+	}
+	if expected != nil && !a.UpdatedAt.Equal(*expected) {
+		writeApplicationChanged(w)
 		return config.Application{}, false
 	}
 	return a, true

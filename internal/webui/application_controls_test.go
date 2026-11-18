@@ -38,20 +38,23 @@ function include(context, from, until) {
   vm.runInContext(page.slice(start, end), context);
 }
 async function run() {
-  for (const scenario of ['auto', 'manual', 'legacy', 'cancel', 'reject', 'other_editor']) {
+  for (const scenario of ['auto', 'manual', 'legacy', 'cancel', 'reject', 'conflict', 'missing_revision', 'other_editor']) {
     const id = 'fixture/app', notices = [], calls = [];
+    const version = '2026-11-01T12:13:14.123456Z';
+    const app = {id, name: 'Fixture', public_host: 'fixture.invalid', updated_at: scenario === 'missing_revision' ? '' : version};
     let cleared = 0, collapsed = 0, refreshed = 0, edgeRefreshes = 0;
-    const context = {appsListCache: [{id, name: 'Fixture', public_host: 'fixture.invalid'}],
+    const context = {appsListCache: [app],
       document: {getElementById: () => ({value: scenario === 'other_editor' ? 'other' : id})},
       confirmDialog: async (text, options) => {
         assert.match(text, /Fixture/); assert.match(text, /fixture.invalid/);
         assert.equal(options.danger, true);
+        if (scenario === 'conflict') app.updated_at = '2026-11-01T12:13:15Z';
         return scenario !== 'cancel';
       },
       withBusy: async (button, fn) => fn(), hdr: () => ({}), encodeURIComponent,
       fetch: async (path, init) => {
         calls.push([path, init]);
-        return {ok: scenario !== 'reject', status: scenario === 'reject' ? 422 : 204,
+        return {ok: !['reject', 'conflict'].includes(scenario), status: {reject: 422, conflict: 409}[scenario] || 204,
           headers: {get: () => scenario === 'manual' ? 'false' : scenario === 'legacy' ? null : 'true'},
           json: () => {throw Error('204 has no JSON body')}};
       },
@@ -64,9 +67,14 @@ async function run() {
     include(context, '  async function deleteApplication(', '  async function setAppMaintenance(');
     await context.deleteApplication(id, {});
     if (scenario === 'cancel') { assert.equal(calls.length, 0); assert.equal(refreshed, 0); continue; }
-    assert.equal(calls.length, 1); assert.equal(calls[0][0], '/api/v1/applications/fixture%2Fapp');
+    if (scenario === 'missing_revision') { assert.equal(calls.length, 0); assert.ok(notices.some(([, kind]) => kind === 'err')); continue; }
+    assert.equal(calls.length, 1); assert.equal(calls[0][0], '/api/v1/applications/fixture%2Fapp?expected_updated_at=' + encodeURIComponent(version));
     assert.equal(calls[0][1].method, 'DELETE');
-    if (scenario === 'reject') {
+    if (scenario === 'conflict') {
+      assert.equal(cleared + collapsed + edgeRefreshes, 0); assert.equal(context.pending, true);
+      assert.equal(refreshed, 1, 'refresh the list while preserving the editor');
+      assert.ok(notices.some(([text, kind]) => kind === 'err' && /changed or was deleted/i.test(text)));
+    } else if (scenario === 'reject') {
       assert.equal(cleared + collapsed + refreshed, 0); assert.equal(context.pending, true);
       assert.ok(notices.some(([, kind]) => kind === 'err'));
     } else {

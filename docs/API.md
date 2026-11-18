@@ -529,8 +529,9 @@ Creates or replaces an application (upsert), then applies it to HAProxy. A body 
 ### `DELETE /api/v1/applications/{id}`
 Deletes an application and applies the result to HAProxy (audit label `api-application-delete`). If the apply fails, the deleted row is put back.
 - **Path params:** `id`.
+- **Query:** optional `expected_updated_at` with the exact RFC3339 `updated_at` value returned by the API. The panel uses the value attached to the confirmation dialog.
 - **Response:** `204`, no body.
-- **Errors:** `404` (text/plain, `not found`) for an unknown ID; nothing is applied. `422` / `503` (text/plain) if the apply failed and the row was restored. `500` (text/plain) on a database error.
+- **Errors:** `400` on an invalid query or timestamp. A changed or missing revision returns `409` with code `application_changed` before any delete or Apply. Without a revision, an unknown ID returns `404`. `422` / `503` if Apply failed and the row was restored. `500` on a database error.
 
 ## Application security
 
