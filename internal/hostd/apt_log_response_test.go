@@ -177,12 +177,12 @@ func TestAptLogResponseDoesNotBufferTheWholeLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.ReadMemStats(&after)
-	// Whole-file ReadAll, byte-to-string and whole JSON encoding allocated over
-	// 32 MiB for this 8 MiB fixture. Chunk encoding may allocate cumulatively,
-	// but must not retain those whole-log copies in the package owner.
+	// Allow cumulative chunk encoding costs, including extra pool misses with
+	// the race detector. Reallocating a JSON output buffer for each chunk
+	// adds another full copy of this fixture to the allocation total.
 	allocated := after.TotalAlloc - before.TotalAlloc
 	t.Logf("saved-log response allocated %d bytes for %d-byte log; largest write %d", allocated, size, writer.largest)
-	if allocated > 3*size {
+	if allocated > 5*size/2 {
 		t.Fatalf("saved-log response allocated %d bytes for %d-byte log", allocated, size)
 	}
 }

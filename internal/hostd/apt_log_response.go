@@ -5,6 +5,7 @@ package hostd
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -45,12 +46,16 @@ func writeAptLogJSON(w io.Writer, r io.Reader, size int64) error {
 	if _, err := bw.WriteString(`{"stdout":"`); err != nil {
 		return err
 	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
 	readErr, err := readAptLogChunks(r, size, func(data []byte) error {
-		encoded, err := json.Marshal(string(data))
-		if err != nil {
+		encoded.Reset()
+		if err := encoder.Encode(string(data)); err != nil {
 			return err
 		}
-		_, err = bw.Write(encoded[1 : len(encoded)-1])
+		chunk := encoded.Bytes()
+		// Embed the string contents without the surrounding quotes and newline.
+		_, err := bw.Write(chunk[1 : len(chunk)-2])
 		return err
 	})
 	if err != nil {
