@@ -22,6 +22,7 @@ type PrometheusExporter struct {
 	haproxyFrontendReqRate  *prometheus.GaugeVec
 	haproxyBackendSessions  *prometheus.GaugeVec
 	haproxyBackendUp        *prometheus.GaugeVec
+	haproxyStatsAvailable   bool
 	certDaysRemaining       *prometheus.GaugeVec
 	crowdSecDecisions       *crowdSecDecisionCollector
 	ipblEntries             *prometheus.GaugeVec
@@ -94,9 +95,12 @@ func NewPrometheusExporter() *PrometheusExporter {
 	})
 	reg.MustRegister(
 		e.haproxyFrontendReqTotal,
-		e.haproxyFrontendReqRate,
-		e.haproxyBackendSessions,
-		e.haproxyBackendUp,
+		haproxyRuntimeCollector{
+			exporter: e,
+			availability: prometheus.NewDesc("easy_waf_haproxy_stats_available",
+				"1 if the latest HAProxy stats sample succeeded, 0 before the first sample or after a failure.", nil, nil),
+			gauges: []*prometheus.GaugeVec{e.haproxyFrontendReqRate, e.haproxyBackendSessions, e.haproxyBackendUp},
+		},
 		e.certDaysRemaining,
 		e.crowdSecDecisions,
 		e.ipblEntries,
@@ -118,13 +122,22 @@ func (e *PrometheusExporter) IncApply() { e.applyTotal.Inc() }
 // IncApplyError records one failed apply attempt.
 func (e *PrometheusExporter) IncApplyError() { e.applyErrors.Inc() }
 
-// UpdateFromHAProxyReport refreshes HAProxy-derived gauges and request counter deltas.
+// UpdateFromHAProxyReport refreshes HAProxy metrics. An unavailable sample
+// clears current gauges while retaining cumulative counters and their baselines.
 func (e *PrometheusExporter) UpdateFromHAProxyReport(rep *HAProxyReport) {
-	if e == nil || rep == nil {
+	if e == nil {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	e.haproxyFrontendReqRate.Reset()
+	e.haproxyBackendSessions.Reset()
+	e.haproxyBackendUp.Reset()
+	e.haproxyStatsAvailable = rep != nil && rep.Error == ""
+	if !e.haproxyStatsAvailable {
+		return
+	}
 
 	for _, fe := range rep.Frontends {
 		name := strings.TrimSpace(fe.Name)
@@ -151,8 +164,6 @@ func (e *PrometheusExporter) UpdateFromHAProxyReport(rep *HAProxyReport) {
 		e.haproxyFrontendReqRate.WithLabelValues(name).Set(float64(fe.ReqRate))
 	}
 
-	e.haproxyBackendSessions.Reset()
-	e.haproxyBackendUp.Reset()
 	for _, be := range rep.Backends {
 		bn := strings.TrimSpace(be.Name)
 		if bn == "" {
@@ -160,6 +171,34 @@ func (e *PrometheusExporter) UpdateFromHAProxyReport(rep *HAProxyReport) {
 		}
 		e.haproxyBackendSessions.WithLabelValues(bn).Set(float64(be.SessionsCur))
 		e.haproxyBackendUp.WithLabelValues(bn).Set(backendUpGauge(be))
+	}
+}
+
+type haproxyRuntimeCollector struct {
+	exporter     *PrometheusExporter
+	availability *prometheus.Desc
+	gauges       []*prometheus.GaugeVec
+}
+
+func (c haproxyRuntimeCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.availability
+	for _, gauge := range c.gauges {
+		gauge.Describe(ch)
+	}
+}
+
+func (c haproxyRuntimeCollector) Collect(ch chan<- prometheus.Metric) {
+	// A refresh replaces the gauges, so a scrape keeps its original values
+	// even if the next refresh starts before Prometheus encodes them.
+	c.exporter.mu.Lock()
+	defer c.exporter.mu.Unlock()
+	var available float64
+	if c.exporter.haproxyStatsAvailable {
+		available = 1
+	}
+	ch <- prometheus.MustNewConstMetric(c.availability, prometheus.GaugeValue, available)
+	for _, gauge := range c.gauges {
+		gauge.Collect(ch)
 	}
 }
 

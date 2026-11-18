@@ -74,6 +74,7 @@ All names use the `easy_waf_` prefix.
 | `easy_waf_haproxy_frontend_req_rate` | Gauge | `frontend` | Current HAProxy frontend request rate (`rate` from `show stat`). |
 | `easy_waf_haproxy_backend_sessions_current` | Gauge | `backend` | Current backend sessions (`scur`). |
 | `easy_waf_haproxy_backend_up` | Gauge | `backend` | `1` if aggregate backend health is not `down`, else `0`. |
+| `easy_waf_haproxy_stats_available` | Gauge | — | `1` if the latest HAProxy stats sample succeeded, otherwise `0`. |
 | `easy_waf_certificate_days_remaining` | Gauge | `domain`, `mode` | Days until `NotAfter` when known (per certificate row from the summary builder). |
 | `easy_waf_crowdsec_decisions_total` | Gauge | — | Number of decisions returned by the latest successful LAPI sample (requested limit 100). A successful empty sample reports `0`. The series is absent before the first sample and after a failed refresh. |
 | `easy_waf_crowdsec_decision_sample_available` | Gauge | — | `1` if the latest LAPI sample succeeded, otherwise `0`. |
@@ -83,3 +84,5 @@ All names use the `easy_waf_` prefix.
 | `easy_waf_apply_errors_total` | Counter | — | Failed applies, counted the same way. |
 
 Internal refresh cadence for HAProxy stats, certificates, apps, CrowdSec sample, and IPBL counts: **15 seconds** (independent of scrape interval).
+
+Frontend rates and backend health and session gauges are absent when HAProxy statistics are unavailable. The frontend request counter retains its last value and resumes with the next observed delta after recovery.

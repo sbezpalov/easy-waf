@@ -4,6 +4,8 @@
 package metrics
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -89,6 +91,66 @@ outer:
 	if !found {
 		t.Fatal("expected fe_https request counter > 0 after second HAProxy update")
 	}
+}
+
+func TestHAProxyRuntimeMetricsTrackSampleAvailability(t *testing.T) {
+	e := NewPrometheusExporter()
+	check := func(want, absent []string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		e.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("scrape returned %d: %s", rec.Code, rec.Body)
+		}
+		body := rec.Body.String()
+		for _, sample := range want {
+			if !strings.Contains(body, "\neasy_waf_haproxy_"+sample+"\n") {
+				t.Errorf("missing sample %q in:\n%s", sample, body)
+			}
+		}
+		for _, sample := range absent {
+			if strings.Contains(body, "\neasy_waf_haproxy_"+sample) {
+				t.Errorf("unexpected sample %q in:\n%s", sample, body)
+			}
+		}
+	}
+	runtimeMetrics := []string{"frontend_req_rate{", "backend_sessions_current{", "backend_up{"}
+	report := &HAProxyReport{
+		Frontends: []FrontendStat{{Name: "fe_https", TotalReqHint: 100, ReqRate: 5}, {Name: "fe_removed", ReqRate: 3}},
+		Backends:  []BackendStat{{Name: "be_app", SessionsCur: 2, Health: "healthy"}},
+	}
+
+	check([]string{"stats_available 0"}, runtimeMetrics)
+	e.UpdateFromHAProxyReport(report)
+	report.Frontends[0].TotalReqHint = 120
+	e.UpdateFromHAProxyReport(report)
+	check([]string{
+		"stats_available 1",
+		`frontend_requests_total{frontend="fe_https"} 20`,
+		`frontend_req_rate{frontend="fe_https"} 5`,
+		`frontend_req_rate{frontend="fe_removed"} 3`,
+		`backend_sessions_current{backend="be_app"} 2`,
+		`backend_up{backend="be_app"} 1`,
+	}, nil)
+
+	report.Error = "stats socket unavailable"
+	e.UpdateFromHAProxyReport(report)
+	check([]string{"stats_available 0", `frontend_requests_total{frontend="fe_https"} 20`}, runtimeMetrics)
+
+	report.Error = ""
+	report.Frontends[0].TotalReqHint = 130
+	report.Frontends[0].ReqRate = 0
+	e.UpdateFromHAProxyReport(report)
+	report.Frontends = report.Frontends[:1]
+	e.UpdateFromHAProxyReport(report)
+	check([]string{
+		"stats_available 1",
+		`frontend_requests_total{frontend="fe_https"} 30`,
+		`frontend_req_rate{frontend="fe_https"} 0`,
+		`backend_up{backend="be_app"} 1`,
+	}, []string{`frontend_req_rate{frontend="fe_removed"}`})
+	e.UpdateFromHAProxyReport(nil)
+	check([]string{"stats_available 0", `frontend_requests_total{frontend="fe_https"} 30`}, runtimeMetrics)
 }
 
 func TestCrowdSecDecisionSampleMetrics(t *testing.T) {

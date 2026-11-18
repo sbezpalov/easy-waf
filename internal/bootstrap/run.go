@@ -367,9 +367,11 @@ func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string
 		bg, cancel := context.WithTimeout(ctx, promRefreshTimeout)
 		defer cancel()
 		sock := metrics.StatsSocketPath(srv.Eng.Settings(), stateDir)
-		if rep, _ := srv.HAProxyMetrics.FetchContext(bg, sock); rep != nil {
-			srv.Prom.UpdateFromHAProxyReport(rep)
+		rep, err := srv.HAProxyMetrics.FetchContext(bg, sock)
+		if err != nil {
+			rep = nil
 		}
+		srv.Prom.UpdateFromHAProxyReport(rep)
 		if certs, err := srv.Eng.Store.ListCertificates(bg); err == nil {
 			summary := api.BuildCertificateSummaryResponse(certs, time.Now().UTC())
 			srv.Prom.UpdateFromCertSummary(summary)
