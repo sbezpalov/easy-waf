@@ -154,4 +154,4 @@ jobs:
         run: go test ./internal/haproxy/... -v -count=1
 
       - name: go test internal/haproxy integration (goldens, WebSocket, SSE)
-        run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveApplicationProfiles|TestLiveGeoIPPolicy' -count=1
+        run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveApplicationProfiles|TestLiveGeoIPPolicy|TestLivePublicationRules' -count=1

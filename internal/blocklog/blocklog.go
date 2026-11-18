@@ -1,8 +1,8 @@
 // Copyright 2026 Sergey Bezpalov
 // SPDX-License-Identifier: Apache-2.0
 
-// Package blocklog reads the requests the edge refused out of HAProxy httplog
-// lines. The frontends capture {host|rule}; see blockCapture in internal/haproxy.
+// Package blocklog reads edge refusals and publication rule matches from HAProxy
+// httplog. The frontends capture the host, refusal reason and policy matches.
 package blocklog
 
 import (
@@ -30,7 +30,13 @@ type Event struct {
 }
 
 // %ci:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/... %sq/%bq {%hr} "%r"
-var httplogRE = regexp.MustCompile(`^(\S+):\d+ \[[^\]]+\] (\S+) ([^/\s]+)/\S+ \S+ (\d{3}) \S+ \S+ \S+ (\S{4}) \S+ \S+(?: \{([^}]*)\})? "(.*)"$`)
+const httplogPrefix = `^(\S+):\d+ \[[^\]]+\] (\S+) ([^/\s]+)/\S+ \S+ (\d{3}) \S+ \S+ \S+ (\S{4}) \S+ \S+`
+
+var httplogRE = regexp.MustCompile(httplogPrefix + `(?: \{([^}]*)\})? "(.*)"$`)
+
+// The request line follows the captures. Keep matches even if HAProxy
+// truncates a long request target at the end of the log message.
+var policyLogRE = regexp.MustCompile(httplogPrefix + ` \{([^}]*)\} "`)
 
 const maxPath = 256
 
@@ -55,11 +61,11 @@ func ParseLine(msg string) (Event, bool) {
 		Status:   status,
 	}
 	if caps := m[6]; caps != "" {
-		host, rule := caps, ""
-		if i := strings.LastIndexByte(caps, '|'); i >= 0 {
-			host, rule = caps[:i], caps[i+1:]
+		fields := strings.SplitN(caps, "|", 3)
+		ev.Host = fields[0]
+		if len(fields) > 1 {
+			ev.Rule = fields[1]
 		}
-		ev.Host, ev.Rule = host, rule
 	}
 	if f := strings.Fields(m[7]); len(f) >= 2 {
 		ev.Method, ev.Path = f[0], stripOrigin(f[1])
@@ -105,6 +111,59 @@ type journalEntry struct {
 // ParseJournal reads journalctl --output json lines. It returns the refused
 // requests in input order and how many journal lines it read.
 func ParseJournal(r io.Reader) (events []Event, lines int) {
+	lines = scanJournal(r, func(message string, at time.Time) {
+		if ev, ok := ParseLine(message); ok {
+			ev.Time = at
+			events = append(events, ev)
+		}
+	})
+	return events, lines
+}
+
+// RuleMatch is one configured policy rule that matched a request.
+type RuleMatch struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+}
+
+// RuleEvent reports policy matches in execution order and the final status.
+// It deliberately excludes request targets and header values.
+type RuleEvent struct {
+	Time    time.Time   `json:"time"`
+	Host    string      `json:"host"`
+	Status  int         `json:"status"`
+	Matches []RuleMatch `json:"matches"`
+}
+
+var policyCaptureRE = regexp.MustCompile(`^policy-(count|block|pass):([a-z0-9][a-z0-9_-]{0,31})$`)
+
+// ParseRuleJournal is independent of the final HTTP status: Count can match
+// a successful request or one later rejected by another rule.
+func ParseRuleJournal(r io.Reader) (events []RuleEvent, lines int) {
+	lines = scanJournal(r, func(message string, at time.Time) {
+		m := policyLogRE.FindStringSubmatch(strings.TrimSpace(message))
+		if m == nil {
+			return
+		}
+		captures := strings.Split(m[6], "|")
+		if len(captures) < 3 || captures[0] == "" {
+			return
+		}
+		status, _ := strconv.Atoi(m[4])
+		event := RuleEvent{Time: at, Host: captures[0], Status: status}
+		for _, capture := range captures[2:] {
+			if match := policyCaptureRE.FindStringSubmatch(capture); match != nil {
+				event.Matches = append(event.Matches, RuleMatch{ID: match[2], Action: match[1]})
+			}
+		}
+		if len(event.Matches) > 0 {
+			events = append(events, event)
+		}
+	})
+	return events, lines
+}
+
+func scanJournal(r io.Reader, visit func(string, time.Time)) (lines int) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -117,16 +176,13 @@ func ParseJournal(r io.Reader) (events []Event, lines int) {
 		if json.Unmarshal(raw, &e) != nil {
 			continue
 		}
-		ev, ok := ParseLine(journalMessage(e.Message))
-		if !ok {
-			continue
-		}
+		var at time.Time
 		if us, err := strconv.ParseInt(e.Realtime, 10, 64); err == nil {
-			ev.Time = time.UnixMicro(us).UTC()
+			at = time.UnixMicro(us).UTC()
 		}
-		events = append(events, ev)
+		visit(journalMessage(e.Message), at)
 	}
-	return events, lines
+	return lines
 }
 
 // journalMessage decodes MESSAGE, which journalctl prints as an array of bytes

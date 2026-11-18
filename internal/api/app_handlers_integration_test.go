@@ -275,6 +275,47 @@ func TestUpsertBackendServersRoundTripAndKeep(t *testing.T) {
 	}
 }
 
+func TestUpsertPublicationRulesRoundTrip(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	app := testApp(fmt.Sprintf("rules%d", time.Now().UnixNano()))
+	app.PolicyRules = []config.PublicationRule{
+		{ID: "watch", Action: config.RuleCount, Match: config.PublicationMatch{PathPrefix: "/api"}},
+		{ID: "deny", Action: config.RuleBlock, Match: config.PublicationMatch{Methods: []string{"POST"}}},
+	}
+	rec := putApp(t, s, app)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &app); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), app.ID) })
+
+	app.PolicyRules = nil
+	if rec := putApp(t, s, app); rec.Code != http.StatusOK {
+		t.Fatalf("legacy update: %d %s", rec.Code, rec.Body)
+	}
+	stored, err := s.Eng.Store.GetApplication(t.Context(), app.ID)
+	if err != nil || len(stored.PolicyRules) != 2 || stored.PolicyRules[0].ID != "watch" || stored.PolicyRules[1].ID != "deny" {
+		t.Fatalf("legacy update lost policy order: %+v, %v", stored.PolicyRules, err)
+	}
+	raw, err := json.Marshal(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw[:len(raw)-1], `,"policy_rules":[]}`...)
+	rec = httptest.NewRecorder()
+	s.upsertApp(rec, httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(raw)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body)
+	}
+	stored, err = s.Eng.Store.GetApplication(t.Context(), app.ID)
+	if err != nil || len(stored.PolicyRules) != 0 {
+		t.Fatalf("rules were not cleared: %+v, %v", stored.PolicyRules, err)
+	}
+}
+
 func TestAppMaintenanceToggle(t *testing.T) {
 	s := applyFailingServer(t)
 	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")

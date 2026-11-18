@@ -232,6 +232,7 @@
     document.getElementById('app-advanced').open = false;
     fillBodyPolicy({});
     fillPathPolicy(null);
+    fillPublicationRules([]);
     const nlm = document.getElementById('listen-mode');
     if (nlm) nlm.value = 'https_only';
     syncListenModeUI();
@@ -349,6 +350,7 @@
         break;
       case 'logs':
         loadBlocked();
+        loadPolicyMatches();
         loadAuditPage(true);
         syncAuditAutoRefresh();
         break;
@@ -588,6 +590,8 @@
   document.getElementById('btn-audit-refresh').onclick = () => { loadAuditPage(true); };
   document.getElementById('btn-blocked-refresh').onclick = () => { loadBlocked(); };
   document.getElementById('blocked-period').onchange = () => { loadBlocked(); };
+  document.getElementById('btn-policy-matches-refresh').onclick = loadPolicyMatches;
+  document.getElementById('policy-matches-period').onchange = loadPolicyMatches;
   document.getElementById('blocked-ips').onclick = (e) => {
     const b = e.target.closest('button[data-block-ip]');
     if (b) blockIPFromLog(b.getAttribute('data-block-ip'), b);
@@ -660,6 +664,86 @@
     };
   }
   document.getElementById('audit-auto-refresh').onchange = () => { syncAuditAutoRefresh(); };
+
+  const publicationRulesBox = document.getElementById('publication-rules');
+  const publicationRuleAdd = document.getElementById('btn-publication-rule-add');
+  publicationRuleAdd.onclick = () => addPublicationRule({}).querySelector('.pub-id').focus();
+
+  function syncPublicationOrder() {
+    const rows = [...publicationRulesBox.children];
+    rows.forEach((row, i) => {
+      row.querySelector('legend').textContent = 'Rule ' + (i + 1);
+      row.querySelector('.pub-up').disabled = i === 0;
+      row.querySelector('.pub-down').disabled = i === rows.length - 1;
+    });
+    publicationRuleAdd.disabled = rows.length >= 16;
+  }
+
+  function fillPublicationRules(rules) {
+    publicationRulesBox.replaceChildren();
+    rules.forEach(addPublicationRule);
+    syncPublicationOrder();
+  }
+
+  function addPublicationRule(rule) {
+    const match = rule.match || {};
+    const row = document.createElement('fieldset');
+    row.className = 'panel';
+    row.innerHTML = `
+      <legend></legend>
+      <div class="row" style="flex-wrap:wrap;gap:0.5rem;align-items:flex-start">
+        <label>Rule ID<br /><input type="text" class="pub-id" maxlength="32" value="${esc(rule.id || '')}" placeholder="watch-api" /></label>
+        <label>Action<br /><select class="pub-action"><option value="count">Count</option><option value="block">Block</option><option value="pass">Pass</option></select></label>
+        <label>Path prefix<br /><input type="text" class="pub-path" value="${esc(match.path_prefix || '')}" placeholder="/api" /></label>
+        <label>Methods<br /><input type="text" class="pub-methods" value="${esc((match.methods || []).join(', '))}" placeholder="GET, POST" /></label>
+        <label>Source IPs or CIDRs<br /><input type="text" class="pub-sources" value="${esc((match.source_cidrs || []).join(', '))}" placeholder="192.0.2.0/24, 2001:db8::/32" /></label>
+        <label>Header<br /><input type="text" class="pub-header" value="${esc(match.header || '')}" placeholder="User-Agent" /></label>
+        <label>Header value prefix<br /><input type="text" class="pub-prefix" value="${esc(match.header_prefix || '')}" placeholder="Optional" /></label>
+      </div>
+      <div class="row" style="margin-top:0.5rem">
+        <button type="button" class="secondary pub-up">Move up</button>
+        <button type="button" class="secondary pub-down">Move down</button>
+        <button type="button" class="secondary pub-remove">Remove rule</button>
+      </div>`;
+    row.querySelector('.pub-action').value = rule.action || 'count';
+    row.querySelector('.pub-up').onclick = () => {
+      row.previousElementSibling.before(row);
+      syncPublicationOrder();
+      row.querySelector('.pub-up:not(:disabled), .pub-down:not(:disabled)').focus();
+    };
+    row.querySelector('.pub-down').onclick = () => {
+      row.nextElementSibling.after(row);
+      syncPublicationOrder();
+      (row.querySelector('.pub-down:not(:disabled)') || row.querySelector('.pub-up')).focus();
+    };
+    row.querySelector('.pub-remove').onclick = () => {
+      const next = row.nextElementSibling || row.previousElementSibling;
+      row.remove();
+      syncPublicationOrder();
+      (next ? next.querySelector('.pub-remove') : publicationRuleAdd).focus();
+    };
+    publicationRulesBox.appendChild(row);
+    syncPublicationOrder();
+    return row;
+  }
+
+  function collectPublicationRules() {
+    const list = (value) => value.split(/[\s,]+/).filter(Boolean);
+    return [...publicationRulesBox.children].map((row) => {
+      const value = (field) => row.querySelector('.pub-' + field).value;
+      return {
+        id: value('id').trim(),
+        action: value('action'),
+        match: {
+          path_prefix: value('path').trim(),
+          methods: list(value('methods').toUpperCase()),
+          source_cidrs: list(value('sources')),
+          header: value('header').trim(),
+          header_prefix: value('prefix')
+        }
+      };
+    });
+  }
 
   function fillPathPolicy(policy) {
     const mode = document.getElementById('path-mode');
@@ -1325,6 +1409,7 @@
     clearPublicationErrors();
     fillBodyPolicy(a.security || {});
     fillPathPolicy(a.path_policy || null);
+    fillPublicationRules(a.policy_rules || []);
     clearRestrictedPathRows();
     (a.restricted_paths || []).forEach((rp) => addRestrictedPathRow(rp.path_prefix || '', (rp.allowed_cidrs || []).join('\n')));
     if (!(a.restricted_paths || []).length) addRestrictedPathRow('', '');
@@ -2037,6 +2122,7 @@
     bad_request: 'malformed request', other: 'other',
   };
   let blockedGen = 0;
+  let policyMatchesGen = 0;
   let hostJournalGen = 0;
   let hostJournalLoaded = false;
 
@@ -2128,6 +2214,7 @@
   }
 
   function blockedRuleLabel(r) {
+    if (r === 'policy_block') return 'Publication rule';
     return BLOCKED_RULES[r] || r;
   }
 
@@ -2183,6 +2270,33 @@
       esc(ev.host || '—') + '</td><td><code>' + esc((ev.method || '') + ' ' + (ev.path || '')) + '</code></td><td>' +
       ev.status + '</td><td>' + esc(blockedRuleLabel(ev.rule)) + '</td></tr>').join('') ||
       '<tr><td colspan="6" class="dash-note">Nothing blocked in this period.</td></tr>';
+  }
+
+  async function loadPolicyMatches() {
+    if (panelFromHash() !== 'logs') return;
+    const tbody = document.getElementById('policy-matches-tbody');
+    const status = document.getElementById('policy-matches-status');
+    const period = document.getElementById('policy-matches-period').value;
+    const gen = ++policyMatchesGen;
+    status.textContent = 'Loading…';
+    tbody.replaceChildren();
+    try {
+      const response = await fetch('/api/v1/security/policy-matches?period=' + encodeURIComponent(period), { headers: hdr() });
+      if (gen !== policyMatchesGen) return;
+      if (response.status === 401) { setTok(''); refreshSession(); return; }
+      if (!response.ok) throw new Error(await apiMessage(response));
+      const data = await response.json();
+      if (gen !== policyMatchesGen) return;
+      tbody.innerHTML = data.events.map((event) => {
+        const matches = event.matches.map((match) => esc(match.id) + ' (' + esc(match.action) + ')').join(', ');
+        return '<tr><td>' + esc(formatAuditTime(event.time)) + '</td><td>' + esc(event.host) +
+          '</td><td>' + matches + '</td><td>' + esc(String(event.status)) + '</td></tr>';
+      }).join('');
+      status.textContent = data.events.length === 0 ? 'No matches in this period.' :
+        'Showing ' + data.events.length + (data.truncated ? ' most recent requests with matches.' : ' requests with matches.');
+    } catch (error) {
+      if (gen === policyMatchesGen) status.textContent = error.message || 'Could not load publication rule matches.';
+    }
   }
 
   async function loadAuditPage(reset) {
@@ -3565,6 +3679,7 @@
       };
       const pathPolicy = collectPathPolicy();
       if (pathPolicy) body.path_policy = pathPolicy;
+      body.policy_rules = collectPublicationRules();
       if (editId) {
         body.id = editId;
         const prev = appsListCache.find((x) => x.id === editId);

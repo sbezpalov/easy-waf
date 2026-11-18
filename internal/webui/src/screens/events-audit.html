@@ -27,6 +27,24 @@
             <tbody id="blocked-tbody"></tbody>
           </table>
         </div>
+        <section class="panel" aria-labelledby="policy-matches-title" style="max-width:100%;overflow-x:auto">
+          <h3 id="policy-matches-title">Publication rule matches</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+            <label>Period
+              <select id="policy-matches-period">
+                <option value="1h">Last hour</option>
+                <option value="24h" selected>Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+            <button type="button" class="secondary" id="btn-policy-matches-refresh">Refresh</button>
+            <span id="policy-matches-status" class="dash-note" role="status"></span>
+          </div>
+          <table>
+            <thead><tr><th>Time (UTC)</th><th>Host</th><th>Matched rules, in order</th><th>HTTP status</th></tr></thead>
+            <tbody id="policy-matches-tbody"></tbody>
+          </table>
+        </section>
         <section class="panel admin-only" id="host-journal-panel" style="max-width:100%;margin-top:0.75rem" aria-labelledby="host-journal-title">
           <h3 id="host-journal-title">Service journal</h3>
           <p class="dash-note" id="host-journal-help" style="margin-top:0">Read-only snapshot from one allowlisted appliance service. The browser cannot request arbitrary units or journalctl flags. Output may contain operational details; review it before sharing.</p>

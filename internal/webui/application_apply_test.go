@@ -51,6 +51,13 @@ Object.entries({'app-edit-id': 'fixture-app', 'listen-mode': 'http_only', name: 
   host: 'fixture.invalid', backend: '127.0.0.1', port: '8123', profile: 'balanced'})
   .forEach(([id, value]) => {element(id).value = value});
 if (scenario === 'save_missing_cert') element('listen-mode').value = 'https_only';
+const policyDraft = [
+  {id: 'watch', action: 'count', path: '/api', methods: 'get, HEAD', sources: '192.0.2.0/24', header: 'User-Agent', prefix: 'App '},
+  {id: 'deny', action: 'block', path: '/api', methods: 'POST'}
+];
+element('publication-rules').children = policyDraft.map(rule => ({
+  querySelector: selector => ({value: rule[selector.slice(5)] || ''})
+}));
 const requests = [], notices = [];
 let cleared = 0, collapsed = 0, refreshed = 0;
 const context = {pendingApply: true, document: {getElementById: element},
@@ -80,12 +87,14 @@ const context = {pendingApply: true, document: {getElementById: element},
   withBodyPolicy: value => value,
   clearAppFormFields: () => {cleared++}, setAppFormCollapsed: on => {if (on) collapsed++}};
 vm.createContext(context);
+vm.runInContext("const publicationRulesBox = document.getElementById('publication-rules');", context);
 function include(from, until) {
   const start = page.indexOf(from), end = page.indexOf(until, start);
   assert.ok(start >= 0 && end > start, 'embedded handler missing: ' + from);
   vm.runInContext(page.slice(start, end), context);
 }
 include('  function markPendingApply(', '  function copyBtn(');
+include('  function collectPublicationRules(', '  function fillPathPolicy(');
 include('  async function setAppMaintenance(', '  function fillAppFormFromApp(');
 include("  document.getElementById('save').onclick =", '  const HOST_CRITICAL_UNITS');
 async function run() {
@@ -104,6 +113,12 @@ async function run() {
   assert.equal(mutations.length, 1, 'one mutation; no extra explicit Apply request');
   assert.equal(mutations[0][1].method, 'POST');
   assert.equal(mutations[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' : '/api/v1/applications/fixture-app/maintenance');
+  if (scenario.startsWith('save_')) {
+    assert.deepEqual(JSON.parse(mutations[0][1].body).policy_rules, [
+      {id:'watch', action:'count', match:{path_prefix:'/api', methods:['GET', 'HEAD'], source_cidrs:['192.0.2.0/24'], header:'User-Agent', header_prefix:'App '}},
+      {id:'deny', action:'block', match:{path_prefix:'/api', methods:['POST'], source_cidrs:[], header:'', header_prefix:''}}
+    ]);
+  }
   if (scenario.endsWith('_rejected')) {
     assert.equal(context.pendingApply, true, 'rejected mutation must preserve pending state');
     assert.equal(cleared + collapsed + refreshed, 0, 'keep rejected form for correction');

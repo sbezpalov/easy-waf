@@ -152,6 +152,10 @@
         </label>
         <div id="path-rules"></div>
         <div class="row"><button type="button" class="secondary" id="btn-path-rule-add">Add path rule</button></div>
+        <h4>Publication rules</h4>
+        <p><small>Rules run from top to bottom. All specified conditions must match. Count records a match and continues. Block returns 403. Pass ends this list and continues with the remaining security checks.</small></p>
+        <div id="publication-rules" aria-label="Ordered publication rules"></div>
+        <div class="row"><button type="button" class="secondary" id="btn-publication-rule-add">Add publication rule</button></div>
         <h4>Restricted paths</h4>
         <p><small>Optionally limit a URL prefix to specific IPs/CIDRs. Restricting Home Assistant <code>/api</code> also restricts <code>/api/websocket</code> and can block the web UI, Companion and external API clients. New applications have no automatic LAN restriction. One CIDR per line.</small></p>
         <div id="restricted-rows"></div>

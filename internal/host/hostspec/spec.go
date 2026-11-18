@@ -138,8 +138,12 @@ func ValidRollbackTimeout(s string) bool {
 // http-request deny, LR-- a local response such as http-request return.
 const JournalGrepBlocked = "[PL]R--"
 
+// JournalGrepPolicy matches an edge-generated policy capture, independently
+// of whether the request was ultimately refused or served.
+const JournalGrepPolicy = `\{[^}]*\x7cpolicy-[a-z]+:`
+
 // journalGrep is the only set of --grep patterns accepted: the value is a regex.
-var journalGrep = map[string]struct{}{JournalGrepBlocked: {}}
+var journalGrep = map[string]struct{}{JournalGrepBlocked: {}, JournalGrepPolicy: {}}
 
 // ValidateJournalArgs validates journalctl arguments (not including the "journal" opcode).
 // At least one allowlisted -u is required so a peer cannot dump the whole system journal.

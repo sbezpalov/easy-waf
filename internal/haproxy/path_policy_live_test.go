@@ -7,6 +7,7 @@ package haproxy
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -18,9 +19,146 @@ import (
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/geoip"
 )
+
+func TestLivePublicationRules(t *testing.T) {
+	hx, err := exec.LookPath("haproxy")
+	if err != nil {
+		t.Skip("haproxy not in PATH")
+	}
+	backend := httptestServer(t)
+	defer backend.Close()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "haproxy.cfg")
+	settings := config.DefaultSettings(dir)
+	socket, err := os.CreateTemp("/tmp", "ew-rules*.sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := socket.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(socket.Name()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(socket.Name()) })
+	settings.HAProxyStatsSocketPath = socket.Name()
+	settings.SPOEConfigPath = ""
+	app := config.Application{
+		ID: "live-rules", PublicHost: "rules.example.test", Enabled: true, ListenMode: "http_only",
+		BackendHost: "127.0.0.1", BackendPort: backend.port, Profile: "balanced",
+		RestrictedPaths: []config.RestrictedPath{{PathPrefix: "/api/health/private", AllowedCIDRs: []string{"192.0.2.0/24"}}},
+		PolicyRules: []config.PublicationRule{
+			{ID: "watch-api", Action: config.RuleCount, Match: config.PublicationMatch{PathPrefix: "/api/"}},
+			{ID: "watch-client", Action: config.RuleCount, Match: config.PublicationMatch{
+				PathPrefix: "/api", Methods: []string{"GET", "HEAD"}, SourceCIDRs: []string{"127.0.0.0/8", "::1"},
+				Header: "User-Agent", HeaderPrefix: "-i",
+			}},
+			{ID: "pass-health", Action: config.RulePass, Match: config.PublicationMatch{PathPrefix: "/api/health"}},
+			{ID: "deny-api", Action: config.RuleBlock, Match: config.PublicationMatch{PathPrefix: "/api"}},
+			{ID: "watch-status", Action: config.RuleCount, Match: config.PublicationMatch{PathPrefix: "/status"}},
+		},
+	}
+	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: []config.Application{app}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	cfg := strings.ReplaceAll(rendered.HAProxyConfig, "bind *:80", "bind "+edge)
+	cfg = stripPrivilegeDrop(strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200"))
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(hx, "-c", "-f", cfgPath).CombinedOutput(); err != nil {
+		t.Fatalf("HAProxy config check: %v\n%s", err, out)
+	}
+	logFile, err := os.Create(filepath.Join(dir, "edge.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+	cmd := exec.Command(hx, "-f", cfgPath, "-db")
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	waitTCP(t, edge)
+
+	transport := &http.Transport{}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	for _, tc := range []struct {
+		path, method, ua string
+		status           int
+	}{
+		{"/api/health", "GET", "-i Example Client", 200},
+		{"/api/health/private", "GET", "-i Example Client", 403},
+		{"/api", "GET", "-i Example Client", 403},
+		{"/api/job", "POST", "-i Example Client", 403},
+		{"/api/job", "GET", "Other Client", 403},
+		{"/status", "GET", "-i Example Client", 200},
+		{"/apiary", "GET", "-i Example Client", 200},
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), tc.method, "http://"+edge+tc.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = app.PublicHost
+		req.Header.Set("User-Agent", tc.ua)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != tc.status {
+			t.Fatalf("%s %s: got %d, want %d", tc.method, tc.path, resp.StatusCode, tc.status)
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var raw []byte
+	for {
+		raw, err = os.ReadFile(logFile.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "GET /apiary") || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var journal strings.Builder
+	encoder := json.NewEncoder(&journal)
+	for _, line := range strings.Split(string(raw), "\n") {
+		if err := encoder.Encode(map[string]string{"MESSAGE": line}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ := blocklog.ParseRuleJournal(strings.NewReader(journal.String()))
+	want := []string{"200 watch-api watch-client pass-health", "403 watch-api watch-client pass-health",
+		"403 watch-api watch-client deny-api", "403 watch-api deny-api",
+		"403 watch-api deny-api", "200 watch-status"}
+	if len(events) != len(want) {
+		t.Fatalf("got %d rule events, want %d; live HAProxy log:\n%s", len(events), len(want), raw)
+	}
+	for i, event := range events {
+		got := fmt.Sprint(event.Status)
+		for _, match := range event.Matches {
+			got += " " + match.ID
+		}
+		if got != want[i] || event.Host != app.PublicHost {
+			t.Fatalf("event %d: %+v, want %q on %s", i, event, want[i], app.PublicHost)
+		}
+	}
+}
 
 func TestLiveGeoIPPolicy(t *testing.T) {
 	hx, err := exec.LookPath("haproxy")

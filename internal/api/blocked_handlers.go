@@ -17,6 +17,7 @@ import (
 
 // readBlockedJournal is replaced in tests.
 var readBlockedJournal = journal.ReadBlocked
+var readPolicyJournal = journal.ReadPolicy
 
 var blockedPeriods = map[string]time.Duration{
 	"1h":  time.Hour,
@@ -43,25 +44,10 @@ type blockedResponse struct {
 // listBlocked serves GET /security/blocked: requests the edge refused, from the
 // haproxy.service journal.
 func (s *Server) listBlocked(w http.ResponseWriter, r *http.Request) {
-	period := r.URL.Query().Get("period")
-	if period == "" {
-		period = "24h"
-	}
-	d, ok := blockedPeriods[period]
+	period, limit, since, ok := edgeJournalWindow(w, r)
 	if !ok {
-		http.Error(w, "period must be 1h, 24h or 7d", http.StatusBadRequest)
 		return
 	}
-	limit := blockedDefaultLimit
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > blockedMaxLimit {
-			http.Error(w, "limit must be 1-1000", http.StatusBadRequest)
-			return
-		}
-		limit = n
-	}
-	since := time.Now().Add(-d)
 	out, err := readBlockedJournal(r.Context(), since, journal.BlockedLines)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
@@ -81,6 +67,48 @@ func (s *Server) listBlocked(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Events = nonNil(events)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func edgeJournalWindow(w http.ResponseWriter, r *http.Request) (period string, limit int, since time.Time, ok bool) {
+	period = r.URL.Query().Get("period")
+	if period == "" {
+		period = "24h"
+	}
+	d, ok := blockedPeriods[period]
+	if !ok {
+		http.Error(w, "period must be 1h, 24h or 7d", http.StatusBadRequest)
+		return "", 0, time.Time{}, false
+	}
+	limit = blockedDefaultLimit
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > blockedMaxLimit {
+			http.Error(w, "limit must be 1-1000", http.StatusBadRequest)
+			return "", 0, time.Time{}, false
+		}
+		limit = n
+	}
+	return period, limit, time.Now().Add(-d), true
+}
+
+func (s *Server) listPolicyMatches(w http.ResponseWriter, r *http.Request) {
+	period, limit, since, ok := edgeJournalWindow(w, r)
+	if !ok {
+		return
+	}
+	out, err := readPolicyJournal(r.Context(), since, journal.PolicyLines)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
+		return
+	}
+	events, lines := blocklog.ParseRuleJournal(strings.NewReader(out))
+	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
+	writeJSON(w, http.StatusOK, struct {
+		Period    string               `json:"period"`
+		Since     time.Time            `json:"since"`
+		Truncated bool                 `json:"truncated"`
+		Events    []blocklog.RuleEvent `json:"events"`
+	}{period, since.UTC(), lines >= journal.PolicyLines || len(events) > limit, nonNil(events[:min(len(events), limit)])})
 }
 
 // addBlockedCountries looks up only the top list, under one short deadline: a

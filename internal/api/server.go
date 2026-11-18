@@ -109,6 +109,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/ipbl/sources", s.listIPBLSources)
 				r.Get("/ipwl/local", s.listIPWLLocal)
 				r.Get("/security/blocked", s.listBlocked)
+				r.Get("/security/policy-matches", s.listPolicyMatches)
 				r.Get("/security/blocked-ua", s.listBlockedUA)
 				r.Get("/geoip/lookup", s.geoipLookup)
 				r.Get("/geoip/stats", s.geoipStats)
@@ -372,6 +373,18 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	a.PathPolicy = profiles.ResolvePathPolicy(a.Profile, a.PathPolicy, previousPolicy)
 	if err := config.ValidatePathPolicy(a.PathPolicy); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	policyJSON, supplied := present["policy_rules"]
+	if supplied && strings.TrimSpace(string(policyJSON)) == "null" {
+		http.Error(w, "policy_rules must be an array", http.StatusBadRequest)
+		return
+	}
+	if haveOld && !supplied {
+		a.PolicyRules = old.PolicyRules
+	}
+	if err := config.ValidatePublicationRules(a.PolicyRules); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

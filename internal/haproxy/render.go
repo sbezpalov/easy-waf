@@ -116,6 +116,8 @@ type RenderInput struct {
 	// DefaultForwardAuthLuaPath. UseForwardAuth is derived by Render.
 	ForwardAuthLuaPath string `json:"-"`
 	UseForwardAuth     bool   `json:"-"`
+	// PolicyCaptureSlots is derived from the largest enabled rule list.
+	PolicyCaptureSlots int `json:"-"`
 	// TrustedProxySrc, ProxyProtocolSrc and RealIPFetch are derived from
 	// Settings by Render; callers do not set them.
 	TrustedProxySrc  string `json:"-"`
@@ -196,10 +198,12 @@ func Render(in RenderInput) (Rendered, error) {
 		return Rendered{}, err
 	}
 	apps := make([]AppRender, 0, len(in.Applications))
+	maxPolicyRules := 0
 	for _, app := range in.Applications {
 		if !app.Enabled {
 			continue
 		}
+		maxPolicyRules = max(maxPolicyRules, len(app.PolicyRules))
 		config.NormalizeListenMode(&app)
 		config.NormalizeApplicationSecurity(&app.Security)
 		p, err := profiles.Resolve(app.Profile)
@@ -247,6 +251,7 @@ func Render(in RenderInput) (Rendered, error) {
 			Exposure:             exposure,
 		})
 	}
+	in.PolicyCaptureSlots = maxPolicyRules
 	in.NeedsDNSResolver = false
 	in.TCPServices = nil
 	for _, t := range in.Settings.TCPServices {
@@ -550,7 +555,7 @@ frontend fe_http
 	mode http
 {{- template "realIP" .}}
 {{- template "securityHeaders" .}}
-{{- template "blockCapture"}}
+{{- template "blockCapture" .}}
 	# Client-supplied X-Forwarded-Proto must not influence backends (Secure cookies/CSRF).
 	http-request del-header X-Forwarded-Proto
 	http-request set-header X-Forwarded-Proto http
@@ -653,7 +658,7 @@ frontend fe_https
 {{- template "realIP" .}}
 {{- end}}
 {{- template "securityHeaders" .}}
-{{- template "blockCapture"}}
+{{- template "blockCapture" .}}
 {{if .HTTPSClientTimeout}}	# HAProxy 2.8 cannot change timeout client per request. This is the longest any app on this frontend asked for.
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPSClientTimeout}}s
@@ -868,6 +873,9 @@ backend {{backendName $a.Application.PublicHost}}
 	# httplog shows {host|rule}: the rule that refused a request (Logs → Blocked requests).
 	declare capture request len 64
 	declare capture request len 24
+	{{- range .PolicyCaptureSlots}}
+	declare capture request len 48
+	{{- end}}
 	http-request capture req.hdr(host) id 0
 {{- end}}
 {{- define "appSecurity"}}
@@ -892,7 +900,7 @@ backend {{backendName $a.Application.PublicHost}}
 {{end}}	# httplog stays on the request line; this header is not captured.
 	http-request capture str(path_header) id 1 if {{$host}} {{$h.PathName}} !{{$h.CheckName}}{{$acme}}
 	http-request deny deny_status 401 if {{$host}} {{$h.PathName}} !{{$h.CheckName}}{{$acme}}
-{{end}}{{- if and $root.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
+{{end}}{{publicationRules $a $host .SkipACME}}{{- if and $root.UseIPAllowlist $a.Application.Security.IPAllowlistEnabled}}
 	acl app_{{$a.ACLTag}}_white src -f {{$root.IPAllowlistMapPath}}
 	http-request allow if {{$host}} app_{{$a.ACLTag}}_white{{$acme}}
 {{- end}}
@@ -1001,18 +1009,19 @@ backend {{backendName $a.Application.PublicHost}}
 `
 
 var compiledTemplate = template.Must(template.New("haproxy").Funcs(template.FuncMap{
-	"errorPages":      errorPages,
-	"maintenancePage": maintenancePage,
-	"backendName":     sanitizeBackendName,
-	"backendAddr":     formatBackendAddr,
-	"join":            strings.Join,
-	"exactPaths":      exactPaths,
-	"dirPrefixes":     dirPrefixes,
-	"joinCIDRs":       joinCIDRs,
-	"haDur":           formatHAProxyDuration,
-	"methodSlug":      methodSlug,
-	"appSec":          appSec,
-	"acmeSuffix":      acmeSuffix,
+	"errorPages":       errorPages,
+	"maintenancePage":  maintenancePage,
+	"backendName":      sanitizeBackendName,
+	"backendAddr":      formatBackendAddr,
+	"join":             strings.Join,
+	"exactPaths":       exactPaths,
+	"dirPrefixes":      dirPrefixes,
+	"joinCIDRs":        joinCIDRs,
+	"haDur":            formatHAProxyDuration,
+	"methodSlug":       methodSlug,
+	"appSec":           appSec,
+	"acmeSuffix":       acmeSuffix,
+	"publicationRules": publicationRules,
 }).Parse(haproxyTemplate))
 
 // Paths under stateDir for generated artifacts.

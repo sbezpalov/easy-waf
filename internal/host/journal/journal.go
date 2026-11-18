@@ -94,10 +94,22 @@ func buildJournalArgs(q Query) ([]string, error) {
 // BlockedLines caps one ReadBlocked call.
 const BlockedLines = 5000
 
+// PolicyLines bounds the JSON journal output even when many rules match.
+const PolicyLines = 1000
+
 // ReadBlocked returns haproxy.service journal entries since the given time whose
 // message looks refused by the edge, newest last, as journalctl JSON lines.
 func ReadBlocked(ctx context.Context, since time.Time, lines int) (string, error) {
-	args, err := buildBlockedArgs(since, lines)
+	return readHAProxyJournal(ctx, since, lines, hostspec.JournalGrepBlocked)
+}
+
+// ReadPolicy returns HAProxy entries with at least one publication rule match.
+func ReadPolicy(ctx context.Context, since time.Time, lines int) (string, error) {
+	return readHAProxyJournal(ctx, since, lines, hostspec.JournalGrepPolicy)
+}
+
+func readHAProxyJournal(ctx context.Context, since time.Time, lines int, pattern string) (string, error) {
+	args, err := buildHAProxyJournalArgs(since, lines, pattern)
 	if err != nil {
 		return "", err
 	}
@@ -109,13 +121,13 @@ func ReadBlocked(ctx context.Context, since time.Time, lines int) (string, error
 	return string(out), err
 }
 
-func buildBlockedArgs(since time.Time, lines int) ([]string, error) {
+func buildHAProxyJournalArgs(since time.Time, lines int, pattern string) ([]string, error) {
 	if lines <= 0 || lines > BlockedLines {
 		lines = BlockedLines
 	}
 	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", "haproxy.service",
 		"--since", since.Local().Format("2006-01-02 15:04:05"),
-		"--grep", hostspec.JournalGrepBlocked, "--output", "json"}
+		"--grep", pattern, "--output", "json"}
 	if err := hostspec.ValidateJournalArgs(args[1:]); err != nil {
 		return nil, err
 	}

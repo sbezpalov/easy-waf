@@ -128,9 +128,10 @@ type Application struct {
 	RestrictedPaths        []RestrictedPath `json:"restricted_paths,omitempty"`
 	// PathPolicy is optional exposure control (allowlist, required headers, per-path timeouts and rate limits).
 	// A nil value means the client omitted it. On update the API keeps the stored policy.
-	PathPolicy    *PathPolicy `json:"path_policy,omitempty"`
-	Profile       string      `json:"profile"`
-	CertificateID string      `json:"certificate_id,omitempty"`
+	PathPolicy    *PathPolicy       `json:"path_policy,omitempty"`
+	PolicyRules   []PublicationRule `json:"policy_rules,omitempty"`
+	Profile       string            `json:"profile"`
+	CertificateID string            `json:"certificate_id,omitempty"`
 	// ListenMode controls publishing on fe_http / fe_https: https_only (default), http_only, http_and_https, redirect_to_https.
 	ListenMode string              `json:"listen_mode,omitempty"`
 	Enabled    bool                `json:"enabled"`
