@@ -1330,6 +1330,7 @@
             <dt>Running product version</dt><dd><code id="about-version">Unavailable</code></dd>
             <dt>Go runtime and platform</dt><dd><code id="about-runtime">Unavailable</code></dd>
             <dt id="about-revision-label" class="hidden">Source commit</dt><dd id="about-revision-row" class="hidden"><code id="about-revision"></code></dd>
+            <dt id="about-source-time-label" class="hidden">Source commit date</dt><dd id="about-source-time-row" class="hidden"><time id="about-source-time"></time></dd>
           </dl>
           <div class="row" style="flex-wrap:wrap;gap:1rem">
             <a href="https://github.com/sbezpalov/easy-waf" target="_blank" rel="noopener noreferrer">Source code</a>
@@ -1349,9 +1350,8 @@
         <section class="panel" style="max-width:100%" aria-labelledby="about-license-title">
           <h3 id="about-license-title">License and attribution</h3>
           <p>Sergey Bezpalov and Easy Home WAF contributors</p>
-          <p>Apache License 2.0</p>
           <details>
-            <summary>Terms of use</summary>
+            <summary>Terms of use (Apache License 2.0)</summary>
             <pre class="journal-output" id="about-license" tabindex="0" aria-label="Apache License 2.0">License text unavailable.</pre>
           </details>
           <details>
@@ -2281,6 +2281,11 @@
       document.getElementById('about-revision-row').classList.toggle('hidden', !data.revision);
       document.getElementById('about-revision').textContent = data.revision
         ? data.revision + (data.modified ? ' (modified source)' : '') : '';
+      document.getElementById('about-source-time-label').classList.toggle('hidden', !data.source_time);
+      document.getElementById('about-source-time-row').classList.toggle('hidden', !data.source_time);
+      const sourceTime = document.getElementById('about-source-time');
+      sourceTime.dateTime = data.source_time || '';
+      sourceTime.textContent = sourceTime.dateTime;
       components.replaceChildren();
       for (const component of data.components || []) {
         const row = document.createElement('tr');

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,7 +50,7 @@ func TestAboutReportsShippedVersionAndTerms(t *testing.T) {
 	if info.License != "Apache-2.0" || info.Terms != read("LICENSE") || info.Notice != read("NOTICE") {
 		t.Fatal("expected the build's complete license and attribution files")
 	}
-	if len(info.Components) != len(aboutPackages)+1 || info.Components[len(info.Components)-1] != (aboutComponent{Name: "PostgreSQL", Source: "Connected database"}) {
+	if !slices.Contains(info.Components, aboutComponent{Name: "PostgreSQL", Source: "Connected database"}) {
 		t.Fatalf("expected package inventory with an unavailable database: %+v", info.Components)
 	}
 	if runtime.GOOS == "linux" {
@@ -63,10 +65,27 @@ func TestAboutReportsShippedVersionAndTerms(t *testing.T) {
 func TestAboutReportsConnectedDatabaseVersion(t *testing.T) {
 	s := applyFailingServer(t)
 	info := readAboutForTest(t, s)
-	got := info.Components[len(info.Components)-1]
+	got := info.Components[len(aboutPackages)]
 	want, err := s.Eng.Store.ServerVersion(t.Context())
 	if err != nil || want == "" || got.Version != want || got.Name != "PostgreSQL" {
 		t.Fatalf("database version: got %+v, want %q, error %v", got, want, err)
+	}
+}
+
+func TestLinkedAboutComponents(t *testing.T) {
+	got := linkedAboutComponents([]*debug.Module{
+		{Path: "github.com/jackc/pgx/v5", Version: "v5.0.0"},
+		{Path: "github.com/oschwald/maxminddb-golang", Version: "v1.0.0", Replace: &debug.Module{Path: "../private-checkout"}},
+		{Path: "github.com/prometheus/client_golang", Version: "v1.0.0", Replace: &debug.Module{Path: "example.com/fork", Version: "v1.2.3"}},
+		{Path: "example.com/unlisted", Version: "v1.0.0"},
+	})
+	want := []aboutComponent{
+		{Name: "pgx (PostgreSQL driver)", Version: "v5.0.0", Source: "Linked into the management API"},
+		{Name: "MaxMind DB reader", Source: "Linked into the management API"},
+		{Name: "Prometheus client", Version: "v1.2.3", Source: "Linked into the management API"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("linked components = %+v, want %+v", got, want)
 	}
 }
 

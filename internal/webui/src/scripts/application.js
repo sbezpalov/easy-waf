@@ -430,6 +430,11 @@
       document.getElementById('about-revision-row').classList.toggle('hidden', !data.revision);
       document.getElementById('about-revision').textContent = data.revision
         ? data.revision + (data.modified ? ' (modified source)' : '') : '';
+      document.getElementById('about-source-time-label').classList.toggle('hidden', !data.source_time);
+      document.getElementById('about-source-time-row').classList.toggle('hidden', !data.source_time);
+      const sourceTime = document.getElementById('about-source-time');
+      sourceTime.dateTime = data.source_time || '';
+      sourceTime.textContent = sourceTime.dateTime;
       components.replaceChildren();
       for (const component of data.components || []) {
         const row = document.createElement('tr');

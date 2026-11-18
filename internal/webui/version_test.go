@@ -74,6 +74,7 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 assert.ok(page.includes('href="#about"'));
 assert.ok(page.includes("case 'about':\n        void loadAbout();"));
 assert.ok(page.includes('Sergey Bezpalov and Easy Home WAF contributors'));
+assert.ok(page.includes('<summary>Terms of use (Apache License 2.0)</summary>'));
 const start = page.indexOf('  let aboutGeneration = 0;');
 const end = page.indexOf('  const VIEWER_SAFE_ACTIONS', start);
 assert.ok(start >= 0 && end > start);
@@ -85,7 +86,7 @@ function element() {
   };
 }
 async function run() {
-  for (const scenario of ['success', 'offline']) {
+  for (const scenario of ['success', 'no source date', 'offline']) {
     const elements = new Map();
     const context = {document: {getElementById: id => {
       if (!elements.has(id)) {
@@ -102,6 +103,7 @@ async function run() {
       return {ok: true, json: async () => ({
         version: '1.6.1', go_version: 'go1.27.4', platform: 'linux/amd64',
         revision: 'abc123', modified: true, license_text: 'Apache terms', notice: '<notice>',
+        source_time: scenario === 'success' ? '2026-11-18T08:30:00Z' : undefined,
         components: [{name: 'HAProxy', version: '2.8.30', source: 'Installed package'},
           {name: 'PostgreSQL', source: 'Connected database'}]
       })};
@@ -117,6 +119,10 @@ async function run() {
     assert.equal(elements.get('about-status').textContent, '');
     assert.equal(elements.get('about-version').textContent, '1.6.1');
     assert.equal(elements.get('about-revision').textContent, 'abc123 (modified source)');
+    const sourceTime = scenario === 'success' ? '2026-11-18T08:30:00Z' : '';
+    assert.equal(elements.get('about-source-time').dateTime, sourceTime);
+    assert.equal(elements.get('about-source-time').textContent, sourceTime);
+    assert.equal(elements.get('about-source-time-row').hidden, !sourceTime);
     assert.equal(elements.get('about-license').textContent, 'Apache terms');
     assert.equal(elements.get('about-notice').textContent, '<notice>');
     assert.deepEqual(elements.get('about-components').children.map(row => row.children.map(cell => cell.textContent)), [

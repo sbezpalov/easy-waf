@@ -26,6 +26,7 @@ type aboutResponse struct {
 	GoVersion  string           `json:"go_version"`
 	Platform   string           `json:"platform"`
 	Revision   string           `json:"revision,omitempty"`
+	SourceTime string           `json:"source_time,omitempty"`
 	Modified   bool             `json:"modified,omitempty"`
 	Components []aboutComponent `json:"components"`
 	License    string           `json:"license"`
@@ -40,6 +41,12 @@ var aboutPackages = []struct{ key, name string }{
 	{"crowdsec-haproxy-spoa-bouncer", "CrowdSec HAProxy bouncer"},
 	{"fail2ban", "Fail2Ban"},
 	{"nftables", "nftables"},
+}
+
+var aboutModules = []struct{ path, name string }{
+	{"github.com/jackc/pgx/v5", "pgx (PostgreSQL driver)"},
+	{"github.com/oschwald/maxminddb-golang", "MaxMind DB reader"},
+	{"github.com/prometheus/client_golang", "Prometheus client"},
 }
 
 const aboutCheckTimeout = 2 * time.Second
@@ -58,23 +65,47 @@ func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
 	components = append(components, db)
 
 	var revision string
+	var sourceTime string
 	var modified bool
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			switch setting.Key {
 			case "vcs.revision":
 				revision = setting.Value
+			case "vcs.time":
+				sourceTime = setting.Value
 			case "vcs.modified":
 				modified = setting.Value == "true"
 			}
 		}
+		components = append(components, linkedAboutComponents(info.Deps)...)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, aboutResponse{
 		Version: easywaf.Version(), GoVersion: runtime.Version(), Platform: runtime.GOOS + "/" + runtime.GOARCH,
-		Revision: revision, Modified: modified, Components: components,
+		Revision: revision, SourceTime: sourceTime, Modified: modified, Components: components,
 		License: "Apache-2.0", Terms: easywaf.LicenseText(), Notice: easywaf.NoticeText(),
 	})
+}
+
+func linkedAboutComponents(deps []*debug.Module) []aboutComponent {
+	versions := make(map[string]string, len(deps))
+	for _, dep := range deps {
+		version := dep.Version
+		if dep.Replace != nil {
+			version = dep.Replace.Version
+		}
+		if version != "(devel)" {
+			versions[dep.Path] = version
+		}
+	}
+	components := make([]aboutComponent, 0, len(aboutModules))
+	for _, module := range aboutModules {
+		components = append(components, aboutComponent{
+			Name: module.name, Version: versions[module.path], Source: "Linked into the management API",
+		})
+	}
+	return components
 }
 
 func installedAboutComponents(ctx context.Context) []aboutComponent {

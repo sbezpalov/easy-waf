@@ -302,9 +302,10 @@ Minimal status for the control plane.
 
 ### `GET /api/v1/about`
 Provides the data for **Overview → About** to authenticated viewers and administrators.
-- **Response:** `200` with the running product `version`, `go_version`, `platform` and optional source `revision` and `modified` flag. A missing revision means the build did not record source metadata.
+- **Response:** `200` with the running product `version`, `go_version`, `platform` and optional source `revision`, its RFC 3339 timestamp `source_time` and the `modified` flag.
 - `components` has entries with `name`, `source` and an optional `version`. The Easy Home WAF package, HAProxy, CrowdSec, its HAProxy bouncer, Fail2Ban and nftables report local installed package versions. PostgreSQL reports the connected server version, including when that server is remote. Missing versions appear as **Unavailable**.
 - `license` is the SPDX identifier. `license_text` and `notice` contain the complete `LICENSE` and `NOTICE` files embedded in the running build.
+- The PostgreSQL driver, MaxMind DB reader and Prometheus client report their module versions from the running management API's Go build metadata.
 
 ### `GET /api/v1/edge/status`
 Returns the persistent saved/applied generation relationship and the checksum of
