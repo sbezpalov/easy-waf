@@ -90,6 +90,10 @@ esac
   echo "[offline-build] Easy WAF package not found: $DEB" >&2
   exit 1
 }
+# APT parses an argument like dist/appliance.deb as package/release.
+if [[ "$DEB" != /* ]]; then
+  DEB="$PWD/$DEB"
+fi
 DEB_ARCH="$(dpkg-deb -f "$DEB" Architecture)"
 if [[ "$DEB_ARCH" != "$ARCH" ]]; then
   echo "[offline-build] package architecture $DEB_ARCH does not match native $ARCH" >&2

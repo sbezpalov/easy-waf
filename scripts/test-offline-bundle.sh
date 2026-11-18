@@ -57,6 +57,34 @@ if [[ "$EUID" == 0 ]] && (
   . /etc/os-release
   [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 24.04 ]]
 ); then
+  # The release job supplies dist/<name>.deb. Exercise the builder up to the
+  # APT boundary with a local DEB and without contacting package repositories.
+  builder="$TEMP_DIR/relative package/build"
+  mkdir -p "$builder/dist" "$builder/fixture/DEBIAN" "$builder/scripts"
+  cp "$SCRIPT_DIR/build-offline-bundle.sh" "$builder/scripts/"
+  printf '9.9.9\n' >"$builder/VERSION"
+  package="dist/easy-waf_9.9.9_$(dpkg --print-architecture).deb"
+  printf 'Package: easy-waf\nVersion: 9.9.9\nArchitecture: %s\nMaintainer: Fixture <fixture@example.invalid>\nDescription: Offline bundle fixture\n' \
+    "$(dpkg --print-architecture)" >"$builder/fixture/DEBIAN/control"
+  dpkg-deb --build "$builder/fixture" "$builder/$package" >/dev/null
+  cat >"$TEMP_DIR/apt-path-fixture.env" <<'FIXTURE'
+git() { :; }
+apt-ftparchive() { return 91; }
+dpkg-scanpackages() { return 91; }
+apt-get() {
+  while [[ $# -gt 1 && "$1" != install ]]; do shift; done
+  [[ "$1" == install && "$2" == "$PWD/$EASY_WAF_DEB" ]] || return 92
+  echo 'APT received the absolute DEB path'
+  return 93
+}
+FIXTURE
+  builder_status=0
+  (cd "$builder" && BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_DEB="$package" \
+    EASY_WAF_OFFLINE_FORMAT=tar.gz "${BASH}" scripts/build-offline-bundle.sh) \
+    >"$TEMP_DIR/apt-path.log" 2>&1 || builder_status=$?
+  [[ "$builder_status" == 93 ]]
+  grep -Fxq 'APT received the absolute DEB path' "$TEMP_DIR/apt-path.log"
+
   mkdir -p "$STAGE/repository" "$PAYLOAD/scripts"
   : >"$STAGE/repository/Packages"
   printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=24.04\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \

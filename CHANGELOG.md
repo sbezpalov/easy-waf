@@ -107,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Complete tarball staging.** Installer/download paths validate and stage all required binaries before promotion, reject corrupt or incomplete archives and no longer suppress extraction errors. Existing incomplete local distributions cannot silently satisfy acquisition.
 - **Unambiguous artifact checksums.** Verification requires one exact-case artifact entry with a valid SHA-256 digest; duplicate, conflicting and malformed records fail closed instead of selecting the first match.
 - **Release-specific signature trust.** Download verification now requires the exact release-workflow identity for the requested version tag, rather than accepting any `v*` signing tag from that repository. Unversioned URLs require an explicit checksum-only override.
-- **Release validation gate.** Tag builds call same-commit CI with read-only permissions before building, signing or publishing artifacts. Offline bundles remain transitively gated; failed or skipped validation cannot publish through the normal workflow.
+- **Release validation gate.** Tag builds call same-commit CI with read-only permissions. A release goes public once both signed offline ISOs are verified and all package assets match the signed checksum manifest.
 - **Expired certificate priority.** Eligible expired certificates are claimed before still-valid renewals and other due work, without bypassing retry backoff or active claims; remaining work retains FIFO ordering.
 - **Concurrent certificate requests.** Issue/renew requests now update only issuance options and retry state with a row-version check. Concurrent completion/deletion returns HTTP 409 instead of overwriting generated PEM metadata or recreating a deleted certificate.
 - **ACME queue admission.** A synchronous worker claims only the certificate it can start now, preventing long issuance from stranding preclaimed rows until the stale-claim window expires.
@@ -199,7 +199,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Offline ISO installation.** The bundle contains the local DEB manifest
   required by the installer. Missing or invalid offline inputs stop
-  installation without a GitHub download.
+  installation without a GitHub download. Prepare a separate CrowdSec Hub
+  snapshot for a fresh full-profile installation with the public ISO. See
+  [Offline bundle](docs/OFFLINE_BUNDLE.md).
+- **Offline ISO build.** Relative paths to local DEB files, including the path
+  supplied by the release workflow, are converted to absolute paths before APT
+  resolves dependencies.
 - **Package installation failure.** The installer stops when APT fails to
   install a verified DEB. A retry with unpackaged binaries also stops if
   dpkg still manages Easy WAF.
