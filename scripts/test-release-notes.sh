@@ -48,7 +48,7 @@ reject invalid_version $'1.6.1\ninvalid'
 WORKFLOW="$SCRIPT_DIR/../.github/workflows/release.yml"
 preflight_line="$(grep -n '^      - name: Validate release metadata and prepare notes$' "$WORKFLOW" | cut -d: -f1)"
 [[ "$preflight_line" =~ ^[0-9]+$ ]] || fail 'missing or duplicate workflow preflight'
-for step in 'Setup Go' 'Install nfpm' 'Build amd64 and arm64 tarballs and packages' 'Install cosign' 'Sign SHA256SUMS' 'Create GitHub Release'; do
+for step in 'Setup Go' 'Install nfpm' 'Build amd64 and arm64 tarballs and packages' 'Install cosign' 'Sign SHA256SUMS' 'Stage signed release packages'; do
   line="$(grep -n -m 1 "^      - name: $step$" "$WORKFLOW" | cut -d: -f1)"
   [[ "$line" =~ ^[0-9]+$ && "$preflight_line" -lt "$line" ]] || fail "preflight must precede $step"
 done

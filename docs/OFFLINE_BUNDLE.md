@@ -4,6 +4,11 @@ The production offline artifact is a versioned ISO containing a local APT
 repository, the Easy Home WAF Debian package, and the provisioning scripts. It
 is built separately for Ubuntu 24.04 `amd64` and `arm64`.
 
+The release workflow stages the signed packages and both signed ISOs in the
+same Actions run. It verifies the complete set before creating a release.
+GitHub CLI uploads the assets to a draft before publishing it. If an interrupted
+upload leaves a draft, inspect it before retrying the workflow for that tag.
+
 The ISO is more than a copy of `easy-waf_*.deb`. It contains the recursive
 dependency closure for HAProxy, nftables, PostgreSQL, Fail2Ban, CrowdSec and the
 HAProxy SPOA bouncer. During installation APT is configured through a temporary
