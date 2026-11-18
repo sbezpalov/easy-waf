@@ -2144,12 +2144,6 @@
     dashboardController = null;
   }
 
-  function startDashStatsTimer() {
-    dashStatsTimer = setInterval(() => {
-      if (!dashboardController) return runDashboardLoad(loadDashTraffic);
-    }, 10000);
-  }
-
   async function runDashboardLoad(load) {
     const controller = new AbortController();
     dashboardController = controller;
@@ -2708,7 +2702,6 @@
   }
 
   async function renderDashboard(signal) {
-    const loadedAt = document.getElementById('dash-loaded-at');
     resetDashboardView();
 
     const requests = [
@@ -2883,9 +2876,20 @@
       servicesBox.innerHTML = stateView('error', 'systemd service state is unavailable. Use Refresh after checking API host access to systemd.');
     }
 
-    successCount += trafficResult.success;
-    failedSources.push(...trafficResult.failures);
+    const snapshot = { successCount, failedSources, attention, loadedAt: new Date().toLocaleTimeString() };
+    renderDashboardStatus(snapshot, trafficResult);
+    dashStatsTimer = setInterval(() => {
+      if (dashboardController) return;
+      return runDashboardLoad(async (pollSignal) => {
+        const result = await loadDashTraffic(pollSignal);
+        if (dashboardIsCurrent(pollSignal)) renderDashboardStatus(snapshot, result);
+      });
+    }, 10000);
+  }
 
+  function renderDashboardStatus(snapshot, traffic) {
+    const failedSources = [...snapshot.failedSources, ...traffic.failures];
+    const attention = [...snapshot.attention];
     if (failedSources.length) {
       attention.unshift(alertView('unknown', 'Dashboard data is incomplete',
         failedSources.join(' · ') + '. Unknown values are not replaced with zero.'));
@@ -2894,26 +2898,30 @@
       attention.push(alertView('success', 'No attention items in loaded data',
         'All requested sources responded and no loaded item currently reports a warning.'));
     }
-    document.getElementById('dash-attention-list').innerHTML = attention.join('');
+    const attentionEl = document.getElementById('dash-attention-list');
+    const attentionHTML = attention.join('');
+    if (attentionEl.innerHTML !== attentionHTML) attentionEl.innerHTML = attentionHTML;
 
     const statusEl = document.getElementById('dash-status');
-    if (successCount === 0) {
-      statusEl.dataset.state = 'offline';
-      statusEl.textContent = 'Dashboard unavailable. Use Refresh after checking the API and network.';
-      loadedAt.textContent = 'Not loaded';
+    const loadedAt = document.getElementById('dash-loaded-at');
+    let state, message, freshness;
+    if (snapshot.successCount + traffic.success === 0) {
+      state = 'offline';
+      message = 'Dashboard unavailable. Use Refresh after checking the API and network.';
+      freshness = 'Not loaded';
+    } else if (failedSources.length) {
+      state = 'error';
+      message = 'Partial data loaded. Unavailable sources remain Unknown.';
+      freshness = snapshot.successCount === 0 ? 'HAProxy loaded at ' + new Date().toLocaleTimeString() :
+        'Partial data at ' + snapshot.loadedAt;
     } else {
-      const stamp = new Date().toLocaleTimeString();
-      if (failedSources.length) {
-        statusEl.dataset.state = 'error';
-        statusEl.textContent = 'Partial data loaded. Unavailable sources remain Unknown.';
-        loadedAt.textContent = 'Partial data at ' + stamp;
-      } else {
-        statusEl.dataset.state = 'ready';
-        statusEl.textContent = 'Dashboard data loaded.';
-        loadedAt.textContent = 'Loaded at ' + stamp;
-      }
+      state = 'ready';
+      message = 'Dashboard data loaded.';
+      freshness = 'Loaded at ' + snapshot.loadedAt;
     }
-    startDashStatsTimer();
+    statusEl.dataset.state = state;
+    if (statusEl.textContent !== message) statusEl.textContent = message;
+    if (loadedAt.textContent !== freshness) loadedAt.textContent = freshness;
   }
 
   document.getElementById('btn-dashboard-refresh').onclick = () => {

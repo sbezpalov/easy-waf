@@ -163,6 +163,9 @@ async function scenario(mode) {
   let poll;
   let holdSummary;
   let heldCalls = 0;
+  let pollRuntimeError = false;
+  let disconnected = mode === 'offline';
+  let clock = '14:00:00';
   let simulateTimeout = mode === 'timeout';
   let timeoutID = 0;
   const timeouts = new Map();
@@ -174,7 +177,11 @@ async function scenario(mode) {
     });
   }
   const context = {console, document: {getElementById: id => elements[id]}, sessionExpired: false,
+    Date: class extends Date { toLocaleTimeString() { return clock; } },
     fetch: async (path, options) => {
+      if (pollRuntimeError && path === '/api/v1/stats/haproxy') {
+        return response({backends: null, error: 'Runtime poll unavailable'});
+      }
       if (simulateTimeout && path === '/api/v1/certificates/summary') return waitForAbort(options.signal);
       if (simulateTimeout && path === '/api/v1/stats/haproxy') {
         return {...response(null), json: () => waitForAbort(options.signal)};
@@ -184,7 +191,7 @@ async function scenario(mode) {
         holdSummary.signal = options.signal;
         return holdSummary.promise;
       }
-      if (mode === 'offline') throw Error('fixture offline');
+      if (disconnected) throw Error('fixture offline');
       if (mode === 'decisions_denied' && path === '/api/v1/integrations/crowdsec/decisions') {
         return response({error: 'CrowdSec LAPI denied access. Check the configured API key and permissions.'}, 502);
       }
@@ -242,10 +249,29 @@ async function scenario(mode) {
     await poll();
     assert.match(elements['dash-haproxy-table'].innerHTML, /data-state="empty"/);
     assert.equal(elements['dash-haproxy-err'].textContent, '');
+    assert.match(elements['dash-attention-list'].innerHTML, /Certificate summary \(timed out\)/);
+    assert.doesNotMatch(elements['dash-attention-list'].innerHTML, /HAProxy runtime \(timed out\)/);
+    assert.equal(elements['dash-status'].dataset.state, 'error');
     assert.equal(timeouts.size, 0);
     return;
   }
   await refresh;
+  if (mode === 'traffic_poll') {
+    assert.equal(elements['dash-loaded-at'].textContent, 'Loaded at 14:00:00');
+    clock = '14:00:10';
+    pollRuntimeError = true;
+    await poll();
+    assert.equal(elements['dash-status'].dataset.state, 'error');
+    assert.match(elements['dash-attention-list'].innerHTML, /HAProxy runtime \(Runtime poll unavailable\)/);
+    assert.equal(elements['dash-loaded-at'].textContent, 'Partial data at 14:00:00');
+    clock = '14:00:20';
+    pollRuntimeError = false;
+    await poll();
+    assert.equal(elements['dash-status'].dataset.state, 'ready');
+    assert.doesNotMatch(elements['dash-attention-list'].innerHTML, /HAProxy runtime \(Runtime poll unavailable\)/);
+    assert.equal(elements['dash-loaded-at'].textContent, 'Loaded at 14:00:00');
+    return;
+  }
   if (mode === 'overlap') {
     const oldSummary = holdSummary = deferred();
     const oldPoll = poll();
@@ -279,6 +305,13 @@ async function scenario(mode) {
     assert.equal(elements['dash-status'].dataset.state, 'offline');
     assert.match(elements['dash-attention-list'].innerHTML, /incomplete/);
     assert.doesNotMatch(elements['dash-ipbl-stat'].textContent, /0/);
+    disconnected = false;
+    clock = '14:00:10';
+    await poll();
+    assert.equal(elements['dash-status'].dataset.state, 'error');
+    assert.equal(elements['dash-loaded-at'].textContent, 'HAProxy loaded at 14:00:10');
+    assert.equal(elements['dash-apps-stat'].textContent, 'Unknown');
+    assert.equal(elements['dash-req-rate'].textContent, '0.0');
   } else {
     assert.equal(elements['dash-apps-stat'].textContent, '0 / 0');
     assert.equal(elements['dash-ipbl-stat'].textContent, '0 · 0');
@@ -310,7 +343,7 @@ async function scenario(mode) {
   }
 }
 (async () => {
-  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error', 'overlap', 'timeout']) {
+  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error', 'overlap', 'timeout', 'traffic_poll']) {
     await scenario(mode);
   }
 })()
