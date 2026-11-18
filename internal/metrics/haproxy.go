@@ -66,6 +66,13 @@ type ServerStat struct {
 	SessionsCur int64  `json:"sessions_cur"`
 }
 
+// HealthCheckUnconfirmed reports whether HAProxy is still initializing a
+// health check or has no known result. A leading "*" means a check is running.
+func (s ServerStat) HealthCheckUnconfirmed() bool {
+	check := strings.TrimSpace(strings.TrimPrefix(s.CheckStatus, "*"))
+	return check == "INI" || check == "UNK"
+}
+
 // BackendStat is one HAProxy backend (aggregate + servers).
 type BackendStat struct {
 	Name        string       `json:"name"`
@@ -420,10 +427,7 @@ func serverHealthCounts(servers []ServerStat) (up, down int64) {
 		st := strings.ToUpper(strings.TrimSpace(s.Status))
 		switch {
 		case st == "UP" || strings.HasPrefix(st, "UP "):
-			// HAProxy can report UP before the first check finishes.
-			// The "* " prefix denotes a check in progress.
-			check := strings.TrimSpace(strings.TrimPrefix(s.CheckStatus, "*"))
-			if check != "INI" && check != "UNK" {
+			if !s.HealthCheckUnconfirmed() {
 				up++
 			}
 		case strings.Contains(st, "DOWN"), strings.HasPrefix(st, "MAINT"),

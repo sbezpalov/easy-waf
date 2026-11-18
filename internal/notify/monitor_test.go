@@ -62,6 +62,41 @@ func TestMonitorBackendTransitionsAreConfirmed(t *testing.T) {
 	}
 }
 
+func TestMonitorBackendConfirmationRequiresConsecutiveReadings(t *testing.T) {
+	checkReport := func(status, check string) *metrics.HAProxyReport {
+		rep := report(status, 0)
+		rep.Backends[0].Servers[0].CheckStatus = check
+		return rep
+	}
+	for _, tc := range []struct {
+		name     string
+		baseline string
+		target   string
+		gap      *metrics.HAProxyReport
+		want     string
+	}{
+		{"missing stats", "DOWN", "UP", nil, "backend_up"},
+		{"socket error", "UP", "DOWN", &metrics.HAProxyReport{Error: "socket unavailable"}, "backend_down"},
+		{"transitional status", "DOWN", "UP", report("UP 1/3", 0), "backend_up"},
+		{"first check pending", "DOWN", "UP", checkReport("UP", "* INI"), "backend_up"},
+		{"check result unknown", "UP", "DOWN", checkReport("DOWN", "UNK"), "backend_down"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewMonitor()
+			now := time.Unix(0, 0)
+			for _, sample := range []*metrics.HAProxyReport{report(tc.baseline, 0), report(tc.target, 0), tc.gap, report(tc.target, 0)} {
+				if events := m.Observe(sample, now, 0); len(events) != 0 {
+					t.Fatalf("unconfirmed transition: %+v", events)
+				}
+				now = now.Add(30 * time.Second)
+			}
+			if events := m.Observe(report(tc.target, 0), now, 0); len(events) != 1 || events[0].Kind != tc.want {
+				t.Fatalf("expected %s after consecutive readings, got %+v", tc.want, events)
+			}
+		})
+	}
+}
+
 func TestMonitorBlockedSpike(t *testing.T) {
 	m := NewMonitor()
 	t0 := time.Unix(0, 0)

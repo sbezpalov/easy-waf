@@ -58,7 +58,7 @@ Settings → Notifications (or `PATCH /api/v1/settings`) sends operational event
 | Event | Severity | When |
 |-------|----------|------|
 | `apply_failed` | critical | Any HAProxy apply fails (from the panel, a certificate renewal or a feed refresh). The edge keeps its previous configuration. |
-| `backend_down` / `backend_up` | critical / info | A server's health check state changes between `UP` and `DOWN` and stays so for two reads 30 s apart. Only servers with health checks are watched. |
+| `backend_down` / `backend_up` | critical / info | A server's health state changes between `UP` and `DOWN` and is confirmed by two consecutive stats polls. An unavailable read, transitional status, or unconfirmed health check interrupts confirmation. |
 | `blocked_spike` | warning | The frontends reached `notify_blocked_spike_threshold` refusals (`dreq`) over a five-minute observation window. The monitor tracks counter increases per frontend and starts a new window after a stats gap longer than five minutes. The alert can fire once per 30 minutes. Set the threshold to `0` to disable it. |
 | `certificate_attention` | warning | Once a day from `easy-waf-acmed` (see [ACME.md](ACME.md)). |
 

@@ -36,6 +36,10 @@ type serverState struct {
 	n         int
 }
 
+func (s *serverState) resetCandidate() {
+	s.candidate, s.n = "", 0
+}
+
 // NewMonitor returns a Monitor with no history: the first read sets the
 // baseline and announces nothing.
 func NewMonitor() *Monitor {
@@ -46,6 +50,9 @@ func NewMonitor() *Monitor {
 // alert level per 5 minutes; 0 turns that alert off.
 func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold int) []Event {
 	if rep == nil || rep.Error != "" {
+		for _, state := range m.servers {
+			state.resetCandidate()
+		}
 		return nil
 	}
 	var out []Event
@@ -54,17 +61,20 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 		for _, sv := range be.Servers {
 			key := be.Name + "/" + sv.Name
 			seen[key] = true
-			st := serverHealth(sv.Status)
+			s := m.servers[key]
+			st := serverHealth(sv)
 			if st == "" {
+				if s != nil {
+					s.resetCandidate()
+				}
 				continue
 			}
-			s, ok := m.servers[key]
-			if !ok {
+			if s == nil {
 				m.servers[key] = &serverState{announced: st}
 				continue
 			}
 			if st == s.announced {
-				s.candidate, s.n = "", 0
+				s.resetCandidate()
 				continue
 			}
 			if st == s.candidate {
@@ -75,7 +85,8 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 			if s.n < confirmPolls {
 				continue
 			}
-			s.announced, s.candidate, s.n = st, "", 0
+			s.announced = st
+			s.resetCandidate()
 			out = append(out, backendEvent(be.Name, sv.Name, st))
 		}
 	}
@@ -117,10 +128,12 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 	return out
 }
 
-// serverHealth maps a stable HAProxy server status to up/down; transitional
-// ("UP 1/3"), maintenance and unchecked servers return "".
-func serverHealth(status string) string {
-	switch strings.ToUpper(strings.TrimSpace(status)) {
+// serverHealth maps stable, confirmed server states to up or down.
+func serverHealth(server metrics.ServerStat) string {
+	if server.HealthCheckUnconfirmed() {
+		return ""
+	}
+	switch strings.ToUpper(strings.TrimSpace(server.Status)) {
 	case "UP":
 		return "up"
 	case "DOWN":
