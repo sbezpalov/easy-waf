@@ -129,6 +129,12 @@ function response(body, status = 200) {
     text: async () => typeof body === 'string' ? body : JSON.stringify(body)};
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return {promise, resolve};
+}
+
 async function scenario(mode) {
   const ids = ['dash-apps-stat', 'dash-certs-stat', 'dash-certs-sub', 'dash-cs-stat', 'dash-cs-sub',
     'dash-ipbl-stat', 'dash-req-rate', 'dash-active-sessions', 'dash-sec-line', 'dash-http-line',
@@ -153,8 +159,17 @@ async function scenario(mode) {
     '/api/v1/stats/summary': {req_rate: 0, active_sessions: 0},
     '/api/v1/stats/haproxy': {backends: []}
   };
+  let panel = 'dashboard';
+  let poll;
+  let holdSummary;
+  let heldCalls = 0;
   const context = {console, document: {getElementById: id => elements[id]}, sessionExpired: false,
-    fetch: async path => {
+    fetch: async (path, options) => {
+      if (holdSummary && path === '/api/v1/stats/summary') {
+        heldCalls++;
+        holdSummary.signal = options.signal;
+        return holdSummary.promise;
+      }
       if (mode === 'offline') throw Error('fixture offline');
       if (mode === 'decisions_denied' && path === '/api/v1/integrations/crowdsec/decisions') {
         return response({error: 'CrowdSec LAPI denied access. Check the configured API key and permissions.'}, 502);
@@ -170,7 +185,9 @@ async function scenario(mode) {
       }
       return response(successful[path]);
     },
-    hdr: () => ({}), panelFromHash: () => 'dashboard', startDashStatsTimer: () => {},
+    hdr: () => ({}), panelFromHash: () => panel, AbortController,
+    setInterval: callback => { poll = callback; return 1; },
+    clearInterval: () => { poll = null; },
     esc: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;'),
     statusBadge: (label, tone) => '<badge data-tone="' + tone + '">' + label + '</badge>',
     alertView: (tone, title, message) => '<alert data-tone="' + tone + '">' + title + ': ' + message + '</alert>',
@@ -182,9 +199,36 @@ async function scenario(mode) {
   vm.createContext(context);
   const countStart = page.indexOf('  function decisionsCount(');
   const countEnd = page.indexOf('  let dashStatsTimer', countStart);
+  const timerEnd = page.indexOf('  const AUDIT_PAGE', countEnd);
   vm.runInContext(page.slice(countStart, countEnd), context);
+  vm.runInContext(page.slice(countEnd, timerEnd), context);
   vm.runInContext(page.slice(start, end), context);
   await context.loadDashboard();
+  if (mode === 'overlap') {
+    const oldSummary = holdSummary = deferred();
+    const oldPoll = poll();
+    void poll();
+    assert.equal(heldCalls, 1, 'poll must skip a tick while the previous read is pending');
+    holdSummary = null;
+    successful['/api/v1/stats/summary'] = {req_rate: 9, active_sessions: 2};
+    await context.loadDashboard();
+    assert.equal(oldSummary.signal.aborted, true, 'manual refresh must abort the old poll');
+    oldSummary.resolve(response({req_rate: 99, active_sessions: 99}));
+    await oldPoll;
+    assert.equal(elements['dash-req-rate'].textContent, '9.0');
+    assert.equal(elements['dash-active-sessions'].textContent, '2');
+
+    const unfinished = holdSummary = deferred();
+    const pendingPoll = poll();
+    panel = 'apps';
+    context.stopDashStatsTimer();
+    assert.equal(poll, null);
+    assert.equal(unfinished.signal.aborted, true, 'leaving the dashboard must abort the active read');
+    unfinished.resolve(response({req_rate: 99, active_sessions: 99}));
+    await pendingPoll;
+    assert.notEqual(elements['dash-req-rate'].textContent, '99.0');
+    return;
+  }
   if (mode === 'offline') {
     assert.equal(elements['dash-apps-stat'].textContent, 'Unknown');
     assert.equal(elements['dash-ipbl-stat'].textContent, 'Unknown');
@@ -224,7 +268,7 @@ async function scenario(mode) {
   }
 }
 (async () => {
-  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error']) {
+  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error', 'overlap']) {
     await scenario(mode);
   }
 })()

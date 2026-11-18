@@ -2136,15 +2136,35 @@
   }
 
   let dashStatsTimer = null;
+  let dashboardController = null;
+
   function stopDashStatsTimer() {
     if (dashStatsTimer) {
       clearInterval(dashStatsTimer);
       dashStatsTimer = null;
     }
+    dashboardController?.abort();
+    dashboardController = null;
   }
+
   function startDashStatsTimer() {
-    stopDashStatsTimer();
-    dashStatsTimer = setInterval(() => { loadDashTraffic(); }, 10000);
+    dashStatsTimer = setInterval(() => {
+      if (!dashboardController) return runDashboardLoad(loadDashTraffic);
+    }, 10000);
+  }
+
+  async function runDashboardLoad(load) {
+    const controller = new AbortController();
+    dashboardController = controller;
+    try {
+      await load(controller.signal);
+    } finally {
+      if (dashboardController === controller) dashboardController = null;
+    }
+  }
+
+  function dashboardIsCurrent(signal) {
+    return !signal.aborted && !sessionExpired && panelFromHash() === 'dashboard';
   }
 
   const AUDIT_PAGE = 50;
@@ -2504,9 +2524,9 @@
     if (moreBtn) moreBtn.disabled = !hasMore;
   }
 
-  async function dashboardRequest(path) {
+  async function dashboardRequest(path, signal) {
     try {
-      return await fetch(path, { headers: hdr() });
+      return await fetch(path, { headers: hdr(), signal });
     } catch (_) {
       return null;
     }
@@ -2617,9 +2637,9 @@
     }
   }
 
-  async function loadDashTraffic() {
+  async function loadDashTraffic(signal) {
     if (document.getElementById('view-app').classList.contains('hidden')) return { success: 0, failures: [] };
-    if (panelFromHash() !== 'dashboard') return { success: 0, failures: [] };
+    if (!dashboardIsCurrent(signal)) return { success: 0, failures: [] };
     const errEl = document.getElementById('dash-haproxy-err');
     const table = document.getElementById('dash-haproxy-table');
     const rr = document.getElementById('dash-req-rate');
@@ -2630,13 +2650,13 @@
     if (table) table.innerHTML = stateView('loading', 'Loading HAProxy runtime…');
 
     const [summaryResponse, runtimeResponse] = await Promise.all([
-      dashboardRequest('/api/v1/stats/summary'),
-      dashboardRequest('/api/v1/stats/haproxy')
+      dashboardRequest('/api/v1/stats/summary', signal),
+      dashboardRequest('/api/v1/stats/haproxy', signal)
     ]);
     const [summary, runtime] = await Promise.all([
       dashboardJSON(summaryResponse), dashboardJSON(runtimeResponse)
     ]);
-    if (sessionExpired) return { success: 0, failures: [] };
+    if (!dashboardIsCurrent(signal)) return { success: 0, failures: [] };
 
     const failures = [];
     let success = 0;
@@ -2682,7 +2702,12 @@
     return { success, failures };
   }
 
-  async function loadDashboard() {
+  function loadDashboard() {
+    stopDashStatsTimer();
+    return runDashboardLoad(renderDashboard);
+  }
+
+  async function renderDashboard(signal) {
     const loadedAt = document.getElementById('dash-loaded-at');
     resetDashboardView();
 
@@ -2698,8 +2723,8 @@
       ['IP blacklist sources', '/api/v1/ipbl/sources'],
       ['systemd services', '/api/v1/system/services']
     ];
-    const responses = await Promise.all(requests.map((item) => dashboardRequest(item[1])));
-    if (sessionExpired) return;
+    const responses = await Promise.all(requests.map((item) => dashboardRequest(item[1], signal)));
+    if (!dashboardIsCurrent(signal)) return;
 
     const failedSources = [];
     let successCount = 0;
@@ -2715,7 +2740,7 @@
       dashboardJSON(revisionResponse), dashboardJSON(crowdsecResponse), dashboardJSON(localResponse),
       dashboardJSON(sourcesResponse), dashboardJSON(servicesResponse)
     ]);
-    if (sessionExpired) return;
+    if (!dashboardIsCurrent(signal)) return;
 
     const attention = [];
     if (status) {
@@ -2810,6 +2835,7 @@
 
     if (decisionsResponse && decisionsResponse.ok) {
       const decisionsText = await decisionsResponse.text().catch(() => '');
+      if (!dashboardIsCurrent(signal)) return;
       const count = decisionsCount(decisionsText);
       if (count != null) {
         document.getElementById('dash-cs-sub').textContent +=
@@ -2817,7 +2843,7 @@
       }
     } else if (crowdsec && crowdsec.reachable) {
       const message = decisionsResponse ? await apiMessage(decisionsResponse) : 'Could not load CrowdSec decisions.';
-      if (sessionExpired) return;
+      if (!dashboardIsCurrent(signal)) return;
       document.getElementById('dash-cs-stat').innerHTML = statusBadge('LAPI reachable', 'warning');
       document.getElementById('dash-cs-sub').textContent += ' · Decisions unavailable';
       attention.push(alertView('warning', 'CrowdSec decisions unavailable', message));
@@ -2862,8 +2888,8 @@
       servicesBox.innerHTML = stateView('error', 'systemd service state is unavailable. Use Refresh after checking API host access to systemd.');
     }
 
-    const trafficResult = await loadDashTraffic();
-    if (sessionExpired) return;
+    const trafficResult = await loadDashTraffic(signal);
+    if (!dashboardIsCurrent(signal)) return;
     successCount += trafficResult.success;
     failedSources.push(...trafficResult.failures);
 
@@ -2894,7 +2920,7 @@
         loadedAt.textContent = 'Loaded at ' + stamp;
       }
     }
-    if (panelFromHash() === 'dashboard') startDashStatsTimer();
+    startDashStatsTimer();
   }
 
   document.getElementById('btn-dashboard-refresh').onclick = () => {
