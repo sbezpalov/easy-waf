@@ -2130,6 +2130,7 @@
       const j = JSON.parse(rawText);
       if (Array.isArray(j)) return j.length;
       if (j && Array.isArray(j.data)) return j.data.length;
+      if (j === null || (j && j.data === null)) return 0;
     } catch (_) { /* ignore */ }
     return null;
   }
@@ -2793,6 +2794,12 @@
         document.getElementById('dash-cs-sub').textContent +=
           (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') + 'sample decisions: ' + count;
       }
+    } else if (crowdsec && crowdsec.reachable) {
+      const message = decisionsResponse ? await apiMessage(decisionsResponse) : 'Could not load CrowdSec decisions.';
+      if (sessionExpired) return;
+      document.getElementById('dash-cs-stat').innerHTML = statusBadge('LAPI reachable', 'warning');
+      document.getElementById('dash-cs-sub').textContent += ' · Decisions unavailable';
+      attention.push(alertView('warning', 'CrowdSec decisions unavailable', message));
     }
 
     if (Array.isArray(localEntries) || Array.isArray(sourceEntries)) {

@@ -192,6 +192,40 @@ func TestDecisionsSample_XApiKey(t *testing.T) {
 	}
 }
 
+func TestDecisionsSampleValidatesUpstreamPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		valid      bool
+	}{
+		{"empty list", "[]", true},
+		{"null list", "null", true},
+		{"decision list", `[{"id":1,"value":"192.0.2.1"}]`, true},
+		{"wrapped list", `{"data":[{"id":1}]}`, true},
+		{"wrapped empty list", `{"data":null}`, true},
+		{"HTML", "<html>login</html>", false},
+		{"invalid JSON", "[", false},
+		{"unexpected object", `{"error":"unavailable"}`, false},
+		{"wrapped error", `{"data":"unavailable"}`, false},
+		{"scalar entry", `["not a decision"]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			c := testClient(t, srv, "fixture-key")
+			raw, err := c.DecisionsSample(t.Context())
+			if tc.valid {
+				if err != nil || string(raw) != tc.body {
+					t.Fatalf("expected unchanged decision payload, got %q, %v", raw, err)
+				}
+			} else if err == nil || len(raw) != 0 {
+				t.Fatalf("unexpected payload was accepted: %q, %v", raw, err)
+			}
+		})
+	}
+}
+
 func TestAddDecision_InvalidIP(t *testing.T) {
 	c := Client{BaseURL: "http://127.0.0.1:8080", APIKey: "k"}
 	err := c.AddDecision(context.Background(), AddDecisionRequest{IP: "not-an-ip", Type: "ban", Duration: "1h", Reason: "x"})

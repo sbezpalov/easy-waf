@@ -1230,7 +1230,7 @@ Checks whether LAPI answers by sending `GET /v1/watchers/login` to it.
 
 ### `GET /api/v1/integrations/crowdsec/decisions`
 Returns the active decisions by sending `GET /v1/decisions?limit=100` to LAPI.
-- **Response:** `200`, with LAPI's JSON body **passed through verbatim** (`Content-Type: application/json`). This is CrowdSec's decision array; its fields (`id`, `value`, `type`, `duration`, `scenario`, `origin`, ...) are defined by CrowdSec, not by easy-waf. CrowdSec answers `null` rather than `[]` when there are no decisions.
+- **Response:** `200`, with a validated decision list passed through verbatim as JSON. The list can be an array of objects, `null` for an empty list, or one of these values under `data`. Dashboard counts an empty list as zero decisions. A malformed body or unexpected structure is an upstream error.
 - **Errors:** `502` (JSON) on an upstream failure. For all decision operations, LAPI `401` or `403` returns a message to check the configured API key and permissions. Other upstream failures return `CrowdSec LAPI request failed.` The server log holds diagnostic details.
 
 ### `POST /api/v1/integrations/crowdsec/decisions`

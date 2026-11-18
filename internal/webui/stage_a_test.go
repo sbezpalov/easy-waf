@@ -146,7 +146,7 @@ async function scenario(mode) {
     '/api/v1/certificates/summary': {valid: 0, expiring_soon: 0, expired: 0, failed: 0, total: 0, certificates: []},
     '/api/v1/revisions?limit=30': [],
     '/api/v1/integrations/crowdsec': {reachable: true, last_message: 'probe ok'},
-    '/api/v1/integrations/crowdsec/decisions': [],
+    '/api/v1/integrations/crowdsec/decisions': null,
     '/api/v1/ipbl/local': [],
     '/api/v1/ipbl/sources': [],
     '/api/v1/system/services': {services: []},
@@ -154,7 +154,13 @@ async function scenario(mode) {
     '/api/v1/stats/haproxy': {backends: []}
   };
   const context = {console, document: {getElementById: id => elements[id]}, sessionExpired: false,
-    fetch: async path => { if (mode === 'offline') throw Error('fixture offline'); return response(successful[path]); },
+    fetch: async path => {
+      if (mode === 'offline') throw Error('fixture offline');
+      if (mode === 'decisions_denied' && path === '/api/v1/integrations/crowdsec/decisions') {
+        return response({error: 'CrowdSec LAPI denied access. Check the configured API key and permissions.'}, 502);
+      }
+      return response(successful[path]);
+    },
     hdr: () => ({}), panelFromHash: () => 'dashboard', startDashStatsTimer: () => {},
     esc: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;'),
     statusBadge: (label, tone) => '<badge data-tone="' + tone + '">' + label + '</badge>',
@@ -162,9 +168,12 @@ async function scenario(mode) {
     stateView: (state, message) => '<state data-state="' + state + '">' + message + '</state>',
     renderApplicationVersion: value => { elements['dash-version'].textContent = value || 'Unknown'; },
     renderPersistentEdgeStatus: status => status != null, formatAuditTime: value => value,
-    decisionsCount: text => JSON.parse(text).length, shortSha: value => String(value || '').slice(0, 8),
+    apiMessage: async r => (await r.json()).error, shortSha: value => String(value || '').slice(0, 8),
     withBusy: async (_button, fn) => fn(), setTimeout, clearTimeout};
   vm.createContext(context);
+  const countStart = page.indexOf('  function decisionsCount(');
+  const countEnd = page.indexOf('  let dashStatsTimer', countStart);
+  vm.runInContext(page.slice(countStart, countEnd), context);
   vm.runInContext(page.slice(start, end), context);
   await context.loadDashboard();
   if (mode === 'offline') {
@@ -181,11 +190,19 @@ async function scenario(mode) {
     assert.match(elements['dash-cs-stat'].innerHTML, /LAPI reachable/);
     assert.match(elements['dash-edge-state'].innerHTML, /Saved and applied match/);
     assert.match(elements['dash-edge-runtime'].textContent, /Process and backend health are separate/);
-    assert.match(elements['dash-loaded-at'].textContent, /^Loaded at /);
-    assert.equal(elements['dash-status'].dataset.state, 'ready');
+    assert.match(elements['dash-loaded-at'].textContent, mode === 'decisions_denied' ? /^Partial data at / : /^Loaded at /);
+    if (mode === 'decisions_denied') {
+      assert.match(elements['dash-cs-stat'].innerHTML, /warning.*LAPI reachable/);
+      assert.match(elements['dash-cs-sub'].textContent, /Decisions unavailable/);
+      assert.match(elements['dash-attention-list'].innerHTML, /configured API key and permissions/);
+      assert.equal(elements['dash-status'].dataset.state, 'error');
+    } else {
+      assert.match(elements['dash-cs-sub'].textContent, /sample decisions: 0/);
+      assert.equal(elements['dash-status'].dataset.state, 'ready');
+    }
   }
 }
-(async () => { await scenario('offline'); await scenario('success'); })()
+(async () => { await scenario('offline'); await scenario('success'); await scenario('decisions_denied'); })()
   .catch(error => {console.error(error); process.exitCode = 1});
 `
 

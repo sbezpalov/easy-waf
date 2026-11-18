@@ -110,7 +110,35 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if len(b) > maxDecisionsBytes {
 		return nil, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
 	}
+	if !validDecisionSample(b) {
+		return nil, fmt.Errorf("crowdsec lapi decisions: invalid decision list")
+	}
 	return json.RawMessage(b), nil
+}
+
+func validDecisionSample(raw []byte) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) > 0 && raw[0] == '{' {
+		var envelope struct {
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return false
+		}
+		raw = envelope.Data
+	}
+	// A null list is CrowdSec's empty response. Preserve it and any
+	// supported data envelope in the public response.
+	var decisions []json.RawMessage
+	if err := json.Unmarshal(raw, &decisions); err != nil {
+		return false
+	}
+	for _, decision := range decisions {
+		if len(decision) == 0 || decision[0] != '{' {
+			return false
+		}
+	}
+	return true
 }
 
 // AddDecisionRequest is the easy-waf API / UI payload mapped to LAPI POST /v1/decisions.
