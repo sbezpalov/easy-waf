@@ -5,9 +5,11 @@ package hostd
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
@@ -82,9 +84,11 @@ func TestDispatch_invalidStagedPath(t *testing.T) {
 
 func TestDispatch_journalBadFlag(t *testing.T) {
 	d := &Dispatcher{Runner: &mockRunner{}}
-	r := d.Dispatch(context.Background(), []string{"journal", "--follow"})
-	if r.OK {
-		t.Fatal("flag rejected")
+	for _, flag := range []string{"--follow", "--output-fields=MESSAGE"} {
+		r := d.Dispatch(t.Context(), []string{"journal", "-u", "haproxy.service", flag})
+		if r.OK {
+			t.Errorf("accepted caller-supplied %s", flag)
+		}
 	}
 }
 
@@ -93,6 +97,37 @@ func TestDispatchJournalReportsOutputLimit(t *testing.T) {
 	resp := d.Dispatch(t.Context(), []string{"journal", "-n", "5000", "-u", "haproxy.service", "--output", "json"})
 	if resp.OK || !resp.OutputLimited || resp.Error != commandoutput.ErrLimit.Error() {
 		t.Fatalf("unexpected broker response: %+v", resp)
+	}
+}
+
+func TestDispatchJournalProjectsFieldsForStructuredHAProxyEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		selected bool
+	}{
+		{"blocked requests", []string{"-u", "haproxy.service", "--grep", blocklog.JournalGrepBlocked, "--output", "json"}, true},
+		{"publication rules", []string{"--output", "json", "--grep", blocklog.JournalGrepPolicy, "-u", "haproxy.service"}, true},
+		{"legacy edge query", []string{"-u", "haproxy", "--grep", "[PL]R--", "--output", "json"}, true},
+		{"service snapshot", []string{"-u", "haproxy.service", "--output", "json"}, false},
+		{"text output", []string{"-u", "haproxy.service", "--grep", blocklog.JournalGrepBlocked, "--output", "cat"}, false},
+		{"multiple units", []string{"-u", "haproxy.service", "-u", "crowdsec.service", "--grep", blocklog.JournalGrepPolicy, "--output", "json"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &mockRunner{}
+			dispatcher := &Dispatcher{Runner: runner}
+			resp := dispatcher.Dispatch(t.Context(), append([]string{"journal"}, tc.args...))
+			if !resp.OK || runner.lastName != binJournalctl {
+				t.Fatalf("journal dispatch failed: %+v", resp)
+			}
+			want := slices.Clone(tc.args)
+			if tc.selected {
+				want = append(want, "--output-fields=MESSAGE")
+			}
+			if !slices.Equal(runner.lastArgs, want) {
+				t.Fatalf("journalctl argv = %v, want %v", runner.lastArgs, want)
+			}
+		})
 	}
 }
 

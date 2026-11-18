@@ -6,6 +6,7 @@ package hostd
 import (
 	"context"
 	"os"
+	"slices"
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
@@ -231,7 +232,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if err := hostspec.ValidateJournalArgs(jargs); err != nil {
 			return failResp(err.Error(), 1)
 		}
-		stdout, stderr, code, err := runCmd(ctx, r, binJournalctl, jargs...)
+		stdout, stderr, code, err := runCmd(ctx, r, binJournalctl, journalCommandArgs(jargs)...)
 		if err != nil || code != 0 {
 			return failExec(stdout, stderr, code, err)
 		}
@@ -305,4 +306,29 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	default:
 		return failResp("unknown op: "+op, 1)
 	}
+}
+
+// journalCommandArgs receives validated broker arguments. Only the structured
+// edge queries consume MESSAGE and the timestamp that journalctl includes in JSON.
+func journalCommandArgs(args []string) []string {
+	var edge, grep bool
+	var output string
+	for i := 1; i < len(args); i++ {
+		switch args[i-1] {
+		case "-u":
+			unit := args[i]
+			if edge || (unit != "haproxy.service" && unit != "haproxy") {
+				return args
+			}
+			edge = true
+		case "--grep":
+			grep = true
+		case "--output":
+			output = args[i]
+		}
+	}
+	if edge && grep && output == "json" {
+		return slices.Concat(args, []string{"--output-fields=MESSAGE"})
+	}
+	return args
 }
