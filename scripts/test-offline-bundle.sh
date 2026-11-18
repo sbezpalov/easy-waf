@@ -94,7 +94,8 @@ if [[ "$EUID" == 0 ]] && (
   # The release job supplies dist/<name>.deb. Exercise the builder up to the
   # APT boundary with a local DEB and without contacting package repositories.
   builder="$TEMP_DIR/relative package/build"
-  mkdir -p "$builder/dist" "$builder/fixture/DEBIAN" "$builder/scripts/lib"
+  mkdir -p "$builder/dist" "$builder/scripts/lib"
+  install -d -m 0755 "$builder/fixture/DEBIAN"
   cp "$SCRIPT_DIR/build-offline-bundle.sh" "$builder/scripts/"
   cp "$SCRIPT_DIR/lib/offline-apt.sh" "$builder/scripts/lib/"
   printf '9.9.9\n' >"$builder/VERSION"
@@ -203,7 +204,7 @@ FIXTURE
   export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
   export APT_WORKSPACE="$TEMP_DIR/apt-workspace"
   export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
-  mkdir -p "$builder/wrong/DEBIAN"
+  install -d -m 0755 "$builder/wrong/DEBIAN"
   sed 's/^Version: 9\.9\.9$/Version: 9.9.8/' "$builder/fixture/DEBIAN/control" >"$builder/wrong/DEBIAN/control"
   dpkg-deb --build "$builder/wrong" "$PAYLOAD/$package" >/dev/null
   write_bundle_checksums
@@ -304,7 +305,7 @@ fi
 [[ -z "$(find "$TEMP_DIR" -maxdepth 1 -name '.crowdsec-snapshot.*' -print -quit)" ]]
 
 if command -v python3 >/dev/null; then
-  python3 -I "$SCRIPT_DIR/test-offline-crowdsec-snapshot.py"
-  python3 -I "$SCRIPT_DIR/test-install-offline-crowdsec.py"
+  python3 -B -I "$SCRIPT_DIR/test-offline-crowdsec-snapshot.py"
+  python3 -B -I "$SCRIPT_DIR/test-install-offline-crowdsec.py"
 fi
 echo "test-offline-bundle: PASS"
