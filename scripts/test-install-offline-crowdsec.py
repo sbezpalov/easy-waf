@@ -3,6 +3,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import socket
 import stat
 import tempfile
 import unittest
@@ -85,6 +86,20 @@ class OfflineInstallTest(unittest.TestCase):
             with self.assertRaises(HTTPError) as rejected:
                 urlopen(endpoint + "/snapshot/other.yaml", timeout=3)
             self.assertEqual(rejected.exception.code, 404)
+
+    def test_mirror_serves_requests_with_an_idle_connection(self):
+        index = b'{"fixture": {}}'
+        with installer.serve_index(index) as port:
+            address = ("127.0.0.1", port)
+            with socket.create_connection(address, timeout=2):
+                url = f"http://{address[0]}:{port}{installer.INDEX_ROUTE}?with_content=true"
+                with urlopen(url, timeout=2) as response:
+                    self.assertEqual(response.read(), index)
+
+    def test_mirror_closes_idle_connections(self):
+        with patch.object(installer, "INDEX_SOCKET_TIMEOUT", 0.5), installer.serve_index(b"{}") as port:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as idle:
+                self.assertEqual(idle.recv(1), b"")
 
 
 if __name__ == "__main__":

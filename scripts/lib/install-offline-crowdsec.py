@@ -5,7 +5,7 @@ import fcntl
 import hashlib
 import os
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,6 +19,7 @@ DATA = Path("/var/lib/crowdsec/data")
 RUN = Path("/run/lock")
 PENDING = ".easy-waf-offline-install"
 INDEX_ROUTE = "/snapshot/.index.json"
+INDEX_SOCKET_TIMEOUT = 5
 ACQUISITION = b"""source: file
 filenames:
   - /var/log/haproxy.log
@@ -96,6 +97,8 @@ def copy_verified(source, destination):
 @contextmanager
 def serve_index(index):
     class IndexRequest(BaseHTTPRequestHandler):
+        timeout = INDEX_SOCKET_TIMEOUT
+
         def respond(self, send_body):
             if self.path not in (INDEX_ROUTE, INDEX_ROUTE + "?with_content=true"):
                 self.send_error(404)
@@ -116,7 +119,7 @@ def serve_index(index):
         def log_message(self, *_args):
             pass
 
-    with HTTPServer(("127.0.0.1", 0), IndexRequest) as server:
+    with ThreadingHTTPServer(("127.0.0.1", 0), IndexRequest) as server:
         worker = Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
