@@ -104,9 +104,25 @@ func TestReleaseRequiresSameCommitCI(t *testing.T) {
 
 func TestReleaseVerifiesSignedArtifactsBeforePublishing(t *testing.T) {
 	release := readWorkflow(t, "release.yml")
-	signed, verified, staged := -1, -1, -1
+	built, signed, verified, staged := -1, -1, -1, -1
 	for index, step := range release.Jobs["build-packages"].Steps {
 		switch step["name"] {
+		case "Build amd64 and arm64 tarballs and packages":
+			built = index
+			run, _ := step["run"].(string)
+			for _, command := range []string{
+				`GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb`,
+				`go version -m "dist/$binary"`,
+				"vcs.revision",
+				"vcs.modified=false",
+			} {
+				if !strings.Contains(run, command) {
+					t.Errorf("release build must check source provenance with %q", command)
+				}
+			}
+			if step["if"] != nil || step["continue-on-error"] != nil {
+				t.Error("source provenance verification must not be skipped or softened")
+			}
 		case "Sign SHA256SUMS":
 			signed = index
 		case "Verify signed release artifacts before publication":
@@ -129,8 +145,8 @@ func TestReleaseVerifiesSignedArtifactsBeforePublishing(t *testing.T) {
 			staged = index
 		}
 	}
-	if signed < 0 || verified <= signed || staged <= verified {
-		t.Fatal("packages must be signed and verified before staging")
+	if built < 0 || signed <= built || verified <= signed || staged <= verified {
+		t.Fatal("packages must pass source provenance verification, signing and signature verification before staging")
 	}
 	if len(release.Permissions) != 1 || release.Permissions["contents"] != "read" {
 		t.Fatal("release jobs must default to read-only repository access")

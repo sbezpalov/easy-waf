@@ -16,7 +16,6 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  GOFLAGS: -buildvcs=false
 
 jobs:
   # Local reusable workflow resolves at this tag's commit, not moving main.
@@ -47,7 +46,8 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match VERSION (${FILE_VERSION})" >&2
             exit 1
           fi
-          bash scripts/release-notes.sh "$VERSION" CHANGELOG.md > release_notes.md
+          mkdir -p "$RUNNER_TEMP/easy-waf-release"
+          bash scripts/release-notes.sh "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/easy-waf-release/release_notes.md"
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -65,9 +65,21 @@ jobs:
           set -euo pipefail
           export PATH="$(go env GOPATH)/bin:$PATH"
           VERSION="${GITHUB_REF_NAME#v}"
+          # Stage outputs outside the checkout so Go records a clean revision
+          # for both architectures.
+          OUTPUT="$RUNNER_TEMP/easy-waf-release"
+          REVISION="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           for arch in amd64 arm64; do
             rm -rf dist
-            EASY_WAF_ARCH="$arch" make deb
+            GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb
+            for binary in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
+              metadata="$(go version -m "dist/$binary")"
+              if ! grep -Fxq $'\tbuild\tvcs.revision='"$REVISION" <<<"$metadata" ||
+                 ! grep -Fxq $'\tbuild\tvcs.modified=false' <<<"$metadata"; then
+                echo "Unexpected source metadata in $arch $binary for $REVISION" >&2
+                exit 1
+              fi
+            done
             STAGE="$(mktemp -d)"
             mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults" "${STAGE}/scripts/lib"
             cp -a dist/easy-waf-hostd dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin "${STAGE}/dist/"
@@ -78,10 +90,11 @@ jobs:
             cp -a scripts/lib/selinux-easy-waf-haproxy.sh "${STAGE}/scripts/lib/"
             NAME="easy-waf_${VERSION}_linux_${arch}.tar.gz"
             DEB="easy-waf_${VERSION}_${arch}.deb"
-            tar -czf "${NAME}" -C "${STAGE}" .
-            mv "dist/${DEB}" .
+            tar -czf "$OUTPUT/${NAME}" -C "${STAGE}" .
+            mv "dist/${DEB}" "$OUTPUT/"
             rm -rf "${STAGE}"
           done
+          mv "$OUTPUT"/* .
           # Every artifact in one SHA256SUMS: scripts/lib/release-verify.sh looks
           # the file up by name, and installing an unverified .deb would be root
           # code execution just like an unverified tarball.
