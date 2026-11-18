@@ -161,19 +161,26 @@ if (( cache_available_kb < cache_required_kb || root_available_kb < root_require
   exit 1
 fi
 
-TEMP_DIR="$(mktemp -d)"
+TEMP_DIR="$(mktemp -d /tmp/easy-waf-offline.XXXXXXXXXX)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
+chmod 0711 "$TEMP_DIR"
+mkdir -m 0755 -- "${TEMP_DIR}/lists" "${TEMP_DIR}/empty"
 printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "${SCRIPT_DIR}/repository")" >"${TEMP_DIR}/sources.list"
 cat >"${TEMP_DIR}/apt.conf" <<EOF
+Dir::Etc::main "/dev/null";
+Dir::Etc::parts "${TEMP_DIR}/empty";
 Dir::Etc::sourcelist "${TEMP_DIR}/sources.list";
-Dir::Etc::sourceparts "-";
+Dir::Etc::sourceparts "${TEMP_DIR}/empty";
+Dir::State::lists "${TEMP_DIR}/lists";
+Dir::Cache::pkgcache "";
+Dir::Cache::srcpkgcache "";
 Acquire::Languages "none";
-APT::Get::List-Cleanup "0";
 APT::Install-Recommends "false";
 EOF
 
 echo "[offline-install] using only the verified local repository"
 export APT_CONFIG="${TEMP_DIR}/apt.conf"
+unset EASY_WAF_APT_UPDATED
 export EASY_WAF_OFFLINE=1
 export EASY_WAF_REPO_ROOT="${SCRIPT_DIR}/payload"
 export EASY_WAF_RELEASE_VERSION="$BUNDLE_VERSION"

@@ -159,22 +159,22 @@ set -eu
 [[ "$EASY_WAF_RELEASE_VERSION" == 9.9.9 && "$EASY_WAF_OFFLINE" == 1 ]]
 [[ "$EASY_WAF_INSTALL_CROWDSEC" == "${EXPECTED_CROWDSEC:-0}" ]]
 [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == "${EXPECTED_AGENT:-}" ]]
+[[ ! -v EASY_WAF_APT_UPDATED ]]
 if [[ "${CHECK_APT_REPOSITORY:-0}" == 1 ]]; then
   apt_dir="${APT_CONFIG%/*}"
+  printf '%s\n' "$apt_dir" >"$APT_WORKSPACE"
   grep -Fq '/stage%20%231%25/repository ./' "$apt_dir/sources.list"
-  mkdir -p "$apt_dir/lists/partial" "$apt_dir/cache" "$apt_dir/config.d"
+  apt-config dump >"$apt_dir/effective.conf"
+  grep -Fxq "Dir::State::lists \"$apt_dir/lists\";" "$apt_dir/effective.conf"
+  grep -Fxq 'Dir::Etc::main "/dev/null";' "$apt_dir/effective.conf"
+  grep -Fxq "Dir::Etc::parts \"$apt_dir/empty\";" "$apt_dir/effective.conf"
+  grep -Fxq "Dir::Etc::sourceparts \"$apt_dir/empty\";" "$apt_dir/effective.conf"
+  [[ -z "$(ls -A "$apt_dir/lists")" && "$(stat -c %a "$apt_dir")" == 711 ]]
   : >"$apt_dir/status"
-  cp "$APT_CONFIG" "$apt_dir/fixture.conf"
-  cat >>"$apt_dir/fixture.conf" <<EOF
-Dir::Etc::main "/dev/null";
-Dir::Etc::parts "$apt_dir/config.d";
-Dir::State::status "$apt_dir/status";
-Dir::State::lists "$apt_dir/lists";
-Dir::Cache "$apt_dir/cache";
-APT::Sandbox::User "root";
-EOF
-  APT_CONFIG="$apt_dir/fixture.conf" apt-get -qq update
-  (cd "$apt_dir" && APT_CONFIG="$apt_dir/fixture.conf" apt-get -qq download easy-waf)
+  # Keep the fixture independent of the host dpkg database and container caps.
+  apt_fixture=(-o "Dir::State::status=$apt_dir/status" -o APT::Sandbox::User=root)
+  apt-get "${apt_fixture[@]}" -qq update
+  (cd "$apt_dir" && apt-get "${apt_fixture[@]}" -qq download easy-waf)
   deb="easy-waf_9.9.9_$(dpkg --print-architecture).deb"
   cmp "repository/$deb" "$apt_dir/$deb"
 fi
@@ -199,12 +199,14 @@ python3() {
 }
 FIXTURE
   export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
+  export APT_WORKSPACE="$TEMP_DIR/apt-workspace"
   export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
   write_bundle_checksums
-  if ! CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
+  if ! EASY_WAF_APT_UPDATED=1 CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
     echo 'test-offline-bundle: installer could not use the local APT repository' >&2
     exit 1
   fi
+  [[ ! -e "$(< "$APT_WORKSPACE")" ]]
   rm -- "$HOST_CHANGES"
   if EASY_WAF_INSTALL_CROWDSEC=1 "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
     echo 'test-offline-bundle: base bundle accepted CrowdSec provisioning' >&2

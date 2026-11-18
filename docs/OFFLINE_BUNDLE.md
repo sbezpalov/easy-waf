@@ -13,9 +13,10 @@ upload leaves a draft, inspect it before retrying the workflow for that tag.
 
 The ISO is more than a copy of `easy-waf_*.deb`. It contains the recursive
 dependency closure for HAProxy, nftables, PostgreSQL, Fail2Ban, CrowdSec and the
-HAProxy SPOA bouncer. During installation APT is configured through a temporary
-`APT_CONFIG` to see only that verified repository. Existing online sources are
-not edited and cannot affect package resolution.
+HAProxy SPOA bouncer. The installer reads only the verified repository through
+a temporary APT configuration with fresh package indexes. It skips the system
+APT configuration files and their hooks. Package installation uses the host's
+dpkg database, APT pinning preferences and archive cache.
 
 ## Download and verify
 
@@ -74,8 +75,8 @@ reports a missing snapshot before provisioning the appliance.
 
 The installer fails closed when an internal file is damaged, the host is not
 Ubuntu 24.04, the architecture differs, or there is insufficient free space. It
-does not modify `/etc/apt/sources.list*`; the local-only APT configuration exists
-only for the installer process.
+leaves the host's APT sources and indexes intact. It removes its temporary APT
+configuration and indexes on exit.
 
 The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
 The outer manifest also covers this file. Offline package installation requires
