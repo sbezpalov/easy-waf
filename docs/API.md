@@ -813,7 +813,7 @@ Per-frontend and per-backend HAProxy statistics.
 - **Response:** `200`, `metrics.HAProxyReport` (`internal/metrics/haproxy.go`):
   - `collected_at` (RFC 3339; the zero time when the read failed)
   - `frontends`: array of objects with `name`, `status`, `sessions_cur`, `sessions_max`, `bytes_in`, `bytes_out`, `req_rate`, `http_2xx`, `http_4xx`, `http_5xx`, and `total_req_hint` (sum of the cumulative `hrsp_*` counters).
-  - `backends`: array of objects with the same counters (except `total_req_hint`) plus `health` (`healthy`, `degraded` or `down`, derived from the servers) and `servers` (each with `name`, `status`, `sessions_cur`).
+  - `backends`: array of objects with the same counters (except `total_req_hint`) plus `health` (`healthy`, `degraded`, `down` or `unknown`) and `servers` (each with `name`, `status`, `sessions_cur`). An aggregate `DOWN` reports `down`. A pool with both known up and unavailable servers reports `degraded`. When the remaining server states do not establish overall health, the pool reports `unknown`.
   - `error` (string, only on failure, e.g. `stats socket "/run/haproxy/easy-waf-admin.sock": dial unix ...: connect: no such file or directory`). On failure `frontends` and `backends` are `null`.
 - **Errors:** none returned as an HTTP error. If the client disconnects while waiting for the read, nothing is written.
 
@@ -824,7 +824,7 @@ Dashboard aggregate computed from the same report.
   - `blocked_requests`: `http_4xx + http_5xx` on frontend `fe_https`, or on all frontends if there is no `fe_https`. This counts every 4xx and 5xx response, including those that come from the backends, not only WAF denials.
   - `active_sessions`: sum of frontend `sessions_cur`.
   - `req_rate` (float): sum of frontend `req_rate`.
-  - `backends_up`, `backends_down`: counts of backend **servers**, not backends. A server whose status is `UP` (including transitional `UP n/m`) counts as up; one whose status contains `DOWN` or starts with `MAINT` or `NOLB` counts as down; other states are not counted.
+  - `backends_up`, `backends_down`: counts of individual backend servers. `UP` and transitional `UP n/m` count as up. `DOWN` and statuses beginning with `MAINT`, `NOLB` or `DRAIN` count as unavailable. Unknown states such as `no check` are excluded from both counts.
   - `error` (string, only when the socket read failed; the counters are then `0`).
   ```json
   {"total_requests":184220,"blocked_requests":312,"active_sessions":7,"req_rate":3,"backends_up":4,"backends_down":0}

@@ -61,6 +61,65 @@ func TestParseShowStatCSV(t *testing.T) {
 	}
 }
 
+func TestBackendHealthDistinguishesUnavailableAndUnknownServers(t *testing.T) {
+	const header = "# pxname,svname,status,type\n"
+	for _, tc := range []struct {
+		name, rows, health string
+		up, down           int64
+	}{
+		{"no servers", "pool,BACKEND,UP,1\n", "unknown", 0, 0},
+		{"unchecked", "pool,BACKEND,UP,1\npool,s1,no check,2\n", "unknown", 0, 0},
+		{"unknown beside up", "pool,BACKEND,UP,1\npool,s1,UP,2\npool,s2,,2\n", "unknown", 1, 0},
+		{"unknown beside down", "pool,BACKEND,UP,1\npool,s1,DOWN,2\npool,s2,no check,2\n", "unknown", 0, 1},
+		{"draining", "pool,BACKEND,UP,1\npool,s1,DRAIN,2\n", "down", 0, 1},
+		{"degraded", "pool,BACKEND,UP,1\npool,s1,UP 2/3,2\npool,s2,MAINT(via),2\n", "degraded", 1, 1},
+		{"confirmed down", "pool,BACKEND,DOWN,1\npool,s1,no check,2\n", "down", 0, 0},
+		{"healthy", "pool,BACKEND,UP,1\npool,s1,UP,2\n", "healthy", 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report, err := ParseShowStatCSV([]byte(header + tc.rows))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Backends) != 1 || report.Backends[0].Health != tc.health {
+				t.Fatalf("expected %s backend, got %+v", tc.health, report.Backends)
+			}
+			summary := BuildSummary(report)
+			if summary.BackendsUp != tc.up || summary.BackendsDown != tc.down {
+				t.Fatalf("server counts = %d/%d, want %d/%d", summary.BackendsUp, summary.BackendsDown, tc.up, tc.down)
+			}
+			e := NewPrometheusExporter()
+			e.UpdateFromHAProxyReport(report)
+			assertBackendUpGauge(t, e, tc.health)
+		})
+	}
+}
+
+func assertBackendUpGauge(t *testing.T, e *PrometheusExporter, health string) {
+	t.Helper()
+	families, err := e.reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "easy_waf_haproxy_backend_up" {
+			continue
+		}
+		var want float64
+		if health != "down" {
+			want = 1
+		}
+		metrics := family.GetMetric()
+		if health == "unknown" || len(metrics) != 1 || metrics[0].GetGauge().GetValue() != want {
+			t.Fatalf("unexpected backend_up for %q: %v", health, metrics)
+		}
+		return
+	}
+	if health != "unknown" {
+		t.Fatalf("backend_up missing for %q", health)
+	}
+}
+
 func TestStatsSocketPath(t *testing.T) {
 	gs := config.GlobalSettings{HAProxyStatsSocketPath: "/custom.sock"}
 	if p := StatsSocketPath(gs, "/var/lib/easy-waf"); p != "/custom.sock" {

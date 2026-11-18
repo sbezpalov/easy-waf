@@ -660,7 +660,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - **Ответ:** `200`, `metrics.HAProxyReport` (`internal/metrics/haproxy.go`):
   - `collected_at` (RFC 3339; нулевое время, если чтение не удалось)
   - `frontends`: массив объектов с `name`, `status`, `sessions_cur`, `sessions_max`, `bytes_in`, `bytes_out`, `req_rate`, `http_2xx`, `http_4xx`, `http_5xx` и `total_req_hint` (сумма накопительных счётчиков `hrsp_*`).
-  - `backends`: массив объектов с теми же счётчиками (кроме `total_req_hint`) плюс `health` (`healthy`, `degraded` или `down`, выводится из состояния серверов) и `servers` (у каждого — `name`, `status`, `sessions_cur`).
+  - `backends`: массив объектов с теми же счётчиками (кроме `total_req_hint`), полем `health` (`healthy`, `degraded`, `down` или `unknown`) и списком `servers` с полями `name`, `status` и `sessions_cur`. Статус всего бэкенда `DOWN` даёт `down`. Сочетание подтверждённых рабочих и недоступных серверов даёт `degraded`. Если имеющихся состояний недостаточно для оценки здоровья всего пула, возвращается `unknown`.
   - `error` (string, только при сбое, например `stats socket "/run/haproxy/easy-waf-admin.sock": dial unix ...: connect: no such file or directory`). При сбое `frontends` и `backends` равны `null`.
 - **Ошибки:** HTTP-ошибкой ничего не возвращается. Если клиент отключился, пока ждал чтения, ничего не записывается.
 
@@ -671,7 +671,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `blocked_requests`: `http_4xx + http_5xx` на фронтенде `fe_https` или на всех фронтендах, если `fe_https` нет. Учитываются все ответы 4xx и 5xx, включая пришедшие от бэкендов, а не только отказы WAF.
   - `active_sessions`: сумма `sessions_cur` фронтендов.
   - `req_rate` (float): сумма `req_rate` фронтендов.
-  - `backends_up`, `backends_down`: число **серверов** бэкендов, а не бэкендов. Сервер со статусом `UP` (включая переходный `UP n/m`) считается работающим; сервер, статус которого содержит `DOWN` или начинается с `MAINT` или `NOLB`, — неработающим; прочие состояния не учитываются.
+  - `backends_up`, `backends_down`: число отдельных серверов в бэкендах. `UP` и переходный `UP n/m` учитываются как рабочие состояния. `DOWN` и статусы, начинающиеся с `MAINT`, `NOLB` или `DRAIN`, учитываются как недоступные. Неопределённые состояния, например `no check`, исключаются из обоих счётчиков.
   - `error` (string, только если чтение сокета не удалось; счётчики тогда равны `0`).
   ```json
   {"total_requests":184220,"blocked_requests":312,"active_sessions":7,"req_rate":3,"backends_up":4,"backends_down":0}

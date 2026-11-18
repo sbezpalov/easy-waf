@@ -73,7 +73,7 @@ All names use the `easy_waf_` prefix.
 | `easy_waf_haproxy_frontend_requests_total` | Counter | `frontend` | Increments by the delta of HAProxy `TotalReqHint` between internal 15s refreshes (approximation of new responses since last poll). |
 | `easy_waf_haproxy_frontend_req_rate` | Gauge | `frontend` | Current HAProxy frontend request rate (`rate` from `show stat`). |
 | `easy_waf_haproxy_backend_sessions_current` | Gauge | `backend` | Current backend sessions (`scur`). |
-| `easy_waf_haproxy_backend_up` | Gauge | `backend` | `1` if aggregate backend health is not `down`, else `0`. |
+| `easy_waf_haproxy_backend_up` | Gauge | `backend` | `1` for healthy or degraded backends and `0` for unavailable backends. Backends with unknown health have no sample. |
 | `easy_waf_haproxy_stats_available` | Gauge | — | `1` if the latest HAProxy stats sample succeeded, otherwise `0`. |
 | `easy_waf_certificate_days_remaining` | Gauge | `domain`, `mode` | Days until `NotAfter` when known (per certificate row from the summary builder). |
 | `easy_waf_crowdsec_decisions_total` | Gauge | — | Number of decisions returned by the latest successful LAPI sample (requested limit 100). A successful empty sample reports `0`. The series is absent before the first sample and after a failed refresh. |

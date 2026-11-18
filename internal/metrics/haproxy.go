@@ -397,29 +397,34 @@ func hrspTotal(rec []string, idx map[string]int) int64 {
 }
 
 func deriveBackendHealth(b *BackendStat) string {
-	if len(b.Servers) == 0 {
-		return strings.ToLower(strings.TrimSpace(b.Status))
-	}
-	up, down := 0, 0
-	for _, s := range b.Servers {
-		st := strings.ToUpper(strings.TrimSpace(s.Status))
-		if st == "UP" || strings.HasPrefix(st, "UP ") {
-			up++
-			continue
-		}
-		if strings.HasPrefix(st, "DOWN") || strings.HasPrefix(st, "MAINT") || strings.HasPrefix(st, "NOLB") || strings.Contains(st, "DOWN") {
-			down++
-			continue
-		}
-		up++
-	}
-	if down == 0 {
-		return "healthy"
-	}
-	if up == 0 {
+	if strings.EqualFold(strings.TrimSpace(b.Status), "DOWN") {
 		return "down"
 	}
-	return "degraded"
+	up, down := serverHealthCounts(b.Servers)
+	switch {
+	case up > 0 && down > 0:
+		return "degraded"
+	case up > 0 && up == int64(len(b.Servers)):
+		return "healthy"
+	case down > 0 && down == int64(len(b.Servers)):
+		return "down"
+	default:
+		return "unknown"
+	}
+}
+
+func serverHealthCounts(servers []ServerStat) (up, down int64) {
+	for _, s := range servers {
+		st := strings.ToUpper(strings.TrimSpace(s.Status))
+		switch {
+		case st == "UP" || strings.HasPrefix(st, "UP "):
+			up++
+		case strings.Contains(st, "DOWN"), strings.HasPrefix(st, "MAINT"),
+			strings.HasPrefix(st, "NOLB"), strings.HasPrefix(st, "DRAIN"):
+			down++
+		}
+	}
+	return up, down
 }
 
 // BuildSummary aggregates HAProxyReport for the dashboard summary API.
@@ -453,14 +458,9 @@ func BuildSummary(rep *HAProxyReport) SummaryReport {
 	}
 	var up, down int64
 	for _, be := range rep.Backends {
-		for _, sv := range be.Servers {
-			st := strings.ToUpper(strings.TrimSpace(sv.Status))
-			if st == "UP" || strings.HasPrefix(st, "UP ") {
-				up++
-			} else if strings.Contains(st, "DOWN") || strings.HasPrefix(st, "MAINT") || strings.HasPrefix(st, "NOLB") {
-				down++
-			}
-		}
+		serversUp, serversDown := serverHealthCounts(be.Servers)
+		up += serversUp
+		down += serversDown
 	}
 	out.TotalRequests = totalHint
 	out.BlockedRequests = blocked

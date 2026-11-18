@@ -344,7 +344,7 @@ func runtimeDiagnosticSteps(app config.Application, route ApplicationDiagnosticS
 		step.Evidence = serverEvidence
 		return runtime, step
 	default:
-		step := diagnosticStep("backend", "Backend", diagnosticUnknown, "backend_health_unknown", "HAProxy did not provide a recognized backend health state.")
+		step := diagnosticStep("backend", "Backend", diagnosticUnknown, "backend_health_unknown", "HAProxy statistics do not establish backend health.")
 		step.Evidence = serverEvidence
 		return runtime, step
 	}

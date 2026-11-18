@@ -60,7 +60,7 @@ func NewPrometheusExporter() *PrometheusExporter {
 	e.haproxyBackendUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "easy_waf",
 		Name:      "haproxy_backend_up",
-		Help:      "1 if the backend aggregate health is not down, else 0.",
+		Help:      "1 for healthy or degraded backends, 0 for unavailable backends. Unknown health is omitted.",
 	}, []string{"backend"})
 	e.certDaysRemaining = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "easy_waf",
@@ -170,7 +170,12 @@ func (e *PrometheusExporter) UpdateFromHAProxyReport(rep *HAProxyReport) {
 			continue
 		}
 		e.haproxyBackendSessions.WithLabelValues(bn).Set(float64(be.SessionsCur))
-		e.haproxyBackendUp.WithLabelValues(bn).Set(backendUpGauge(be))
+		switch be.Health {
+		case "healthy", "degraded":
+			e.haproxyBackendUp.WithLabelValues(bn).Set(1)
+		case "down":
+			e.haproxyBackendUp.WithLabelValues(bn).Set(0)
+		}
 	}
 }
 
@@ -200,14 +205,6 @@ func (c haproxyRuntimeCollector) Collect(ch chan<- prometheus.Metric) {
 	for _, gauge := range c.gauges {
 		gauge.Collect(ch)
 	}
-}
-
-func backendUpGauge(be BackendStat) float64 {
-	h := strings.ToLower(strings.TrimSpace(be.Health))
-	if h == "down" {
-		return 0
-	}
-	return 1
 }
 
 // UpdateFromCertSummary sets per-certificate days remaining (resets stale label pairs each refresh).
