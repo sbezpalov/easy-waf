@@ -64,7 +64,15 @@ def mkdir_tree(path):
     for folder in (*reversed(path.parents), path):
         if folder.is_symlink():
             raise ValueError(f"refusing symlink directory {folder}")
-        folder.mkdir(exist_ok=True)
+        try:
+            folder.mkdir(mode=0o755)
+        except FileExistsError:
+            if not folder.is_dir():
+                raise
+        else:
+            # The packaged SPOA service must be able to traverse its config
+            # parent, even if the installer inherited root's private umask.
+            folder.chmod(0o755)
 
 
 def copy_verified(source, destination):

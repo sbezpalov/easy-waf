@@ -3,6 +3,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -57,6 +58,19 @@ class OfflineInstallTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlink directory"):
             installer.copy_verified(source, linked / "file")
         self.assertFalse((redirected / "file").exists())
+
+    def test_created_directories_allow_service_traversal_under_private_umask(self):
+        existing = self.root / "operator"
+        existing.mkdir(mode=0o700)
+        target = existing / "crowdsec" / "acquis.d"
+        previous = os.umask(0o077)
+        try:
+            installer.mkdir_tree(target)
+        finally:
+            os.umask(previous)
+        self.assertEqual(stat.S_IMODE(existing.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(target.parent.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
 
     def test_mirror_serves_only_embedded_index(self):
         index = b'{"fixture": {}}'
