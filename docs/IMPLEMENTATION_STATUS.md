@@ -6,8 +6,9 @@
 **Current local artifacts:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
-The amd64 ISO passed installation, reboot, live About verification and repeat
-installation on a disconnected VMware guest.
+Both ISOs passed installation, reboot, live About verification and repeat
+installation without a network adapter. The amd64 guest used VMware, and
+the arm64 guest used QEMU system emulation.
 
 **Earlier offline installation evidence:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
