@@ -124,9 +124,11 @@ func readHAProxyJournal(ctx context.Context, since time.Time, lines, maxLines in
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	cutoff := since.UTC().Format("2006-01-02 15:04:05.000000 UTC")
+	legacyCutoff := false
 	reduced := false
 	for {
-		args, err := buildHAProxyJournalArgs(since, lines, pattern)
+		args, err := buildHAProxyJournalArgs(cutoff, lines, pattern)
 		if err != nil {
 			return Sample{}, err
 		}
@@ -142,6 +144,11 @@ func readHAProxyJournal(ctx context.Context, since time.Time, lines, maxLines in
 		case len(out) == 0 && err.Error() == "exit code 1":
 			// journalctl --grep exits 1 silently when nothing matches.
 			return Sample{}, nil
+		case !legacyCutoff && len(out) == 0 && err.Error() == "journal: invalid --since":
+			// The API can restart before the broker during a package upgrade.
+			// Retry with the local timestamp syntax accepted by older brokers.
+			cutoff = since.Local().Format("2006-01-02 15:04:05")
+			legacyCutoff = true
 		case errors.Is(err, commandoutput.ErrLimit) && lines > 1:
 			// The failed output may end mid-record. Requery the newest
 			// entries with a smaller row budget to get a complete sample.
@@ -153,9 +160,9 @@ func readHAProxyJournal(ctx context.Context, since time.Time, lines, maxLines in
 	}
 }
 
-func buildHAProxyJournalArgs(since time.Time, lines int, pattern string) ([]string, error) {
+func buildHAProxyJournalArgs(cutoff string, lines int, pattern string) ([]string, error) {
 	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", "haproxy.service",
-		"--since", since.Local().Format("2006-01-02 15:04:05"),
+		"--since", cutoff,
 		"--grep", pattern, "--output", "json"}
 	if err := hostspec.ValidateJournalArgs(args[1:]); err != nil {
 		return nil, err

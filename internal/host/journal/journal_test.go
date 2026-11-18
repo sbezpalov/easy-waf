@@ -58,13 +58,13 @@ func TestBuildJournalArgs_haproxyOnSystemdList(t *testing.T) {
 }
 
 func TestBuildBlockedArgs(t *testing.T) {
-	since := time.Date(2026, 11, 11, 9, 5, 0, 0, time.Local)
+	const since = "2026-11-11 09:05:00.000000 UTC"
 	args, err := buildHAProxyJournalArgs(since, BlockedLines, blocklog.JournalGrepBlocked)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"journal", "--no-pager", "-n", "5000", "-u", "haproxy.service",
-		"--since", "2026-11-11 09:05:00", "--grep", blocklog.JournalGrepBlocked, "--output", "json"}
+		"--since", since, "--grep", blocklog.JournalGrepBlocked, "--output", "json"}
 	if len(args) != len(want) {
 		t.Fatalf("args: %v", args)
 	}
@@ -122,8 +122,55 @@ func TestReadHAProxyJournalPropagatesUnrelatedFailures(t *testing.T) {
 	}
 }
 
+func TestReadHAProxyJournalUsesAbsoluteCutoff(t *testing.T) {
+	// The same wall-clock time occurs twice when clocks fall back.
+	for _, tc := range []struct {
+		offset int
+		want   string
+	}{
+		{-4 * 3600, "2026-11-01 05:30:00.123456 UTC"},
+		{-5 * 3600, "2026-11-01 06:30:00.123456 UTC"},
+	} {
+		since := time.Date(2026, 11, 1, 1, 30, 0, 123456000, time.FixedZone("fixture", tc.offset))
+		run := func(_ context.Context, args ...string) ([]byte, error) {
+			idx := slices.Index(args, "--since")
+			if idx < 0 || args[idx+1] != tc.want {
+				t.Fatalf("expected cutoff %q, got %v", tc.want, args)
+			}
+			return nil, nil
+		}
+		if _, err := readHAProxyJournal(t.Context(), since, 2, PolicyLines, blocklog.JournalGrepPolicy, run); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestReadHAProxyJournalRetriesLegacyBrokerCutoff(t *testing.T) {
+	since := time.Date(2026, 11, 1, 9, 5, 0, 0, time.Local)
+	wantCutoffs := []string{since.UTC().Format("2006-01-02 15:04:05.000000 UTC"), "2026-11-01 09:05:00", "2026-11-01 09:05:00"}
+	wantLimits := []string{"4", "4", "2"}
+	replies := []error{errors.New("journal: invalid --since"), commandoutput.ErrLimit, nil}
+	calls := 0
+	run := func(_ context.Context, args ...string) ([]byte, error) {
+		if calls >= len(replies) || args[7] != wantCutoffs[calls] || args[3] != wantLimits[calls] {
+			t.Fatalf("unexpected journal request %d: %v", calls, args)
+		}
+		err := replies[calls]
+		calls++
+		if err != nil {
+			return nil, err
+		}
+		return []byte("{\"MESSAGE\":\"fixture\"}\n"), nil
+	}
+	sample, err := readHAProxyJournal(t.Context(), since, 4, BlockedLines, blocklog.JournalGrepBlocked, run)
+	if err != nil || calls != len(replies) || !sample.Truncated || sample.JSON == "" {
+		t.Fatalf("journal sample %+v after %d calls, error %v", sample, calls, err)
+	}
+}
+
 func TestBuildPolicyJournalArgs(t *testing.T) {
-	if _, err := buildHAProxyJournalArgs(time.Now(), 200, blocklog.JournalGrepPolicy); err != nil {
+	const since = "2026-11-11 09:05:00.000000 UTC"
+	if _, err := buildHAProxyJournalArgs(since, 200, blocklog.JournalGrepPolicy); err != nil {
 		t.Fatal(err)
 	}
 	pattern := regexp.MustCompile(blocklog.JournalGrepPolicy)
@@ -140,7 +187,7 @@ func TestBuildPolicyJournalArgs(t *testing.T) {
 			t.Errorf("journal pattern matched outside a valid policy capture: %s", tail)
 		}
 	}
-	if _, err := buildHAProxyJournalArgs(time.Now(), 200, "arbitrary"); err == nil {
+	if _, err := buildHAProxyJournalArgs(since, 200, "arbitrary"); err == nil {
 		t.Fatal("unapproved grep pattern was accepted")
 	}
 }

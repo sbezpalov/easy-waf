@@ -42,6 +42,7 @@ const (
 var (
 	usernameRE     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	journalSinceRE = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$|^[0-9]+[smhdw]?$`)
+	journalUTCRE   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6} UTC$`)
 	// verbose/export can dump binary fields and broader metadata; keep
 	// operator-facing formats only.
 	journalOutput = map[string]struct{}{
@@ -183,7 +184,7 @@ func ValidateJournalArgs(args []string) error {
 			if i+1 >= len(args) {
 				return fmt.Errorf("journal: %s requires value", a)
 			}
-			if !journalSinceRE.MatchString(args[i+1]) {
+			if !journalSinceRE.MatchString(args[i+1]) && !journalUTCRE.MatchString(args[i+1]) {
 				return fmt.Errorf("journal: invalid %s", a)
 			}
 			i++

@@ -110,3 +110,19 @@ func TestValidateJournalArgs(t *testing.T) {
 		t.Fatal("export output must be rejected")
 	}
 }
+
+func TestValidateJournalArgsUTCCutoff(t *testing.T) {
+	const valid = "2026-11-01 05:30:00.123456 UTC"
+	if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--since", valid}); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []string{
+		"2026-11-01 01:30:00.123456 America/New_York",
+		"2026-11-01 05:30:00.1234567 UTC",
+		valid + " --file=/tmp/fixture",
+	} {
+		if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--since", invalid}); err == nil {
+			t.Errorf("accepted unsupported cutoff %q", invalid)
+		}
+	}
+}
