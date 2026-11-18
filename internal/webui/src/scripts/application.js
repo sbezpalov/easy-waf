@@ -2125,13 +2125,10 @@
     });
   }
 
-  function decisionsCount(rawText) {
-    try {
-      const j = JSON.parse(rawText);
-      if (Array.isArray(j)) return j.length;
-      if (j && Array.isArray(j.data)) return j.data.length;
-      if (j === null || (j && j.data === null)) return 0;
-    } catch (_) { /* ignore */ }
+  function decisionsCount(sample) {
+    if (Array.isArray(sample)) return sample.length;
+    if (Array.isArray(sample?.data)) return sample.data.length;
+    if (sample === null || sample?.data === null) return 0;
     return null;
   }
 
@@ -2524,27 +2521,31 @@
     if (moreBtn) moreBtn.disabled = !hasMore;
   }
 
-  async function dashboardRequest(path, signal) {
+  async function dashboardRequest(path, signal, includeError = false) {
+    if (signal.aborted) return { failure: 'canceled' };
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal.addEventListener('abort', cancel, { once: true });
+    const timeout = setTimeout(cancel, 10000);
+    let result = { failure: 'offline' };
     try {
-      return await fetch(path, { headers: hdr(), signal });
+      const response = await fetch(path, { headers: hdr(), signal: controller.signal });
+      if (response.ok) {
+        result = { failure: 'invalid response' };
+        result = { data: await response.json() };
+      } else {
+        result = { failure: 'HTTP ' + response.status };
+        if (includeError) result.failure = await apiMessage(response);
+      }
     } catch (_) {
-      return null;
+      // The last completed stage determines the failure when no abort occurred.
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', cancel);
     }
-  }
-
-  async function dashboardJSON(response) {
-    if (!response || !response.ok) return null;
-    try {
-      return await response.json();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function responseLabel(response, payload) {
-    if (!response) return 'offline';
-    if (response.ok) return payload?.error || 'invalid response';
-    return 'HTTP ' + response.status;
+    if (signal.aborted) return { failure: 'canceled' };
+    if (controller.signal.aborted) return { failure: 'timed out' };
+    return result;
   }
 
   function resetDashboardView() {
@@ -2649,17 +2650,15 @@
     if (errEl) errEl.textContent = '';
     if (table) table.innerHTML = stateView('loading', 'Loading HAProxy runtime…');
 
-    const [summaryResponse, runtimeResponse] = await Promise.all([
+    const [summaryResult, runtimeResult] = await Promise.all([
       dashboardRequest('/api/v1/stats/summary', signal),
       dashboardRequest('/api/v1/stats/haproxy', signal)
-    ]);
-    const [summary, runtime] = await Promise.all([
-      dashboardJSON(summaryResponse), dashboardJSON(runtimeResponse)
     ]);
     if (!dashboardIsCurrent(signal)) return { success: 0, failures: [] };
 
     const failures = [];
     let success = 0;
+    const summary = summaryResult.data;
     if (summary && !summary.error) {
       success++;
       rr.textContent = summary.req_rate != null && Number.isFinite(Number(summary.req_rate))
@@ -2667,9 +2666,10 @@
         : 'Unknown';
       active.textContent = summary.active_sessions != null ? String(summary.active_sessions) : 'Unknown';
     } else {
-      failures.push('HAProxy summary (' + responseLabel(summaryResponse, summary) + ')');
+      failures.push('HAProxy summary (' + (summaryResult.failure || summary?.error || 'invalid response') + ')');
     }
 
+    const runtime = runtimeResult.data;
     if (runtime && !runtime.error) {
       success++;
       const backends = Array.isArray(runtime.backends) ? runtime.backends : [];
@@ -2694,7 +2694,7 @@
           rows + '</tbody></table></div>';
       }
     } else {
-      failures.push('HAProxy runtime (' + responseLabel(runtimeResponse, runtime) + ')');
+      failures.push('HAProxy runtime (' + (runtimeResult.failure || runtime?.error || 'invalid response') + ')');
       table.innerHTML = stateView('offline', 'HAProxy runtime is unavailable. Use Refresh after checking the stats socket and API logs.');
     }
 
@@ -2718,29 +2718,28 @@
       ['Certificate summary', '/api/v1/certificates/summary'],
       ['Revision history', '/api/v1/revisions?limit=30'],
       ['CrowdSec LAPI', '/api/v1/integrations/crowdsec'],
-      ['CrowdSec decisions', '/api/v1/integrations/crowdsec/decisions'],
+      ['CrowdSec decisions', '/api/v1/integrations/crowdsec/decisions', true],
       ['Local IP blacklist', '/api/v1/ipbl/local'],
       ['IP blacklist sources', '/api/v1/ipbl/sources'],
       ['systemd services', '/api/v1/system/services']
     ];
-    const responses = await Promise.all(requests.map((item) => dashboardRequest(item[1], signal)));
+    const [results, trafficResult] = await Promise.all([
+      Promise.all(requests.map(([, path, includeError]) => dashboardRequest(path, signal, includeError))),
+      loadDashTraffic(signal)
+    ]);
     if (!dashboardIsCurrent(signal)) return;
 
     const failedSources = [];
     let successCount = 0;
-    responses.forEach((response, index) => {
-      if (response && response.ok) successCount++;
-      else failedSources.push(requests[index][0] + ' (' + responseLabel(response) + ')');
+    results.forEach((result, index) => {
+      if (result.failure) failedSources.push(requests[index][0] + ' (' + result.failure + ')');
+      else successCount++;
     });
 
-    const [statusResponse, edgeResponse, appsResponse, certResponse, revisionResponse, crowdsecResponse,
-      decisionsResponse, localResponse, sourcesResponse, servicesResponse] = responses;
-    const [status, edge, appsData, certSummary, revisions, crowdsec, localEntries, sourceEntries, servicesData] = await Promise.all([
-      dashboardJSON(statusResponse), dashboardJSON(edgeResponse), dashboardJSON(appsResponse), dashboardJSON(certResponse),
-      dashboardJSON(revisionResponse), dashboardJSON(crowdsecResponse), dashboardJSON(localResponse),
-      dashboardJSON(sourcesResponse), dashboardJSON(servicesResponse)
-    ]);
-    if (!dashboardIsCurrent(signal)) return;
+    const [
+      {data: status}, {data: edge}, {data: appsData}, {data: certSummary}, {data: revisions}, {data: crowdsec},
+      {data: decisions, failure: decisionsFailure}, {data: localEntries}, {data: sourceEntries}, {data: servicesData}
+    ] = results;
 
     const attention = [];
     if (status) {
@@ -2833,20 +2832,16 @@
       document.getElementById('dash-cs-sub').textContent = crowdsec.last_message || 'Reachability probe completed';
     }
 
-    if (decisionsResponse && decisionsResponse.ok) {
-      const decisionsText = await decisionsResponse.text().catch(() => '');
-      if (!dashboardIsCurrent(signal)) return;
-      const count = decisionsCount(decisionsText);
+    if (!decisionsFailure) {
+      const count = decisionsCount(decisions);
       if (count != null) {
         document.getElementById('dash-cs-sub').textContent +=
           (document.getElementById('dash-cs-sub').textContent ? ' · ' : '') + 'sample decisions: ' + count;
       }
     } else if (crowdsec && crowdsec.reachable) {
-      const message = decisionsResponse ? await apiMessage(decisionsResponse) : 'Could not load CrowdSec decisions.';
-      if (!dashboardIsCurrent(signal)) return;
       document.getElementById('dash-cs-stat').innerHTML = statusBadge('LAPI reachable', 'warning');
       document.getElementById('dash-cs-sub').textContent += ' · Decisions unavailable';
-      attention.push(alertView('warning', 'CrowdSec decisions unavailable', message));
+      attention.push(alertView('warning', 'CrowdSec decisions unavailable', decisionsFailure));
     }
 
     if (Array.isArray(localEntries) || Array.isArray(sourceEntries)) {
@@ -2888,8 +2883,6 @@
       servicesBox.innerHTML = stateView('error', 'systemd service state is unavailable. Use Refresh after checking API host access to systemd.');
     }
 
-    const trafficResult = await loadDashTraffic(signal);
-    if (!dashboardIsCurrent(signal)) return;
     successCount += trafficResult.success;
     failedSources.push(...trafficResult.failures);
 

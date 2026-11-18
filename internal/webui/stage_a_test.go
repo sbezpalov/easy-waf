@@ -163,8 +163,22 @@ async function scenario(mode) {
   let poll;
   let holdSummary;
   let heldCalls = 0;
+  let simulateTimeout = mode === 'timeout';
+  let timeoutID = 0;
+  const timeouts = new Map();
+  const timedOutSignals = [];
+  function waitForAbort(signal) {
+    timedOutSignals.push(signal);
+    return new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(Error('fixture aborted')), {once: true});
+    });
+  }
   const context = {console, document: {getElementById: id => elements[id]}, sessionExpired: false,
     fetch: async (path, options) => {
+      if (simulateTimeout && path === '/api/v1/certificates/summary') return waitForAbort(options.signal);
+      if (simulateTimeout && path === '/api/v1/stats/haproxy') {
+        return {...response(null), json: () => waitForAbort(options.signal)};
+      }
       if (holdSummary && path === '/api/v1/stats/summary') {
         heldCalls++;
         holdSummary.signal = options.signal;
@@ -195,7 +209,9 @@ async function scenario(mode) {
     renderApplicationVersion: value => { elements['dash-version'].textContent = value || 'Unknown'; },
     renderPersistentEdgeStatus: status => status != null, formatAuditTime: value => value,
     apiMessage: async r => (await r.json()).error, shortSha: value => String(value || '').slice(0, 8),
-    withBusy: async (_button, fn) => fn(), setTimeout, clearTimeout};
+    withBusy: async (_button, fn) => fn(),
+    setTimeout: (callback, delay) => { timeouts.set(++timeoutID, {callback, delay}); return timeoutID; },
+    clearTimeout: id => { timeouts.delete(id); }};
   vm.createContext(context);
   const countStart = page.indexOf('  function decisionsCount(');
   const countEnd = page.indexOf('  let dashStatsTimer', countStart);
@@ -203,7 +219,33 @@ async function scenario(mode) {
   vm.runInContext(page.slice(countStart, countEnd), context);
   vm.runInContext(page.slice(countEnd, timerEnd), context);
   vm.runInContext(page.slice(start, end), context);
-  await context.loadDashboard();
+  const refresh = context.loadDashboard();
+  if (mode === 'timeout') {
+    await new Promise(setImmediate);
+    assert.equal(timedOutSignals.length, 2, 'slow headers and slow body must run in parallel');
+    assert.equal(timeouts.size, 2, 'only the stalled requests should still have timers');
+    for (const {callback, delay} of timeouts.values()) {
+      assert.equal(delay, 10000);
+      callback();
+    }
+    await refresh;
+    assert.equal(timeouts.size, 0);
+    assert.ok(timedOutSignals.every(signal => signal.aborted));
+    assert.equal(elements['dash-apps-stat'].textContent, '0 / 0');
+    assert.equal(elements['dash-req-rate'].textContent, '0.0');
+    assert.match(elements['dash-haproxy-table'].innerHTML, /data-state="offline"/);
+    assert.match(elements['dash-attention-list'].innerHTML, /Certificate summary \(timed out\)/);
+    assert.match(elements['dash-attention-list'].innerHTML, /HAProxy runtime \(timed out\)/);
+    assert.equal(elements['dash-status'].dataset.state, 'error');
+    assert.equal(typeof poll, 'function', 'periodic refresh must resume after a timeout');
+    simulateTimeout = false;
+    await poll();
+    assert.match(elements['dash-haproxy-table'].innerHTML, /data-state="empty"/);
+    assert.equal(elements['dash-haproxy-err'].textContent, '');
+    assert.equal(timeouts.size, 0);
+    return;
+  }
+  await refresh;
   if (mode === 'overlap') {
     const oldSummary = holdSummary = deferred();
     const oldPoll = poll();
@@ -268,7 +310,7 @@ async function scenario(mode) {
   }
 }
 (async () => {
-  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error', 'overlap']) {
+  for (const mode of ['offline', 'success', 'decisions_denied', 'stats_error', 'summary_error', 'runtime_error', 'overlap', 'timeout']) {
     await scenario(mode);
   }
 })()
