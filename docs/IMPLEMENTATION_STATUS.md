@@ -22,6 +22,9 @@ verified clean installation of the current public-profile ISO with a separate
 CrowdSec snapshot, isolated APT state, appliance readiness after reboot and
 repeat installation without the snapshot on a VMware guest with no network
 adapter.
+The [arm64 follow-up on the same commit](release-evidence/1.6.1-offline-arm64-441e499.md)
+verified the offline build, clean installation, restart and repeat
+installation without the snapshot in an isolated QEMU guest.
 
 The [local release archives on 441e499](release-evidence/1.6.1-release-assets-441e499.md)
 passed the workflow build step, checksum verification and binary comparison
