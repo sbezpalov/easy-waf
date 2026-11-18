@@ -390,6 +390,27 @@ An application (`config.Application`, `internal/config/types.go`) maps a public 
 
 Omitting `path_policy` on update keeps the stored policy. Profile `ha-mcp` with no policy yet receives the preset from `GET /profiles`. Timeouts are 1–86400 seconds. At most 32 allow entries and 8 rules.
 
+### Publication rules
+
+`policy_rules` is an ordered array of up to 16 objects with `id`, `action`
+and `match`. Each ID must be unique within the application, start with a
+lowercase letter or digit, and use at most 32 lowercase letters, digits,
+underscores or hyphens. Omitting the field on update preserves the list.
+Sending `[]` clears it.
+
+The `match` object requires at least one condition. All specified fields
+must match. `path_prefix` matches the path and its descendants, and `/`
+matches every path. `methods` and `source_cidrs` each match any listed
+value and accept up to 16 entries. Methods are uppercase, and source
+entries are IP addresses or CIDRs. `header` checks for the presence of
+an HTTP header, and optional `header_prefix` matches the beginning of its
+value.
+
+The actions are `count` to record a match and continue, `block` to return
+403, and `pass` to end this list and resume later security checks. Path
+exposure and required-header checks run before the ordered list. Events
+are available via [policy matches](#get-apiv1securitypolicy-matches).
+
 Mutating endpoints in this section and the next require a password step-up no older than 5 minutes. They take the application mutation gate before reading the previous row or writing data, then apply the saved change to HAProxy. A rejected apply attempts to undo the database change. An error after a successful reload keeps the saved change and the loaded edge configuration. Apply errors use JSON `{"error":…}`; internal engine, path and database details, including any failed undo, are logged server-side. The status code is:
 - `503` with `apply timed out; retry` when the mutation-gate wait or apply deadline expires before the configuration is applied. Gate acquisition and normal apply work each have a two-minute budget; recovery reload has a separate 30-second limit.
 - `422` with `apply failed` when validation, promotion or reload fails.
@@ -1049,6 +1070,24 @@ Deletes an allowlist entry.
 - **Path params:** `id`.
 - **Response:** `204`, no body.
 - **Errors (text/plain):** `404` (`not found`) for an unknown id. `500` on a database error.
+
+## Publication rule matches
+
+### `GET /api/v1/security/policy-matches`
+
+Returns HTTP requests with publication rule matches from the HAProxy
+journal, newest first. Each event has `time`, `host`, final HTTP `status`
+and `matches`, an ordered array of `{id, action}` objects. The event payload
+excludes request targets and header values. Count matches can appear for
+successful or rejected requests.
+
+- **Query** `period` accepts `1h`, `24h` (default) or `7d`. `limit` accepts
+  1–1000 events (default 200).
+- **Response** `200` with `period`, UTC `since`, `truncated` and `events`.
+  `truncated` indicates a journal read budget was reached or the response
+  omitted events beyond the requested limit.
+- **Errors** `400` for an invalid period or limit, `503` when the journal
+  cannot be read.
 
 ## Blocked requests
 

@@ -56,10 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EASY_WAF_ENV_FILE`, verify the database named in its archived
   `etc/easy-waf.env`. The current backup and restore commands use Python 3
   with libpq, and the Debian package declares the Python dependency.
-- API startup applies migrations through 028, which adds persistent tracking
-  of saved and applied edge configuration. After this migration, older
-  binaries that only support schema 027 will refuse to start against the
-  upgraded database. To roll back, use the matching package and archive, and
+- API startup applies migrations through 029. Migration 028 tracks saved
+  and applied edge configuration. Migration 029 adds ordered publication
+  rules and initializes existing applications with an empty rule list.
+  Binaries that support only schema 028 or older refuse to start against
+  the upgraded database. To roll back, use the matching package and archive, and
   [restore into an empty database](docs/BACKUP_RESTORE.md#restoring-an-older-schema-after-an-upgrade).
   Revision rollback changes edge artifacts, not saved applications/settings;
   a later Apply or API startup reconciliation can replace that runtime rollback.
@@ -159,6 +160,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ordered publication rules.** An application can match the request path,
+  method, client network and header. Count records a match and continues,
+  Block returns 403, and Pass ends the ordered list and resumes the remaining
+  security checks. Events & audit shows matched rules, including Count on
+  successful requests. See [Application API](docs/API.md#publication-rules).
+- **Product and component versions.** Overview → About shows the running
+  version, build details, installed package versions and the connected
+  PostgreSQL version. It includes the Apache 2.0 terms and attribution.
+  The Easy WAF command-line binaries accept `--version`.
+
 - **OpenClaw Gateway profile.** Publish the Control UI over HTTPS with
   WebSocket and Gateway authentication. HAProxy rebuilds the forwarded
   client address for the Gateway. See the [OpenClaw configuration guide](docs/OPENCLAW.md).
@@ -198,10 +209,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Offline ISO installation.** The bundle contains the local DEB manifest
-  required by the installer. Missing or invalid offline inputs stop
-  installation without a GitHub download. Prepare a separate CrowdSec Hub
-  snapshot for a fresh full-profile installation with the public ISO. See
+  required by the installer. The installer checks the DEB checksum, name,
+  version and architecture before provisioning and uses temporary APT
+  settings and indexes. The release build compares both copies of the DEB
+  in the extracted ISO with the verified release package before signing.
+  Prepare a separate CrowdSec Hub snapshot for a fresh full-profile
+  installation with the public ISO. See
   [Offline bundle](docs/OFFLINE_BUNDLE.md).
+- **HAProxy forwarding headers.** The `X-Forwarded-For` option is scoped to
+  HTTP and HTTPS frontends, with the IPv4 loopback exception.
 - **Offline ISO build.** Relative paths to local DEB files, including the path
   supplied by the release workflow, are converted to absolute paths before APT
   resolves dependencies.
