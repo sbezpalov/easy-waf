@@ -17,6 +17,12 @@ The [offline ISO follow-up on 77d73e0](release-evidence/1.6.1-offline-iso-77d73e
 passed both isolated APT solves, checksum validation and comparison with the
 exact amd64 and arm64 candidate DEBs.
 
+The [amd64 offline follow-up on 441e499](release-evidence/1.6.1-offline-vmware-441e499.md)
+verified clean installation of the current public-profile ISO with a separate
+CrowdSec snapshot, isolated APT state, appliance readiness after reboot and
+repeat installation without the snapshot on a VMware guest with no network
+adapter.
+
 **Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
 configured Easy WAF on a clean guest. The full profile then stopped in
