@@ -57,6 +57,15 @@ func TestScopedJournalUIContract(t *testing.T) {
 }
 
 func TestScopedJournalUIInteraction(t *testing.T) {
+	runJournalInteraction(t, scopedJournalInteractionTest)
+}
+
+func TestEdgeJournalUIInteraction(t *testing.T) {
+	runJournalInteraction(t, edgeJournalInteractionTest)
+}
+
+func runJournalInteraction(t *testing.T, script string) {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node.js is required for UI interaction tests")
@@ -67,12 +76,88 @@ func TestScopedJournalUIInteraction(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "-e", scopedJournalInteractionTest)
+	cmd := exec.CommandContext(ctx, node, "-e", script)
 	cmd.Stdin = bytes.NewReader(page)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("scoped journal interaction: %v\n%s", err, output)
+		t.Fatalf("journal interaction: %v\n%s", err, output)
 	}
 }
+
+const edgeJournalInteractionTest = `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const start = page.indexOf('  async function loadBlocked()');
+const end = page.indexOf('  async function loadAuditPage(', start);
+assert.ok(start >= 0 && end > start, 'missing edge journal functions');
+
+const elements = Object.fromEntries([
+  'blocked-err', 'blocked-tbody', 'blocked-period', 'blocked-total', 'blocked-rules',
+  'blocked-ips', 'blocked-hosts', 'policy-matches-tbody', 'policy-matches-status',
+  'policy-matches-period'
+].map(id => [id, {textContent: '', innerHTML: '', value: '24h', replaceChildren() { this.innerHTML = ''; }}]));
+const context = vm.createContext({
+  document: {getElementById: id => elements[id]},
+  panelFromHash: () => 'logs', hdr: () => ({}), esc: String,
+  blockedRuleLabel: String, formatAuditTime: String, blockedGen: 0, policyMatchesGen: 0,
+  apiMessage: response => response.text()
+});
+vm.runInContext(page.slice(start, end), context);
+
+const blocked = {
+  summary: {total: 2, by_rule: [{key: 'geoip', count: 2}], top_ips: [{key: '192.0.2.1', count: 2}],
+    top_hosts: [{key: 'example.test', count: 2}]},
+  events: [{client_ip: '192.0.2.1', time: 'fixture', status: 403, rule: 'geoip'}]
+};
+const success = data => ({ok: true, status: 200, json: async () => data});
+const httpError = text => ({ok: false, status: 503, text});
+
+async function run() {
+  context.fetch = async () => success(blocked);
+  await context.loadBlocked();
+  assert.match(elements['blocked-ips'].innerHTML, /Blacklist/);
+  assert.match(elements['blocked-total'].textContent, /2 blocked/);
+  assert.match(elements['blocked-total'].textContent, /showing the latest 1/i);
+
+  let finishError, readingError;
+  const errorRead = new Promise(resolve => { readingError = resolve; });
+  const errorBody = new Promise(resolve => { finishError = resolve; });
+  context.fetch = async () => httpError(() => { readingError(); return errorBody; });
+  elements['blocked-period'].value = '1h';
+  const superseded = context.loadBlocked();
+  await errorRead;
+  assert.equal(elements['blocked-total'].textContent, '');
+  for (const id of ['blocked-rules', 'blocked-ips', 'blocked-hosts']) {
+    assert.equal(elements[id].innerHTML, '');
+  }
+  context.fetch = async () => success({summary: {total: 0}, events: []});
+  await context.loadBlocked();
+  finishError('superseded error');
+  await superseded;
+  assert.equal(elements['blocked-err'].textContent, '');
+  assert.match(elements['blocked-tbody'].innerHTML, /Nothing blocked in this period/);
+
+  context.fetch = async () => success(blocked);
+  await context.loadBlocked();
+  context.fetch = async () => httpError(async () => 'Journal unavailable.');
+  await context.loadBlocked();
+  assert.equal(elements['blocked-err'].textContent, 'Journal unavailable.');
+  assert.equal(elements['blocked-total'].textContent, '');
+  assert.equal(elements['blocked-ips'].innerHTML, '');
+  assert.equal(elements['blocked-tbody'].innerHTML, '');
+
+  context.fetch = async () => success({truncated: true, summary: {total: 0}, events: []});
+  await context.loadBlocked();
+  assert.match(elements['blocked-tbody'].innerHTML, /available journal sample/);
+
+  context.fetch = async () => success({truncated: true, events: []});
+  await context.loadPolicyMatches();
+  assert.match(elements['policy-matches-status'].textContent, /available journal sample/);
+  context.fetch = async () => success({truncated: false, events: []});
+  await context.loadPolicyMatches();
+  assert.equal(elements['policy-matches-status'].textContent, 'No matches in this period.');
+}
+run().catch(error => {console.error(error); process.exitCode = 1});
+`
 
 const scopedJournalInteractionTest = `
 const assert = require('node:assert/strict'), vm = require('node:vm');

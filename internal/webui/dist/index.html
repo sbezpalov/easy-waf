@@ -1203,9 +1203,9 @@
               </select>
             </label>
             <button type="button" class="secondary" id="btn-blocked-refresh">Refresh</button>
-            <span id="blocked-total" class="dash-note"></span>
+            <span id="blocked-total" class="dash-note" role="status"></span>
           </div>
-          <p id="blocked-err" class="warn" style="min-height:1rem"></p>
+          <p id="blocked-err" class="warn" role="status" style="min-height:1rem"></p>
           <div class="row" style="flex-wrap:wrap;gap:1.5rem;align-items:flex-start">
             <div><h4 style="margin:0.3rem 0">By rule</h4><table><tbody id="blocked-rules"></tbody></table></div>
             <div><h4 style="margin:0.3rem 0">Top clients</h4><table><tbody id="blocked-ips"></tbody></table></div>
@@ -4168,7 +4168,15 @@
     const tbody = document.getElementById('blocked-tbody');
     if (!tbody || panelFromHash() !== 'logs') return;
     const gen = ++blockedGen;
+    const total = document.getElementById('blocked-total');
+    const ruleRows = document.getElementById('blocked-rules');
+    const ipRows = document.getElementById('blocked-ips');
+    const hostRows = document.getElementById('blocked-hosts');
     errEl.textContent = '';
+    total.textContent = '';
+    ruleRows.replaceChildren();
+    ipRows.replaceChildren();
+    hostRows.replaceChildren();
     tbody.innerHTML = '<tr><td colspan="6" class="dash-note">Loading…</td></tr>';
     const period = document.getElementById('blocked-period').value;
     let data;
@@ -4176,7 +4184,13 @@
       const r = await fetch('/api/v1/security/blocked?period=' + encodeURIComponent(period), { headers: hdr() });
       if (gen !== blockedGen) return;
       if (r.status === 401) { setTok(''); refreshSession(); return; }
-      if (!r.ok) { tbody.innerHTML = ''; errEl.textContent = await apiMessage(r); return; }
+      if (!r.ok) {
+        const message = await apiMessage(r);
+        if (gen !== blockedGen) return;
+        tbody.replaceChildren();
+        errEl.textContent = message;
+        return;
+      }
       data = await r.json();
     } catch (e) {
       if (gen !== blockedGen) return;
@@ -4186,22 +4200,24 @@
     }
     if (gen !== blockedGen) return;
     const sum = data.summary || {};
-    document.getElementById('blocked-total').textContent = (sum.total || 0) + ' blocked' +
-      (data.truncated ? ' (newest journal entries only)' : '');
+    const events = Array.isArray(data.events) ? data.events : [];
+    total.textContent = (sum.total || 0) + ' blocked' +
+      (data.truncated ? ' (newest journal entries only)' : '') +
+      (events.length < sum.total ? '. Showing the latest ' + events.length + '.' : '');
     const rows = (list, fmt) => (list || []).map(fmt).join('') || '<tr><td class="dash-note">—</td></tr>';
-    document.getElementById('blocked-rules').innerHTML = rows(sum.by_rule, (c) =>
+    ruleRows.innerHTML = rows(sum.by_rule, (c) =>
       '<tr><td>' + esc(blockedRuleLabel(c.key)) + '</td><td>' + c.count + '</td></tr>');
-    document.getElementById('blocked-ips').innerHTML = rows(sum.top_ips, (c) =>
+    ipRows.innerHTML = rows(sum.top_ips, (c) =>
       '<tr><td><code>' + esc(c.key) + '</code></td><td>' + esc(c.country || '') + '</td><td>' + c.count +
       '</td><td><button type="button" class="secondary" data-block-ip="' + esc(c.key) + '">Blacklist</button></td></tr>');
-    document.getElementById('blocked-hosts').innerHTML = rows(sum.top_hosts, (c) =>
+    hostRows.innerHTML = rows(sum.top_hosts, (c) =>
       '<tr><td>' + esc(c.key) + '</td><td>' + c.count + '</td></tr>');
-    const events = Array.isArray(data.events) ? data.events : [];
+    const empty = data.truncated ? 'No blocked requests in the available journal sample.' : 'Nothing blocked in this period.';
     tbody.innerHTML = events.map((ev) =>
       '<tr><td>' + esc(formatAuditTime(ev.time)) + '</td><td><code>' + esc(ev.client_ip) + '</code></td><td>' +
       esc(ev.host || '—') + '</td><td><code>' + esc((ev.method || '') + ' ' + (ev.path || '')) + '</code></td><td>' +
       ev.status + '</td><td>' + esc(blockedRuleLabel(ev.rule)) + '</td></tr>').join('') ||
-      '<tr><td colspan="6" class="dash-note">Nothing blocked in this period.</td></tr>';
+      '<tr><td colspan="6" class="dash-note">' + empty + '</td></tr>';
   }
 
   async function loadPolicyMatches() {
@@ -4224,8 +4240,12 @@
         return '<tr><td>' + esc(formatAuditTime(event.time)) + '</td><td>' + esc(event.host) +
           '</td><td>' + matches + '</td><td>' + esc(String(event.status)) + '</td></tr>';
       }).join('');
-      status.textContent = data.events.length === 0 ? 'No matches in this period.' :
-        'Showing ' + data.events.length + (data.truncated ? ' most recent requests with matches.' : ' requests with matches.');
+      if (data.events.length === 0) {
+        status.textContent = data.truncated ? 'No matches in the available journal sample.' : 'No matches in this period.';
+      } else {
+        status.textContent = 'Showing ' + data.events.length +
+          (data.truncated ? ' most recent requests with matches.' : ' requests with matches.');
+      }
     } catch (error) {
       if (gen === policyMatchesGen) status.textContent = error.message || 'Could not load publication rule matches.';
     }
