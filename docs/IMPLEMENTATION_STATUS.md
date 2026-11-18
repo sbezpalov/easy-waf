@@ -3,6 +3,12 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Local pre-tag verification:** [e066d3f](release-evidence/1.6.1-pre-tag-e066d3f.md).
+Both DEBs, tarballs and offline ISOs built and passed verification. The
+full Linux suite, live HAProxy tests and all six local E2E launchers passed
+at the scopes in the report. Remote CI for the release commit, release
+approval and validation of the signed assets remain open. DNS-01 is deferred.
+
 **Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
 configured Easy WAF on a clean guest. The full profile then stopped in
