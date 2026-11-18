@@ -11,8 +11,9 @@ local Hub snapshot enabled the default collections and let the same ISO
 complete installation with the network down. The opt-in private amd64
 ISO from `cb5f8c1` passed clean VMware installation with no network
 adapter, automatic activation of the snapshot, and reinstallation with
-existing CrowdSec configuration. Public distribution of the snapshot
-remains open.
+existing CrowdSec configuration. The public-profile amd64 ISO from
+`66f30ea` also passed installation with a separately transferred snapshot
+and reinstallation after that snapshot was unmounted.
 
 **Latest local Linux verification:** [39742bd](release-evidence/1.6.1-linux-gates-39742bd.md).
 The full race suite with PostgreSQL, live HAProxy integration, fresh
