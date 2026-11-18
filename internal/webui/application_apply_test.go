@@ -20,7 +20,7 @@ func TestApplicationApplyFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
+	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_end_maintenance_success", "save_clear_bypass_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
@@ -56,6 +56,12 @@ const healthPath = element('app-health-path');
 healthPath.defaultValue = scenario === 'save_new_success' ? '' : '/ready';
 const sentHealthPath = {save_new_success: '', save_clear_health_success: '', save_update_health_success: '/next'}[scenario];
 healthPath.value = ' ' + (sentHealthPath ?? healthPath.defaultValue) + ' ';
+const maintenance = element('app-maint');
+const bypass = element('app-maint-bypass');
+maintenance.defaultChecked = scenario === 'save_end_maintenance_success';
+maintenance.checked = false;
+bypass.defaultValue = scenario === 'save_new_success' ? '' : '192.0.2.0/24, 2001:db8::/32';
+bypass.value = scenario === 'save_clear_bypass_success' ? '' : bypass.defaultValue.replace(', ', '\n');
 const policyDraft = [
   {id: 'watch', action: 'count', path: '/api', methods: 'get, HEAD', sources: '192.0.2.0/24', header: 'User-Agent', prefix: 'App '},
   {id: 'deny', action: 'block', path: '/api', methods: 'POST'}
@@ -123,6 +129,8 @@ async function run() {
     assert.equal(body.id, scenario === 'save_new_success' ? undefined : 'fixture-app');
     assert.equal(body.enabled, scenario === 'save_new_success' ? true : undefined, 'editing a publication must preserve its stored state');
     assert.equal(body.health_path, sentHealthPath);
+    assert.equal(body.maintenance, ['save_new_success', 'save_end_maintenance_success'].includes(scenario) ? false : undefined);
+    assert.deepEqual(body.maintenance_bypass_cidrs, ['save_new_success', 'save_clear_bypass_success'].includes(scenario) ? [] : undefined);
     assert.deepEqual(body.policy_rules, [
       {id:'watch', action:'count', match:{path_prefix:'/api', methods:['GET', 'HEAD'], source_cidrs:['192.0.2.0/24'], header:'User-Agent', header_prefix:'App '}},
       {id:'deny', action:'block', match:{path_prefix:'/api', methods:['POST'], source_cidrs:[], header:'', header_prefix:''}}

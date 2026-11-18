@@ -199,6 +199,15 @@
     document.getElementById('totp-setup-box').classList.add('hidden');
   }
 
+  function fillAppMaintenance(enabled, bypassCIDRs) {
+    const maintenance = document.getElementById('app-maint');
+    maintenance.defaultChecked = enabled;
+    maintenance.checked = enabled;
+    const bypass = document.getElementById('app-maint-bypass');
+    bypass.defaultValue = bypassCIDRs.join(', ');
+    bypass.value = bypass.defaultValue;
+  }
+
   function clearAppFormFields() {
     document.getElementById('app-edit-id').value = '';
     document.getElementById('apps-edit-hint').classList.add('hidden');
@@ -211,8 +220,7 @@
     const healthPath = document.getElementById('app-health-path');
     healthPath.value = '';
     healthPath.defaultValue = '';
-    document.getElementById('app-maint').checked = false;
-    document.getElementById('app-maint-bypass').value = '';
+    fillAppMaintenance(false, []);
     document.getElementById('app-fwd-auth').value = '';
     document.getElementById('app-fwd-auth-bypass').value = '';
     document.getElementById('behttps').checked = false;
@@ -1430,8 +1438,7 @@
     const healthPath = document.getElementById('app-health-path');
     healthPath.defaultValue = a.health_path || '';
     healthPath.value = healthPath.defaultValue;
-    document.getElementById('app-maint').checked = !!a.maintenance;
-    document.getElementById('app-maint-bypass').value = (a.maintenance_bypass_cidrs || []).join(', ');
+    fillAppMaintenance(!!a.maintenance, a.maintenance_bypass_cidrs || []);
     document.getElementById('app-fwd-auth').value = a.forward_auth_url || '';
     document.getElementById('app-fwd-auth-bypass').value = (a.forward_auth_bypass_cidrs || []).join(', ');
     document.getElementById('behttps').checked = !!a.backend_https;
@@ -3710,8 +3717,6 @@
         backend_port: draft.backend_port,
         backend_servers: backendServers,
         backend_balance: document.getElementById('backend-balance').value,
-        maintenance: document.getElementById('app-maint').checked,
-        maintenance_bypass_cidrs: document.getElementById('app-maint-bypass').value.split(/[\s,]+/).filter(Boolean),
         forward_auth_url: document.getElementById('app-fwd-auth').value.trim(),
         forward_auth_bypass_cidrs: document.getElementById('app-fwd-auth-bypass').value.split(/[\s,]+/).filter(Boolean),
         backend_https: document.getElementById('behttps').checked,
@@ -3724,6 +3729,12 @@
       const healthPath = document.getElementById('app-health-path');
       const checkPath = healthPath.value.trim();
       if (!editId || checkPath !== healthPath.defaultValue.trim()) body.health_path = checkPath;
+      const maintenance = document.getElementById('app-maint');
+      if (!editId || maintenance.checked !== maintenance.defaultChecked) body.maintenance = maintenance.checked;
+      const bypass = document.getElementById('app-maint-bypass');
+      const cidrs = bypass.value.split(/[\s,]+/).filter(Boolean);
+      const savedCIDRs = bypass.defaultValue.split(/[\s,]+/).filter(Boolean);
+      if (!editId || cidrs.join(',') !== savedCIDRs.join(',')) body.maintenance_bypass_cidrs = cidrs;
       const pathPolicy = collectPathPolicy();
       if (pathPolicy) body.path_policy = pathPolicy;
       body.policy_rules = collectPublicationRules();

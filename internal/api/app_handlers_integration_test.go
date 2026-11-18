@@ -461,6 +461,63 @@ func TestAppMaintenanceToggle(t *testing.T) {
 	}
 }
 
+func TestUpsertKeepsMaintenanceFromNewerMutation(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("maintedit%d", time.Now().UnixNano()))
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+	var draft map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &draft); err != nil {
+		t.Fatal(err)
+	}
+	delete(draft, "maintenance")
+	delete(draft, "maintenance_bypass_cidrs")
+	draft["name"] = json.RawMessage(`"Updated publication"`)
+
+	rec = httptest.NewRecorder()
+	req := withURLParam(httptest.NewRequest(http.MethodPost, "/api/v1/applications/x/maintenance",
+		strings.NewReader(`{"enabled":true,"bypass_cidrs":["192.0.2.0/24"]}`)), "id", a.ID)
+	s.postAppMaintenance(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enable maintenance: %d %s", rec.Code, rec.Body)
+	}
+
+	save := func(wantMode bool, wantBypass string) {
+		t.Helper()
+		raw, err := json.Marshal(draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		s.upsertApp(rec, httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(raw)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("update publication: %d %s", rec.Code, rec.Body)
+		}
+		stored, err := s.Eng.Store.GetApplication(t.Context(), a.ID)
+		if err != nil || stored.Name != "Updated publication" || stored.Maintenance != wantMode ||
+			strings.Join(stored.MaintenanceBypassCIDRs, ",") != wantBypass {
+			t.Fatalf("stored name %q, maintenance %t, bypass %v: %v", stored.Name, stored.Maintenance, stored.MaintenanceBypassCIDRs, err)
+		}
+	}
+
+	save(true, "192.0.2.0/24")
+	draft["maintenance"] = json.RawMessage("null")
+	draft["maintenance_bypass_cidrs"] = json.RawMessage("null")
+	save(true, "192.0.2.0/24")
+	draft["maintenance"] = json.RawMessage("false")
+	save(false, "192.0.2.0/24")
+	delete(draft, "maintenance")
+	draft["maintenance_bypass_cidrs"] = json.RawMessage("[]")
+	save(false, "")
+}
+
 func TestPanelUsersLifecycle(t *testing.T) {
 	s := applyFailingServer(t)
 	ctx := context.Background()

@@ -296,9 +296,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	var payload struct {
 		config.Application
-		Enabled    *bool   `json:"enabled"`
-		HealthPath *string `json:"health_path"`
-		PathPrefix *string `json:"path_prefix"`
+		Enabled     *bool   `json:"enabled"`
+		Maintenance *bool   `json:"maintenance"`
+		HealthPath  *string `json:"health_path"`
+		PathPrefix  *string `json:"path_prefix"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -354,6 +355,11 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if haveOld && a.MaintenanceBypassCIDRs == nil {
 		a.MaintenanceBypassCIDRs = old.MaintenanceBypassCIDRs
+	}
+	if payload.Maintenance != nil {
+		a.Maintenance = *payload.Maintenance
+	} else if haveOld {
+		a.Maintenance = old.Maintenance
 	}
 	// An older client that does not know forward auth must not switch it off.
 	if _, ok := present["forward_auth_url"]; haveOld && !ok {
