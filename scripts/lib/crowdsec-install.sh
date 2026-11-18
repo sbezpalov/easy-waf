@@ -155,7 +155,8 @@ crowdsec_install_spoa_bouncer_package() {
     apt-get update -qq
     # SPOA 0.4.0 copies this example during postinst. Minimal images can
     # exclude documentation, including the file the package needs to configure.
-    apt-get -o Dpkg::Options::=--force-confold \
+    # Its color probe also fails on terminals with reset but no color support.
+    NO_COLOR=1 apt-get -o Dpkg::Options::=--force-confold \
       -o Dpkg::Options::=--path-include=/usr/share/doc/crowdsec-haproxy-spoa-bouncer/examples/crowdsec.cfg \
       install -y crowdsec-haproxy-spoa-bouncer
   else

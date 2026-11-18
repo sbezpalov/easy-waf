@@ -118,6 +118,9 @@ echo 'OK: CrowdSec installer key preservation and recovery'
   }
   mkdir() { [[ "$*" == '-p /etc/haproxy/errors' ]]; }
   apt-get() {
+    if [[ "$1" == -o ]]; then
+      [[ "${NO_COLOR:-}" == 1 ]] || fail 'SPOA postinst color detection was left enabled'
+    fi
     printf '%s\n' "$@" >>"$ROOT/spoa-apt-arguments"
   }
   crowdsec_install_spoa_bouncer_package
