@@ -3,6 +3,10 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+**Current local release artifacts:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
+The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
+checksums and payload comparison with the updated HAProxy renderer.
+
 **Local pre-tag verification:** [e066d3f](release-evidence/1.6.1-pre-tag-e066d3f.md).
 Both DEBs, tarballs and offline ISOs built and passed verification. The
 full Linux suite, live HAProxy tests and all six local E2E launchers passed
