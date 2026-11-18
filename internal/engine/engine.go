@@ -297,9 +297,8 @@ func (e *Engine) SyncIPBL(ctx context.Context) (res ipbl.SyncResult, err error) 
 	return res, err
 }
 
-// writeGeoIPEnforceMap refreshes the HAProxy GeoIP batch map from merged
-// blacklist CIDRs. geo memoizes lookups across the maps of one render; nil
-// means a fresh one.
+// writeGeoIPEnforceMap refreshes the legacy batch map from merged blacklist
+// CIDRs. Application country policies use the MMDB network index separately.
 func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSettings, blacklistCIDRs []string, geo *renderGeo) error {
 	if !cfg.GeoIPEnabled {
 		return geoip.WriteDisabledEnforceMap(cfg, e.StateDir)
@@ -315,8 +314,7 @@ func (e *Engine) writeGeoIPEnforceMap(ctx context.Context, cfg config.GlobalSett
 	return geoip.WriteEnforceMap(ctx, prov, nil, cfg, e.StateDir, blacklistCIDRs)
 }
 
-// renderGeo resolves countries for one render: every address is looked up at
-// most once however many maps (global and per application) need it.
+// renderGeo deduplicates address lookups while building the legacy batch map.
 type renderGeo struct {
 	rt      *geoip.Runtime
 	cfg     config.GlobalSettings
@@ -411,7 +409,7 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 	if err := e.writeGeoIPEnforceMap(ctx, cfg, syncRes.AllCIDRs, geo); err != nil {
 		return haproxy.Rendered{}, err
 	}
-	if err := e.writePerAppGeoMaps(ctx, apps, syncRes.AllCIDRs, geo); err != nil {
+	if err := e.writePerAppGeoMaps(ctx, cfg, apps); err != nil {
 		return haproxy.Rendered{}, err
 	}
 	certs, err := e.Store.ListCertificates(ctx)
@@ -471,20 +469,40 @@ func (e *Engine) renderFromStore(ctx context.Context, cfg config.GlobalSettings)
 	return haproxy.Render(ri)
 }
 
-func (e *Engine) writePerAppGeoMaps(ctx context.Context, apps []config.Application, blacklistCIDRs []string, geo *renderGeo) error {
+func (e *Engine) writePerAppGeoMaps(ctx context.Context, cfg config.GlobalSettings, apps []config.Application) error {
+	var countries []string
+	for _, app := range apps {
+		if app.Enabled && app.Security.GeoIPEnabled {
+			countries = append(countries, app.Security.GeoIPCountryList...)
+		}
+	}
+	var networks map[string][]string
+	if len(countries) > 0 {
+		if !strings.EqualFold(strings.TrimSpace(cfg.GeoIPProvider), "maxmind") {
+			return fmt.Errorf("application GeoIP requires the maxmind provider and a local Country MMDB")
+		}
+		provider, err := geoip.NewMaxMindProvider(cfg.GeoIPMMDBPath)
+		if err != nil {
+			return fmt.Errorf("open application GeoIP database: %w", err)
+		}
+		defer provider.Close()
+		networks, err = provider.CountryNetworks(ctx, countries)
+		if err != nil {
+			return fmt.Errorf("build application GeoIP networks: %w", err)
+		}
+	}
 	for _, a := range apps {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		out := geoip.AppEnforceMapPath(e.StateDir, a.ID)
-		if !a.Enabled || !a.Security.GeoIPEnabled || !geoip.HasCountryTargets(a.Security.GeoIPCountryList) {
+		if !a.Enabled || !a.Security.GeoIPEnabled || len(a.Security.GeoIPCountryList) == 0 {
 			if err := geoip.WriteDisabledAppEnforceMap(out); err != nil {
 				return err
 			}
 			continue
 		}
-		prov, err := geo.provider()
-		if err != nil {
-			return err
-		}
-		if err := geoip.WriteAppEnforceMap(ctx, prov, nil, a.Security.GeoIPPolicy, a.Security.GeoIPCountryList, blacklistCIDRs, out); err != nil {
+		if err := geoip.WriteAppEnforceMap(networks, a.Security.GeoIPCountryList, out); err != nil {
 			return err
 		}
 	}

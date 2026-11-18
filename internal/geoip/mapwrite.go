@@ -52,10 +52,27 @@ func WriteEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, 
 	return writeEnforceMapCore(ctx, prov, cache, g.GeoIPDefaultPolicy, g.GeoIPCountryList, blacklistCIDRs, out)
 }
 
-// WriteAppEnforceMap writes a per-application GeoIP map using app-level policy and country list.
-func WriteAppEnforceMap(ctx context.Context, prov GeoProvider, cache *MemoryCache, policy string, countries []string, blacklistCIDRs []string, outPath string) error {
-	_ = os.MkdirAll(filepath.Dir(outPath), 0o750)
-	return writeEnforceMapCore(ctx, prov, cache, policy, countries, blacklistCIDRs, outPath)
+// WriteAppEnforceMap writes the networks of the configured countries. Both
+// allow and deny rules use this same positive membership set.
+func WriteAppEnforceMap(networks map[string][]string, countries []string, outPath string) error {
+	seen := make(map[string]bool, len(countries))
+	var ranges []string
+	for _, country := range countries {
+		code := strings.ToUpper(strings.TrimSpace(country))
+		if seen[code] {
+			continue
+		}
+		if len(networks[code]) == 0 {
+			return fmt.Errorf("geoip: no country networks for %q", code)
+		}
+		seen[code] = true
+		ranges = append(ranges, networks[code]...)
+	}
+	sort.Strings(ranges)
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o750); err != nil {
+		return err
+	}
+	return writeMapFile(outPath, "# easy-waf geoip — networks in selected countries\n"+strings.Join(ranges, "\n")+"\n")
 }
 
 func writeEnforceMapCore(ctx context.Context, prov GeoProvider, cache *MemoryCache, defaultPolicy string, countryList []string, blacklistCIDRs []string, out string) error {

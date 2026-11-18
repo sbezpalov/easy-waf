@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,8 +12,38 @@ import (
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 )
+
+func TestCountryMapProviderFailurePreservesExistingMap(t *testing.T) {
+	e := newArtifactTestEngine(t)
+	app := config.Application{ID: "country", Enabled: true, Security: config.ApplicationSecurity{
+		GeoIPEnabled: true, GeoIPCountryList: []string{"NL"},
+	}}
+	path := geoip.AppEnforceMapPath(e.StateDir, app.ID)
+	const previous = "80.57.0.0/16\n"
+	writeArtifactTestFile(t, path, previous)
+	for _, tc := range []struct {
+		provider string
+		want     string
+	}{
+		{"ipinfo", "requires the maxmind provider"},
+		{"maxmind", "open application GeoIP database"},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			cfg := config.GlobalSettings{GeoIPProvider: tc.provider, GeoIPMMDBPath: filepath.Join(t.TempDir(), "missing.mmdb")}
+			err := e.writePerAppGeoMaps(context.Background(), cfg, []config.Application{app})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+			body, err := os.ReadFile(path)
+			if err != nil || string(body) != previous {
+				t.Fatalf("previous map changed: %q (%v)", body, err)
+			}
+		})
+	}
+}
 
 func TestFailedArtifactRecoveryKeepsSnapshotForRetry(t *testing.T) {
 	for _, promoted := range []bool{false, true} {

@@ -208,7 +208,10 @@ func Render(in RenderInput) (Rendered, error) {
 		}
 		tag := sanitizeAppACLTag(app.ID, app.PublicHost)
 		geoPath := geoip.AppEnforceMapPath(in.StateDir, app.ID)
-		useAppGeo := app.Security.GeoIPEnabled && geoip.UseEnforceMapInRender(true, geoPath)
+		useAppGeo := app.Security.GeoIPEnabled && len(app.Security.GeoIPCountryList) > 0
+		if useAppGeo && !geoip.UseEnforceMapInRender(true, geoPath) {
+			return Rendered{}, fmt.Errorf("application %q: missing or empty GeoIP country map", app.PublicHost)
+		}
 		burst := p.RateLimitBurst
 		if app.Security.RateLimitBurstOverride != nil {
 			burst = *app.Security.RateLimitBurstOverride

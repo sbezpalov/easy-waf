@@ -28,7 +28,7 @@ The sequence below is shared by `fe_http` and `fe_https`. On port 80, HAProxy ha
 3. **Required headers** — `path_policy.rules` may require a header (and an optional value prefix) or an edge token. A miss is **401**. The edge-token header is removed before the backend. Neither value is captured in httplog.
 4. **Allowlist bypass** — `http-request allow` when global IP allowlist is enabled, the app allows it, and the source matches the map (short-circuits further rules for that request in the ruleset phase). It does not skip the two steps above.
 5. **IP blacklist** deny
-6. **GeoIP** (per-app map `geoip_app_<id>.map`, built on Apply / IPBL sync when country targets exist)
+6. **GeoIP** (per-app map `geoip_app_<id>.map`, built on Apply from a local Country MMDB when country targets exist). See [country policy behavior](GEOIP.md#country-policies-on-a-publication).
 7. **Bot protection** — empty User-Agent (requires global `block_empty_ua`) and optional blocked UA map (requires global `blocked_user_agents_enabled`)
 8. **Basic WAF** — SQLi / XSS / `../` traversal ACLs
 9. **Method filter** — `ExtraBlockedMethods` from the selected **profile**

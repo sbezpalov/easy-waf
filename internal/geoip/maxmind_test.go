@@ -6,6 +6,7 @@ package geoip
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -19,6 +20,65 @@ import (
 	"github.com/maxmind/mmdbwriter/inserter"
 	"github.com/maxmind/mmdbwriter/mmdbtype"
 )
+
+func TestCountryNetworksBuildsPositiveMembershipMaps(t *testing.T) {
+	tree, err := mmdbwriter.New(mmdbwriter.Options{DatabaseType: "GeoLite2-Country", IPVersion: 6, RecordSize: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for cidr, country := range map[string]string{"80.57.0.0/16": "NL", "2a02:a000::/32": "NL", "81.48.0.0/16": "FR"} {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tree.Insert(ipnet, mmdbtype.Map{"country": mmdbtype.Map{"iso_code": mmdbtype.String(country)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "test.mmdb")
+	var db bytes.Buffer
+	if _, err := tree.WriteTo(&db); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, db.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := NewMaxMindProvider(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	ctx := context.Background()
+	networks, err := provider.CountryNetworks(ctx, []string{" nl ", "FR", "NL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for country, body := range map[string]string{
+		"NL": "2a02:a000::/32\n80.57.0.0/16\n",
+		"FR": "81.48.0.0/16\n",
+	} {
+		out := filepath.Join(t.TempDir(), country+".map")
+		if err := WriteAppEnforceMap(networks, []string{country, country}, out); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ranges, _ := strings.Cut(string(got), "\n")
+		if ranges != body {
+			t.Errorf("%s ranges = %q, want %q", country, ranges, body)
+		}
+	}
+	if _, err := provider.CountryNetworks(ctx, []string{"NL", "US"}); err == nil || !strings.Contains(err.Error(), "US") {
+		t.Fatalf("missing selected country: %v", err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := provider.CountryNetworks(canceled, []string{"NL"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled traversal: %v", err)
+	}
+}
 
 func writeTestCountryMMDB(t *testing.T, ip, iso string) string {
 	t.Helper()

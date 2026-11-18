@@ -19,7 +19,83 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/geoip"
 )
+
+func TestLiveGeoIPPolicy(t *testing.T) {
+	hx, err := exec.LookPath("haproxy")
+	if err != nil {
+		t.Skip("haproxy not in PATH")
+	}
+	backend := httptestServer(t)
+	defer backend.Close()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "haproxy.cfg")
+	sock, err := os.CreateTemp("/tmp", "ew-geo*.sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sock.Close()
+	_ = os.Remove(sock.Name())
+	t.Cleanup(func() { _ = os.Remove(sock.Name()) })
+	settings := config.DefaultSettings(dir)
+	settings.HAProxyStatsSocketPath = sock.Name()
+	settings.SPOEConfigPath = ""
+	var apps []config.Application
+	for _, policy := range []string{"allow", "deny"} {
+		app := config.Application{
+			ID: policy, PublicHost: policy + ".example.test", Enabled: true, ListenMode: "http_only",
+			BackendHost: "127.0.0.1", BackendPort: backend.port, Profile: "balanced",
+			Security: config.ApplicationSecurity{Mode: "custom", GeoIPEnabled: true, GeoIPPolicy: policy, GeoIPCountryList: []string{"NL"}},
+		}
+		if err := geoip.WriteAppEnforceMap(map[string][]string{"NL": {"127.0.0.2/32", "::1/128"}},
+			app.Security.GeoIPCountryList, geoip.AppEnforceMapPath(dir, app.ID)); err != nil {
+			t.Fatal(err)
+		}
+		apps = append(apps, app)
+	}
+	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: apps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgePort := freePort(t)
+	edge4 := fmt.Sprintf("127.0.0.1:%d", edgePort)
+	edge6 := fmt.Sprintf("[::1]:%d", edgePort)
+	binds := "bind " + edge4 + "\n\tbind " + edge6
+	cfg := strings.ReplaceAll(rendered.HAProxyConfig, "bind *:80", binds)
+	cfg = stripPrivilegeDrop(strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200"))
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(hx, "-f", cfgPath, "-db")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+	waitTCP(t, edge4)
+	for _, tc := range []struct {
+		name, source, address string
+		allow, deny           int
+	}{
+		{"selected IPv4", "127.0.0.2", edge4, 200, 403},
+		{"unknown IPv4", "127.0.0.1", edge4, 403, 200},
+		{"selected IPv6", "::1", edge6, 200, 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dialer := &net.Dialer{LocalAddr: &net.TCPAddr{IP: net.ParseIP(tc.source)}}
+			transport := &http.Transport{DialContext: dialer.DialContext}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+			base := "http://" + tc.address + "/"
+			mustStatus(t, client, base, "allow.example.test", "", tc.allow)
+			mustStatus(t, client, base, "deny.example.test", "", tc.deny)
+		})
+	}
+}
 
 // TestLivePathPolicy exercises allowlist, the Authorization requirement and an
 // SSE stream that stays open for more than a minute. The generated client

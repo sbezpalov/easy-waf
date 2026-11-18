@@ -87,8 +87,9 @@ func NormalizeApplicationSecurity(s *ApplicationSecurity) {
 		*s = def
 		return
 	}
-	p := strings.ToLower(strings.TrimSpace(s.GeoIPPolicy))
-	if p != "deny" {
+	if strings.EqualFold(strings.TrimSpace(s.GeoIPPolicy), "deny") {
+		s.GeoIPPolicy = "deny"
+	} else {
 		s.GeoIPPolicy = "allow"
 	}
 }

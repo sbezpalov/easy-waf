@@ -267,7 +267,7 @@ restore the manifest as a set; cfg-only historical rows use the legacy fallback.
 - **Cache**: in-memory **LRU + TTL** (`internal/geoip/cache.go`); stats: hits, misses, size — exposed at **`GET /api/v1/geoip/stats`**.
 - **API**: **`GET /api/v1/geoip/lookup?ip=`** → `{ ip, country, cached }` for diagnostics (uses current `geoip_provider` / cache).
 - **Settings** (global JSON / migration `007`): `geoip_enabled`, `geoip_provider` (`ipinfo`|`maxmind`), `geoip_default_policy` (`allow` = allow-list, `deny` = deny-list), `geoip_country_list` (alpha-2 codes), `geoip_enforce_map_path` (optional override).
-- **HAProxy (batch MVP)**: on **Apply** / IPBL **Sync**, when `geoip_enabled`, each blacklist CIDR’s **network address** is resolved once → `geoip_enforce.map` lists CIDRs to **deny** (subset matching policy vs country list). The generated rule is included on every enabled application frontend. This is not a real-time lookup per connection (cf. CrowdSec); maps refresh on sync/apply.
+- **HAProxy country enforcement**: Apply reads a local MaxMind Country MMDB and renders each enabled application’s selected country networks into its own IPv4/IPv6 map. Allow policies deny nonmatches and deny policies deny matches. The global blacklist-derived `geoip_enforce.map` remains a legacy batch artifact. See [country policies](GEOIP.md#country-policies-on-a-publication).
 - **MaxMind**: GeoLite2 Country **MMDB** is supported by the same provider interface and can be hot-reloaded with `POST /api/v1/geoip/reload` after replacing the file.
 
 ## Risks and contentious areas

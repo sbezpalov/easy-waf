@@ -2,8 +2,8 @@
 
 Easy Home WAF resolves IP addresses to **ISO 3166-1 alpha-2** country codes for:
 
-- **Batch enforcement** — HAProxy map generation on Apply / IPBL sync (when GeoIP is enabled).
-- **Per-application GeoIP** — optional per-app policy and country lists.
+- **Per-application enforcement** — HAProxy country CIDR maps built from a local MMDB on Apply.
+- **Legacy batch map** — an IP blacklist-derived artifact maintained for compatibility.
 - **Management UI** — lookup test on the Security tab.
 
 Two backends are supported via global setting **`geoip_provider`**: **`ipinfo`** (default) and **`maxmind`**.
@@ -11,7 +11,7 @@ Two backends are supported via global setting **`geoip_provider`**: **`ipinfo`**
 ## ipinfo (HTTP API)
 
 - Outbound HTTPS to `ipinfo.io` (rate-limited in-process; optional token **`GEOIP_IPINFO_TOKEN`** on the `easy-waf-api` host). Renders and API lookups with the configured settings share one client and its **1 request/s** limit, so a manual lookup may wait behind a render's batch; probes with other settings use their own client.
-- **Pros:** no local database file; quick to start.
+- **Pros:** no local database file; quick to start for address lookups.
 - **Cons:** depends on external service and network; per-IP HTTP calls (with in-memory cache).
 
 ## MaxMind (GeoLite2-Country.mmdb)
@@ -68,14 +68,37 @@ Environment variables for **`scripts/update-geoip-db.sh`**:
 | `EASY_WAF_GEOIP_DIR` | no | Destination directory (default `/var/lib/easy-waf/geoip`) |
 | `EASY_WAF_RESTART_API` | no | Boolean; when true and run as root, restart an active local API service after the atomic install |
 
-## Real-time lookup vs batch map
+## Country policies on a publication
+
+Select `maxmind` and configure a local Country MMDB. In the application
+security settings, set `geoip_enabled: true`, `geoip_policy: "allow"` or
+`"deny"`, and `geoip_country_list` to the desired country codes. The
+`PATCH /api/v1/applications/{id}/security` endpoint accepts those fields.
+For a Netherlands allowlist, set `geoip_policy` to `allow` and
+`geoip_country_list` to `["NL"]`.
+
+Apply builds each application's map of IPv4 and IPv6 networks in the selected
+countries. In `allow` mode, a source outside those networks or absent from
+the database receives 403. In `deny` mode, only sources in the selected
+countries receive the GeoIP 403. An empty country selection leaves the
+application's country rule inactive. The existing per-application IP
+allowlist bypass still takes precedence when enabled.
+
+If upgrading an existing application country policy that used IPinfo,
+configure MaxMind and a Country MMDB before applying. Apply rejects an
+unavailable database or a country with no network coverage and preserves the
+previously applied artifacts. Deploy database updates with Apply to refresh
+the active country maps.
+
+## Diagnostic lookup and generated maps
 
 | Mode | When | Mechanism |
 |------|------|-------------|
 | **Real-time** | `GET /api/v1/geoip/lookup?ip=…` from the UI or automation | Uses current provider + in-memory TTL cache (`geoip_cache_ttl`). Optional **`nocache=1`** bypasses cache for one request. For MaxMind path checks before save, use **`probe_mmdb_path=/path/to.mmdb`** (opened just for that request, never cached, does not replace the configured reader). |
-| **Batch** | Apply / IPBL sync with GeoIP enabled | Resolves many blacklist CIDRs (and per-app rules) through the same provider; writes HAProxy **`.map`** files used at the edge. |
+| **Per application** | Apply with GeoIP enabled and countries selected on the application | Reads the Country MMDB once for the selected countries, then writes the per-application HAProxy `.map` files used at the edge. |
+| **Legacy batch artifact** | Apply / IPBL sync with global GeoIP enabled | Resolves blacklist CIDRs. Application country enforcement uses its own MMDB-derived maps. |
 
-Batch mode avoids per-request HTTP to ipinfo during traffic; MaxMind batch reads are local mmap lookups.
+HAProxy applies country policy using the generated CIDRs without a provider call per request.
 
 ## API reference
 

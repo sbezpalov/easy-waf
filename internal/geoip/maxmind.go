@@ -78,6 +78,52 @@ func (p *MaxMindProvider) Lookup(ctx context.Context, ipStr string) (string, err
 	return cc, nil
 }
 
+// CountryNetworks reads the complete IPv4 and IPv6 coverage for the requested
+// countries. Keep one reader pinned for the entire traversal.
+func (p *MaxMindProvider) CountryNetworks(ctx context.Context, countries []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(countries))
+	for _, country := range countries {
+		code := strings.ToUpper(strings.TrimSpace(country))
+		if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+			return nil, fmt.Errorf("geoip maxmind: invalid country code %q", country)
+		}
+		result[code] = nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.reader == nil {
+		return nil, fmt.Errorf("geoip maxmind: reader closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	networks := p.reader.Networks(maxminddb.SkipAliasedNetworks)
+	for networks.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var record maxMindCountryRecord
+		network, err := networks.Network(&record)
+		if err != nil {
+			return nil, fmt.Errorf("geoip maxmind: read country network: %w", err)
+		}
+		code := strings.ToUpper(strings.TrimSpace(record.Country.ISOCode))
+		if _, selected := result[code]; selected {
+			result[code] = append(result[code], network.String())
+		}
+	}
+	if err := networks.Err(); err != nil {
+		return nil, fmt.Errorf("geoip maxmind: traverse country networks: %w", err)
+	}
+	for _, country := range countries {
+		code := strings.ToUpper(strings.TrimSpace(country))
+		if len(result[code]) == 0 {
+			return nil, fmt.Errorf("geoip maxmind: database has no networks for %s", code)
+		}
+	}
+	return result, nil
+}
+
 // Reload opens a new reader from dbPath, swaps it in and closes the previous
 // reader once no lookup is using it.
 func (p *MaxMindProvider) Reload(dbPath string) error {
