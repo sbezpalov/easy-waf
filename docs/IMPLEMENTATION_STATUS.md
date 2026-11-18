@@ -3,8 +3,9 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Current local packages:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
-Both architectures passed package build and embedded source-revision verification.
+**Current local artifacts:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
+Both architectures passed package build, embedded source-revision verification,
+offline APT dependency resolution and exact ISO payload comparison.
 
 **Offline installation evidence:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
