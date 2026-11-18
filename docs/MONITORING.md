@@ -75,7 +75,8 @@ All names use the `easy_waf_` prefix.
 | `easy_waf_haproxy_backend_sessions_current` | Gauge | `backend` | Current backend sessions (`scur`). |
 | `easy_waf_haproxy_backend_up` | Gauge | `backend` | `1` if aggregate backend health is not `down`, else `0`. |
 | `easy_waf_certificate_days_remaining` | Gauge | `domain`, `mode` | Days until `NotAfter` when known (per certificate row from the summary builder). |
-| `easy_waf_crowdsec_decisions_total` | Gauge | — | Length of the last LAPI decisions sample (capped at 100); not total decisions in CrowdSec. |
+| `easy_waf_crowdsec_decisions_total` | Gauge | — | Number of decisions returned by the latest successful LAPI sample (requested limit 100). A successful empty sample reports `0`. The series is absent before the first sample and after a failed refresh. |
+| `easy_waf_crowdsec_decision_sample_available` | Gauge | — | `1` if the latest LAPI sample succeeded, otherwise `0`. |
 | `easy_waf_ipbl_entries_total` | Gauge | `type=local\|external` | **local**: enabled local CIDR rows in DB. **external**: count of **enabled external feed URLs** configured (not merged line count from downloads). |
 | `easy_waf_applications_total` | Gauge | `mode` | Applications grouped by `security.mode`. |
 | `easy_waf_apply_total` | Counter | — | Successful applies started by the API: `POST /api/v1/apply` and the apply after each change. Applies by `easy-waf-acmed` are not counted. |

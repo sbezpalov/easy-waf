@@ -23,7 +23,7 @@ type PrometheusExporter struct {
 	haproxyBackendSessions  *prometheus.GaugeVec
 	haproxyBackendUp        *prometheus.GaugeVec
 	certDaysRemaining       *prometheus.GaugeVec
-	crowdSecDecisions       prometheus.Gauge
+	crowdSecDecisions       *crowdSecDecisionCollector
 	ipblEntries             *prometheus.GaugeVec
 	appsTotal               *prometheus.GaugeVec
 	applyTotal              prometheus.Counter
@@ -66,11 +66,12 @@ func NewPrometheusExporter() *PrometheusExporter {
 		Name:      "certificate_days_remaining",
 		Help:      "Days until certificate NotAfter (UTC), when known.",
 	}, []string{"domain", "mode"})
-	e.crowdSecDecisions = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "easy_waf",
-		Name:      "crowdsec_decisions_total",
-		Help:      "Number of decisions returned by the last LAPI sample (limit 100); not necessarily full CrowdSec inventory.",
-	})
+	e.crowdSecDecisions = &crowdSecDecisionCollector{
+		countDesc: prometheus.NewDesc("easy_waf_crowdsec_decisions_total",
+			"Number of decisions returned by the last successful LAPI sample (requested limit 100).", nil, nil),
+		availabilityDesc: prometheus.NewDesc("easy_waf_crowdsec_decision_sample_available",
+			"1 when the latest CrowdSec decisions sample succeeded, 0 before the first sample or after a failure.", nil, nil),
+	}
 	e.ipblEntries = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "easy_waf",
 		Name:      "ipbl_entries_total",
@@ -216,12 +217,53 @@ func (e *PrometheusExporter) UpdateFromAppStats(apps []config.Application) {
 	}
 }
 
-// SetCrowdSecDecisionSampleSize sets the CrowdSec gauge from the last LAPI decisions payload length.
+// SetCrowdSecDecisionSampleSize records a successful CrowdSec decisions sample.
 func (e *PrometheusExporter) SetCrowdSecDecisionSampleSize(n int) {
 	if e == nil {
 		return
 	}
-	e.crowdSecDecisions.Set(float64(n))
+	e.crowdSecDecisions.set(n, true)
+}
+
+// ClearCrowdSecDecisionSample marks the CrowdSec decision count as unavailable.
+func (e *PrometheusExporter) ClearCrowdSecDecisionSample() {
+	if e != nil {
+		e.crowdSecDecisions.set(0, false)
+	}
+}
+
+// CrowdSec sample size and availability are collected from the same snapshot.
+type crowdSecDecisionCollector struct {
+	mu               sync.Mutex
+	size             int
+	available        bool
+	countDesc        *prometheus.Desc
+	availabilityDesc *prometheus.Desc
+}
+
+func (c *crowdSecDecisionCollector) set(size int, available bool) {
+	c.mu.Lock()
+	c.size = size
+	c.available = available
+	c.mu.Unlock()
+}
+
+func (c *crowdSecDecisionCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.countDesc
+	ch <- c.availabilityDesc
+}
+
+func (c *crowdSecDecisionCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	size, available := c.size, c.available
+	c.mu.Unlock()
+
+	var readiness float64
+	if available {
+		readiness = 1
+		ch <- prometheus.MustNewConstMetric(c.countDesc, prometheus.GaugeValue, float64(size))
+	}
+	ch <- prometheus.MustNewConstMetric(c.availabilityDesc, prometheus.GaugeValue, readiness)
 }
 
 // SetIPBLEntries sets local vs external IPBL gauges (see metric help for semantics).

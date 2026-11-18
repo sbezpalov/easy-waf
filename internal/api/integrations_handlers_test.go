@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/geoip"
+	"github.com/easy-waf/easy-waf/internal/metrics"
 )
 
 func engineServer(t *testing.T, mutate func(*config.GlobalSettings)) *Server {
@@ -127,6 +129,62 @@ func TestCrowdSecDecisionErrorsIdentifyUpstreamAccessDenial(t *testing.T) {
 					strings.Contains(rec.Body.String(), privateBody) || strings.Contains(rec.Body.String(), lapi.URL) {
 					t.Fatalf("%s with upstream %d: %d %s", action.method, status, rec.Code, rec.Body)
 				}
+			}
+		})
+	}
+}
+
+func TestRefreshCrowdSecMetricsUsesEffectiveLAPIAndReportsFailure(t *testing.T) {
+	const key = "metrics-fixture-key"
+	var calls atomic.Int32
+	lapi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != key || r.URL.Path != "/v1/decisions" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		switch calls.Add(1) {
+		case 1:
+			_, _ = fmt.Fprint(w, `{"data":[{"id":1},{"id":2}]}`)
+		case 2:
+			http.Error(w, "key denied", http.StatusForbidden)
+		case 3:
+			_, _ = fmt.Fprint(w, `null`)
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(lapi.Close)
+	t.Setenv("CROWDSEC_LAPI_URL", lapi.URL)
+	t.Setenv("CROWDSEC_LAPI_KEY", key)
+	t.Setenv("CROWDSEC_LAPI_ALLOWED_ORIGINS", lapi.URL)
+	s := engineServer(t, func(g *config.GlobalSettings) {
+		g.CrowdSecLAPIURL = "http://192.0.2.1:8080"
+		g.CrowdSecLAPIKey = "stored-fixture-key"
+	})
+	s.Prom = metrics.NewPrometheusExporter()
+
+	for _, step := range []struct {
+		name, availability, count string
+	}{
+		{"wrapped sample", "1", "2"},
+		{"access denied", "0", ""},
+		{"empty after recovery", "1", "0"},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			s.RefreshCrowdSecMetrics(t.Context())
+			rec := httptest.NewRecorder()
+			s.Prom.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			body := rec.Body.String()
+			if rec.Code != http.StatusOK || !strings.Contains(body, "easy_waf_crowdsec_decision_sample_available "+step.availability+"\n") {
+				t.Fatalf("expected sample availability %s, got status %d and body:\n%s", step.availability, rec.Code, body)
+			}
+			const metric = "easy_waf_crowdsec_decisions_total "
+			if step.count == "" {
+				if strings.Contains(body, "\n"+metric) {
+					t.Fatalf("unexpected decision count after LAPI failure:\n%s", body)
+				}
+			} else if !strings.Contains(body, "\n"+metric+step.count+"\n") {
+				t.Fatalf("expected decision count %s, got:\n%s", step.count, body)
 			}
 		})
 	}

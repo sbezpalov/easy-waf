@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -11,6 +12,24 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 )
+
+// RefreshCrowdSecMetrics samples LAPI using the same configuration as the decision API.
+func (s *Server) RefreshCrowdSecMetrics(ctx context.Context) {
+	if s.Prom == nil {
+		return
+	}
+	client, err := s.crowdsecLAPIClient()
+	if err != nil {
+		s.Prom.ClearCrowdSecDecisionSample()
+		return
+	}
+	size, err := client.DecisionSampleSize(ctx)
+	if err != nil {
+		s.Prom.ClearCrowdSecDecisionSample()
+		return
+	}
+	s.Prom.SetCrowdSecDecisionSampleSize(size)
+}
 
 func writeCrowdsecDecisionError(w http.ResponseWriter, err error) {
 	message := "CrowdSec LAPI request failed."

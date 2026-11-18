@@ -196,17 +196,18 @@ func TestDecisionsSampleValidatesUpstreamPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		valid      bool
+		size       int
 	}{
-		{"empty list", "[]", true},
-		{"null list", "null", true},
-		{"decision list", `[{"id":1,"value":"192.0.2.1"}]`, true},
-		{"wrapped list", `{"data":[{"id":1}]}`, true},
-		{"wrapped empty list", `{"data":null}`, true},
-		{"HTML", "<html>login</html>", false},
-		{"invalid JSON", "[", false},
-		{"unexpected object", `{"error":"unavailable"}`, false},
-		{"wrapped error", `{"data":"unavailable"}`, false},
-		{"scalar entry", `["not a decision"]`, false},
+		{"empty list", "[]", true, 0},
+		{"null list", "null", true, 0},
+		{"decision list", `[{"id":1,"value":"192.0.2.1"}]`, true, 1},
+		{"wrapped list", `{"data":[{"id":1},{"id":2}]}`, true, 2},
+		{"wrapped empty list", `{"data":null}`, true, 0},
+		{"HTML", "<html>login</html>", false, 0},
+		{"invalid JSON", "[", false, 0},
+		{"unexpected object", `{"error":"unavailable"}`, false, 0},
+		{"wrapped error", `{"data":"unavailable"}`, false, 0},
+		{"scalar entry", `["not a decision"]`, false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -214,15 +215,26 @@ func TestDecisionsSampleValidatesUpstreamPayload(t *testing.T) {
 			}))
 			defer srv.Close()
 			c := testClient(t, srv, "fixture-key")
-			raw, err := c.DecisionsSample(t.Context())
+			raw, size, err := c.decisionSample(t.Context())
 			if tc.valid {
-				if err != nil || string(raw) != tc.body {
-					t.Fatalf("expected unchanged decision payload, got %q, %v", raw, err)
+				if err != nil || string(raw) != tc.body || size != tc.size {
+					t.Fatalf("expected unchanged decision payload and size %d, got %q, %d, %v", tc.size, raw, size, err)
 				}
 			} else if err == nil || len(raw) != 0 {
 				t.Fatalf("unexpected payload was accepted: %q, %v", raw, err)
 			}
 		})
+	}
+}
+
+func TestDecisionSampleSizeRequiresLAPI(t *testing.T) {
+	c := Client{}
+	if _, err := c.DecisionSampleSize(t.Context()); err == nil {
+		t.Fatal("expected an error when no LAPI URL is configured")
+	}
+	raw, err := c.DecisionsSample(t.Context())
+	if err != nil || string(raw) != "[]" {
+		t.Fatalf("expected the legacy empty response, got %q, %v", raw, err)
 	}
 }
 

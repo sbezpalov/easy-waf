@@ -6,7 +6,6 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -378,16 +377,7 @@ func prometheusRefreshLoop(ctx context.Context, srv *api.Server, stateDir string
 		if apps, err := srv.Eng.Store.ListApplications(bg); err == nil {
 			srv.Prom.UpdateFromAppStats(apps)
 		}
-		cs := crowdsec.Client{BaseURL: srv.Eng.Settings().CrowdSecLAPIURL, APIKey: srv.Eng.Settings().CrowdSecLAPIKey}
-		raw, err := cs.DecisionsSample(bg)
-		n := 0
-		if err == nil {
-			var arr []json.RawMessage
-			if json.Unmarshal(raw, &arr) == nil {
-				n = len(arr)
-			}
-		}
-		srv.Prom.SetCrowdSecDecisionSampleSize(n)
+		srv.RefreshCrowdSecMetrics(bg)
 		localRows, err1 := srv.Eng.Store.ListIPBLLocal(bg)
 		extSrc, err2 := srv.Eng.Store.ListIPBLExternalSources(bg)
 		if err1 == nil && err2 == nil {

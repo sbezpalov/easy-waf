@@ -90,3 +90,35 @@ outer:
 		t.Fatal("expected fe_https request counter > 0 after second HAProxy update")
 	}
 }
+
+func TestCrowdSecDecisionSampleMetrics(t *testing.T) {
+	e := NewPrometheusExporter()
+	check := func(wantAvailable, wantCount float64) {
+		t.Helper()
+		families, err := e.reg.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gauges := make(map[string]float64)
+		for _, family := range families {
+			if metric := family.GetMetric(); len(metric) == 1 && metric[0].GetGauge() != nil {
+				gauges[family.GetName()] = metric[0].GetGauge().GetValue()
+			}
+		}
+		available, ok := gauges["easy_waf_crowdsec_decision_sample_available"]
+		if !ok || available != wantAvailable {
+			t.Errorf("availability = %v (present %t), want %v", available, ok, wantAvailable)
+		}
+		count, ok := gauges["easy_waf_crowdsec_decisions_total"]
+		if ok != (wantAvailable == 1) || count != wantCount {
+			t.Errorf("count = %v (present %t), want %v (present %t)", count, ok, wantCount, wantAvailable == 1)
+		}
+	}
+	check(0, 0)
+	e.SetCrowdSecDecisionSampleSize(7)
+	check(1, 7)
+	e.ClearCrowdSecDecisionSample()
+	check(0, 0)
+	e.SetCrowdSecDecisionSampleSize(0)
+	check(1, 0)
+}

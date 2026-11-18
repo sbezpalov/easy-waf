@@ -94,36 +94,48 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return json.RawMessage(`[]`), nil
 	}
+	raw, _, err := c.decisionSample(ctx)
+	return raw, err
+}
+
+// DecisionSampleSize returns the number of decisions in a validated LAPI sample.
+func (c *Client) DecisionSampleSize(ctx context.Context) (int, error) {
+	_, size, err := c.decisionSample(ctx)
+	return size, err
+}
+
+func (c *Client) decisionSample(ctx context.Context) (json.RawMessage, int, error) {
 	resp, err := c.doLAPI(ctx, http.MethodGet, "/v1/decisions?limit=100", nil, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, decisionStatusError("decisions", resp.StatusCode)
+		return nil, 0, decisionStatusError("decisions", resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionsBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// Cut off, the passthrough would be invalid JSON served with a 200.
 	if len(b) > maxDecisionsBytes {
-		return nil, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
+		return nil, 0, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
 	}
-	if !validDecisionSample(b) {
-		return nil, fmt.Errorf("crowdsec lapi decisions: invalid decision list")
+	size, valid := decisionSampleSize(b)
+	if !valid {
+		return nil, 0, fmt.Errorf("crowdsec lapi decisions: invalid decision list")
 	}
-	return json.RawMessage(b), nil
+	return json.RawMessage(b), size, nil
 }
 
-func validDecisionSample(raw []byte) bool {
+func decisionSampleSize(raw []byte) (int, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) > 0 && raw[0] == '{' {
 		var envelope struct {
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(raw, &envelope); err != nil {
-			return false
+			return 0, false
 		}
 		raw = envelope.Data
 	}
@@ -131,14 +143,14 @@ func validDecisionSample(raw []byte) bool {
 	// supported data envelope in the public response.
 	var decisions []json.RawMessage
 	if err := json.Unmarshal(raw, &decisions); err != nil {
-		return false
+		return 0, false
 	}
 	for _, decision := range decisions {
 		if len(decision) == 0 || decision[0] != '{' {
-			return false
+			return 0, false
 		}
 	}
-	return true
+	return len(decisions), true
 }
 
 // AddDecisionRequest is the easy-waf API / UI payload mapped to LAPI POST /v1/decisions.
