@@ -293,11 +293,15 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var a config.Application
-	if err := json.Unmarshal(raw, &a); err != nil {
+	var payload struct {
+		config.Application
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	a := payload.Application
 	var present map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &present)
 	if _, err := profiles.Resolve(a.Profile); err != nil {
@@ -363,6 +367,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		// The row keeps its original created_at (the upsert never updates
 		// it); report that rather than whatever the client sent or omitted.
 		a.CreatedAt = old.CreatedAt
+		a.Enabled = old.Enabled
+	}
+	if payload.Enabled != nil {
+		a.Enabled = *payload.Enabled
 	}
 	if strings.TrimSpace(a.ID) == "" {
 		a.ID = uuid.NewString()

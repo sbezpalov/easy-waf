@@ -102,6 +102,52 @@ func TestUpsertResponseReportsStoredCreatedAt(t *testing.T) {
 	}
 }
 
+func TestUpsertPreservesPublicationStateWhenOmitted(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("enabled%d", time.Now().UnixNano()))
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		field string
+		want  bool
+	}{
+		{"", true},
+		{"false", false},
+		{"", false},
+		{"null", false},
+		{"true", true},
+	} {
+		delete(body, "enabled")
+		if tc.field != "" {
+			body["enabled"] = json.RawMessage(tc.field)
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec = httptest.NewRecorder()
+		s.upsertApp(rec, httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(raw)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("update with enabled %q: %d %s", tc.field, rec.Code, rec.Body)
+		}
+		stored, err := s.Eng.Store.GetApplication(t.Context(), a.ID)
+		if err != nil || stored.Enabled != tc.want {
+			t.Fatalf("enabled %q: stored %t, want %t, error %v", tc.field, stored.Enabled, tc.want, err)
+		}
+	}
+}
+
 func TestUpsertKeepsSecurityTogglesSentWithoutMode(t *testing.T) {
 	s := applyFailingServer(t)
 	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")

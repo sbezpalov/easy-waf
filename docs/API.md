@@ -476,6 +476,7 @@ Creates or replaces an application (upsert), then applies it to HAProxy. A body 
 - `backend_tls_verify_disabled`, when the saved application has `backend_https: true` and `backend_tls_verify: "none"`.
 - **Request body:** a `config.Application`. Server-side processing:
   - `profile` is required and must be one of the names from `GET /profiles`.
+  - `enabled` controls whether the application is published. An omitted or null value preserves the current state on update. On creation it defaults to `false`.
   - `listen_mode` is normalised to `https_only` (default), `http_only`, `http_and_https` or `redirect_to_https`. Unknown values become `https_only`.
   - `certificate_id` is required unless `listen_mode` is `http_only`.
   - `id`, if given, must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` and be at most 128 bytes.

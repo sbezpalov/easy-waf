@@ -20,7 +20,7 @@ func TestApplicationApplyFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"save_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
+	for _, scenario := range []string{"save_success", "save_new_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
@@ -51,6 +51,7 @@ Object.entries({'app-edit-id': 'fixture-app', 'listen-mode': 'http_only', name: 
   host: 'fixture.invalid', backend: '127.0.0.1', port: '8123', profile: 'balanced'})
   .forEach(([id, value]) => {element(id).value = value});
 if (scenario === 'save_missing_cert') element('listen-mode').value = 'https_only';
+if (scenario === 'save_new_success') element('app-edit-id').value = '';
 const policyDraft = [
   {id: 'watch', action: 'count', path: '/api', methods: 'get, HEAD', sources: '192.0.2.0/24', header: 'User-Agent', prefix: 'App '},
   {id: 'deny', action: 'block', path: '/api', methods: 'POST'}
@@ -61,7 +62,7 @@ element('publication-rules').children = policyDraft.map(rule => ({
 const requests = [], notices = [];
 let cleared = 0, collapsed = 0, refreshed = 0;
 const context = {pendingApply: true, document: {getElementById: element},
-  appsListCache: [{id: 'fixture-app', security: {mode: 'balanced'}}],
+  appsListCache: [{id: 'fixture-app', enabled: false, security: {mode: 'balanced'}}],
   hdr: () => ({}), encodeURIComponent, esc: value => String(value),
   fetch: async (path, init) => {
     requests.push([path, init]);
@@ -114,7 +115,10 @@ async function run() {
   assert.equal(mutations[0][1].method, 'POST');
   assert.equal(mutations[0][0], scenario.startsWith('save_') ? '/api/v1/applications' : scenario.startsWith('mode_') ? '/api/v1/applications/fixture-app/security/mode' : '/api/v1/applications/fixture-app/maintenance');
   if (scenario.startsWith('save_')) {
-    assert.deepEqual(JSON.parse(mutations[0][1].body).policy_rules, [
+    const body = JSON.parse(mutations[0][1].body);
+    assert.equal(body.id, scenario === 'save_new_success' ? undefined : 'fixture-app');
+    assert.equal(body.enabled, scenario === 'save_new_success' ? true : undefined, 'editing a publication must preserve its stored state');
+    assert.deepEqual(body.policy_rules, [
       {id:'watch', action:'count', match:{path_prefix:'/api', methods:['GET', 'HEAD'], source_cidrs:['192.0.2.0/24'], header:'User-Agent', header_prefix:'App '}},
       {id:'deny', action:'block', match:{path_prefix:'/api', methods:['POST'], source_cidrs:[], header:'', header_prefix:''}}
     ]);

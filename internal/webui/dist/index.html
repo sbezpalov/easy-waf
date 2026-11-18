@@ -5488,7 +5488,6 @@
         profile: document.getElementById('profile').value,
         listen_mode: draft.listen_mode,
         certificate_id: draft.certificate_id,
-        enabled: true,
         restricted_paths: collectRestrictedPaths()
       };
       const pathPolicy = collectPathPolicy();
@@ -5498,6 +5497,8 @@
         body.id = editId;
         const prev = appsListCache.find((x) => x.id === editId);
         if (prev && prev.security) body.security = prev.security;
+      } else {
+        body.enabled = true;
       }
       const selectedMode = document.getElementById('app-security-mode').value || 'balanced';
       body.security = securityForPublication(selectedMode, body.security);
