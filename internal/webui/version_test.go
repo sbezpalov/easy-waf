@@ -12,6 +12,15 @@ import (
 )
 
 func TestApplicationVersionFeedback(t *testing.T) {
+	runVersionUI(t, versionInteractionTest)
+}
+
+func TestAboutShowsVersionsAndAttribution(t *testing.T) {
+	runVersionUI(t, aboutInteractionTest)
+}
+
+func runVersionUI(t *testing.T, script string) {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node.js is required for UI interaction tests")
@@ -22,7 +31,7 @@ func TestApplicationVersionFeedback(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "-e", versionInteractionTest)
+	cmd := exec.CommandContext(ctx, node, "-e", script)
 	cmd.Stdin = bytes.NewReader(page)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("version UI interaction: %v\n%s", err, output)
@@ -54,6 +63,65 @@ async function run() {
     assert.equal(calls, 1);
     assert.equal(elements['header-version'].textContent, scenario === 'success' ? 'v9.8.7-rc.2' : 'Version unavailable');
     assert.equal(elements['dash-version'].textContent, scenario === 'success' ? '9.8.7-rc.2' : 'Unknown');
+  }
+}
+run().catch(error => {console.error(error); process.exitCode = 1});
+`
+
+const aboutInteractionTest = `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+assert.ok(page.includes('href="#about"'));
+assert.ok(page.includes("case 'about':\n        void loadAbout();"));
+assert.ok(page.includes('Sergey Bezpalov and Easy Home WAF contributors'));
+const start = page.indexOf('  let aboutGeneration = 0;');
+const end = page.indexOf('  const VIEWER_SAFE_ACTIONS', start);
+assert.ok(start >= 0 && end > start);
+function element() {
+  return {
+    textContent: '', children: [], hidden: false,
+    appendChild(node) { this.children.push(node); },
+    replaceChildren() { this.children = []; }
+  };
+}
+async function run() {
+  for (const scenario of ['success', 'offline']) {
+    const elements = new Map();
+    const context = {document: {getElementById: id => {
+      if (!elements.has(id)) {
+        const node = element();
+        node.classList = {toggle: (cls, on) => { if (cls === 'hidden') node.hidden = on; }};
+        elements.set(id, node);
+      }
+      return elements.get(id);
+    }, createElement: element}, hdr: () => ({Authorization: 'fixture'}),
+    fetch: async (path, init) => {
+      assert.equal(path, '/api/v1/about');
+      assert.equal(init.headers.Authorization, 'fixture');
+      if (scenario === 'offline') throw Error('fixture network failure');
+      return {ok: true, json: async () => ({
+        version: '1.6.1', go_version: 'go1.27.4', platform: 'linux/amd64',
+        revision: 'abc123', modified: true, license_text: 'Apache terms', notice: '<notice>',
+        components: [{name: 'HAProxy', version: '2.8.30', source: 'Installed package'},
+          {name: 'PostgreSQL', source: 'Connected database'}]
+      })};
+    }};
+    vm.createContext(context);
+    vm.runInContext(page.slice(start, end), context);
+    await context.loadAbout();
+    if (scenario === 'offline') {
+      assert.equal(elements.get('about-status').textContent, 'Could not load product information.');
+      assert.equal(elements.get('about-components').children.length, 0);
+      continue;
+    }
+    assert.equal(elements.get('about-status').textContent, '');
+    assert.equal(elements.get('about-version').textContent, '1.6.1');
+    assert.equal(elements.get('about-revision').textContent, 'abc123 (modified source)');
+    assert.equal(elements.get('about-license').textContent, 'Apache terms');
+    assert.equal(elements.get('about-notice').textContent, '<notice>');
+    assert.deepEqual(elements.get('about-components').children.map(row => row.children.map(cell => cell.textContent)), [
+      ['HAProxy', '2.8.30', 'Installed package'], ['PostgreSQL', 'Unavailable', 'Connected database']
+    ]);
   }
 }
 run().catch(error => {console.error(error); process.exitCode = 1});

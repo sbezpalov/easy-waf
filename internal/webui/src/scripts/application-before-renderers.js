@@ -309,7 +309,8 @@
     '#users': 'users',
     '#config': 'config',
     '#settings': 'settings',
-    '#logs': 'logs'
+    '#logs': 'logs',
+    '#about': 'about'
   };
 
   function show(el, on) { document.getElementById(el).classList.toggle('hidden', !on); }

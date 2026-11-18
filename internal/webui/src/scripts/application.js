@@ -354,6 +354,9 @@
         loadAuditPage(true);
         syncAuditAutoRefresh();
         break;
+      case 'about':
+        void loadAbout();
+        break;
       default:
         break;
     }
@@ -393,6 +396,42 @@
       renderApplicationVersion(response.ok ? (await response.json()).version : '');
     } catch (_) {
       renderApplicationVersion('');
+    }
+  }
+
+  let aboutGeneration = 0;
+
+  async function loadAbout() {
+    const gen = ++aboutGeneration;
+    const status = document.getElementById('about-status');
+    const components = document.getElementById('about-components');
+    status.textContent = 'Loading product information…';
+    try {
+      const response = await fetch('/api/v1/about', { headers: hdr() });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (gen !== aboutGeneration) return;
+      document.getElementById('about-version').textContent = data.version || 'Unavailable';
+      document.getElementById('about-runtime').textContent = [data.go_version, data.platform].filter(Boolean).join(' · ') || 'Unavailable';
+      document.getElementById('about-revision-label').classList.toggle('hidden', !data.revision);
+      document.getElementById('about-revision-row').classList.toggle('hidden', !data.revision);
+      document.getElementById('about-revision').textContent = data.revision
+        ? data.revision + (data.modified ? ' (modified source)' : '') : '';
+      components.replaceChildren();
+      for (const component of data.components || []) {
+        const row = document.createElement('tr');
+        for (const value of [component.name, component.version || 'Unavailable', component.source]) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        }
+        components.appendChild(row);
+      }
+      document.getElementById('about-license').textContent = data.license_text || 'License text unavailable.';
+      document.getElementById('about-notice').textContent = data.notice || 'Notice text unavailable.';
+      status.textContent = '';
+    } catch (_) {
+      if (gen === aboutGeneration) status.textContent = 'Could not load product information.';
     }
   }
 

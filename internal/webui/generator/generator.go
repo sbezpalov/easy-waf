@@ -31,6 +31,7 @@ var defaultManifest = []string{
 	"screens/edge-changes.html",
 	"screens/settings.html",
 	"screens/events-audit.html",
+	"screens/about.html",
 	"document-before-script.html",
 	"scripts/application-before-renderers.js",
 	"scripts/renderers.js",

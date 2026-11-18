@@ -87,6 +87,7 @@ func (s *Server) Router() chi.Router {
 				r.Use(auth.ReadOnlyGate)
 				r.Post("/auth/confirm", s.handleConfirmPassword)
 				r.Get("/status", s.handleStatus)
+				r.Get("/about", s.handleAbout)
 				r.Get("/edge/status", s.handleEdgeStatus)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)

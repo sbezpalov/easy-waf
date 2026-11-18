@@ -300,6 +300,12 @@ Optional per user (ADR 0004, option C). When it is on, `POST /api/v1/auth/login`
 Minimal status for the control plane.
 - **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.6.1"}`. `version` comes from root `VERSION` embedded in the running binary. It does not require or accept an `EASY_WAF_VERSION` environment override. The panel header and Dashboard use this value.
 
+### `GET /api/v1/about`
+Provides the data for **Overview → About** to authenticated viewers and administrators.
+- **Response:** `200` with the running product `version`, `go_version`, `platform` and optional source `revision` and `modified` flag. A missing revision means the build did not record source metadata.
+- `components` has entries with `name`, `source` and an optional `version`. The Easy Home WAF package, HAProxy, CrowdSec, its HAProxy bouncer, Fail2Ban and nftables report local installed package versions. PostgreSQL reports the connected server version, including when that server is remote. Missing versions appear as **Unavailable**.
+- `license` is the SPDX identifier. `license_text` and `notice` contain the complete `LICENSE` and `NOTICE` files embedded in the running build.
+
 ### `GET /api/v1/edge/status`
 Returns the persistent saved/applied generation relationship and the checksum of
 the managed live `haproxy.cfg`. Viewer and administrator sessions may read it.

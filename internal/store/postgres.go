@@ -82,6 +82,13 @@ func (s *Store) Close() error { return s.db.Close() }
 // Ping verifies connectivity to the underlying PostgreSQL database.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
+// ServerVersion reports the connected database's version, including remote installations.
+func (s *Store) ServerVersion(ctx context.Context) (string, error) {
+	var version string
+	err := s.db.QueryRowContext(ctx, `SHOW server_version`).Scan(&version)
+	return version, err
+}
+
 // BeginReadOnly starts a database-enforced read-only transaction for diagnostics.
 func (s *Store) BeginReadOnly(ctx context.Context) (*sql.Tx, error) {
 	return s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
