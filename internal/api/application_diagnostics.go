@@ -357,7 +357,11 @@ func diagnosticStep(id, label, status, code, summary string) ApplicationDiagnost
 func backendServerEvidence(servers []metrics.ServerStat) []string {
 	out := make([]string, 0, len(servers))
 	for _, server := range servers {
-		out = append(out, fmt.Sprintf("%s: %s", server.Name, strings.TrimSpace(server.Status)))
+		state := strings.TrimSpace(server.Status)
+		if check := strings.TrimSpace(server.CheckStatus); check != "" {
+			state += " (check: " + check + ")"
+		}
+		out = append(out, fmt.Sprintf("%s: %s", server.Name, state))
 	}
 	if len(out) > 8 {
 		out = append(out[:8], fmt.Sprintf("%d more servers", len(out)-8))

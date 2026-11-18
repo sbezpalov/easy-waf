@@ -817,6 +817,8 @@ Per-frontend and per-backend HAProxy statistics.
   - `error` (string, only on failure, e.g. `stats socket "/run/haproxy/easy-waf-admin.sock": dial unix ...: connect: no such file or directory`). On failure `frontends` and `backends` are `null`.
 - **Errors:** none returned as an HTTP error. If the client disconnects while waiting for the read, nothing is written.
 
+Server rows include `check_status` when HAProxy reports it. A server with an `UP` status and a check still reporting `INI` or `UNK` contributes unknown health and is excluded from both server counts below.
+
 ### `GET /api/v1/stats/summary`
 Dashboard aggregate computed from the same report.
 - **Response:** `200`, `metrics.SummaryReport`:

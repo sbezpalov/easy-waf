@@ -62,13 +62,16 @@ func TestParseShowStatCSV(t *testing.T) {
 }
 
 func TestBackendHealthDistinguishesUnavailableAndUnknownServers(t *testing.T) {
-	const header = "# pxname,svname,status,type\n"
+	const header = "# pxname,svname,status,type,check_status\n"
 	for _, tc := range []struct {
 		name, rows, health string
 		up, down           int64
 	}{
 		{"no servers", "pool,BACKEND,UP,1\n", "unknown", 0, 0},
 		{"unchecked", "pool,BACKEND,UP,1\npool,s1,no check,2\n", "unknown", 0, 0},
+		{"first check pending", "pool,BACKEND,UP,1\npool,s1,UP 1/3,2,* INI\n", "unknown", 0, 0},
+		{"check unknown", "pool,BACKEND,UP,1\npool,s1,UP,2,UNK\n", "unknown", 0, 0},
+		{"checking again", "pool,BACKEND,UP,1\npool,s1,UP,2,* L7OK\n", "healthy", 1, 0},
 		{"unknown beside up", "pool,BACKEND,UP,1\npool,s1,UP,2\npool,s2,,2\n", "unknown", 1, 0},
 		{"unknown beside down", "pool,BACKEND,UP,1\npool,s1,DOWN,2\npool,s2,no check,2\n", "unknown", 0, 1},
 		{"draining", "pool,BACKEND,UP,1\npool,s1,DRAIN,2\n", "down", 0, 1},

@@ -115,6 +115,19 @@ func TestBuildApplicationDiagnosticsKeepsFailureAndUnknownDistinct(t *testing.T)
 		}
 	})
 
+	t.Run("initial health check is exposed as pending evidence", func(t *testing.T) {
+		facts := base
+		facts.HAProxyReport = &metrics.HAProxyReport{Backends: []metrics.BackendStat{{
+			Name: haproxy.ApplicationBackendName(app.PublicHost), Health: "unknown", Status: "UP",
+			Servers: []metrics.ServerStat{{Name: "s1", Status: "UP 1/3", CheckStatus: "* INI"}},
+		}}}
+		response := buildApplicationDiagnostics(facts)
+		backend := diagnosticStepByID(t, response, "backend")
+		if backend.Status != diagnosticUnknown || len(backend.Evidence) != 1 || backend.Evidence[0] != "s1: UP 1/3 (check: * INI)" {
+			t.Fatalf("unexpected backend check evidence: %+v", backend)
+		}
+	})
+
 	t.Run("unavailable observations stay unknown", func(t *testing.T) {
 		facts := base
 		facts.DNSAddresses = nil

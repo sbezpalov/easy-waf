@@ -62,6 +62,7 @@ type FrontendStat struct {
 type ServerStat struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"`
+	CheckStatus string `json:"check_status,omitempty"`
 	SessionsCur int64  `json:"sessions_cur"`
 }
 
@@ -346,6 +347,7 @@ func ParseShowStatCSV(data []byte) (*HAProxyReport, error) {
 			servers[px] = append(servers[px], ServerStat{
 				Name:        sv,
 				Status:      field(rec, idx, "status"),
+				CheckStatus: field(rec, idx, "check_status"),
 				SessionsCur: parseInt64(field(rec, idx, "scur")),
 			})
 		}
@@ -418,7 +420,12 @@ func serverHealthCounts(servers []ServerStat) (up, down int64) {
 		st := strings.ToUpper(strings.TrimSpace(s.Status))
 		switch {
 		case st == "UP" || strings.HasPrefix(st, "UP "):
-			up++
+			// HAProxy can report UP before the first check finishes.
+			// The "* " prefix denotes a check in progress.
+			check := strings.TrimSpace(strings.TrimPrefix(s.CheckStatus, "*"))
+			if check != "INI" && check != "UNK" {
+				up++
+			}
 		case strings.Contains(st, "DOWN"), strings.HasPrefix(st, "MAINT"),
 			strings.HasPrefix(st, "NOLB"), strings.HasPrefix(st, "DRAIN"):
 			down++

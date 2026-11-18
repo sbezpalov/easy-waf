@@ -664,6 +664,8 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `error` (string, только при сбое, например `stats socket "/run/haproxy/easy-waf-admin.sock": dial unix ...: connect: no such file or directory`). При сбое `frontends` и `backends` равны `null`.
 - **Ошибки:** HTTP-ошибкой ничего не возвращается. Если клиент отключился, пока ждал чтения, ничего не записывается.
 
+Для серверов добавляется `check_status`, если HAProxy передаёт это поле. При статусе `UP` и результате проверки `INI` или `UNK` здоровье сервера считается неизвестным. Такой сервер исключается из обоих счётчиков ниже.
+
 ### `GET /api/v1/stats/summary`
 Агрегат для дашборда, вычисленный из того же отчёта.
 - **Ответ:** `200`, `metrics.SummaryReport`:
