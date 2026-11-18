@@ -8,6 +8,8 @@ The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
 Linux verification of this commit passed lint, the PostgreSQL-backed race
 suite, the CI HAProxy integration selection and `make verify`.
+The local nightly fixtures also passed, including the systemd/APT lifecycle,
+PostgreSQL archive SCRAM and real nftables rollback.
 Both ISOs passed a clean full-profile install, reboot and repeat install
 without a network adapter, using VMware for amd64 and QEMU system
 emulation for arm64.
