@@ -27,30 +27,36 @@ trusted workstation:
 - the matching `.iso.sha256`
 - the matching `.iso.sigstore.json`
 
-First verify the keyless signature using the same GitHub Actions identity policy
-as [`SECURITY.md`](SECURITY.md#supply-chain), then verify the ISO checksum:
+Set the version and architecture to match the downloaded files. Verify the
+keyless signature against the exact release tag and then verify the checksum.
+The certificate identity follows the policy in [SECURITY.md](SECURITY.md#supply-chain).
 
 ```bash
+VERSION=1.6.1
+ARCH=amd64
+ISO="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}.iso"
 cosign verify-blob \
-  --bundle easy-waf_1.6.0_offline_ubuntu24.04_amd64.iso.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/sbezpalov/easy-waf/.github/workflows/release.yml@refs/tags/v' \
+  --bundle "${ISO}.sigstore.json" \
+  --certificate-identity "https://github.com/sbezpalov/easy-waf/.github/workflows/release.yml@refs/tags/v${VERSION}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  easy-waf_1.6.0_offline_ubuntu24.04_amd64.iso
-sha256sum -c easy-waf_1.6.0_offline_ubuntu24.04_amd64.iso.sha256
+  "$ISO" && sha256sum -c "${ISO}.sha256"
 ```
 
-Transfer the verified ISO across the air gap. The checksum file is useful for
-detecting transfer damage, but authenticity comes from verification on a trusted
-connected workstation (or from a checksum delivered through another trusted
-channel).
+On macOS, replace the checksum command with `shasum -a 256 -c "${ISO}.sha256"`.
+Transfer the ISO across the air gap after both checks pass. The checksum file
+detects transfer damage. Verify authenticity on a trusted connected workstation
+or use a checksum delivered through another trusted channel.
 
 ## Install
 
 Attach the ISO as virtual media or copy it to the Ubuntu 24.04 appliance, then:
 
 ```bash
+VERSION=1.6.1
+ARCH="$(dpkg --print-architecture)"
+ISO="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}.iso"
 sudo mkdir -p /mnt/easy-waf-offline
-sudo mount -o loop,ro easy-waf_1.6.0_offline_ubuntu24.04_amd64.iso /mnt/easy-waf-offline
+sudo mount -o loop,ro "$ISO" /mnt/easy-waf-offline
 cd /mnt/easy-waf-offline
 bash install.sh --verify-only
 sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot bash install.sh

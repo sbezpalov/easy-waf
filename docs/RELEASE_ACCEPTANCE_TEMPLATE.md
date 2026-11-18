@@ -23,6 +23,7 @@ session tokens, private PEMs, DNS environment files or full secret-bearing dumps
 | Required Linux race/integration and real HAProxy validation | Not run | |
 | Body policy, CrowdSec and systemd/APT E2E | Not run | |
 | amd64 and arm64 packages/tarballs, manifests and signatures | Not run | |
+| amd64 and arm64 offline ISOs, checksums and exact-tag signatures | Not run | Both payload DEBs match the signed package set. The public ISOs omit the operator CrowdSec snapshot. |
 | Release tag matches VERSION; matching changelog and package metadata | Not run | |
 
 Local equivalents can diagnose failures but must state their OS, tool versions,
@@ -47,6 +48,8 @@ state. Stop on a failure and record recovery, rather than marking later rows pas
 | AC-06 Apply and rollback | Not run | Requests before/after; invalid apply leaves previous edge working |
 | AC-07 UI status | Not run | Apps/certificates/blocked views agree with actual state |
 | AC-08 actual reboot and late DB recovery | Not run | Different boot IDs, recovered services/readiness and published HTTPS request |
+| Offline installation on amd64 and arm64 | Not run | Clean install, reboot, running binaries match the package, and repeat installation with the snapshot unmounted. Record hardware or emulator. |
+| About build provenance | Not run | Authenticated About reports the release commit and date, installed component versions and license. |
 | AC-09 WebSocket | Not run | Actual upgrade and sustained bidirectional traffic through edge |
 | AC-10 backup and restore | Not run | Matched archive, exact recovered state and trusted HTTPS on a copy, writer stop/start failures and retained archive usability |
 

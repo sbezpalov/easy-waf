@@ -130,17 +130,28 @@ and prepares this same notes file before Go setup, package builds or signing.
 Tag releases first call the reusable CI workflow from the same commit with
 read-only permissions. All CI jobs (lint/vulnerability checks, PostgreSQL race
 tests, repository verification and real HAProxy validation) must succeed before
-the build/sign/publish job can start. Offline bundles depend on that publication
-job and inherit the gate. This runs candidate checks rather than trusting a
-possibly unrelated branch result; it does not replace the manual appliance
-acceptance in [ACCEPTANCE.md](ACCEPTANCE.md). Workflow dependency coverage is
-checked by `go test ./internal/releasecheck`.
+package builds start. Both offline builds use the signed package set from that
+run. The publication job waits for the packages and both ISOs, then verifies
+the complete set before creating the release. Record manual appliance checks
+using [ACCEPTANCE.md](ACCEPTANCE.md). Workflow dependency coverage is checked
+by `go test ./internal/releasecheck`.
 
 **Which repository artifacts come from:** `install.sh` and `download-release.sh` derive `owner/name` from the **origin remote of the checkout they run from**, falling back to `easy-waf/easy-waf`. Override with **`EASY_WAF_GITHUB_REPO`** (installer) or **`GITHUB_REPOSITORY`** (download script). This matters on a fork or after a rename: with a wrong repository every download 404s. Before 1.3.0 the installer then quietly built from source, which also meant the `SHA256SUMS` verification never ran; since 1.4.0 it stops and says so instead.
 
-From the next tag, a release publishes **six** assets: `easy-waf_<version>_amd64.deb` and `easy-waf_<version>_arm64.deb` (the install and upgrade path; `install.sh` picks the machine's architecture), `easy-waf_<version>_linux_amd64.tar.gz` and `easy-waf_<version>_linux_arm64.tar.gz` (binaries for developers and manual placement), `SHA256SUMS` covering all four, and its cosign signature `SHA256SUMS.sigstore.json`. A tag with `-` (`v1.7.0-rc.1`) is published as a pre-release, not the latest release.
+The workflow publishes **12 assets**:
 
-The release already published as **1.6.0** has only the amd64 `.deb` and the amd64 tarball. arm64 files appear with the next tag, not by rewriting 1.6.0.
+- One `easy-waf_<version>_<arch>.deb` and one
+  `easy-waf_<version>_linux_<arch>.tar.gz` per architecture. The installer
+  selects the matching DEB. The tarball supports manual placement.
+- `SHA256SUMS` for the four DEB and tarball files, and
+  `SHA256SUMS.sigstore.json` to authenticate the manifest before checking it.
+- One `easy-waf_<version>_offline_ubuntu24.04_<arch>.iso` per architecture,
+  plus its `.iso.sha256` and `.iso.sigstore.json`. See
+  [offline bundle verification](OFFLINE_BUNDLE.md#download-and-verify).
+
+The architectures are `amd64` and `arm64`. A tag such as `v1.7.0-rc.1`
+publishes a pre-release. The existing **1.6.0** release contains the amd64
+DEB and tarball with their signed manifest.
 
 Both tarballs contain the same layout:
 
