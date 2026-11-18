@@ -100,10 +100,8 @@ if [[ "$HOST_ARCH" != "$ARCH" ]]; then
   echo "[offline-install] bundle is $ARCH but host is $HOST_ARCH" >&2
   exit 1
 fi
-[[ "$SCRIPT_DIR" != *[[:space:]]* ]] || {
-  echo "[offline-install] mount/copy the bundle to a path without whitespace" >&2
-  exit 1
-}
+# shellcheck source=lib/offline-apt.sh
+. "${SCRIPT_DIR}/payload/scripts/lib/offline-apt.sh"
 
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 case "$EASY_WAF_INSTALL_CROWDSEC" in
@@ -165,9 +163,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-cat >"${TEMP_DIR}/sources.list" <<EOF
-deb [trusted=yes] file:${SCRIPT_DIR}/repository ./
-EOF
+printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "${SCRIPT_DIR}/repository")" >"${TEMP_DIR}/sources.list"
 cat >"${TEMP_DIR}/apt.conf" <<EOF
 Dir::Etc::sourcelist "${TEMP_DIR}/sources.list";
 Dir::Etc::sourceparts "-";

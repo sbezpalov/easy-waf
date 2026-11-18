@@ -249,17 +249,8 @@ SOLVER="${APT_WORK}/solver"
 install -d -m 0755 "$SOLVER" "$SOLVER/lists" "$SOLVER/cache" "$SOLVER/cache/archives"
 mkdir -p "${SOLVER}/lists/partial" "${SOLVER}/cache/archives/partial"
 : >"${SOLVER}/status"
-apt_repository_uri() {
-  local LC_ALL=C path="$1" byte i
-  printf 'file:'
-  for ((i=0; i<${#path}; i++)); do
-    byte="${path:i:1}"
-    case "$byte" in
-      [[:alnum:]./_~-]) printf '%s' "$byte" ;;
-      *) printf '%%%02X' "'$byte" ;;
-    esac
-  done
-}
+# shellcheck source=lib/offline-apt.sh
+. "${SCRIPT_DIR}/lib/offline-apt.sh"
 printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "$APT_REPO")" >"${SOLVER}/sources.list"
 apt_opts=(
   -o "Dir::Etc::sourcelist=${SOLVER}/sources.list"

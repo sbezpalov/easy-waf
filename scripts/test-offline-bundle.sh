@@ -21,15 +21,14 @@ if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
   exit 1
 fi
 
-# Match the APT source-list escaping used by the builder.
-uri_step="$(sed -n '/^apt_repository_uri() {$/,/^}$/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
-[[ -n "$uri_step" ]] || { echo 'test-offline-bundle: builder URI formatter missing' >&2; exit 1; }
-eval "$uri_step"
+# shellcheck source=lib/offline-apt.sh
+. "$SCRIPT_DIR/lib/offline-apt.sh"
 [[ "$(apt_repository_uri '/tmp/large disk #1%/repository')" == 'file:/tmp/large%20disk%20%231%25/repository' ]]
+[[ "$(apt_repository_uri '/tmp/архив/repository')" == 'file:/tmp/%D0%B0%D1%80%D1%85%D0%B8%D0%B2/repository' ]]
 
 # Use the actual builder's checksum step. The nested manifest must be verified
 # by the outer one, and the outer manifest cannot list a temporary self-entry.
-STAGE="${TEMP_DIR}/stage"
+STAGE="${TEMP_DIR}/stage #1%"
 PAYLOAD="${STAGE}/payload"
 WORK_DIR="${TEMP_DIR}/outside"
 mkdir -p "$PAYLOAD/dist" "$WORK_DIR"
@@ -114,8 +113,16 @@ FIXTURE
     grep -Fxq 'APT received the absolute DEB path' "$TEMP_DIR/apt-path.log"
   done
 
-  mkdir -p "$STAGE/repository" "$PAYLOAD/scripts"
-  : >"$STAGE/repository/Packages"
+  mkdir -p "$STAGE/repository" "$PAYLOAD/scripts/lib"
+  cp "$SCRIPT_DIR/lib/offline-apt.sh" "$PAYLOAD/scripts/lib/"
+  (
+    cd "$STAGE/repository"
+    deb="${package##*/}"
+    cp "$builder/$package" "$deb"
+    dpkg-deb -f "$deb" >Packages
+    read -r digest _ < <(sha256sum "$deb")
+    printf 'Filename: ./%s\nSize: %s\nSHA256: %s\n' "$deb" "$(stat -c %s "$deb")" "$digest" >>Packages
+  )
   printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=24.04\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \
     "$VERSION" "$(dpkg --print-architecture)" >"$STAGE/BUNDLE.env"
   cat >"$PAYLOAD/scripts/install.sh" <<'PAYLOAD'
@@ -123,6 +130,25 @@ set -eu
 [[ "$EASY_WAF_RELEASE_VERSION" == 9.9.9 && "$EASY_WAF_OFFLINE" == 1 ]]
 [[ "$EASY_WAF_INSTALL_CROWDSEC" == "${EXPECTED_CROWDSEC:-0}" ]]
 [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == "${EXPECTED_AGENT:-}" ]]
+if [[ "${CHECK_APT_REPOSITORY:-0}" == 1 ]]; then
+  apt_dir="${APT_CONFIG%/*}"
+  grep -Fq '/stage%20%231%25/repository ./' "$apt_dir/sources.list"
+  mkdir -p "$apt_dir/lists/partial" "$apt_dir/cache" "$apt_dir/config.d"
+  : >"$apt_dir/status"
+  cp "$APT_CONFIG" "$apt_dir/fixture.conf"
+  cat >>"$apt_dir/fixture.conf" <<EOF
+Dir::Etc::main "/dev/null";
+Dir::Etc::parts "$apt_dir/config.d";
+Dir::State::status "$apt_dir/status";
+Dir::State::lists "$apt_dir/lists";
+Dir::Cache "$apt_dir/cache";
+APT::Sandbox::User "root";
+EOF
+  APT_CONFIG="$apt_dir/fixture.conf" apt-get -qq update
+  (cd "$apt_dir" && APT_CONFIG="$apt_dir/fixture.conf" apt-get -qq download easy-waf)
+  deb="easy-waf_9.9.9_$(dpkg --print-architecture).deb"
+  cmp "repository/$deb" "$apt_dir/$deb"
+fi
 PAYLOAD
   cat >"$TEMP_DIR/handoff-fixture.env" <<'FIXTURE'
 mkdir() {
@@ -146,8 +172,8 @@ FIXTURE
   export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
   export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
   write_bundle_checksums
-  if ! "${BASH}" "$STAGE/install.sh" >/dev/null; then
-    echo 'test-offline-bundle: wrong package version passed to the installer' >&2
+  if ! CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
+    echo 'test-offline-bundle: installer could not use the local APT repository' >&2
     exit 1
   fi
   rm -- "$HOST_CHANGES"
