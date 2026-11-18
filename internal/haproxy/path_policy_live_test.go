@@ -224,8 +224,9 @@ func TestLiveGeoIPPolicy(t *testing.T) {
 	settings := config.DefaultSettings(dir)
 	settings.HAProxyStatsSocketPath = sock.Name()
 	settings.SPOEConfigPath = ""
-	var apps []config.Application
-	for _, policy := range []string{"allow", "deny"} {
+	policies := []string{"allow", "deny"}
+	apps := make([]config.Application, 0, len(policies))
+	for _, policy := range policies {
 		app := config.Application{
 			ID: policy, PublicHost: policy + ".example.test", Enabled: true, ListenMode: "http_only",
 			BackendHost: "127.0.0.1", BackendPort: backend.port, Profile: "balanced",
@@ -421,7 +422,11 @@ func httptestServer(t *testing.T) *testBackend {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/websocket", webSocketEchoHandler(t))
 	mux.HandleFunc("/api/forwarded-for", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, strings.Join(r.Header.Values("X-Forwarded-For"), ","))
+		got := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
+		if want := r.URL.Query().Get("client"); got != want {
+			t.Errorf("X-Forwarded-For = %q, want %q", got, want)
+			http.Error(w, "unexpected forwarding header", http.StatusBadRequest)
+		}
 	})
 	mux.HandleFunc("/api/mcp", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -446,6 +451,9 @@ func httptestServer(t *testing.T) *testBackend {
 			want := "127.0.0.1"
 			if r.URL.Path == "/config/via-proxy" {
 				want = "192.0.2.42"
+			}
+			if r.URL.Path == "/config/via-loopback-alias" {
+				want = "127.0.0.2"
 			}
 			forwarded := r.Header.Values("X-Forwarded-For")
 			if len(forwarded) != 1 || forwarded[0] != want ||

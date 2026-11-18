@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,12 @@ import (
 )
 
 func TestLiveApplicationProfiles(t *testing.T) {
+	t.Run("direct", func(t *testing.T) { testLiveApplicationProfiles(t, false) })
+	t.Run("with_tls_passthrough", func(t *testing.T) { testLiveApplicationProfiles(t, true) })
+}
+
+func testLiveApplicationProfiles(t *testing.T, passthrough bool) {
+	t.Helper()
 	hx, err := exec.LookPath("haproxy")
 	if err != nil {
 		t.Skip("haproxy not in PATH")
@@ -36,21 +43,37 @@ func TestLiveApplicationProfiles(t *testing.T) {
 	backend := httptestServer(t)
 	defer backend.Close()
 	dir := t.TempDir()
-	socket, err := os.CreateTemp("/tmp", "ewf-ha-*.sock")
+	// Keep the chained Unix listener short even when TMPDIR has a long path.
+	socketDir, err := os.MkdirTemp("", "ewf-ha-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	socketPath := socket.Name()
-	_ = socket.Close()
-	_ = os.Remove(socketPath)
-	t.Cleanup(func() { _ = os.Remove(socketPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
 	settings := config.DefaultSettings(dir)
 	settings.SPOEConfigPath = ""
 	settings.BlockEmptyUA = false
 	settings.WAFBasicRulesEnabled = false
-	settings.HAProxyStatsSocketPath = socketPath
+	settings.HAProxyStatsSocketPath = filepath.Join(socketDir, "stats.sock")
 	settings.TrustedProxyCIDRs = []string{"127.0.0.1/32"}
 	settings.RealIPHeader = "X-Real-IP"
+	const passthroughMarker = "TLS terminated at the test backend"
+	var tlsBackend *httptest.Server
+	var passthroughHost string
+	if passthrough {
+		tlsBackend = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, passthroughMarker)
+		}))
+		t.Cleanup(tlsBackend.Close)
+		names := tlsBackend.Certificate().DNSNames
+		if len(names) == 0 {
+			t.Fatal("passthrough fixture certificate has no DNS name")
+		}
+		passthroughHost = names[0]
+		addr := tlsBackend.Listener.Addr().(*net.TCPAddr)
+		settings.TLSPassthrough = []config.TLSPassthrough{{
+			ServerName: passthroughHost, BackendHost: addr.IP.String(), BackendPort: addr.Port, Enabled: true,
+		}}
+	}
 	const clawHost = "openclaw.example.test"
 	const clawCert = "openclaw"
 	bundle := filepath.Join(dir, "openclaw.pem")
@@ -97,6 +120,8 @@ func TestLiveApplicationProfiles(t *testing.T) {
 	cfg = strings.ReplaceAll(cfg, "bind *:443", fmt.Sprintf("bind 127.0.0.1:%d", tlsPort))
 	cfg = strings.ReplaceAll(cfg, "maxconn 50000", "maxconn 200")
 	cfg = stripPrivilegeDrop(cfg)
+	// The test HAProxy runs as the current user and owns the Unix listener.
+	cfg = strings.ReplaceAll(cfg, "mode 600 user haproxy accept-proxy", "mode 600 accept-proxy")
 	// Keep HTTP inactivity short so the later idle WebSocket exchange proves
 	// HAProxy switched to its unchanged tunnel timeout after the 101 response.
 	httpTimeout := regexp.MustCompile(`(?m)^([\t ]*timeout (client|server))[\t ]+\S+$`)
@@ -127,16 +152,17 @@ func TestLiveApplicationProfiles(t *testing.T) {
 		req.Host = "home-assistant.example.test"
 		if clientIP != "" {
 			req.Header.Set("X-Real-IP", clientIP)
+			query := req.URL.Query()
+			query.Set("client", clientIP)
+			req.URL.RawQuery = query.Encode()
 		}
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		if err != nil || resp.StatusCode != http.StatusOK || string(body) != clientIP {
-			t.Fatalf("HTTP forwarding for client %q: status %d, header %q, read error %v",
-				clientIP, resp.StatusCode, body, err)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("HTTP forwarding for client %q: status %d", clientIP, resp.StatusCode)
 		}
 	}
 	mustStatus(t, client, base+"/.git/config", "home-assistant.example.test", "", http.StatusForbidden)
@@ -165,6 +191,30 @@ func TestLiveApplicationProfiles(t *testing.T) {
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("OpenClaw via trusted proxy: HTTP %d, want 200", response.StatusCode)
+	}
+	if passthrough {
+		aliasDialer := &net.Dialer{LocalAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 2)}}
+		aliasClient := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
+			TLSClientConfig: tlsConfig, DialContext: aliasDialer.DialContext,
+		}}
+		defer aliasClient.CloseIdleConnections()
+		mustStatus(t, aliasClient, clawBase+"/config/via-loopback-alias", clawHost, "", http.StatusOK)
+
+		passthroughRoots := x509.NewCertPool()
+		passthroughRoots.AddCert(tlsBackend.Certificate())
+		passthroughClient := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: passthroughRoots, ServerName: passthroughHost, MinVersion: tls.VersionTLS12},
+		}}
+		defer passthroughClient.CloseIdleConnections()
+		resp, err := passthroughClient.Get(clawBase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK || string(body) != passthroughMarker {
+			t.Fatalf("TLS passthrough: status %d, response %q, read error %v", resp.StatusCode, body, err)
+		}
 	}
 	mustWebSocketExchange(t, port, "home-assistant.example.test", "/api/websocket", nil, http.StatusSwitchingProtocols)
 	mustWebSocketExchange(t, port, "ha-mcp.example.test", "/api/websocket", nil, http.StatusNotFound)
