@@ -102,7 +102,7 @@ and remains unverified in that run.
 The [GeoIP follow-up](release-evidence/1.6.1-geoip-smoke.md) observed upstream
 IPinfo rate limiting and corrected smoke's silent non-200 skip. One live run
 with the fixed script passed 19 checks with 0 failures and 2 optional skips.
-**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 has container and PVE loopback evidence; external-client acceptance remains open. These counts describe coverage, not approval of the current release candidate.
+**Summary.** Capability tables (*Security hardening* … *Platform constraints*): Done — **36**, Partial — **0**, Missing — **0**, N/A — **0**. Acceptance criteria AC-01 … AC-10: Done — **9**, Partial — **1** (AC-03), at the individual scopes below. AC-05 includes [external mobile-client acceptance on PVE](release-evidence/1.6.1-pve-ac05-mobile.md). These counts describe coverage, not approval of the current release candidate.
 
 This document records **what the appliance is required to do and where each
 requirement is implemented** — the original MVP scope, the security work that
@@ -222,7 +222,7 @@ The table distinguishes implementation coverage from appliance evidence.
 **Done** describes repository coverage at the stated scope, not approval of the
 current release candidate. AC-01 has separate scoped clean-install and direct
 package-upgrade evidence; AC-08 has scoped PVE/VMware evidence, and AC-05 has
-container/PVE loopback evidence. Other candidate checks remain open;
+PVE mobile-client, loopback and container evidence. Other candidate checks remain open;
 DNS-01 capability is untested.
 Actual HTTPS reboot recovery and HTTP-01 failure/backoff passed in the
 [PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md).
@@ -311,8 +311,10 @@ remain outside that CI scope.
 The subsequent [PVE security/WAN follow-up](release-evidence/1.6.1-pve-c27-crowdsec-wan.md)
 passed six actual installed CrowdSec baseline/ban/isolation/unban/fail-open/cleanup
 checks and received operator-confirmed mobile-data access without TLS warnings
-on c27c77b. This supersedes the pending mobile observation above; current-client
-forwarded-IP correlation and external-client blocking are not established.
+on c27c77b. That run left external-client blocking and forwarded-IP correlation
+open. A [later PVE mobile-data test](release-evidence/1.6.1-pve-ac05-mobile.md)
+confirmed CrowdSec blocking and recovery by matching the same public client in
+the HAProxy journal.
 The [native Edge/ACME follow-up](release-evidence/1.6.1-pve-c27-ui-acme.md)
 confirmed current version, application/Delete control visibility, valid public
 certificate, runtime backend health and rollback guidance after browser reload.
@@ -328,7 +330,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 | **AC-02** | Add app via UI + Apply | **Done** (scoped PVE and VMware) | Native Edge form creation and Config → Apply HAProxy passed on [PVE candidate 2220fde](release-evidence/1.6.1-application-apply.md), with an independent backend HTTP 200 marker before and after manual Apply and cleanup of the owned test application. [VMware candidate 79d7f16](release-evidence/1.6.1-browser-apply-79d7f16.md) passed browser Cancel and Confirm against the installed package, with a new active revision and an independent HTTP check. Implementation: `#apps` → `POST /api/v1/applications`; `#config` → `POST /api/v1/apply`; `internal/api/server.go`, `internal/engine/engine.go` |
 | **AC-03** | HTTPS certificate automatic (ACME) | **Partial** | `cmd/easy-waf-acmed` — issue/renew, on success transactional publication and `ApplyIfChanged`; needs global `acme_email`, DNS/HTTP-01, worker running (`docs/ACME.md`). Production HTTP-01 and renewal with trusted served TLS passed on the [PVE candidate](release-evidence/1.6.1-public-http01.md); a real NXDOMAIN HTTP-01 failure/backoff passed in the [follow-up](release-evidence/1.6.1-https-reboot-failure.md). Fresh production HTTP-01 renewal after the global configuration repair passed on [cb2d0a7](release-evidence/1.6.1-http01-renewal-cb2d0a7.md), including new DB/served leaf, trusted Windows request and native UI expiry. DNS-01 and optional notification checks remain scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
 | **AC-04** | External access to published application | **Done** (scoped PVE) | Operator-confirmed mobile-data HTTPS request without certificate warnings, with the external client IP matched between HAProxy and backend X-Forwarded-For on the [PVE candidate](release-evidence/1.6.1-public-http01.md). WAN/NAT routing remains deployment-specific; follow [ACCEPTANCE.md](ACCEPTANCE.md). |
-| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (containers; scoped PVE) | The generated config sends each request to the bouncer and returns 403 for any remediation other than `allow` (`internal/haproxy/render.go`, `docs/CROWDSEC.md`); fails open. Proven against a real LAPI and bouncer by `scripts/test-crowdsec-e2e.sh`, nightly in `.github/workflows/e2e.yml`; a real dev appliance also passed ban/unban/fail-open with a dedicated loopback client ([candidate evidence](release-evidence/1.6.1-336b5e0.md)); external-client acceptance remains scoped by [ACCEPTANCE.md](ACCEPTANCE.md) |
+| **AC-05** | CrowdSec blocks; HAProxy returns 403 for denied traffic | **Done** (PVE external client and fail-open) | The [mobile-data PVE run](release-evidence/1.6.1-pve-ac05-mobile.md) correlated HTTPS 200 → CrowdSec 403 → 200 to one public client and verified decision cleanup. The [earlier PVE run](release-evidence/1.6.1-pve-c27-crowdsec-wan.md) verified installed-bouncer fail-open and restart. The nightly `scripts/test-crowdsec-e2e.sh` covers a real LAPI and bouncer in containers. |
 | **AC-06** | Apply + rollback | **Done** (scoped VMware) | Actual HAProxy validation rejection preserved live files, worker/master, revisions and HTTPS; maintenance Apply returned 503 and revision rollback restored 200 on [candidate 74b0df7](release-evidence/1.6.1-apply-rollback-74b0df7.md). Revision rollback restores artifacts, not application rows; cleanup realigned DB/edge and restored the matched checkpoint. Implementation: `engine.Apply` / `Rollback`, DB revisions; `POST /revisions/{id}/rollback`; UI Config (revisions table + button). |
 | **AC-07** | UI: apps, certs, blocked | **Done** (scoped PVE views) | Authenticated native Edge views on [candidate e95ccb3](release-evidence/1.6.1-ui-csp.md) matched API application inventory, certificate validity and blocked-request count. Application creation/Apply subsequently passed on [candidate 2220fde](release-evidence/1.6.1-application-apply.md); other UI workflows remain separate checks. |
 | **AC-08** | Survives reboot | **Done** (scoped PVE/VMware) | Actual reboot with trusted published-HTTPS recovery passed in the [PVE follow-up](release-evidence/1.6.1-https-reboot-failure.md); late-PostgreSQL startup recovery passed on the same binary [candidate](release-evidence/1.6.1-336b5e0.md). An actual c27c77b VMware power cycle also preserved data/certs and recovered TLS/stats/smoke on the [2 GiB lab profile](release-evidence/1.6.1-crowdsec-package-f8f7694.md). A fresh actual PVE reboot passed on [22ce6f0](release-evidence/1.6.1-reboot-22ce6f0.md) after an owned backend fixture correction, with trusted HTTPS, exact data/payload, runtime stats and Windows verification; this did not repeat late-DB injection. Implementation: `systemctl enable` for hostd/api/acmed (and optional CrowdSec); `Restart=on-failure` in unit files; api/acmed use `RestartSec=5` and `StartLimitIntervalSec=0`, so they keep retrying until a late PostgreSQL is up |
