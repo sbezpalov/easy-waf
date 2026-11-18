@@ -112,7 +112,7 @@ func TestLivePublicationRules(t *testing.T) {
 	}{
 		{"/api/health", "GET", "-i Example Client", 200},
 		{"/api/health/private", "GET", "-i Example Client", 403},
-		{"/api", "GET", "-i Example Client", 403},
+		{"/api?token=fixture", "GET", "-i Example Client", 403},
 		{"/api/job", "POST", "-i Example Client", 403},
 		{"/api/job", "GET", "Other Client", 403},
 		{"/status", "GET", "-i Example Client", 200},
@@ -159,6 +159,9 @@ func TestLivePublicationRules(t *testing.T) {
 	if len(blocks) == 0 || blocks[0].Host != wide.PublicHost || blocks[0].Status != 403 ||
 		!strings.HasPrefix(blocks[0].Path, "/blocked/") || !strings.HasSuffix(blocks[0].Path, "…") {
 		t.Fatalf("blocked request with long path missing from journal: %+v", blocks)
+	}
+	if len(blocks) < 3 || blocks[2].Rule != "policy_block" || blocks[2].Path != "/api" {
+		t.Fatalf("journal should return only the blocked request path: %+v", blocks)
 	}
 	if len(events) == 0 || events[0].Host != wide.PublicHost || events[0].Status != 200 || len(events[0].Matches) != len(wide.PolicyRules) {
 		t.Fatal("journal lost the full hostname or rule list at the supported limits")

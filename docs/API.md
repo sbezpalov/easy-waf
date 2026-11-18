@@ -1049,11 +1049,11 @@ Requests the edge refused, read from the `haproxy.service` journal through `easy
     },
     "events": [
       { "time": "2026-11-11T19:47:40.418Z", "client_ip": "203.0.113.9", "frontend": "fe_https", "backend": "fe_https",
-        "status": 403, "host": "app.example.com", "method": "GET", "path": "/?q=union%20select", "rule": "sqli" }
+        "status": 403, "host": "app.example.com", "method": "GET", "path": "/", "rule": "sqli" }
     ]
   }
   ```
-  Events are newest first. `summary` covers every match read, `events` only the first `limit`. `truncated` is true when the journal had more matches than one read returns. `country` is set for the top 10 clients only, when GeoIP is enabled.
+  Events are newest first. The response removes query strings from `path`. `summary` covers every match read and `events` contains up to `limit` entries. `truncated` indicates that the journal read reached its line or byte budget. `country` is set for the top 10 clients when GeoIP is enabled.
   Rules: `sensitive_path`, `method`, `path_allowlist`, `path_header`, `ip_blacklist`, `geoip`, `empty_ua`, `bad_ua`, `sqli`, `xss`, `traversal`, `blocked_path`, `restricted_path`, `multipart`, `body_size`, `content_length`, `crowdsec`, plus the fallbacks above.
 - **Errors:** `400` (text/plain) for another `period` or `limit`; `503` (`{"error": ...}`) when the journal cannot be read (for example, `easy-waf-hostd` is down).
 

@@ -27,7 +27,7 @@ func TestParseLine(t *testing.T) {
 		ip, host, rule, path, fe string
 		status                   int
 	}{
-		{lineDeny, "172.17.0.1", "app.example", "sqli", "/?q=union%20select", "fe_https", 403},
+		{lineDeny, "172.17.0.1", "app.example", "sqli", "/", "fe_https", 403},
 		{lineReturn, "172.17.0.1", "app.example", "body_size", "/upload", "fe_https", 413},
 		{lineBackend, "2001:db8::7", "app.example", "rate_limit", "/rl", "fe_https", 429},
 		{lineH2, "172.17.0.1", "app.example", "sensitive_path", "/.git", "fe_https", 403},
@@ -57,6 +57,7 @@ func TestParseLineRetainsRefusalsWithTruncatedTargets(t *testing.T) {
 	}{
 		{"long path", " \"GET " + path, "GET", path[:maxPath] + "…"},
 		{"short fragment", " \"GET /partial", "GET", "/partial…"},
+		{"clipped query", " \"GET /callback?token=secret", "GET", "/callback"},
 		{"method only", " \"GE", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,6 +71,23 @@ func TestParseLineRetainsRefusalsWithTruncatedTargets(t *testing.T) {
 	success := strings.TrimSuffix(lineOK, ` HTTP/1.1"`)
 	if ev, ok := ParseLine(success); ok {
 		t.Fatalf("truncated backend success counted as a block: %+v", ev)
+	}
+}
+
+func TestParseLineReturnsOnlyPath(t *testing.T) {
+	for _, tc := range []struct {
+		target, path string
+	}{
+		{"/callback?next=https://example.test/elsewhere&token=secret", "/callback"},
+		{"https://app.example?next=https://example.test/elsewhere", "/"},
+		{"https://app.example/saved%3Fkey?token=secret", "/saved%3Fkey"},
+		{"/literal://segment/leaf?token=secret", "/literal://segment/leaf"},
+		{"*", "*"},
+	} {
+		line := strings.Replace(lineDeny, "/?q=union%20select", tc.target, 1)
+		if ev, ok := ParseLine(line); !ok || ev.Path != tc.path {
+			t.Errorf("target %q: path = %q, want %q", tc.target, ev.Path, tc.path)
+		}
 	}
 }
 

@@ -72,12 +72,14 @@ func ParseLine(msg string) (Event, bool) {
 	request, closed := strings.CutSuffix(m[7], `"`)
 	f := strings.Fields(request)
 	if len(f) >= 2 {
-		ev.Method, ev.Path = f[0], stripOrigin(f[1])
-	}
-	if len(ev.Path) > maxPath {
-		ev.Path = ev.Path[:maxPath] + "…"
-	} else if ev.Path != "" && !closed && len(f) == 2 {
-		ev.Path += "…"
+		target, _, hasQuery := strings.Cut(f[1], "?")
+		ev.Method, ev.Path = f[0], stripOrigin(target)
+		switch {
+		case len(ev.Path) > maxPath:
+			ev.Path = ev.Path[:maxPath] + "…"
+		case ev.Path != "" && !hasQuery && !closed && len(f) == 2:
+			ev.Path += "…"
+		}
 	}
 	if ev.Rule == "" {
 		ev.Rule = fallbackRule(ev)
@@ -86,8 +88,8 @@ func ParseLine(msg string) (Event, bool) {
 }
 
 func stripOrigin(target string) string {
-	if i := strings.Index(target, "://"); i >= 0 {
-		rest := target[i+3:]
+	scheme, rest, absolute := strings.Cut(target, "://")
+	if absolute && (strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https")) {
 		if j := strings.IndexByte(rest, '/'); j >= 0 {
 			return rest[j:]
 		}

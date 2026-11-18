@@ -69,7 +69,7 @@ func TestListBlocked(t *testing.T) {
 	readBlockedJournal = func(_ context.Context, since time.Time, _ int) (journal.Sample, error) {
 		gotSince = since
 		return journal.Sample{JSON: strings.Join([]string{
-			journalLine(`203.0.113.9:1 [x] fe_https~ fe_https/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {a.example|sqli} "GET /?q=1 HTTP/1.1"`, now.Add(-2*time.Minute)),
+			journalLine(`203.0.113.9:1 [x] fe_https~ fe_https/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {a.example|sqli} "GET /callback?next=https://example.test/elsewhere&token=sensitive HTTP/1.1"`, now.Add(-2*time.Minute)),
 			journalLine(`203.0.113.9:2 [x] fe_https~ fe_https/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {a.example|geoip} "GET / HTTP/1.1"`, now.Add(-time.Minute)),
 			journalLine(`198.51.100.1:3 [x] fe_http fe_http/<NOSRV> 0/-1/-1/-1/0 301 1 - - LR-- 1/1/0/0/0 0/0 {a.example|} "GET / HTTP/1.1"`, now),
 		}, "\n"), Truncated: true}, nil
@@ -90,6 +90,9 @@ func TestListBlocked(t *testing.T) {
 	}
 	if !resp.Truncated || resp.Summary.Total != 2 || len(resp.Events) != 2 || resp.Events[0].Rule != "geoip" {
 		t.Fatalf("newest first, redirects skipped: %+v", resp)
+	}
+	if resp.Events[1].Path != "/callback" || strings.Contains(rec.Body.String(), "sensitive") {
+		t.Fatalf("expected only the blocked path, got %q", resp.Events[1].Path)
 	}
 	if len(resp.Summary.TopIPs) != 1 || resp.Summary.TopIPs[0].Count != 2 {
 		t.Fatalf("top ips: %+v", resp.Summary.TopIPs)
