@@ -9,6 +9,11 @@ full Linux suite, live HAProxy tests and all six local E2E launchers passed
 at the scopes in the report. Remote CI for the release commit, release
 approval and validation of the signed assets remain open. DNS-01 is deferred.
 
+**Current local source and DEB checks:** [85d8332](release-evidence/1.6.1-local-gates-85d8332.md).
+The current runtime changes passed the Linux race suite with PostgreSQL,
+live HAProxy integration, lint, repository verification and amd64/arm64
+DEB build and payload checks.
+
 **Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
 configured Easy WAF on a clean guest. The full profile then stopped in
