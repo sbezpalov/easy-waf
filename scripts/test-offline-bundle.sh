@@ -54,6 +54,35 @@ if "${BASH}" "${STAGE}/install.sh" --verify-only >/dev/null 2>&1; then
   exit 1
 fi
 
+# CI compares the extracted ISO to the separately verified release package.
+release_name="easy-waf_${VERSION}_${ARCH}.deb"
+release_fixture="$TEMP_DIR/$release_name"
+cp "$PAYLOAD/dist/$release_name" "$release_fixture"
+mkdir -p "$STAGE/repository"
+cp "$release_fixture" "$STAGE/repository/$release_name"
+verify_release="$SCRIPT_DIR/verify-offline-release-package.sh"
+write_bundle_checksums
+"${BASH}" "$verify_release" "$STAGE" "$release_fixture"
+for location in payload/dist repository; do
+  copy="$STAGE/$location/$release_name"
+  printf 'different package\n' >"$copy"
+  write_bundle_checksums
+  "${BASH}" "$STAGE/install.sh" --verify-only >/dev/null
+  if "${BASH}" "$verify_release" "$STAGE" "$release_fixture" >"$TEMP_DIR/release-error" 2>&1; then
+    echo "test-offline-bundle: accepted a package differing from the release in $location" >&2
+    exit 1
+  fi
+  grep -Fq "$location/$release_name does not match" "$TEMP_DIR/release-error"
+  cp "$release_fixture" "$copy"
+done
+printf 'unusable checksum list\n' >"$PAYLOAD/dist/SHA256SUMS"
+if "${BASH}" "$verify_release" "$STAGE" "$release_fixture" >"$TEMP_DIR/release-error" 2>&1; then
+  echo 'test-offline-bundle: accepted an unusable payload checksum manifest' >&2
+  exit 1
+fi
+grep -Fq 'payload checksum manifest does not match' "$TEMP_DIR/release-error"
+rm -- "$STAGE/repository/$release_name"
+
 # The installer sources /etc/os-release before handing the package version
 # to its payload. Exercise that handoff on its supported Ubuntu host.
 if [[ "$EUID" == 0 ]] && (

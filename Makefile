@@ -68,6 +68,7 @@ check-version-docs:
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		shellcheck -x -P SCRIPTDIR scripts/publish-release.sh scripts/test-publish-release.sh && \
+		shellcheck scripts/verify-offline-release-package.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/prepare-offline-crowdsec.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-haproxy-working-dir.sh scripts/testdata/haproxy-working-dir.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-conffiles.sh scripts/testdata/installer-conffiles.sh && \

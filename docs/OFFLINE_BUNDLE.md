@@ -5,7 +5,9 @@ repository, the Easy Home WAF Debian package, and the provisioning scripts. It
 is built separately for Ubuntu 24.04 `amd64` and `arm64`.
 
 The release workflow stages the signed packages and both signed ISOs in the
-same Actions run. It verifies the complete set before creating a release.
+same Actions run. Before signing each ISO it extracts the image and compares
+both copies of the Easy WAF DEB with the verified release package. It verifies
+the complete set before creating a release.
 GitHub CLI uploads the assets to a draft before publishing it. If an interrupted
 upload leaves a draft, inspect it before retrying the workflow for that tag.
 
