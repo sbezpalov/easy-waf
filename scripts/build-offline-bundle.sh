@@ -94,18 +94,9 @@ esac
 if [[ "$DEB" != /* ]]; then
   DEB="$PWD/$DEB"
 fi
-DEB_ARCH="$(dpkg-deb -f "$DEB" Architecture)"
-if [[ "$DEB_ARCH" != "$ARCH" ]]; then
-  echo "[offline-build] package architecture $DEB_ARCH does not match native $ARCH" >&2
-  exit 1
-fi
-DEB_PACKAGE="$(dpkg-deb -f "$DEB" Package)"
-DEB_VERSION="$(dpkg-deb -f "$DEB" Version)"
-EXPECTED_DEB_VERSION="${VERSION//-/~}"
-if [[ "$DEB_PACKAGE" != "easy-waf" ]] || ! dpkg --compare-versions "$DEB_VERSION" eq "$EXPECTED_DEB_VERSION"; then
-  echo "[offline-build] expected easy-waf $EXPECTED_DEB_VERSION; package contains $DEB_PACKAGE $DEB_VERSION" >&2
-  exit 1
-fi
+# shellcheck source=lib/offline-apt.sh
+. "${SCRIPT_DIR}/lib/offline-apt.sh"
+offline_check_package_identity "$DEB" "$VERSION" "$ARCH"
 
 # Release payloads come only from committed files. This prevents an ignored or
 # untracked credential below scripts/configs from being copied into an ISO.
@@ -249,8 +240,6 @@ SOLVER="${APT_WORK}/solver"
 install -d -m 0755 "$SOLVER" "$SOLVER/lists" "$SOLVER/cache" "$SOLVER/cache/archives"
 mkdir -p "${SOLVER}/lists/partial" "${SOLVER}/cache/archives/partial"
 : >"${SOLVER}/status"
-# shellcheck source=lib/offline-apt.sh
-. "${SCRIPT_DIR}/lib/offline-apt.sh"
 printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "$APT_REPO")" >"${SOLVER}/sources.list"
 apt_opts=(
   -o "Dir::Etc::sourcelist=${SOLVER}/sources.list"

@@ -2,6 +2,10 @@
 # Compare the extracted ISO's package copies with the verified release DEB.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/offline-apt.sh
+. "${SCRIPT_DIR}/lib/offline-apt.sh"
+
 if (( $# != 2 )); then
   echo 'Usage: bash verify-offline-release-package.sh EXTRACTED_ISO VERIFIED_DEB' >&2
   exit 2
@@ -18,10 +22,7 @@ for location in payload/dist repository; do
   fi
 done
 
-if ! (
-  cd -- "$bundle/payload/dist"
-  sha256sum -- "$name" | cmp -s -- SHA256SUMS -
-); then
+if ! offline_package_checksum_matches "$bundle/payload/dist" "$name"; then
   echo "[offline-release] payload checksum manifest does not match $name" >&2
   exit 1
 fi

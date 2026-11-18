@@ -94,12 +94,14 @@ if [[ "$EUID" == 0 ]] && (
   # The release job supplies dist/<name>.deb. Exercise the builder up to the
   # APT boundary with a local DEB and without contacting package repositories.
   builder="$TEMP_DIR/relative package/build"
-  mkdir -p "$builder/dist" "$builder/fixture/DEBIAN" "$builder/scripts"
+  mkdir -p "$builder/dist" "$builder/fixture/DEBIAN" "$builder/scripts/lib"
   cp "$SCRIPT_DIR/build-offline-bundle.sh" "$builder/scripts/"
+  cp "$SCRIPT_DIR/lib/offline-apt.sh" "$builder/scripts/lib/"
   printf '9.9.9\n' >"$builder/VERSION"
-  package="dist/easy-waf_9.9.9_$(dpkg --print-architecture).deb"
+  ARCH="$(dpkg --print-architecture)"
+  package="dist/easy-waf_9.9.9_${ARCH}.deb"
   printf 'Package: easy-waf\nVersion: 9.9.9\nArchitecture: %s\nMaintainer: Fixture <fixture@example.invalid>\nDescription: Offline bundle fixture\n' \
-    "$(dpkg --print-architecture)" >"$builder/fixture/DEBIAN/control"
+    "$ARCH" >"$builder/fixture/DEBIAN/control"
   dpkg-deb --build "$builder/fixture" "$builder/$package" >/dev/null
   cat >"$TEMP_DIR/apt-path-fixture.env" <<'FIXTURE'
 git() { :; }
@@ -201,6 +203,18 @@ FIXTURE
   export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
   export APT_WORKSPACE="$TEMP_DIR/apt-workspace"
   export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
+  mkdir -p "$builder/wrong/DEBIAN"
+  sed 's/^Version: 9\.9\.9$/Version: 9.9.8/' "$builder/fixture/DEBIAN/control" >"$builder/wrong/DEBIAN/control"
+  dpkg-deb --build "$builder/wrong" "$PAYLOAD/$package" >/dev/null
+  write_bundle_checksums
+  if "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: installed a package with the wrong declared version' >&2
+    exit 1
+  fi
+  grep -Fq 'expected easy-waf 9.9.9' "$TEMP_DIR/error"
+  [[ ! -e "$HOST_CHANGES" && ! -e "$APT_WORKSPACE" ]]
+
+  cp "$builder/$package" "$PAYLOAD/$package"
   write_bundle_checksums
   if ! EASY_WAF_APT_UPDATED=1 CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
     echo 'test-offline-bundle: installer could not use the local APT repository' >&2

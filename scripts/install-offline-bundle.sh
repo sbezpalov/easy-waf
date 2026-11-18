@@ -103,6 +103,14 @@ fi
 # shellcheck source=lib/offline-apt.sh
 . "${SCRIPT_DIR}/payload/scripts/lib/offline-apt.sh"
 
+package_name="easy-waf_${BUNDLE_VERSION}_${ARCH}.deb"
+payload_dist="${SCRIPT_DIR}/payload/dist"
+if ! offline_package_checksum_matches "$payload_dist" "$package_name"; then
+  echo "[offline-install] payload checksum manifest does not match $package_name" >&2
+  exit 1
+fi
+offline_check_package_identity "$payload_dist/$package_name" "$BUNDLE_VERSION" "$ARCH"
+
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 case "$EASY_WAF_INSTALL_CROWDSEC" in
   0|1) ;;

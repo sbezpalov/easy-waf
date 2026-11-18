@@ -79,8 +79,10 @@ leaves the host's APT sources and indexes intact. It removes its temporary APT
 configuration and indexes on exit.
 
 The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
-The outer manifest also covers this file. Offline package installation requires
-both files and rejects a checksum mismatch. No GitHub download is needed.
+The outer manifest also covers this file. Before modifying the host, the
+installer checks the DEB against this inner checksum and checks its name,
+version and architecture against the bundle metadata. No GitHub download is
+needed.
 
 Provisioning overrides still apply. For example, an external database:
 
