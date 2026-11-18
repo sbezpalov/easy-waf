@@ -118,11 +118,21 @@ if ! git -C "$REPO_ROOT" diff --quiet -- "${tracked_inputs[@]}" ||
 fi
 
 WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "$WORK_DIR"' EXIT
+APT_WORK="${WORK_DIR}/apt"
+trap 'rm -rf -- "$WORK_DIR" "${APT_WORK:-$WORK_DIR}"' EXIT
+if (( EUID == 0 )); then
+  # The APT sandbox needs to traverse this public package workspace even
+  # when the caller uses a private TMPDIR or builds with a private snapshot.
+  APT_WORK="$(mktemp -d /tmp/easy-waf-apt.XXXXXXXXXX)"
+  chmod 0711 "$APT_WORK"
+fi
 STAGE="${WORK_DIR}/easy-waf-offline"
-APT_REPO="${STAGE}/repository"
+APT_REPO="${APT_WORK}/repository"
 PAYLOAD="${STAGE}/payload"
-mkdir -p "$APT_REPO" "$PAYLOAD/dist" "$OUTPUT_DIR"
+install -d -m 0755 "$APT_REPO" "$APT_WORK/input"
+mkdir -p "$PAYLOAD/dist" "$OUTPUT_DIR"
+APT_DEB="$APT_WORK/input/${DEB##*/}"
+install -m 0644 -- "$DEB" "$APT_DEB"
 
 packages=(
   haproxy nftables ca-certificates curl iproute2 netplan.io iputils-ping
@@ -143,7 +153,8 @@ echo "[offline-build] resolving ${#packages[@]} roots for Ubuntu 24.04/$ARCH"
 # systemd-sysusers, ...). Those have no candidate, so apt-get download fails
 # before the repository exists. The solver below picks one real provider
 # (dbus rather than dbus-broker, debconf rather than cdebconf).
-RESOLVE="${WORK_DIR}/resolve"
+RESOLVE="${APT_WORK}/resolve"
+install -d -m 0755 "$RESOLVE" "$RESOLVE/cache" "$RESOLVE/cache/archives"
 mkdir -p "${RESOLVE}/cache/archives/partial"
 : >"${RESOLVE}/status"
 apt_resolve_opts=(
@@ -159,7 +170,7 @@ apt_resolve_opts=(
   -o "APT::Get::Assume-Yes=true"
   -o "Acquire::Languages=none"
 )
-apt-get "${apt_resolve_opts[@]}" --download-only install "$DEB" "${packages[@]}"
+apt-get "${apt_resolve_opts[@]}" --download-only install "$APT_DEB" "${packages[@]}"
 find "${RESOLVE}/cache/archives" -maxdepth 1 -type f -name '*.deb' -exec mv -t "$APT_REPO" {} +
 mapfile -d '' downloaded_debs < <(find "$APT_REPO" -maxdepth 1 -type f -name '*.deb' -print0)
 if [[ "${#downloaded_debs[@]}" -lt 1 ]]; then
@@ -168,8 +179,8 @@ if [[ "${#downloaded_debs[@]}" -lt 1 ]]; then
 fi
 echo "[offline-build] downloaded ${#downloaded_debs[@]} packages"
 
-cp -a "$DEB" "$APT_REPO/"
-cp -a "$DEB" "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"
+cp -a "$APT_DEB" "$APT_REPO/"
+cp -a "$APT_DEB" "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"
 git -C "$REPO_ROOT" archive --format=tar HEAD -- "${tracked_inputs[@]}" | tar -xf - -C "$PAYLOAD"
 if [[ -n "$CROWDSEC_SNAPSHOT" ]]; then
   crowdsec_debs=("$APT_REPO"/crowdsec_*.deb)
@@ -188,6 +199,7 @@ chmod 0755 "${STAGE}/install.sh"
 
 (
   cd "$APT_REPO"
+  umask 022
   dpkg-scanpackages --multiversion . /dev/null >Packages
   gzip -9 -c Packages >Packages.gz
   apt-ftparchive release . >Release
@@ -226,7 +238,8 @@ EOF
 # Validate the repository with APT's real solver against an empty package state.
 # This catches missing alternatives/providers and versioned dependencies before
 # an ISO can be signed, without running maintainer scripts on the build host.
-SOLVER="${WORK_DIR}/solver"
+SOLVER="${APT_WORK}/solver"
+install -d -m 0755 "$SOLVER" "$SOLVER/lists" "$SOLVER/cache" "$SOLVER/cache/archives"
 mkdir -p "${SOLVER}/lists/partial" "${SOLVER}/cache/archives/partial"
 : >"${SOLVER}/status"
 cat >"${SOLVER}/sources.list" <<EOF
@@ -248,6 +261,7 @@ if ! apt-get "${apt_opts[@]}" --simulate install easy-waf "${packages[@]}" >"${S
   exit 1
 fi
 echo "[offline-build] isolated APT dependency solve passed"
+mv -- "$APT_REPO" "$STAGE/repository"
 
 write_bundle_checksums() {
   (

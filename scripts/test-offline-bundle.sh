@@ -72,14 +72,23 @@ git() { :; }
 apt-ftparchive() { return 91; }
 dpkg-scanpackages() { return 91; }
 apt-get() {
+  local arg archives=
+  for arg in "$@"; do
+    case "$arg" in Dir::Cache::archives=*) archives="${arg#*=}" ;; esac
+  done
   while [[ $# -gt 1 && "$1" != install ]]; do shift; done
-  [[ "$1" == install && "$2" == "$PWD/$EASY_WAF_DEB" ]] || return 92
+  [[ "$1" == install && "$2" == /* ]] && cmp -s "$2" "$PWD/$EASY_WAF_DEB" || return 92
+  local apt_work="${archives%/resolve/cache/archives}"
+  [[ "$apt_work" == /tmp/easy-waf-apt.* ]] || return 94
+  [[ "$(stat -c %a "$apt_work")" == 711 &&
+     "$(stat -c %a "$archives")" == 755 &&
+     "$(stat -c %a "$2")" == 644 ]] || return 95
   echo 'APT received the absolute DEB path'
   return 93
 }
 FIXTURE
   builder_status=0
-  (cd "$builder" && BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_DEB="$package" \
+  (cd "$builder" && umask 077 && TMPDIR="$TEMP_DIR" BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_DEB="$package" \
     EASY_WAF_OFFLINE_FORMAT=tar.gz "${BASH}" scripts/build-offline-bundle.sh) \
     >"$TEMP_DIR/apt-path.log" 2>&1 || builder_status=$?
   [[ "$builder_status" == 93 ]]
