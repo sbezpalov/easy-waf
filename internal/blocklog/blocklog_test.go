@@ -4,6 +4,7 @@
 package blocklog
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ func TestParseJournal(t *testing.T) {
 		`not json`,
 		`{"MESSAGE":[49,46,50,46,51,46,52,58,49,32,91,120,93,32,102,101,32,102,101,47,60,78,79,83,82,86,62,32,48,32,52,48,51,32,48,32,45,32,45,32,80,82,45,45,32,48,32,48,32,123,104,124,103,101,111,105,112,125,32,34,71,69,84,32,47,32,72,84,84,80,47,49,46,49,34],"__REALTIME_TIMESTAMP":"1794426460000000"}`,
 	}, "\n")
-	ev, lines := ParseJournal(strings.NewReader(in))
+	ev, lines := ParseJournal(in)
 	if lines != 4 || len(ev) != 2 {
 		t.Fatalf("lines=%d events=%+v", lines, ev)
 	}
@@ -107,6 +108,31 @@ func TestParseJournal(t *testing.T) {
 	}
 	if ev[1].ClientIP != "1.2.3.4" || ev[1].Rule != "geoip" {
 		t.Fatalf("byte-array MESSAGE: %+v", ev[1])
+	}
+}
+
+func TestJournalParsersKeepEntriesAfterLargeJSONRecord(t *testing.T) {
+	const timestamp = `","__REALTIME_TIMESTAMP":"1794426460418000"}`
+	encode := func(message string) string { return strings.ReplaceAll(message, `"`, `\"`) }
+	matched := strings.Replace(lineDeny, "{app.example|sqli}", "{app.example|policy_block|policy-block:rule-a}", 1)
+	// Extra journal fields contribute to the JSON record size independently
+	// of HAProxy's limit on the MESSAGE field.
+	var journal strings.Builder
+	journal.WriteByte('{')
+	pad := strings.Repeat("x", 4000)
+	for i := range 270 {
+		journal.WriteString(`"METADATA_` + strconv.Itoa(i) + `":"` + pad + `",`)
+	}
+	journal.WriteString(`"MESSAGE":"` + encode(lineDeny) + timestamp + "\r\n")
+	journal.WriteString(`{"MESSAGE":"` + encode(matched) + timestamp)
+	in := journal.String()
+	blocked, lines := ParseJournal(in)
+	if lines != 2 || len(blocked) != 2 || blocked[1].Rule != "policy_block" {
+		t.Fatalf("blocked records = %v, lines = %d", blocked, lines)
+	}
+	matches, lines := ParseRuleJournal(in)
+	if lines != 2 || len(matches) != 1 || len(matches[0].Matches) != 1 || matches[0].Matches[0].ID != "rule-a" {
+		t.Fatalf("rule matches = %v, lines = %d", matches, lines)
 	}
 }
 

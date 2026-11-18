@@ -164,8 +164,8 @@ func TestLivePublicationRules(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, _ := blocklog.ParseRuleJournal(strings.NewReader(journal.String()))
-	blocks, _ := blocklog.ParseJournal(strings.NewReader(journal.String()))
+	events, _ := blocklog.ParseRuleJournal(journal.String())
+	blocks, _ := blocklog.ParseJournal(journal.String())
 	if blockedLines != len(blocks) || policyLines != len(events) {
 		t.Fatalf("journal grep and parsers disagree: blocked %d/%d, policy %d/%d", blockedLines, len(blocks), policyLines, len(events))
 	}

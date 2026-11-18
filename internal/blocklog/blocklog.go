@@ -6,9 +6,7 @@
 package blocklog
 
 import (
-	"bufio"
 	"encoding/json"
-	"io"
 	"regexp"
 	"sort"
 	"strconv"
@@ -131,10 +129,10 @@ type journalEntry struct {
 	Realtime string          `json:"__REALTIME_TIMESTAMP"`
 }
 
-// ParseJournal reads journalctl --output json lines. It returns the refused
-// requests in input order and how many journal lines it read.
-func ParseJournal(r io.Reader) (events []Event, lines int) {
-	lines = scanJournal(r, func(message string, at time.Time) {
+// ParseJournal parses a bounded journalctl JSON sample and returns refused
+// requests in input order and the number of journal lines examined.
+func ParseJournal(sample string) (events []Event, lines int) {
+	lines = scanJournal(sample, func(message string, at time.Time) {
 		if ev, ok := ParseLine(message); ok {
 			ev.Time = at
 			events = append(events, ev)
@@ -162,8 +160,8 @@ var policyCaptureRE = regexp.MustCompile("^" + policyCapture + "$")
 
 // ParseRuleJournal is independent of the final HTTP status: Count can match
 // a successful request or one later rejected by another rule.
-func ParseRuleJournal(r io.Reader) (events []RuleEvent, lines int) {
-	lines = scanJournal(r, func(message string, at time.Time) {
+func ParseRuleJournal(sample string) (events []RuleEvent, lines int) {
+	lines = scanJournal(sample, func(message string, at time.Time) {
 		m := policyLogRE.FindStringSubmatch(strings.TrimSpace(message))
 		if m == nil {
 			return
@@ -186,17 +184,17 @@ func ParseRuleJournal(r io.Reader) (events []RuleEvent, lines int) {
 	return events, lines
 }
 
-func scanJournal(r io.Reader, visit func(string, time.Time)) (lines int) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		raw := sc.Bytes()
+func scanJournal(sample string, visit func(string, time.Time)) (lines int) {
+	// The broker bounds the sample. Iterate over its lines without imposing
+	// a separate token limit that could discard the rest of the sample.
+	for line := range strings.Lines(sample) {
+		raw := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
 		if len(raw) == 0 {
 			continue
 		}
 		lines++
 		var e journalEntry
-		if json.Unmarshal(raw, &e) != nil {
+		if json.Unmarshal([]byte(raw), &e) != nil {
 			continue
 		}
 		var at time.Time

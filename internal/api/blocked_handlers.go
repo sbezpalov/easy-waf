@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/blocklog"
@@ -52,7 +51,7 @@ func (s *Server) listBlocked(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
 		return
 	}
-	events, _ := blocklog.ParseJournal(strings.NewReader(sample.JSON))
+	events, _ := blocklog.ParseJournal(sample.JSON)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	resp := blockedResponse{
 		Period:    period,
@@ -100,7 +99,7 @@ func (s *Server) listPolicyMatches(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
 		return
 	}
-	events, _ := blocklog.ParseRuleJournal(strings.NewReader(sample.JSON))
+	events, _ := blocklog.ParseRuleJournal(sample.JSON)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	writeJSON(w, http.StatusOK, struct {
 		Period    string               `json:"period"`
