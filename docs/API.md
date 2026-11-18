@@ -806,6 +806,8 @@ Sends one test notification to every configured channel (webhook and Telegram).
 
 Both endpoints read HAProxy `show stat` from the stats Unix socket. The socket is `haproxy_stats_socket_path` from settings; an empty value, or the legacy `<state_dir>/haproxy/admin.sock`, maps to `/run/haproxy/easy-waf-admin.sock`. Reads are cached for 5 seconds per socket path, and concurrent requests share a single socket read. An unreachable socket is **not** an HTTP error: both endpoints still return `200` with an `error` string in the body.
 
+Both endpoints also return `200` with an `error` string when the socket response exceeds the 16 MiB limit. The collector discards the incomplete snapshot.
+
 ### `GET /api/v1/stats/haproxy`
 Per-frontend and per-backend HAProxy statistics.
 - **Response:** `200`, `metrics.HAProxyReport` (`internal/metrics/haproxy.go`):

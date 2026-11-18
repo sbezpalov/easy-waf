@@ -25,6 +25,8 @@ const MinHAProxyStatsRefresh = 5 * time.Second
 // defaultHAProxyStatsSocketPath matches config.DefaultSettings (under /run/haproxy for AppArmor).
 const defaultHAProxyStatsSocketPath = "/run/haproxy/easy-waf-admin.sock"
 
+const maxHAProxyStatsBytes = 16 << 20
+
 // StatsSocketPath returns the configured stats socket path or the product default.
 // Legacy installs stored <stateDir>/haproxy/admin.sock — that path may break under AppArmor
 // (haproxy_t + var_lib_t); treat it as the default /run/haproxy socket without requiring a DB edit.
@@ -224,10 +226,13 @@ func haproxyShowStat(socketPath string) ([]byte, error) {
 	if _, err := io.WriteString(conn, "show stat\n"); err != nil {
 		return nil, err
 	}
-	const maxRead = 16 << 20
-	b, err := io.ReadAll(io.LimitReader(conn, maxRead))
+	// Read one byte past the limit so a cut-off CSV never looks complete.
+	b, err := io.ReadAll(io.LimitReader(conn, maxHAProxyStatsBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(b) > maxHAProxyStatsBytes {
+		return nil, fmt.Errorf("HAProxy stats response exceeds %d bytes", maxHAProxyStatsBytes)
 	}
 	return b, nil
 }
