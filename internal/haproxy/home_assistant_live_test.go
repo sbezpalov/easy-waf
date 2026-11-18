@@ -119,6 +119,26 @@ func TestLiveApplicationProfiles(t *testing.T) {
 	for _, route := range []string{"/", "/config/dashboard", "/api/", "/api/websocket"} {
 		mustStatus(t, client, base+route, "home-assistant.example.test", "", http.StatusOK)
 	}
+	for _, clientIP := range []string{"", "192.0.2.42"} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/api/forwarded-for", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = "home-assistant.example.test"
+		if clientIP != "" {
+			req.Header.Set("X-Real-IP", clientIP)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK || string(body) != clientIP {
+			t.Fatalf("HTTP forwarding for client %q: status %d, header %q, read error %v",
+				clientIP, resp.StatusCode, body, err)
+		}
+	}
 	mustStatus(t, client, base+"/.git/config", "home-assistant.example.test", "", http.StatusForbidden)
 	mustStatus(t, client, base+"/.env", "home-assistant.example.test", "", http.StatusForbidden)
 	mustStatus(t, client, base+"/config/dashboard", "balanced.example.test", "", http.StatusForbidden)

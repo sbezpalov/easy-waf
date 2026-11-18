@@ -420,6 +420,9 @@ func httptestServer(t *testing.T) *testBackend {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/websocket", webSocketEchoHandler(t))
+	mux.HandleFunc("/api/forwarded-for", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.Join(r.Header.Values("X-Forwarded-For"), ","))
+	})
 	mux.HandleFunc("/api/mcp", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")

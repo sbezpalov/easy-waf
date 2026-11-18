@@ -528,7 +528,6 @@ defaults
 	option	dontlognull
 	option	httplog
 	option	http-server-close
-	option	forwardfor except 127.0.0.0/8
 	timeout connect 5s
 	timeout client  50s
 	timeout server  50s
@@ -555,6 +554,7 @@ frontend fe_http
 	bind :::80 v6only
 {{- end}}
 	mode http
+	option forwardfor except 127.0.0.0/8
 {{- template "realIP" .}}
 {{- template "securityHeaders" .}}
 {{- template "blockCapture" .}}
@@ -654,6 +654,7 @@ frontend fe_https
 {{- end}}
 {{- end}}
 	mode http
+	option forwardfor except 127.0.0.0/8
 {{- if .HTTPSChainSocket}}
 {{- template "realIPHeader" .}}
 {{- else}}
@@ -665,7 +666,7 @@ frontend fe_https
 	# timeout http-request still aborts an incomplete request, which the client timeout does not.
 	timeout client {{.HTTPSClientTimeout}}s
 	timeout http-request 10s
-{{end}}	option forwardfor
+{{end -}}
 {{if $.UseCrowdSecHTTPS}}
 	# CrowdSec SPOE — engine id must match the [section] in {{.Settings.SPOEConfigPath}}.
 	# The bouncer's messages send unique-id, so the frontend must define one.
@@ -788,7 +789,7 @@ backend {{backendName $a.Application.PublicHost}}
 	http-request del-header X-Forwarded-For
 	http-request del-header X-Real-IP
 	http-request del-header Forwarded
-	# The inherited forwardfor rule skips IPv4 loopback.
+	# The frontend forwardfor rule skips IPv4 loopback.
 	http-request set-header X-Forwarded-For %[src] if { src 127.0.0.0/8 }
 	{{- end }}
 	{{- if $a.Profile.HTTPKeepAlive }}

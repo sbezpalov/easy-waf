@@ -11,8 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/easy-waf/easy-waf/internal/apply"
 )
 
 // TestGoldenConfigsPassHaproxyCheck requires:
@@ -42,7 +40,7 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			// HAProxy 3.x requires an absolute stats socket path, but sun_path is limited (~97 bytes).
 			// t.TempDir() already includes a long test name; keep socket filename very short.
 			d := t.TempDir()
-			// Validate deliberately runs from /, as it does on the appliance.
+			// The appliance validator runs from a traversable directory.
 			// Materialize the list with absolute PEM paths, and resolve shared
 			// SPOE/map fixtures without depending on HAProxy's working directory.
 			listName := name + ".crt-list.txt"
@@ -71,8 +69,14 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			if err := os.WriteFile(tmp, cfgBody, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := apply.Validate(t.Context(), hx, tmp); err != nil {
-				t.Fatal(err)
+			cmd := exec.CommandContext(t.Context(), hx, "-c", "-f", tmp)
+			cmd.Dir = filepath.VolumeName(tmp) + string(filepath.Separator)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("haproxy -c: %v\n%s", err, output)
+			}
+			if bytes.Contains(output, []byte("'option forwardfor' ignored")) {
+				t.Fatalf("HTTP forwarding option inherited by a TCP section:\n%s", output)
 			}
 		})
 	}
