@@ -11,7 +11,11 @@ skipped 84 top-level tests. The run used no PostgreSQL fixture or HAProxy,
 and platform-specific tests skipped where applicable. The publication
 test also passed under Git Bash.
 
-**Current local artifacts:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
+**Current local packages:** [a085e13](release-evidence/1.6.1-packages-a085e13.md).
+A disconnected Ubuntu VMware guest ran `make verify` on a clean checkout
+and built both DEBs and tarballs. Linux and Windows verified the artifacts.
+
+**Offline ISO acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
 Both ISOs passed installation, reboot, live About verification and repeat
