@@ -6,6 +6,8 @@
 **Current local release artifacts:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
+Linux verification of this commit passed lint, the PostgreSQL-backed race
+suite, the CI HAProxy integration selection and `make verify`.
 The amd64 ISO also passed a clean full-profile install, reboot and repeat
 install in VMware without a network adapter.
 
