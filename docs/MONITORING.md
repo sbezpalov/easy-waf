@@ -59,7 +59,7 @@ Settings → Notifications (or `PATCH /api/v1/settings`) sends operational event
 |-------|----------|------|
 | `apply_failed` | critical | Any HAProxy apply fails (from the panel, a certificate renewal or a feed refresh). The edge keeps its previous configuration. |
 | `backend_down` / `backend_up` | critical / info | A server's health check state changes between `UP` and `DOWN` and stays so for two reads 30 s apart. Only servers with health checks are watched. |
-| `blocked_spike` | warning | The frontends refused at least `notify_blocked_spike_threshold` requests (`dreq`) within 5 minutes; at most once per 30 minutes. `0` turns it off. |
+| `blocked_spike` | warning | The frontends reached `notify_blocked_spike_threshold` refusals (`dreq`) over a five-minute observation window. The monitor tracks counter increases per frontend and starts a new window after a stats gap longer than five minutes. The alert can fire once per 30 minutes. Set the threshold to `0` to disable it. |
 | `certificate_attention` | warning | Once a day from `easy-waf-acmed` (see [ACME.md](ACME.md)). |
 
 The webhook gets `{"source":"easy-waf","host":...,"time":...,"event":...,"severity":...,"title":...,"text":...}`; `certificate_attention` keeps its older body `{source, event, certificates}`. Telegram gets `title` and `text` as one message. Backend and spike events come from `easy-waf-api` polling the HAProxy stats socket every 30 s, so they stop while the API is down. Neither the URL nor the token is logged.

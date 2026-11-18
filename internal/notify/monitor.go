@@ -22,10 +22,12 @@ const (
 // Monitor turns successive HAProxy stats reads into backend down/up and
 // blocked-spike events. It is not safe for concurrent use.
 type Monitor struct {
-	servers    map[string]*serverState
-	baseDenied int64
-	baseAt     time.Time
-	lastSpike  time.Time
+	servers        map[string]*serverState
+	lastDenied     map[string]int64
+	deniedInWindow int64
+	windowStart    time.Time
+	lastStatsAt    time.Time
+	lastSpike      time.Time
 }
 
 type serverState struct {
@@ -83,15 +85,23 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 		}
 	}
 
-	var denied int64
-	for _, fe := range rep.Frontends {
-		denied += fe.DeniedReq
+	if m.windowStart.IsZero() || now.Sub(m.lastStatsAt) > spikeWindow {
+		// A long break in samples does not show when the counters increased.
+		m.windowStart = now
+		m.deniedInWindow = 0
+		m.lastDenied = nil
 	}
-	switch {
-	case m.baseAt.IsZero() || denied < m.baseDenied: // first read or counters reset by a reload
-		m.baseDenied, m.baseAt = denied, now
-	case now.Sub(m.baseAt) >= spikeWindow:
-		delta := denied - m.baseDenied
+	nextDenied := make(map[string]int64, len(rep.Frontends))
+	for _, fe := range rep.Frontends {
+		// New frontends and counters that reset establish a fresh baseline.
+		if previous, ok := m.lastDenied[fe.Name]; ok && fe.DeniedReq > previous {
+			m.deniedInWindow += fe.DeniedReq - previous
+		}
+		nextDenied[fe.Name] = fe.DeniedReq
+	}
+	m.lastDenied, m.lastStatsAt = nextDenied, now
+	if elapsed := now.Sub(m.windowStart); elapsed >= spikeWindow {
+		delta := m.deniedInWindow
 		if threshold > 0 && delta >= int64(threshold) && (m.lastSpike.IsZero() || now.Sub(m.lastSpike) >= spikeCooldown) {
 			m.lastSpike = now
 			out = append(out, Event{
@@ -99,10 +109,10 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 				Severity: SeverityWarning,
 				Title:    "Spike of blocked requests",
 				Text: fmt.Sprintf("The edge refused %d requests in the last %d minutes (alert threshold %d). See Logs / Audit, Blocked requests.",
-					delta, int(now.Sub(m.baseAt).Round(time.Minute).Minutes()), threshold),
+					delta, int(elapsed.Round(time.Minute).Minutes()), threshold),
 			})
 		}
-		m.baseDenied, m.baseAt = denied, now
+		m.deniedInWindow, m.windowStart = 0, now
 	}
 	return out
 }

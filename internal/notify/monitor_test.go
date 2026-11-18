@@ -4,6 +4,7 @@
 package notify
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -84,5 +85,61 @@ func TestMonitorBlockedSpike(t *testing.T) {
 	}
 	if got := m.Observe(report("UP", 10000), t0.Add(80*time.Minute), 0); got != nil {
 		t.Fatalf("threshold 0 is off: %v", got)
+	}
+}
+
+func TestMonitorBlockedSpikeTracksFrontendsSeparately(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		first []metrics.FrontendStat
+		next  []metrics.FrontendStat
+		want  bool
+	}{
+		{
+			name:  "existing count on a new frontend is not a spike",
+			first: []metrics.FrontendStat{{Name: "fe_http", DeniedReq: 12}},
+			next:  []metrics.FrontendStat{{Name: "fe_http", DeniedReq: 13}, {Name: "fe_https", DeniedReq: 100}},
+		},
+		{
+			name:  "a reset cannot hide another frontend's spike",
+			first: []metrics.FrontendStat{{Name: "fe_http", DeniedReq: 900}, {Name: "fe_https", DeniedReq: 12}},
+			next:  []metrics.FrontendStat{{Name: "fe_http", DeniedReq: 5}, {Name: "fe_https", DeniedReq: 62}},
+			want:  true,
+		},
+		{
+			name:  "a removed frontend cannot hide another frontend's spike",
+			first: []metrics.FrontendStat{{Name: "fe_http", DeniedReq: 900}, {Name: "fe_https", DeniedReq: 12}},
+			next:  []metrics.FrontendStat{{Name: "fe_https", DeniedReq: 62}},
+			want:  true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewMonitor()
+			now := time.Unix(0, 0)
+			m.Observe(&metrics.HAProxyReport{Frontends: tc.first}, now, 50)
+			events := m.Observe(&metrics.HAProxyReport{Frontends: tc.next}, now.Add(5*time.Minute), 50)
+			if !tc.want {
+				if len(events) != 0 {
+					t.Fatalf("unexpected spike: %+v", events)
+				}
+				return
+			}
+			if len(events) != 1 || events[0].Kind != "blocked_spike" || !strings.Contains(events[0].Text, "refused 50 requests") {
+				t.Fatalf("expected a spike of 50 requests, got %+v", events)
+			}
+		})
+	}
+}
+
+func TestMonitorBlockedSpikeStartsNewWindowAfterStatsGap(t *testing.T) {
+	m := NewMonitor()
+	now := time.Unix(0, 0)
+	m.Observe(report("UP", 12), now, 50)
+	m.Observe(&metrics.HAProxyReport{Error: "socket unavailable"}, now.Add(time.Minute), 50)
+	if events := m.Observe(report("UP", 600), now.Add(20*time.Minute), 50); len(events) != 0 {
+		t.Fatalf("refusals over a long stats gap were reported as a spike: %+v", events)
+	}
+	if events := m.Observe(report("UP", 650), now.Add(25*time.Minute), 50); len(events) != 1 || events[0].Kind != "blocked_spike" {
+		t.Fatalf("expected a spike in the new window, got %+v", events)
 	}
 }
