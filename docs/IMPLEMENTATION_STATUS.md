@@ -8,8 +8,9 @@ The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
 Linux verification of this commit passed lint, the PostgreSQL-backed race
 suite, the CI HAProxy integration selection and `make verify`.
-The amd64 ISO also passed a clean full-profile install, reboot and repeat
-install in VMware without a network adapter.
+Both ISOs passed a clean full-profile install, reboot and repeat install
+without a network adapter, using VMware for amd64 and QEMU system
+emulation for arm64.
 
 **Local pre-tag verification:** [e066d3f](release-evidence/1.6.1-pre-tag-e066d3f.md).
 Both DEBs, tarballs and offline ISOs built and passed verification. The
@@ -26,7 +27,7 @@ passed both isolated APT solves, checksum validation and comparison with the
 exact amd64 and arm64 candidate DEBs.
 
 The [amd64 offline follow-up on 441e499](release-evidence/1.6.1-offline-vmware-441e499.md)
-verified clean installation of the current public-profile ISO with a separate
+verified clean installation of that candidate's public-profile ISO with a separate
 CrowdSec snapshot, isolated APT state, appliance readiness after reboot and
 repeat installation without the snapshot on a VMware guest with no network
 adapter.
