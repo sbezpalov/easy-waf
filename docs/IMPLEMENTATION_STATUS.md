@@ -347,7 +347,7 @@ and the procedure in [ACCEPTANCE.md](ACCEPTANCE.md).
 6. **OVA/OVF appliance template** for fast VM deployment. Signature WAF (Coraza/CRS) is a proposed ADR only: [docs/adr/0006-coraza-crs.md](adr/0006-coraza-crs.md).
 7. **Smoke test checklist** — partly done: `scripts/smoke-appliance.sh` runs after installs and upgrades.
 8. **Tests:** broader e2e — partly done: container runs for CrowdSec, the body policy and the real systemd/APT package-restart lifecycle in `.github/workflows/e2e.yml`; full appliance install/upgrade and real ACME are still checked by hand. The package lifecycle fixture uses a minimal package and fixture API/ACME workers (see [DEPLOYMENT.md](DEPLOYMENT.md)).
-9. **UI:** optional separate frontend framework instead of a single `index.html`.
+9. **UI:** continue [JavaScript source separation](WEBUI_MAINTAINABILITY.md#3-split-javascript-by-responsibility). The Go generator assembles all screen partials into the embedded page. See [deployed bundle verification](WEBUI_MAINTAINABILITY.md#verify-the-deployed-bundle) when a running panel appears out of date.
 10. **OpenClaw publication template:** the [Gateway profile and example](OPENCLAW.md) cover Control UI with HTTPS, WebSocket and Gateway authentication. HAProxy integration covers forwarding metadata, the UI settings path and upgraded transport. Pairing with a deployed OpenClaw Gateway is a separate acceptance check.
 
 Update this file when closing MVP items and when `VERSION` changes.
