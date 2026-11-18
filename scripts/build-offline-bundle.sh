@@ -118,12 +118,19 @@ if ! git -C "$REPO_ROOT" diff --quiet -- "${tracked_inputs[@]}" ||
 fi
 
 WORK_DIR="$(mktemp -d)"
-APT_WORK="${WORK_DIR}/apt"
+APT_WORK=
 trap 'rm -rf -- "$WORK_DIR" "${APT_WORK:-$WORK_DIR}"' EXIT
+absolute_work_dir="$(realpath -- "$WORK_DIR")"
+WORK_DIR="$absolute_work_dir"
+APT_WORK="${WORK_DIR}/apt"
 if (( EUID == 0 )); then
-  # The APT sandbox needs to traverse this public package workspace even
-  # when the caller uses a private TMPDIR or builds with a private snapshot.
-  APT_WORK="$(mktemp -d /tmp/easy-waf-apt.XXXXXXXXXX)"
+  # Keep public package IO on the chosen temporary volume when _apt can
+  # traverse it. Fall back to /tmp when TMPDIR is private.
+  apt_parent="$(dirname -- "$WORK_DIR")"
+  if ! runuser -u _apt -- test -x "$apt_parent" 2>/dev/null; then
+    apt_parent=/tmp
+  fi
+  APT_WORK="$(mktemp -d "$apt_parent/easy-waf-apt.XXXXXXXXXX")"
   chmod 0711 "$APT_WORK"
 fi
 STAGE="${WORK_DIR}/easy-waf-offline"
@@ -242,9 +249,18 @@ SOLVER="${APT_WORK}/solver"
 install -d -m 0755 "$SOLVER" "$SOLVER/lists" "$SOLVER/cache" "$SOLVER/cache/archives"
 mkdir -p "${SOLVER}/lists/partial" "${SOLVER}/cache/archives/partial"
 : >"${SOLVER}/status"
-cat >"${SOLVER}/sources.list" <<EOF
-deb [trusted=yes] file:${APT_REPO} ./
-EOF
+apt_repository_uri() {
+  local LC_ALL=C path="$1" byte i
+  printf 'file:'
+  for ((i=0; i<${#path}; i++)); do
+    byte="${path:i:1}"
+    case "$byte" in
+      [[:alnum:]./_~-]) printf '%s' "$byte" ;;
+      *) printf '%%%02X' "'$byte" ;;
+    esac
+  done
+}
+printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "$APT_REPO")" >"${SOLVER}/sources.list"
 apt_opts=(
   -o "Dir::Etc::sourcelist=${SOLVER}/sources.list"
   -o "Dir::Etc::sourceparts=-"

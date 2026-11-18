@@ -101,6 +101,11 @@ a fresh Ubuntu 24.04 system would install. Virtual dependencies such as
 `dbus-system-bus` and `libgnutls30` are stored as the provider APT selects
 (`dbus`, `libgnutls30t64`), not as the virtual name.
 
+Set `TMPDIR` to choose the temporary build volume. When the builder runs as
+root, APT uses that volume if `_apt` can traverse the chosen directory.
+With a private `TMPDIR`, the APT workspace falls back to `/tmp` and staging
+stays in `TMPDIR`.
+
 `EASY_WAF_OFFLINE_INCLUDE_CROWDSEC=0` builds a smaller base bundle. Its
 installer defaults to the base profile and rejects requests to install the
 absent CrowdSec packages.
