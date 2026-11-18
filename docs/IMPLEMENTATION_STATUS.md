@@ -13,6 +13,9 @@ approval and validation of the signed assets remain open. DNS-01 is deferred.
 The current runtime changes passed the Linux race suite with PostgreSQL,
 live HAProxy integration, lint, repository verification and amd64/arm64
 DEB build and payload checks.
+The [offline ISO follow-up on 77d73e0](release-evidence/1.6.1-offline-iso-77d73e0.md)
+passed both isolated APT solves, checksum validation and comparison with the
+exact amd64 and arm64 candidate DEBs.
 
 **Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
