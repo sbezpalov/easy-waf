@@ -10,7 +10,12 @@ import (
 )
 
 func TestDefaultSettingsAcceptsNativeStateDirectory(t *testing.T) {
-	stateDir := t.TempDir()
+	// This test only builds paths. Use the native root so the fixture does not
+	// inherit special characters from the current workspace or temp directory.
+	stateDir, err := filepath.Abs(filepath.Join(string(filepath.Separator), "easy-waf-test", "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	settings := DefaultSettings(stateDir)
 	if err := ValidateSettingsRenderSafety(&settings); err != nil {
 		t.Fatalf("native state directory produced unsafe defaults: %v", err)
@@ -18,6 +23,18 @@ func TestDefaultSettingsAcceptsNativeStateDirectory(t *testing.T) {
 	want := filepath.ToSlash(filepath.Join(stateDir, "haproxy", "haproxy.cfg"))
 	if settings.HAProxyConfigPath != want {
 		t.Fatalf("HAProxy config path = %q, want %q", settings.HAProxyConfigPath, want)
+	}
+}
+
+func TestDefaultSettingsRejectsStateDirectoryWithConfigDelimiters(t *testing.T) {
+	for _, component := range []string{"contains space", "contains#hash"} {
+		t.Run(component, func(t *testing.T) {
+			stateDir := filepath.Join(string(filepath.Separator), "easy-waf-test", component)
+			settings := DefaultSettings(stateDir)
+			if err := ValidateSettingsRenderSafety(&settings); err == nil {
+				t.Fatalf("accepted a state directory with a HAProxy config delimiter: %q", stateDir)
+			}
+		})
 	}
 }
 
