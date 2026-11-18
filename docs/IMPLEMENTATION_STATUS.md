@@ -6,8 +6,10 @@
 **Current local artifacts:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
+The amd64 ISO passed installation, reboot, live About verification and repeat
+installation on a disconnected VMware guest.
 
-**Offline installation evidence:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
+**Earlier offline installation evidence:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
 Linux verification of this commit passed lint, the PostgreSQL-backed race
