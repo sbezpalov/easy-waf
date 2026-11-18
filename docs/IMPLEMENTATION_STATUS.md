@@ -9,10 +9,10 @@ full Linux suite, live HAProxy tests and all six local E2E launchers passed
 at the scopes in the report. Remote CI for the release commit, release
 approval and validation of the signed assets remain open. DNS-01 is deferred.
 
-**Current local source and DEB checks:** [85d8332](release-evidence/1.6.1-local-gates-85d8332.md).
-The current runtime changes passed the Linux race suite with PostgreSQL,
-live HAProxy integration, lint, repository verification and amd64/arm64
-DEB build and payload checks.
+**Current local Linux runtime checks:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
+The race suite with PostgreSQL, the separate root cases and the CI HAProxy
+integration selection passed. The [earlier 85d8332 run](release-evidence/1.6.1-local-gates-85d8332.md)
+also covered lint, repository verification and amd64/arm64 DEB payloads.
 The [offline ISO follow-up on 77d73e0](release-evidence/1.6.1-offline-iso-77d73e0.md)
 passed both isolated APT solves, checksum validation and comparison with the
 exact amd64 and arm64 candidate DEBs.
