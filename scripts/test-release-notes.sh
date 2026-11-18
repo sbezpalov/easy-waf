@@ -73,6 +73,8 @@ MOCK
   chmod 0700 "$WORK/bin/$tool"
 done
 export PATH="$WORK/bin:$PATH"
+runner_temp="$WORK/runner temp"
+notes="$runner_temp/easy-waf-release/release_notes.md"
 for scenario in mismatched_tag missing_notes empty_notes ready; do
   : >"$WORK/calls"
   tag=v1.6.1
@@ -83,13 +85,21 @@ for scenario in mismatched_tag missing_notes empty_notes ready; do
     ready) printf '## [1.6.1]\nExpected entry\n' >"$WORK/repo/CHANGELOG.md" ;;
   esac
   result=0
-  (cd "$WORK/repo"; GITHUB_REF_NAME="$tag" bash "$WORK/preflight.sh") >"$WORK/$scenario.log" 2>&1 || result=$?
+  (
+    cd "$WORK/repo"
+    GITHUB_REF_NAME="$tag" RUNNER_TEMP="$runner_temp" bash "$WORK/preflight.sh"
+  ) >"$WORK/$scenario.log" 2>&1 || result=$?
+  [[ ! -e "$WORK/repo/release_notes.md" ]] || fail "$scenario wrote release notes into the checkout"
   if [[ "$scenario" == ready ]]; then
-    [[ "$result" == 0 ]] || fail 'valid workflow metadata rejected'
+    if [[ "$result" != 0 ]]; then
+      cat "$WORK/$scenario.log" >&2
+      fail 'valid workflow metadata rejected'
+    fi
     [[ "$(wc -l <"$WORK/calls")" -eq 3 ]] || fail 'valid metadata did not reach following tools'
-    [[ "$(cat "$WORK/repo/release_notes.md")" == 'Expected entry' ]] || fail 'wrong prepared release body'
+    [[ "$(cat "$notes")" == 'Expected entry' ]] || fail 'wrong prepared release body'
   else
     [[ "$result" != 0 && ! -s "$WORK/calls" ]] || fail "$scenario reached following tools"
+    [[ ! -s "$notes" ]] || fail "$scenario wrote nonempty release notes"
   fi
   echo "PASS: workflow release preflight $scenario"
 done
