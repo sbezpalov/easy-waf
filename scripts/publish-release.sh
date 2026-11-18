@@ -48,7 +48,8 @@ for arch in amd64 arm64; do
 done
 
 release_flags=(--latest=true)
-if [[ "$version" == *-* ]]; then
+# A hyphen before build metadata marks a SemVer pre-release.
+if [[ "${version%%+*}" == *-* ]]; then
   release_flags=(--prerelease --latest=false)
 fi
 

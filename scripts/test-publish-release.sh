@@ -73,6 +73,10 @@ create_assets v1.6.1
 expect_publication --latest=true
 create_assets v1.7.0-rc.1
 expect_publication --prerelease --latest=false
+create_assets v1.7.0+build-ci
+expect_publication --latest=true
+create_assets v1.7.0-rc.1+build-ci
+expect_publication --prerelease --latest=false
 
 create_assets v1.6.1
 rm -- "$arm_iso"
