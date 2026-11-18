@@ -3,7 +3,10 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Current local release artifacts:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
+**Current local packages:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
+Both architectures passed package build and embedded source-revision verification.
+
+**Offline installation evidence:** [1faf1fe](release-evidence/1.6.1-current-artifacts-1faf1fe.md).
 The DEBs, tarballs and public offline ISOs for amd64 and arm64 passed local
 checksums and payload comparison with the updated HAProxy renderer.
 Linux verification of this commit passed lint, the PostgreSQL-backed race
