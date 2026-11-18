@@ -62,7 +62,16 @@ func TestLivePublicationRules(t *testing.T) {
 			{ID: "watch-status", Action: config.RuleCount, Match: config.PublicationMatch{PathPrefix: "/status"}},
 		},
 	}
-	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: []config.Application{app}})
+	wide := app
+	wide.ID = "wide-rules"
+	wide.PublicHost = strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("b", 61)
+	wide.PolicyRules = make([]config.PublicationRule, config.MaxPublicationRules)
+	for i := range wide.PolicyRules {
+		wide.PolicyRules[i] = config.PublicationRule{
+			ID: fmt.Sprintf("rule-%027d", i), Action: config.RuleCount, Match: config.PublicationMatch{PathPrefix: "/"},
+		}
+	}
+	rendered, err := Render(RenderInput{Settings: settings, StateDir: dir, Applications: []config.Application{app, wide}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +103,7 @@ func TestLivePublicationRules(t *testing.T) {
 	transport := &http.Transport{}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	mustStatus(t, client, "http://"+edge+"/?q="+strings.Repeat("a", 3000), wide.PublicHost, "", 200)
 	for _, tc := range []struct {
 		path, method, ua string
 		status           int
@@ -143,6 +153,15 @@ func TestLivePublicationRules(t *testing.T) {
 		}
 	}
 	events, _ := blocklog.ParseRuleJournal(strings.NewReader(journal.String()))
+	if len(events) == 0 || events[0].Host != wide.PublicHost || events[0].Status != 200 || len(events[0].Matches) != len(wide.PolicyRules) {
+		t.Fatal("journal lost the full hostname or rule list at the supported limits")
+	}
+	for i, match := range events[0].Matches {
+		if match.ID != wide.PolicyRules[i].ID || match.Action != config.RuleCount {
+			t.Fatalf("rule %d in the journal: %+v", i, match)
+		}
+	}
+	events = events[1:]
 	want := []string{"200 watch-api watch-client pass-health", "403 watch-api watch-client pass-health",
 		"403 watch-api watch-client deny-api", "403 watch-api deny-api",
 		"403 watch-api deny-api", "200 watch-status"}

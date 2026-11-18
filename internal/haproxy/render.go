@@ -116,7 +116,9 @@ type RenderInput struct {
 	// DefaultForwardAuthLuaPath. UseForwardAuth is derived by Render.
 	ForwardAuthLuaPath string `json:"-"`
 	UseForwardAuth     bool   `json:"-"`
-	// PolicyCaptureSlots is derived from the largest enabled rule list.
+	// PolicyCaptureSlots is derived from the largest enabled rule list. With
+	// policy captures, reserve space for a 253-byte host and a port, and use a
+	// larger log line so the metadata and every match fit before the URI.
 	PolicyCaptureSlots int `json:"-"`
 	// TrustedProxySrc, ProxyProtocolSrc and RealIPFetch are derived from
 	// Settings by Render; callers do not set them.
@@ -500,7 +502,7 @@ func joinCIDRs(cidrs []string) string {
 // haproxyTemplate targets HAProxy 2.8, the Ubuntu 24.04 series, and is checked with `haproxy -c`.
 const haproxyTemplate = `{{/* Easy Home WAF — generated; do not edit by hand */}}
 global
-	log stdout format raw local0
+	log stdout {{if .PolicyCaptureSlots}}len 2048 {{end}}format raw local0
 	maxconn 50000
 {{- if and .Settings.HTTP3 .HasHTTPSFrontend}}
 	# Ubuntu builds HAProxy QUIC on the OpenSSL compatibility layer, which needs this (no 0-RTT).
@@ -871,7 +873,7 @@ backend {{backendName $a.Application.PublicHost}}
 {{- end}}
 {{- define "blockCapture"}}
 	# httplog shows {host|rule}: the rule that refused a request (Logs → Blocked requests).
-	declare capture request len 64
+	declare capture request len {{if .PolicyCaptureSlots}}259{{else}}64{{end}}
 	declare capture request len 24
 	{{- range .PolicyCaptureSlots}}
 	declare capture request len 48
