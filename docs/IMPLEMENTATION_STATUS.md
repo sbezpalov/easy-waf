@@ -3,7 +3,7 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
-**Offline ISO:** [3ef58b7 on VMware](release-evidence/1.6.1-offline-iso-3ef58b7.md).
+**Offline ISO:** [amd64 VMware and ARM64 QEMU acceptance](release-evidence/1.6.1-offline-iso-3ef58b7.md).
 The amd64 ISO passed its dependency solve and both manifests. Offline APT
 configured Easy WAF on a clean guest. The full profile then stopped in
 CrowdSec 1.8.2's online Hub refresh during dpkg configuration. A manual
@@ -13,7 +13,9 @@ ISO from `cb5f8c1` passed clean VMware installation with no network
 adapter, automatic activation of the snapshot, and reinstallation with
 existing CrowdSec configuration. The public-profile amd64 ISO from
 `66f30ea` also passed installation with a separately transferred snapshot
-and reinstallation after that snapshot was unmounted.
+and reinstallation after that snapshot was unmounted. The public-profile
+ARM64 ISO from `9a7c2f9` passed the same two checks on a clean Ubuntu
+24.04.5 QEMU guest with no network adapter.
 
 **Latest local Linux verification:** [39742bd](release-evidence/1.6.1-linux-gates-39742bd.md).
 The full race suite with PostgreSQL, live HAProxy integration, fresh
