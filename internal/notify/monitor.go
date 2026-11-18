@@ -22,12 +22,13 @@ const (
 // Monitor turns successive HAProxy stats reads into backend down/up and
 // blocked-spike events. It is not safe for concurrent use.
 type Monitor struct {
-	servers        map[string]*serverState
-	lastDenied     map[string]int64
-	deniedInWindow int64
-	windowStart    time.Time
-	lastStatsAt    time.Time
-	lastSpike      time.Time
+	servers         map[string]*serverState
+	lastDenied      map[string]int64
+	deniedInWindow  int64
+	windowStart     time.Time
+	lastStatsAt     time.Time
+	lastCollectedAt time.Time
+	lastSpike       time.Time
 }
 
 type serverState struct {
@@ -54,6 +55,13 @@ func (m *Monitor) Observe(rep *metrics.HAProxyReport, now time.Time, threshold i
 			state.resetCandidate()
 		}
 		return nil
+	}
+	if !rep.CollectedAt.IsZero() {
+		// Cache hits reuse the collection time even though they are read later.
+		if rep.CollectedAt.Equal(m.lastCollectedAt) {
+			return nil
+		}
+		m.lastCollectedAt = rep.CollectedAt
 	}
 	var out []Event
 	seen := map[string]bool{}

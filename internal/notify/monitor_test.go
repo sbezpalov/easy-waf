@@ -97,6 +97,26 @@ func TestMonitorBackendConfirmationRequiresConsecutiveReadings(t *testing.T) {
 	}
 }
 
+func TestMonitorBackendConfirmationIgnoresCachedSample(t *testing.T) {
+	m := NewMonitor()
+	start := time.Unix(0, 0)
+	initial := report("DOWN", 0)
+	initial.CollectedAt = start
+	m.Observe(initial, start, 0)
+
+	next := report("UP", 0)
+	next.CollectedAt = start.Add(30 * time.Second)
+	m.Observe(next, next.CollectedAt, 0)
+	copyOfNext := *next
+	if got := m.Observe(&copyOfNext, next.CollectedAt.Add(time.Second), 0); len(got) != 0 {
+		t.Fatalf("cached sample confirmed the state change: %+v", got)
+	}
+	copyOfNext.CollectedAt = next.CollectedAt.Add(30 * time.Second)
+	if got := m.Observe(&copyOfNext, copyOfNext.CollectedAt, 0); len(got) != 1 || got[0].Kind != "backend_up" {
+		t.Fatalf("expected confirmation from a new sample, got %+v", got)
+	}
+}
+
 func TestMonitorBlockedSpike(t *testing.T) {
 	m := NewMonitor()
 	t0 := time.Unix(0, 0)
@@ -176,5 +196,20 @@ func TestMonitorBlockedSpikeStartsNewWindowAfterStatsGap(t *testing.T) {
 	}
 	if events := m.Observe(report("UP", 650), now.Add(25*time.Minute), 50); len(events) != 1 || events[0].Kind != "blocked_spike" {
 		t.Fatalf("expected a spike in the new window, got %+v", events)
+	}
+}
+
+func TestMonitorBlockedSpikeDoesNotUseCachedSampleToBridgeGap(t *testing.T) {
+	m := NewMonitor()
+	start := time.Unix(0, 0)
+	initial := report("UP", 12)
+	initial.CollectedAt = start
+	m.Observe(initial, start, 50)
+	m.Observe(initial, start.Add(4*time.Second), 50)
+
+	next := report("UP", 600)
+	next.CollectedAt = start.Add(5*time.Minute + time.Second)
+	if got := m.Observe(next, next.CollectedAt, 50); len(got) != 0 {
+		t.Fatalf("cached sample shortened the reported stats gap: %+v", got)
 	}
 }
