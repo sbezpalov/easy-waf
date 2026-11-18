@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
@@ -109,12 +110,12 @@ type Sample struct {
 // ReadBlocked returns haproxy.service journal entries since the given time whose
 // message looks refused by the edge, as journalctl JSON lines.
 func ReadBlocked(ctx context.Context, since time.Time, lines int) (Sample, error) {
-	return readHAProxyJournal(ctx, since, lines, BlockedLines, hostspec.JournalGrepBlocked, runner.Privileged)
+	return readHAProxyJournal(ctx, since, lines, BlockedLines, blocklog.JournalGrepBlocked, runner.Privileged)
 }
 
 // ReadPolicy returns HAProxy entries with at least one publication rule match.
 func ReadPolicy(ctx context.Context, since time.Time, lines int) (Sample, error) {
-	return readHAProxyJournal(ctx, since, lines, PolicyLines, hostspec.JournalGrepPolicy, runner.Privileged)
+	return readHAProxyJournal(ctx, since, lines, PolicyLines, blocklog.JournalGrepPolicy, runner.Privileged)
 }
 
 func readHAProxyJournal(ctx context.Context, since time.Time, lines, maxLines int, pattern string, run func(context.Context, ...string) ([]byte, error)) (Sample, error) {

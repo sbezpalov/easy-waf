@@ -80,7 +80,7 @@ func TestValidIP(t *testing.T) {
 }
 
 func TestValidateJournalArgsGrepAllowlist(t *testing.T) {
-	if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--grep", JournalGrepBlocked}); err != nil {
+	if err := ValidateJournalArgs([]string{"-u", "haproxy.service", "--grep", "[PL]R--"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, bad := range [][]string{{"--grep"}, {"--grep", ".*"}, {"--grep", "(?i)pr--"}} {

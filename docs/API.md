@@ -1035,7 +1035,7 @@ Deletes an allowlist entry.
 ## Blocked requests
 
 ### `GET /api/v1/security/blocked`
-Requests the edge refused, read from the `haproxy.service` journal through `easy-waf-hostd` (`journalctl --grep '[PL]R--'`, at most 5000 matches per call). A request counts when an `http-request deny` refused it (termination state `PR`) or HAProxy answered it with a 4xx itself (`LR`, e.g. body policy); backend errors are not included. The frontends log `{host|rule}` in httplog through `declare capture` slots; when no rule was captured, `rule` is `rate_limit` (429), `unknown_host` (`bk_not_found`), `bad_request` (400) or `other`.
+Requests the edge refused, read from the `haproxy.service` journal through `easy-waf-hostd`. The journal filter selects up to 5,000 entries by HTTP status and termination state. A request counts when an `http-request deny` refused it (termination state `PR`) or HAProxy answered with a 4xx itself (`LR`, for example a body policy). The frontends capture the host and refusal reason in httplog. When no reason was captured, `rule` is `rate_limit` (429), `unknown_host` (`bk_not_found`), `bad_request` (400) or `other`.
 - **Query:** `period` = `1h`, `24h` (default) or `7d`; `limit` = 1–1000 events (default 200).
 - **Response:** `200`:
   ```json

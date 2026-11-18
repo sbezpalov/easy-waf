@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -149,13 +150,25 @@ func TestLivePublicationRules(t *testing.T) {
 	}
 	var journal strings.Builder
 	encoder := json.NewEncoder(&journal)
+	blockedGrep := regexp.MustCompile(blocklog.JournalGrepBlocked)
+	policyGrep := regexp.MustCompile(blocklog.JournalGrepPolicy)
+	var blockedLines, policyLines int
 	for _, line := range strings.Split(string(raw), "\n") {
+		if blockedGrep.MatchString(line) {
+			blockedLines++
+		}
+		if policyGrep.MatchString(line) {
+			policyLines++
+		}
 		if err := encoder.Encode(map[string]string{"MESSAGE": line}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	events, _ := blocklog.ParseRuleJournal(strings.NewReader(journal.String()))
 	blocks, _ := blocklog.ParseJournal(strings.NewReader(journal.String()))
+	if blockedLines != len(blocks) || policyLines != len(events) {
+		t.Fatalf("journal grep and parsers disagree: blocked %d/%d, policy %d/%d", blockedLines, len(blocks), policyLines, len(events))
+	}
 	if len(blocks) == 0 || blocks[0].Host != wide.PublicHost || blocks[0].Status != 403 ||
 		!strings.HasPrefix(blocks[0].Path, "/blocked/") || !strings.HasSuffix(blocks[0].Path, "…") {
 		t.Fatalf("blocked request with long path missing from journal: %+v", blocks)

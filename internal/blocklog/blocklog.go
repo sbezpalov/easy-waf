@@ -30,11 +30,26 @@ type Event struct {
 }
 
 // %ci:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/... %sq/%bq {%hr} "%r"
-const httplogPrefix = `^(\S+):\d+ \[[^\]]+\] (\S+) ([^/\s]+)/\S+ \S+ (\d{3}) \S+ \S+ \S+ (\S{4}) \S+ \S+`
+const (
+	httplogHead     = `^(\S+):\d+ \[[^\]]+\] (\S+) ([^/\s]+)/\S+ \S+ `
+	httplogResponse = ` \S+ \S+ \S+ `
+	httplogTail     = ` \S+ \S+`
+	httplogPrefix   = httplogHead + `(\d{3})` + httplogResponse + `(\S{4})` + httplogTail
+	httplogRequest  = `(?: \{([^}]*)\})? "`
+	policyCapture   = `policy-(count|block|pass):([a-z0-9][a-z0-9_-]{0,31})`
+
+	// JournalGrepBlocked selects edge refusals by status and termination
+	// state. The other two letters in %tsc describe cookie handling.
+	JournalGrepBlocked = httplogHead + `(?:\d{3}` + httplogResponse + `PR|4\d{2}` + httplogResponse + `LR)\S{2}` +
+		httplogTail + httplogRequest
+	// JournalGrepPolicy requires a whole rule tag after the host and
+	// refusal-reason slots. Empty slots are possible between rule matches.
+	JournalGrepPolicy = httplogPrefix + ` \{[^|}]+\|[^|}]*(?:\|[^|}]*)*\|` + policyCapture + `(?:\|[^}]*)?\} "`
+)
 
 // HAProxy can clip the end of the request line after writing the refusal
 // metadata. The opening quote marks the point where that optional data starts.
-var httplogRE = regexp.MustCompile(httplogPrefix + `(?: \{([^}]*)\})? "(.*)$`)
+var httplogRE = regexp.MustCompile(httplogPrefix + httplogRequest + `(.*)$`)
 
 // The request line follows the captures. Keep matches even if HAProxy
 // truncates a long request target at the end of the log message.
@@ -143,7 +158,7 @@ type RuleEvent struct {
 	Matches []RuleMatch `json:"matches"`
 }
 
-var policyCaptureRE = regexp.MustCompile(`^policy-(count|block|pass):([a-z0-9][a-z0-9_-]{0,31})$`)
+var policyCaptureRE = regexp.MustCompile("^" + policyCapture + "$")
 
 // ParseRuleJournal is independent of the final HTTP status: Count can match
 // a successful request or one later rejected by another rule.

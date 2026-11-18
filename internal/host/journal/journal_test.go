@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
-	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
 )
 
@@ -59,12 +59,12 @@ func TestBuildJournalArgs_haproxyOnSystemdList(t *testing.T) {
 
 func TestBuildBlockedArgs(t *testing.T) {
 	since := time.Date(2026, 11, 11, 9, 5, 0, 0, time.Local)
-	args, err := buildHAProxyJournalArgs(since, BlockedLines, hostspec.JournalGrepBlocked)
+	args, err := buildHAProxyJournalArgs(since, BlockedLines, blocklog.JournalGrepBlocked)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"journal", "--no-pager", "-n", "5000", "-u", "haproxy.service",
-		"--since", "2026-11-11 09:05:00", "--grep", "[PL]R--", "--output", "json"}
+		"--since", "2026-11-11 09:05:00", "--grep", blocklog.JournalGrepBlocked, "--output", "json"}
 	if len(args) != len(want) {
 		t.Fatalf("args: %v", args)
 	}
@@ -95,7 +95,7 @@ func TestReadHAProxyJournalFitsBrokerOutputBudget(t *testing.T) {
 		out, _, err := capture.Result()
 		return out, err
 	}
-	sample, err := readHAProxyJournal(t.Context(), time.Now(), 0, BlockedLines, hostspec.JournalGrepBlocked, run)
+	sample, err := readHAProxyJournal(t.Context(), time.Now(), 0, BlockedLines, blocklog.JournalGrepBlocked, run)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,20 +117,55 @@ func TestReadHAProxyJournalPropagatesUnrelatedFailures(t *testing.T) {
 		}
 		return nil, failure
 	}
-	if _, err := readHAProxyJournal(t.Context(), time.Now(), 0, PolicyLines, hostspec.JournalGrepPolicy, run); !errors.Is(err, failure) {
+	if _, err := readHAProxyJournal(t.Context(), time.Now(), 0, PolicyLines, blocklog.JournalGrepPolicy, run); !errors.Is(err, failure) {
 		t.Fatalf("error = %v, want %v", err, failure)
 	}
 }
 
 func TestBuildPolicyJournalArgs(t *testing.T) {
-	if _, err := buildHAProxyJournalArgs(time.Now(), 200, hostspec.JournalGrepPolicy); err != nil {
+	if _, err := buildHAProxyJournalArgs(time.Now(), 200, blocklog.JournalGrepPolicy); err != nil {
 		t.Fatal(err)
 	}
-	pattern := regexp.MustCompile(hostspec.JournalGrepPolicy)
-	if !pattern.MatchString("{app.example||policy-count:watch|}") || pattern.MatchString("{app.example||} GET /policy-count:watch") {
-		t.Fatal("journal pattern should select publication capture slots")
+	pattern := regexp.MustCompile(blocklog.JournalGrepPolicy)
+	const prefix = `192.0.2.1:1 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 `
+	if !pattern.MatchString(prefix + `{app.example|||policy-count:watch|} "GET / HTTP/1.1"`) {
+		t.Fatal("journal pattern missed a policy capture after an empty slot")
+	}
+	for _, tail := range []string{
+		`{app.example||} "GET /{app.example||policy-count:watch} HTTP/1.1"`,
+		`{app.example|policy-count:watch|} "GET / HTTP/1.1"`,
+		`{app.example||policy-count:watch.extra|} "GET / HTTP/1.1"`,
+	} {
+		if pattern.MatchString(prefix + tail) {
+			t.Errorf("journal pattern matched outside a valid policy capture: %s", tail)
+		}
 	}
 	if _, err := buildHAProxyJournalArgs(time.Now(), 200, "arbitrary"); err == nil {
 		t.Fatal("unapproved grep pattern was accepted")
+	}
+}
+
+func TestBlockedGrepUsesTerminationField(t *testing.T) {
+	pattern := regexp.MustCompile(blocklog.JournalGrepBlocked)
+	const start = `192.0.2.1:1 [x] fe_http fe_http/<NOSRV> 0/-1/-1/-1/0 `
+	const request = ` 1/1/0/0/0 0/0 {app.example|} "GET /PR-- HTTP/1.1"`
+	for _, tc := range []struct {
+		fields string
+		match  bool
+	}{
+		{"403 1 - - PR--", true},
+		{"403 1 - - PRVN", true},
+		{"413 1 - - LR--", true},
+		{"301 1 - - LR--", false},
+		{"200 1 - - ----", false},
+		{"403 1 - - ----", false},
+	} {
+		tail := request
+		if tc.match {
+			tail = strings.ReplaceAll(tail, "PR--", "fixture")
+		}
+		if got := pattern.MatchString(start + tc.fields + tail); got != tc.match {
+			t.Errorf("fields %q: matched = %t, want %t", tc.fields, got, tc.match)
+		}
 	}
 }

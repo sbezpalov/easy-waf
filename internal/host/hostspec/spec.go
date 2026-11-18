@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
 )
 
@@ -134,16 +135,12 @@ func ValidRollbackTimeout(s string) bool {
 	return n >= RollbackMinSec && n <= RollbackMaxSec
 }
 
-// JournalGrepBlocked selects HAProxy httplog lines the edge refused: PR-- is an
-// http-request deny, LR-- a local response such as http-request return.
-const JournalGrepBlocked = "[PL]R--"
-
-// JournalGrepPolicy matches an edge-generated policy capture, independently
-// of whether the request was ultimately refused or served.
-const JournalGrepPolicy = `\{[^}]*\x7cpolicy-[a-z]+:`
-
 // journalGrep is the only set of --grep patterns accepted: the value is a regex.
-var journalGrep = map[string]struct{}{JournalGrepBlocked: {}, JournalGrepPolicy: {}}
+// Keep the old patterns accepted while an older API may share this broker.
+var journalGrep = map[string]struct{}{
+	blocklog.JournalGrepBlocked: {}, blocklog.JournalGrepPolicy: {},
+	"[PL]R--": {}, `\{[^}]*\x7cpolicy-[a-z]+:`: {},
+}
 
 // ValidateJournalArgs validates journalctl arguments (not including the "journal" opcode).
 // At least one allowlisted -u is required so a peer cannot dump the whole system journal.
