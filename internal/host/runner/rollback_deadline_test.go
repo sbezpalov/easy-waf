@@ -6,15 +6,17 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/hostd"
 )
 
 func TestPrivilegedRollbackDeadline(t *testing.T) {
-	for _, scenario := range []string{"broker deadline", "already expired", "legacy broker", "failed apply", "ordinary output"} {
+	for _, scenario := range []string{"broker deadline", "already expired", "legacy broker", "failed apply", "ordinary output", "output limit"} {
 		t.Run(scenario, func(t *testing.T) {
 			socket := shortTempSock(t)
 			ln, err := net.Listen("unix", socket)
@@ -33,6 +35,9 @@ func TestPrivilegedRollbackDeadline(t *testing.T) {
 			}
 			if scenario == "failed apply" {
 				response.OK, response.Code, response.Error = false, 1, "apply rejected"
+			}
+			if scenario == "output limit" {
+				response = hostd.Response{Code: 1, Stdout: "partial", Error: "journal output exceeded limit", OutputLimited: true}
 			}
 			type observation struct {
 				at  time.Time
@@ -60,21 +65,28 @@ func TestPrivilegedRollbackDeadline(t *testing.T) {
 			started := time.Now()
 			var got time.Time
 			var callErr error
-			if scenario == "ordinary output" {
+			switch scenario {
+			case "ordinary output":
 				// The same response remains readable by existing Privileged callers.
 				var out []byte
 				out, callErr = Privileged(ctx, "nft-list")
 				if callErr != nil || string(out) != "command output" {
 					t.Fatalf("new response broke ordinary output: %q, %v", out, callErr)
 				}
-			} else {
+			case "output limit":
+				var out []byte
+				out, callErr = Privileged(ctx, "journal", "-u", "haproxy.service")
+				if !errors.Is(callErr, commandoutput.ErrLimit) || callErr.Error() != response.Error || string(out) != response.Stdout {
+					t.Fatalf("output limit was lost over the broker protocol: %q, %v", out, callErr)
+				}
+			default:
 				got, callErr = PrivilegedWithRollback(ctx, 90*time.Second, "netplan-apply-confirm", "staged", "90", "abcdef01")
 			}
 			if scenario == "failed apply" {
 				if callErr == nil || !got.IsZero() {
 					t.Fatalf("failed apply exposed a usable deadline: %v, %v", got, callErr)
 				}
-			} else if callErr != nil {
+			} else if scenario != "output limit" && callErr != nil {
 				t.Fatal(callErr)
 			}
 			observed := <-done
@@ -85,7 +97,7 @@ func TestPrivilegedRollbackDeadline(t *testing.T) {
 				if got.Before(started.Add(90*time.Second)) || got.After(observed.at.Add(90*time.Second)) {
 					t.Fatalf("legacy fallback reset the window after apply: %v", got)
 				}
-			} else if scenario != "failed apply" && scenario != "ordinary output" && !got.Equal(deadline) {
+			} else if scenario != "failed apply" && scenario != "ordinary output" && scenario != "output limit" && !got.Equal(deadline) {
 				t.Fatalf("broker deadline replaced: got %v, want %v", got, deadline)
 			}
 		})

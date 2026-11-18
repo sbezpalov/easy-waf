@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
 const defaultBrokerSocket = "/run/easy-waf/hostd.sock"
@@ -21,8 +23,14 @@ type brokerResponse struct {
 	Stderr            string     `json:"stderr"`
 	Code              int        `json:"code"`
 	Error             string     `json:"error,omitempty"`
+	OutputLimited     bool       `json:"output_limited,omitempty"`
 	RollbackExpiresAt *time.Time `json:"rollback_expires_at,omitempty"`
 }
+
+type brokerOutputError string
+
+func (e brokerOutputError) Error() string { return string(e) }
+func (e brokerOutputError) Unwrap() error { return commandoutput.ErrLimit }
 
 // BrokerSocket returns the hostd unix socket path.
 func BrokerSocket() string {

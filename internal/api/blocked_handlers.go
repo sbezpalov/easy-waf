@@ -34,8 +34,7 @@ const (
 type blockedResponse struct {
 	Period string    `json:"period"`
 	Since  time.Time `json:"since"`
-	// Truncated means the journal had more matches than one read returns, so
-	// counts cover only the newest of them.
+	// Truncated marks a sample constrained by the read budget.
 	Truncated bool             `json:"truncated"`
 	Summary   blocklog.Summary `json:"summary"`
 	Events    []blocklog.Event `json:"events"`
@@ -48,17 +47,17 @@ func (s *Server) listBlocked(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	out, err := readBlockedJournal(r.Context(), since, journal.BlockedLines)
+	sample, err := readBlockedJournal(r.Context(), since, journal.BlockedLines)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
 		return
 	}
-	events, lines := blocklog.ParseJournal(strings.NewReader(out))
+	events, _ := blocklog.ParseJournal(strings.NewReader(sample.JSON))
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	resp := blockedResponse{
 		Period:    period,
 		Since:     since.UTC(),
-		Truncated: lines >= journal.BlockedLines,
+		Truncated: sample.Truncated,
 		Summary:   blocklog.Summarize(events, blockedTopN),
 	}
 	s.addBlockedCountries(r.Context(), resp.Summary.TopIPs)
@@ -96,19 +95,19 @@ func (s *Server) listPolicyMatches(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	out, err := readPolicyJournal(r.Context(), since, journal.PolicyLines)
+	sample, err := readPolicyJournal(r.Context(), since, journal.PolicyLines)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "reading the HAProxy journal: " + err.Error()})
 		return
 	}
-	events, lines := blocklog.ParseRuleJournal(strings.NewReader(out))
+	events, _ := blocklog.ParseRuleJournal(strings.NewReader(sample.JSON))
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	writeJSON(w, http.StatusOK, struct {
 		Period    string               `json:"period"`
 		Since     time.Time            `json:"since"`
 		Truncated bool                 `json:"truncated"`
 		Events    []blocklog.RuleEvent `json:"events"`
-	}{period, since.UTC(), lines >= journal.PolicyLines || len(events) > limit, nonNil(events[:min(len(events), limit)])})
+	}{period, since.UTC(), sample.Truncated || len(events) > limit, nonNil(events[:min(len(events), limit)])})
 }
 
 // addBlockedCountries looks up only the top list, under one short deadline: a

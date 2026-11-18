@@ -70,7 +70,10 @@ func privileged(ctx context.Context, args ...string) (brokerResponse, error) {
 		if msg == "" {
 			msg = fmt.Sprintf("exit code %d", resp.Code)
 		}
-		return resp, fmt.Errorf("%s", msg)
+		if resp.OutputLimited {
+			return resp, brokerOutputError(msg)
+		}
+		return resp, errors.New(msg)
 	}
 	return resp, nil
 }

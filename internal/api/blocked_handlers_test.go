@@ -16,18 +16,19 @@ import (
 	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
+	"github.com/easy-waf/easy-waf/internal/host/journal"
 )
 
 func TestListPolicyMatches(t *testing.T) {
 	original := readPolicyJournal
 	t.Cleanup(func() { readPolicyJournal = original })
 	now := time.Now()
-	readPolicyJournal = func(context.Context, time.Time, int) (string, error) {
-		return strings.Join([]string{
+	readPolicyJournal = func(context.Context, time.Time, int) (journal.Sample, error) {
+		return journal.Sample{JSON: strings.Join([]string{
 			journalLine(`192.0.2.1:1 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 {app.example||policy-count:watch} "GET /?token=sensitive HTTP/1.1"`, now),
 			journalLine(`192.0.2.1:2 [x] fe_http fe_http/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {app.example|policy_block|policy-count:watch|policy-block:deny} "GET /?token=sensitive`, now.Add(time.Minute)),
 			journalLine(`192.0.2.1:3 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 {app.example||} "GET /{app.example|policy-count:forged} HTTP/1.1"`, now.Add(2*time.Minute)),
-		}, "\n"), nil
+		}, "\n")}, nil
 	}
 	rec := httptest.NewRecorder()
 	(&Server{}).listPolicyMatches(rec, httptest.NewRequest(http.MethodGet, "/api/v1/security/policy-matches?period=1h&limit=1", nil))
@@ -65,13 +66,13 @@ func TestListBlocked(t *testing.T) {
 	t.Cleanup(func() { readBlockedJournal = orig })
 	now := time.Now()
 	var gotSince time.Time
-	readBlockedJournal = func(_ context.Context, since time.Time, _ int) (string, error) {
+	readBlockedJournal = func(_ context.Context, since time.Time, _ int) (journal.Sample, error) {
 		gotSince = since
-		return strings.Join([]string{
+		return journal.Sample{JSON: strings.Join([]string{
 			journalLine(`203.0.113.9:1 [x] fe_https~ fe_https/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {a.example|sqli} "GET /?q=1 HTTP/1.1"`, now.Add(-2*time.Minute)),
 			journalLine(`203.0.113.9:2 [x] fe_https~ fe_https/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {a.example|geoip} "GET / HTTP/1.1"`, now.Add(-time.Minute)),
 			journalLine(`198.51.100.1:3 [x] fe_http fe_http/<NOSRV> 0/-1/-1/-1/0 301 1 - - LR-- 1/1/0/0/0 0/0 {a.example|} "GET / HTTP/1.1"`, now),
-		}, "\n"), nil
+		}, "\n"), Truncated: true}, nil
 	}
 	s := &Server{Eng: engine.New("", nil, config.GlobalSettings{})}
 
@@ -87,7 +88,7 @@ func TestListBlocked(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Summary.Total != 2 || len(resp.Events) != 2 || resp.Events[0].Rule != "geoip" {
+	if !resp.Truncated || resp.Summary.Total != 2 || len(resp.Events) != 2 || resp.Events[0].Rule != "geoip" {
 		t.Fatalf("newest first, redirects skipped: %+v", resp)
 	}
 	if len(resp.Summary.TopIPs) != 1 || resp.Summary.TopIPs[0].Count != 2 {
@@ -100,7 +101,9 @@ func TestListBlocked(t *testing.T) {
 		t.Fatalf("bad period: %d", rec.Code)
 	}
 
-	readBlockedJournal = func(context.Context, time.Time, int) (string, error) { return "", errors.New("broker down") }
+	readBlockedJournal = func(context.Context, time.Time, int) (journal.Sample, error) {
+		return journal.Sample{}, errors.New("broker down")
+	}
 	rec = httptest.NewRecorder()
 	s.listBlocked(rec, httptest.NewRequest(http.MethodGet, "/api/v1/security/blocked", nil))
 	if rec.Code != http.StatusServiceUnavailable {

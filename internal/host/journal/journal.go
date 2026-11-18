@@ -5,12 +5,14 @@ package journal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
@@ -97,34 +99,60 @@ const BlockedLines = 5000
 // PolicyLines bounds the JSON journal output even when many rules match.
 const PolicyLines = 1000
 
+// Sample contains complete JSON lines. Truncated means the query hit a
+// line limit or had to discard older rows to fit the broker output budget.
+type Sample struct {
+	JSON      string
+	Truncated bool
+}
+
 // ReadBlocked returns haproxy.service journal entries since the given time whose
-// message looks refused by the edge, newest last, as journalctl JSON lines.
-func ReadBlocked(ctx context.Context, since time.Time, lines int) (string, error) {
-	return readHAProxyJournal(ctx, since, lines, hostspec.JournalGrepBlocked)
+// message looks refused by the edge, as journalctl JSON lines.
+func ReadBlocked(ctx context.Context, since time.Time, lines int) (Sample, error) {
+	return readHAProxyJournal(ctx, since, lines, BlockedLines, hostspec.JournalGrepBlocked, runner.Privileged)
 }
 
 // ReadPolicy returns HAProxy entries with at least one publication rule match.
-func ReadPolicy(ctx context.Context, since time.Time, lines int) (string, error) {
-	return readHAProxyJournal(ctx, since, lines, hostspec.JournalGrepPolicy)
+func ReadPolicy(ctx context.Context, since time.Time, lines int) (Sample, error) {
+	return readHAProxyJournal(ctx, since, lines, PolicyLines, hostspec.JournalGrepPolicy, runner.Privileged)
 }
 
-func readHAProxyJournal(ctx context.Context, since time.Time, lines int, pattern string) (string, error) {
-	args, err := buildHAProxyJournalArgs(since, lines, pattern)
-	if err != nil {
-		return "", err
+func readHAProxyJournal(ctx context.Context, since time.Time, lines, maxLines int, pattern string, run func(context.Context, ...string) ([]byte, error)) (Sample, error) {
+	if lines <= 0 || lines > maxLines {
+		lines = maxLines
 	}
-	out, err := runner.Privileged(ctx, args...)
-	// With --grep, journalctl (systemd 255) exits 1 silently when nothing matches.
-	if err != nil && len(out) == 0 && err.Error() == "exit code 1" {
-		return "", nil
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	reduced := false
+	for {
+		args, err := buildHAProxyJournalArgs(since, lines, pattern)
+		if err != nil {
+			return Sample{}, err
+		}
+		out, err := run(ctx, args...)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Sample{}, ctxErr
+		}
+		switch {
+		case err == nil:
+			data := string(out)
+			count := strings.Count(strings.TrimSuffix(data, "\n"), "\n")
+			return Sample{JSON: data, Truncated: reduced || (data != "" && count+1 >= lines)}, nil
+		case len(out) == 0 && err.Error() == "exit code 1":
+			// journalctl --grep exits 1 silently when nothing matches.
+			return Sample{}, nil
+		case errors.Is(err, commandoutput.ErrLimit) && lines > 1:
+			// The failed output may end mid-record. Requery the newest
+			// entries with a smaller row budget to get a complete sample.
+			lines /= 2
+			reduced = true
+		default:
+			return Sample{}, err
+		}
 	}
-	return string(out), err
 }
 
 func buildHAProxyJournalArgs(since time.Time, lines int, pattern string) ([]string, error) {
-	if lines <= 0 || lines > BlockedLines {
-		lines = BlockedLines
-	}
 	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", "haproxy.service",
 		"--since", since.Local().Format("2006-01-02 15:04:05"),
 		"--grep", pattern, "--output", "json"}

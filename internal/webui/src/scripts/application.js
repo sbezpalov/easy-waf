@@ -2255,7 +2255,7 @@
     if (gen !== blockedGen) return;
     const sum = data.summary || {};
     document.getElementById('blocked-total').textContent = (sum.total || 0) + ' blocked' +
-      (data.truncated ? ' (only the newest ' + 5000 + ' journal matches were read)' : '');
+      (data.truncated ? ' (newest journal entries only)' : '');
     const rows = (list, fmt) => (list || []).map(fmt).join('') || '<tr><td class="dash-note">—</td></tr>';
     document.getElementById('blocked-rules').innerHTML = rows(sum.by_rule, (c) =>
       '<tr><td>' + esc(blockedRuleLabel(c.key)) + '</td><td>' + c.count + '</td></tr>');

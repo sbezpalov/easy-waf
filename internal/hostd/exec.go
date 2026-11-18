@@ -104,7 +104,8 @@ func failExec(stdout, stderr []byte, code int, err error) Response {
 	if err != nil {
 		msg = commandFailure(stderr, code, err).Error()
 	}
-	return Response{OK: false, Stdout: string(stdout), Stderr: string(stderr), Code: code, Error: msg}
+	return Response{OK: false, Stdout: string(stdout), Stderr: string(stderr), Code: code, Error: msg,
+		OutputLimited: errors.Is(err, commandoutput.ErrLimit)}
 }
 
 // Keep cancellation/start failures even when the tool printed a warning before

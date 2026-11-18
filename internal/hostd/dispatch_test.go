@@ -7,11 +7,14 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 )
 
 type mockRunner struct {
 	lastName string
 	lastArgs []string
+	err      error
 }
 
 func (m *mockRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
@@ -23,7 +26,7 @@ func (m *mockRunner) Run(_ context.Context, name string, args ...string) ([]byte
 	if name == binNft {
 		return []byte("table inet x\n"), nil, 0, nil
 	}
-	return []byte("ok"), nil, 0, nil
+	return []byte("ok"), nil, 0, m.err
 }
 
 func TestDispatch_unknownOp(t *testing.T) {
@@ -82,6 +85,14 @@ func TestDispatch_journalBadFlag(t *testing.T) {
 	r := d.Dispatch(context.Background(), []string{"journal", "--follow"})
 	if r.OK {
 		t.Fatal("flag rejected")
+	}
+}
+
+func TestDispatchJournalReportsOutputLimit(t *testing.T) {
+	d := &Dispatcher{Runner: &mockRunner{err: commandoutput.ErrLimit}}
+	resp := d.Dispatch(t.Context(), []string{"journal", "-n", "5000", "-u", "haproxy.service", "--output", "json"})
+	if resp.OK || !resp.OutputLimited || resp.Error != commandoutput.ErrLimit.Error() {
+		t.Fatalf("unexpected broker response: %+v", resp)
 	}
 }
 
