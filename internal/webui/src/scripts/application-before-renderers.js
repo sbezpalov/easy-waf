@@ -361,25 +361,17 @@
   }
 
   async function apiMessage(r) {
-    const txt = await r.text().catch(() => r.statusText || 'Request failed');
+    let message = (await r.text().catch(() => '')).trim();
     try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') return humanizeCrowdSecErr(j.error || j.message || txt);
+      const j = JSON.parse(message);
+      if (j && typeof j === 'object') {
+        if (typeof j.error === 'string' && j.error.trim()) message = j.error.trim();
+        else if (typeof j.message === 'string' && j.message.trim()) message = j.message.trim();
+      }
     } catch (_) { /* plain text */ }
-    return humanizeCrowdSecErr(txt || ('HTTP ' + r.status));
-  }
-
-  function humanizeCrowdSecErr(msg) {
-    const s = String(msg || '');
-    if (s === 'step_up_required') return 'Cancelled: this operation needs your password.';
-    if (s === 'read_only') return 'Read-only account: ask an admin to make this change.';
-    if (/http 403|access forbidden/i.test(s)) {
-      return 'CrowdSec LAPI access denied (403). The API key in settings does not match LAPI. Re-run on the host: sudo bash scripts/crowdsec-bootstrap-lapi.sh && sudo systemctl restart easy-waf-api';
-    }
-    if (/lapi url not configured/i.test(s)) {
-      return 'CrowdSec LAPI URL is not configured. Use Settings → Load from server, or re-run install/bootstrap.';
-    }
-    return s;
+    if (message === 'step_up_required') return 'Cancelled: this operation needs your password.';
+    if (message === 'read_only') return 'Read-only account: ask an admin to make this change.';
+    return message || r.statusText || ('HTTP ' + r.status);
   }
 
   function confirmDialog(message, opts) {

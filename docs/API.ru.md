@@ -1061,7 +1061,7 @@ URL должен пройти allowlist назначений LAPI (по умол
 ### `GET /api/v1/integrations/crowdsec/decisions`
 Возвращает активные решения, отправляя в LAPI `GET /v1/decisions?limit=100`.
 - **Ответ:** `200`, JSON-тело LAPI **передаётся как есть** (`Content-Type: application/json`). Это массив решений CrowdSec; его поля (`id`, `value`, `type`, `duration`, `scenario`, `origin`, ...) определяет CrowdSec, а не easy-waf. Если решений нет, CrowdSec отвечает `null`, а не `[]`.
-- **Ошибки:** `502` (JSON) `{"error": "..."}`, когда URL LAPI отклонён, LAPI недоступен, отвечает редиректом, возвращает статус не из 2xx (`crowdsec lapi decisions: http 403`) или присылает больше 1 MiB (`crowdsec lapi decisions: response exceeds 1048576 bytes`).
+- **Ошибки:** `502` (JSON) при сбое обращения к LAPI. Для всех операций с решениями ответ LAPI `401` или `403` приводит к подсказке проверить ключ и права доступа. При других сбоях API возвращает `CrowdSec LAPI request failed.` Подробности доступны в журнале сервера.
 
 ### `POST /api/v1/integrations/crowdsec/decisions`
 Добавляет ручное решение для одного IP, отправляя в LAPI `POST /v1/decisions`. Запрос — массив из одного элемента с `scope: "Ip"` и `origin: "easy-waf"`, а `reason` передаётся как `scenario`. При успехе записывает действие аудита **`crowdsec.decision_added`** с `ip`, `type`, `duration` и `reason`.
@@ -1084,7 +1084,7 @@ URL должен пройти allowlist назначений LAPI (по умол
 - **Ошибки:**
   - `400` (text/plain) при некорректном JSON.
   - `400` (JSON), когда `ip` пуст или не является допустимым IP-адресом (`crowdsec: invalid IP address: ...`). Это проверяется первым.
-  - `502` (JSON), когда URL LAPI отклонён, LAPI недоступен, отвечает редиректом или возвращает статус не из 2xx (например, `crowdsec lapi add decision: http 403` при неверном ключе).
+  - `502` (JSON) при сбое обращения к LAPI. Сообщения совпадают с ответами при чтении списка решений.
 
 ### `DELETE /api/v1/integrations/crowdsec/decisions/{id}`
 Удаляет одно решение, отправляя в LAPI `DELETE /v1/decisions/{id}`. При успехе записывает действие аудита **`crowdsec.decision_deleted`** с `decision_id`.

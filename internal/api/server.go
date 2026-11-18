@@ -674,12 +674,12 @@ func (s *Server) crowdsecStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) crowdsecDecisions(w http.ResponseWriter, r *http.Request) {
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeClientError(w, http.StatusBadGateway, "internal error", err)
+		writeCrowdsecDecisionError(w, err)
 		return
 	}
 	raw, err := c.DecisionsSample(r.Context())
 	if err != nil {
-		writeClientError(w, http.StatusBadGateway, "internal error", err)
+		writeCrowdsecDecisionError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -12,6 +12,14 @@ import (
 	"github.com/easy-waf/easy-waf/internal/crowdsec"
 )
 
+func writeCrowdsecDecisionError(w http.ResponseWriter, err error) {
+	message := "CrowdSec LAPI request failed."
+	if errors.Is(err, crowdsec.ErrLAPIAccessDenied) {
+		message = "CrowdSec LAPI denied access. Check the configured API key and permissions."
+	}
+	writeClientError(w, http.StatusBadGateway, message, err)
+}
+
 func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -20,7 +28,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 	}
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeClientError(w, http.StatusBadGateway, "internal error", err)
+		writeCrowdsecDecisionError(w, err)
 		return
 	}
 	if err = c.DeleteDecision(r.Context(), id); err != nil {
@@ -28,7 +36,7 @@ func (s *Server) crowdsecDeleteDecision(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, crowdsec.ErrDecisionNotFound):
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		default:
-			writeClientError(w, http.StatusBadGateway, "internal error", err)
+			writeCrowdsecDecisionError(w, err)
 		}
 		return
 	}
@@ -50,7 +58,7 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.crowdsecLAPIClient()
 	if err != nil {
-		writeClientError(w, http.StatusBadGateway, "internal error", err)
+		writeCrowdsecDecisionError(w, err)
 		return
 	}
 	if err = c.AddDecision(r.Context(), body); err != nil {
@@ -58,7 +66,7 @@ func (s *Server) crowdsecAddDecision(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, crowdsec.ErrInvalidDecisionIP):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		default:
-			writeClientError(w, http.StatusBadGateway, "internal error", err)
+			writeCrowdsecDecisionError(w, err)
 		}
 		return
 	}

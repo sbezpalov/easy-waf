@@ -10,4 +10,6 @@ var (
 	ErrDecisionNotFound = errors.New("crowdsec: decision not found")
 	// ErrInvalidDecisionIP is returned when AddDecision receives a non-IP value string.
 	ErrInvalidDecisionIP = errors.New("crowdsec: invalid IP address")
+	// ErrLAPIAccessDenied means LAPI rejected access to a decision operation.
+	ErrLAPIAccessDenied = errors.New("crowdsec: LAPI access denied")
 )

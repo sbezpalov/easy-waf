@@ -3180,21 +3180,16 @@
     }
     tableState(wrap, 'loading');
     const r = await fetch('/api/v1/integrations/crowdsec/decisions', { headers: hdr() });
-    const txt = await r.text();
     if (r.status === 401 || r.status === 403) {
       if (r.status === 401) setTok('');
       refreshSession();
       return;
     }
     if (!r.ok) {
-      let errMsg = txt;
-      try {
-        const ej = JSON.parse(txt);
-        if (ej && (ej.error || ej.message)) errMsg = ej.error || ej.message;
-      } catch (_) { /* plain text */ }
-      tableState(wrap, 'error', { message: errMsg || ('HTTP ' + r.status) });
+      tableState(wrap, 'error', { message: await apiMessage(r) });
       return;
     }
+    const txt = await r.text();
     let arr = [];
     try {
       const j = JSON.parse(txt);
@@ -3410,7 +3405,7 @@
       body: JSON.stringify(body)
     });
     if (!r.ok) {
-      if (msg) msg.textContent = await r.text().catch(() => r.statusText);
+      if (msg) msg.textContent = await apiMessage(r);
       return;
     }
     if (msg) {

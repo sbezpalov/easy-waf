@@ -91,6 +91,47 @@ func TestCrowdSecAddDecisionChecksIPBeforeLAPIURL(t *testing.T) {
 	}
 }
 
+func TestCrowdSecDecisionErrorsIdentifyUpstreamAccessDenial(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			const privateBody = "upstream fixture detail"
+			lapi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, privateBody, status)
+			}))
+			t.Cleanup(lapi.Close)
+			t.Setenv("CROWDSEC_LAPI_URL", "")
+			t.Setenv("CROWDSEC_LAPI_KEY", "fixture-key")
+			t.Setenv("CROWDSEC_LAPI_ALLOWED_ORIGINS", lapi.URL)
+			s := engineServer(t, func(g *config.GlobalSettings) { g.CrowdSecLAPIURL = lapi.URL })
+			actions := []struct {
+				method, body string
+				handler      http.HandlerFunc
+			}{
+				{http.MethodGet, "", s.crowdsecDecisions},
+				{http.MethodPost, `{"ip":"192.0.2.1"}`, s.crowdsecAddDecision},
+				{http.MethodDelete, "", s.crowdsecDeleteDecision},
+			}
+			want := "CrowdSec LAPI request failed."
+			if status == http.StatusUnauthorized || status == http.StatusForbidden {
+				want = "CrowdSec LAPI denied access. Check the configured API key and permissions."
+			}
+			for _, action := range actions {
+				req := withURLParam(httptest.NewRequest(action.method, "/", strings.NewReader(action.body)), "id", "fixture")
+				rec := httptest.NewRecorder()
+				action.handler(rec, req)
+				var detail map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+					t.Fatal(err)
+				}
+				if rec.Code != http.StatusBadGateway || detail["error"] != want ||
+					strings.Contains(rec.Body.String(), privateBody) || strings.Contains(rec.Body.String(), lapi.URL) {
+					t.Fatalf("%s with upstream %d: %d %s", action.method, status, rec.Code, rec.Body)
+				}
+			}
+		})
+	}
+}
+
 func TestProfilesUseSnakeCase(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()

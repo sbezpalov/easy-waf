@@ -99,6 +99,9 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, decisionStatusError("decisions", resp.StatusCode)
+	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionsBytes+1))
 	if err != nil {
 		return nil, err
@@ -106,12 +109,6 @@ func (c *Client) DecisionsSample(ctx context.Context) (json.RawMessage, error) {
 	// Cut off, the passthrough would be invalid JSON served with a 200.
 	if len(b) > maxDecisionsBytes {
 		return nil, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
-	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, fmt.Errorf("crowdsec lapi decisions: redirect refused")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("crowdsec lapi decisions: http %d", resp.StatusCode)
 	}
 	return json.RawMessage(b), nil
 }
@@ -155,10 +152,7 @@ func (c *Client) DeleteDecision(ctx context.Context, decisionID string) error {
 	case http.StatusNotFound:
 		return ErrDecisionNotFound
 	default:
-		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-			return fmt.Errorf("crowdsec lapi delete decision: redirect refused")
-		}
-		return fmt.Errorf("crowdsec lapi delete decision: http %d", resp.StatusCode)
+		return decisionStatusError("delete decision", resp.StatusCode)
 	}
 }
 
@@ -217,13 +211,21 @@ func (c *Client) AddDecision(ctx context.Context, req AddDecisionRequest) error 
 	}
 	defer resp.Body.Close()
 	_, _ = io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return fmt.Errorf("crowdsec lapi add decision: redirect refused")
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("crowdsec lapi add decision: http %d", resp.StatusCode)
+		return decisionStatusError("add decision", resp.StatusCode)
 	}
 	return nil
+}
+
+func decisionStatusError(operation string, status int) error {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return fmt.Errorf("crowdsec lapi %s: http %d: %w", operation, status, ErrLAPIAccessDenied)
+	case status >= 300 && status < 400:
+		return fmt.Errorf("crowdsec lapi %s: redirect refused", operation)
+	default:
+		return fmt.Errorf("crowdsec lapi %s: http %d", operation, status)
+	}
 }
 
 func mapAddDecisionDuration(d, decType string) string {

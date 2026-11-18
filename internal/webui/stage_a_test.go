@@ -64,6 +64,32 @@ func TestStageASessionExpiryAndViewerWriteGate(t *testing.T) {
 	runStageANodeTest(t, stageASessionTest)
 }
 
+func TestAPIMessagePreservesErrorSource(t *testing.T) {
+	runStageANodeTest(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const start = page.indexOf('  async function apiMessage(');
+const end = page.indexOf('  function confirmDialog(', start);
+assert.ok(start >= 0 && end > start);
+const context = vm.createContext({});
+vm.runInContext(page.slice(start, end), context);
+async function run() {
+  const denied = 'CrowdSec LAPI denied access. Check the configured API key and permissions.';
+  const cases = [
+    [403, '', 'HTTP 403'],
+    [403, 'Access forbidden', 'Access forbidden'],
+    [403, '{"error":"read_only"}', 'Read-only account: ask an admin to make this change.'],
+    [403, '{"error":"step_up_required"}', 'Cancelled: this operation needs your password.'],
+    [502, JSON.stringify({error: denied}), denied]
+  ];
+  for (const [status, body, expected] of cases) {
+    assert.equal(await context.apiMessage({status, text: async () => body}), expected);
+  }
+}
+run().catch(error => {console.error(error); process.exitCode = 1});
+`)
+}
+
 func runStageANodeTest(t *testing.T, script string) {
 	t.Helper()
 	node, err := exec.LookPath("node")

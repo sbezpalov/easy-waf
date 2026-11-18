@@ -1231,7 +1231,7 @@ Checks whether LAPI answers by sending `GET /v1/watchers/login` to it.
 ### `GET /api/v1/integrations/crowdsec/decisions`
 Returns the active decisions by sending `GET /v1/decisions?limit=100` to LAPI.
 - **Response:** `200`, with LAPI's JSON body **passed through verbatim** (`Content-Type: application/json`). This is CrowdSec's decision array; its fields (`id`, `value`, `type`, `duration`, `scenario`, `origin`, ...) are defined by CrowdSec, not by easy-waf. CrowdSec answers `null` rather than `[]` when there are no decisions.
-- **Errors:** `502` (JSON) `{"error": "..."}` when the LAPI URL is rejected, LAPI is unreachable, refuses with a redirect, returns a non-2xx status (`crowdsec lapi decisions: http 403`), or sends more than 1 MiB (`crowdsec lapi decisions: response exceeds 1048576 bytes`).
+- **Errors:** `502` (JSON) on an upstream failure. For all decision operations, LAPI `401` or `403` returns a message to check the configured API key and permissions. Other upstream failures return `CrowdSec LAPI request failed.` The server log holds diagnostic details.
 
 ### `POST /api/v1/integrations/crowdsec/decisions`
 Adds a manual decision for a single IP by sending `POST /v1/decisions` to LAPI. The request is a one-element array with `scope: "Ip"` and `origin: "easy-waf"`, and `reason` is sent as `scenario`. On success, records the audit action **`crowdsec.decision_added`** with `ip`, `type`, `duration` and `reason`.
@@ -1254,7 +1254,7 @@ Adds a manual decision for a single IP by sending `POST /v1/decisions` to LAPI. 
 - **Errors:**
   - `400` (text/plain) for malformed JSON.
   - `400` (JSON) when `ip` is empty or not a valid IP address (`crowdsec: invalid IP address: ...`). This is checked first.
-  - `502` (JSON) when the LAPI URL is rejected, LAPI is unreachable, redirects, or returns non-2xx (for example `crowdsec lapi add decision: http 403` with a bad key).
+  - `502` (JSON) on an upstream failure, with the same messages as the decision list.
 
 ### `DELETE /api/v1/integrations/crowdsec/decisions/{id}`
 Deletes one decision by sending `DELETE /v1/decisions/{id}` to LAPI. On success, records the audit action **`crowdsec.decision_deleted`** with `decision_id`.
