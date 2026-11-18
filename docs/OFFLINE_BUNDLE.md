@@ -45,8 +45,22 @@ sudo mkdir -p /mnt/easy-waf-offline
 sudo mount -o loop,ro easy-waf_1.6.0_offline_ubuntu24.04_amd64.iso /mnt/easy-waf-offline
 cd /mnt/easy-waf-offline
 bash install.sh --verify-only
-sudo bash install.sh
+sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot bash install.sh
 ```
+
+For a clean installation of the full profile from the public ISO, prepare a
+[CrowdSec snapshot](#prepare-a-private-crowdsec-snapshot) on a connected host and
+transfer it separately. Keep its checksum from the trusted preparation host
+and verify the transferred files there or on the isolated appliance. The
+snapshot contains Hub rules and data. The public ISO contains the CrowdSec
+packages. The installer checks the snapshot files and CrowdSec version before
+using them. An appliance with a configured CrowdSec agent can reuse that agent
+without supplying a snapshot.
+
+The private ISO already embeds the snapshot, so run `sudo bash install.sh`.
+To install the base profile from public media on a clean host, use
+`sudo EASY_WAF_INSTALL_CROWDSEC=0 bash install.sh`. The full-profile installer
+reports a missing snapshot before provisioning the appliance.
 
 The installer fails closed when an internal file is damaged, the host is not
 Ubuntu 24.04, the architecture differs, or there is insufficient free space. It
@@ -82,9 +96,9 @@ a fresh Ubuntu 24.04 system would install. Virtual dependencies such as
 `dbus-system-bus` and `libgnutls30` are stored as the provider APT selects
 (`dbus`, `libgnutls30t64`), not as the virtual name.
 
-`EASY_WAF_OFFLINE_INCLUDE_CROWDSEC=0` builds a smaller base bundle, but that is
-not the default appliance profile; its installer automatically disables the
-CrowdSec provisioning step unless the operator explicitly overrides it.
+`EASY_WAF_OFFLINE_INCLUDE_CROWDSEC=0` builds a smaller base bundle. Its
+installer defaults to the base profile and rejects requests to install the
+absent CrowdSec packages.
 `EASY_WAF_OFFLINE_FORMAT=tar.gz` is available for development; release artifacts
 use the read-only ISO form. Production builds accept only committed inputs and
 stage them from Git, so ignored or untracked local files cannot enter the image.

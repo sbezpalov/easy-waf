@@ -64,21 +64,72 @@ if [[ "$EUID" == 0 ]] && (
   cat >"$PAYLOAD/scripts/install.sh" <<'PAYLOAD'
 set -eu
 [[ "$EASY_WAF_RELEASE_VERSION" == 9.9.9 && "$EASY_WAF_OFFLINE" == 1 ]]
+[[ "$EASY_WAF_INSTALL_CROWDSEC" == "${EXPECTED_CROWDSEC:-0}" ]]
+[[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == "${EXPECTED_AGENT:-}" ]]
 PAYLOAD
   cat >"$TEMP_DIR/handoff-fixture.env" <<'FIXTURE'
 mkdir() {
-  if [[ "$*" == '-p /var/cache/apt/archives/partial' ]]; then return 0; fi
+  if [[ "$*" == '-p /var/cache/apt/archives/partial' ]]; then
+    : >"$HOST_CHANGES"
+    return 0
+  fi
   command mkdir "$@"
 }
 df() {
   printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nfixture 8388608 0 8388608 0%% /\n'
 }
+dpkg-query() {
+  printf '%s' "${FIXTURE_AGENT_STATUS:-not-installed}"
+}
+python3() {
+  [[ "$1" == -I && "$2" == */scripts/lib/install-offline-crowdsec.py ]] || return 91
+  printf '%s\n' "$3" >"$SNAPSHOT_ARGUMENT"
+}
 FIXTURE
+  export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
+  export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
   write_bundle_checksums
-  if ! BASH_ENV="$TEMP_DIR/handoff-fixture.env" "${BASH}" "$STAGE/install.sh" >/dev/null; then
+  if ! "${BASH}" "$STAGE/install.sh" >/dev/null; then
     echo 'test-offline-bundle: wrong package version passed to the installer' >&2
     exit 1
   fi
+  rm -- "$HOST_CHANGES"
+  if EASY_WAF_INSTALL_CROWDSEC=1 "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: base bundle accepted CrowdSec provisioning' >&2
+    exit 1
+  fi
+  grep -Fq 'base bundle has no CrowdSec packages' "$TEMP_DIR/error"
+  [[ ! -e "$HOST_CHANGES" ]]
+
+  sed -i 's/EASY_WAF_BUNDLE_CROWDSEC=0/EASY_WAF_BUNDLE_CROWDSEC=1/' "$STAGE/BUNDLE.env"
+  write_bundle_checksums
+  if "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: full bundle accepted a fresh install without a snapshot' >&2
+    exit 1
+  fi
+  grep -Fq 'CrowdSec requires a prepared snapshot' "$TEMP_DIR/error"
+  [[ ! -e "$HOST_CHANGES" ]]
+  EASY_WAF_INSTALL_CROWDSEC=0 "${BASH}" "$STAGE/install.sh" >/dev/null
+  EXPECTED_CROWDSEC=1 EXPECTED_AGENT=existing FIXTURE_AGENT_STATUS=installed "${BASH}" "$STAGE/install.sh" >/dev/null
+  [[ ! -e "$SNAPSHOT_ARGUMENT" ]]
+
+  mkdir -p "$TEMP_DIR/operator snapshot"
+  (
+    cd "$TEMP_DIR"
+    EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR='operator snapshot' EXPECTED_CROWDSEC=1 EXPECTED_AGENT=new \
+      "${BASH}" "$STAGE/install.sh" >/dev/null
+  )
+  [[ "$(cat "$SNAPSHOT_ARGUMENT")" == "$TEMP_DIR/operator snapshot" ]]
+  mkdir -p "$PAYLOAD/crowdsec-snapshot"
+  write_bundle_checksums
+  EXPECTED_CROWDSEC=1 EXPECTED_AGENT=new "${BASH}" "$STAGE/install.sh" >/dev/null
+  [[ "$(cat "$SNAPSHOT_ARGUMENT")" == "$PAYLOAD/crowdsec-snapshot" ]]
+  if EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR="$TEMP_DIR/operator snapshot" "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: operator snapshot was accepted for a private bundle' >&2
+    exit 1
+  fi
+  grep -Fq 'already has an embedded CrowdSec snapshot' "$TEMP_DIR/error"
+  unset BASH_ENV HOST_CHANGES SNAPSHOT_ARGUMENT
 fi
 
 # Exercise the connected snapshot preparer with a CLI fixture and no downloads.

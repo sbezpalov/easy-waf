@@ -164,6 +164,13 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           EASY_WAF_DEB="dist/easy-waf_${VERSION}_${{ matrix.arch }}.deb" bash scripts/build-offline-bundle.sh
+          CHECK_DIR="$(mktemp -d)"
+          trap 'rm -rf -- "$CHECK_DIR"' EXIT
+          xorriso -osirrox on -indev "dist/easy-waf_${VERSION}_offline_ubuntu24.04_${{ matrix.arch }}.iso" \
+            -extract / "$CHECK_DIR"
+          bash "$CHECK_DIR/install.sh" --verify-only
+          grep -Fxq 'EASY_WAF_BUNDLE_CROWDSEC=1' "$CHECK_DIR/BUNDLE.env"
+          [[ ! -e "$CHECK_DIR/payload/crowdsec-snapshot" && ! -L "$CHECK_DIR/payload/crowdsec-snapshot" ]]
 
       - name: Sign and upload offline ISO
         env:

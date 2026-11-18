@@ -11,6 +11,9 @@ Usage: sudo bash install.sh [--verify-only]
 
 Installs Easy Home WAF from this bundle on Ubuntu 24.04. --verify-only checks
 the internal manifest without changing the host.
+
+Set EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR to a trusted, prepared snapshot
+directory when installing CrowdSec from an ISO without an embedded snapshot.
 EOF
 }
 
@@ -32,6 +35,10 @@ esac
   exit 2
 }
 
+operator_snapshot="${EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR:-}"
+if [[ -n "$operator_snapshot" && "$operator_snapshot" != /* ]]; then
+  operator_snapshot="$PWD/$operator_snapshot"
+fi
 cd "$SCRIPT_DIR"
 [[ -f SHA256SUMS ]] || {
   echo "[offline-install] SHA256SUMS is missing" >&2
@@ -98,6 +105,52 @@ fi
   exit 1
 }
 
+: "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
+case "$EASY_WAF_INSTALL_CROWDSEC" in
+  0|1) ;;
+  *) echo "[offline-install] EASY_WAF_INSTALL_CROWDSEC must be 0 or 1" >&2; exit 1 ;;
+esac
+unset EASY_WAF_OFFLINE_CROWDSEC_PREPARED
+embedded_snapshot="$SCRIPT_DIR/payload/crowdsec-snapshot"
+snapshot="$operator_snapshot"
+if [[ -n "$operator_snapshot" ]]; then
+  if [[ "$EASY_WAF_INSTALL_CROWDSEC" != 1 ]]; then
+    echo "[offline-install] a supplied snapshot requires CrowdSec provisioning" >&2
+    exit 1
+  fi
+  if [[ -e "$embedded_snapshot" || -L "$embedded_snapshot" ]]; then
+    echo "[offline-install] the bundle already has an embedded CrowdSec snapshot" >&2
+    exit 1
+  fi
+  if [[ ! -d "$operator_snapshot" || -L "$operator_snapshot" ]]; then
+    echo "[offline-install] the supplied CrowdSec snapshot must be a directory" >&2
+    exit 1
+  fi
+elif [[ -d "$embedded_snapshot" ]]; then
+  snapshot="$embedded_snapshot"
+fi
+if [[ "$EASY_WAF_INSTALL_CROWDSEC" == 1 ]]; then
+  if [[ "$CROWDSEC" != 1 ]]; then
+    echo "[offline-install] the base bundle has no CrowdSec packages" >&2
+    exit 1
+  fi
+  status="$(dpkg-query -W -f='${db:Status-Status}' crowdsec 2>/dev/null || true)"
+  pending=/etc/crowdsec/.easy-waf-offline-install
+  if [[ "$status" == installed && ! -e "$pending" && ! -L "$pending" ]]; then
+    EASY_WAF_OFFLINE_CROWDSEC_PREPARED=existing
+  else
+    if [[ -z "$snapshot" ]]; then
+      echo "[offline-install] CrowdSec requires a prepared snapshot. Set EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR or use EASY_WAF_INSTALL_CROWDSEC=0." >&2
+      exit 1
+    fi
+    command -v python3 >/dev/null || {
+      echo "[offline-install] Python 3 is required to activate the CrowdSec snapshot" >&2
+      exit 1
+    }
+    EASY_WAF_OFFLINE_CROWDSEC_PREPARED=new
+  fi
+fi
+
 mkdir -p /var/cache/apt/archives/partial
 repo_kb="$(du -sk "$SCRIPT_DIR/repository" | awk '{print $1}')"
 installed_kb="$(awk '/^Installed-Size:/ { total += $2 } END { print total + 0 }' "$SCRIPT_DIR/repository/Packages")"
@@ -130,21 +183,11 @@ export EASY_WAF_REPO_ROOT="${SCRIPT_DIR}/payload"
 export EASY_WAF_RELEASE_VERSION="$BUNDLE_VERSION"
 export EASY_WAF_INSTALL_BUILD_DEPS=0
 export EASY_WAF_BUILD_FROM_SOURCE=0
-: "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 export EASY_WAF_INSTALL_CROWDSEC
-unset EASY_WAF_OFFLINE_CROWDSEC_PREPARED
-snapshot="$SCRIPT_DIR/payload/crowdsec-snapshot"
-if [[ "$CROWDSEC" == 1 && "$EASY_WAF_INSTALL_CROWDSEC" == 1 && -d "$snapshot" ]]; then
-  command -v python3 >/dev/null || {
-    echo "[offline-install] Python 3 is required to activate the private CrowdSec snapshot" >&2
-    exit 1
-  }
-  status="$(dpkg-query -W -f='${db:Status-Status}' crowdsec 2>/dev/null || true)"
-  EASY_WAF_OFFLINE_CROWDSEC_PREPARED=new
-  if [[ "$status" == installed && ! -e /etc/crowdsec/.easy-waf-offline-install ]]; then
-    EASY_WAF_OFFLINE_CROWDSEC_PREPARED=existing
-  fi
+if [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == new ]]; then
   python3 -I "$SCRIPT_DIR/payload/scripts/lib/install-offline-crowdsec.py" "$snapshot" "$SCRIPT_DIR/repository"
+fi
+if [[ -v EASY_WAF_OFFLINE_CROWDSEC_PREPARED ]]; then
   export EASY_WAF_OFFLINE_CROWDSEC_PREPARED
 fi
 bash "${SCRIPT_DIR}/payload/scripts/install.sh"

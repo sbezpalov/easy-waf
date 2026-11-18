@@ -35,6 +35,11 @@ The installer accepts Ubuntu 24.04 only, requires the matching architecture and
 uses a temporary `APT_CONFIG` that disables all configured source lists. It does
 not edit the host's source configuration. CrowdSec's online repository setup is
 skipped only under explicit `EASY_WAF_OFFLINE=1` set by the verified carrier.
+The public ISO carries the CrowdSec agent and bouncer packages. Clean
+full-profile installations use a separately prepared Hub snapshot transferred
+by the operator. An opt-in private ISO can embed that snapshot. The installer
+checks the snapshot's files and package version and stops before provisioning
+when a fresh full-profile installation is missing its snapshot.
 
 Before signing, CI verifies the release `.deb` through the already signed release
 manifest and asks APT's solver to install the complete profile against an empty
