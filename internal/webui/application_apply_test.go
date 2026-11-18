@@ -20,7 +20,7 @@ func TestApplicationApplyFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_end_maintenance_success", "save_clear_bypass_success", "save_manual", "save_legacy", "save_rejected", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
+	for _, scenario := range []string{"save_success", "save_new_success", "save_clear_health_success", "save_update_health_success", "save_end_maintenance_success", "save_clear_bypass_success", "save_manual", "save_legacy", "save_rejected", "save_conflict", "save_missing_revision", "save_missing_cert", "mode_success", "mode_manual", "mode_legacy", "mode_rejected", "mode_cancelled", "maintenance_success", "maintenance_manual", "maintenance_rejected", "maintenance_cancelled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
@@ -52,6 +52,8 @@ Object.entries({'app-edit-id': 'fixture-app', 'listen-mode': 'http_only', name: 
   .forEach(([id, value]) => {element(id).value = value});
 if (scenario === 'save_missing_cert') element('listen-mode').value = 'https_only';
 if (scenario === 'save_new_success') element('app-edit-id').value = '';
+const editedAt = '2026-11-01T12:13:14.123456Z';
+if (scenario !== 'save_missing_revision') element('app-edit-id').dataset.updatedAt = editedAt;
 const healthPath = element('app-health-path');
 healthPath.defaultValue = scenario === 'save_new_success' ? '' : '/ready';
 const sentHealthPath = {save_new_success: '', save_clear_health_success: '', save_update_health_success: '/next'}[scenario];
@@ -69,7 +71,7 @@ const policyDraft = [
 element('publication-rules').children = policyDraft.map(rule => ({
   querySelector: selector => ({value: rule[selector.slice(5)] || ''})
 }));
-const requests = [], notices = [];
+const requests = [], notices = [], errors = [];
 let cleared = 0, collapsed = 0, refreshed = 0;
 const context = {pendingApply: true, document: {getElementById: element},
   appsListCache: [{id: 'fixture-app', enabled: false, security: {mode: 'balanced'}}],
@@ -81,6 +83,7 @@ const context = {pendingApply: true, document: {getElementById: element},
       return {ok: true, json: async () => ({saved_generation: 9, applied_generation: pending ? 8 : 9,
         pending, last_apply: null, runtime: {state: 'known'}})};
     }
+    if (scenario === 'save_conflict') return {ok: false, status: 409};
     return {ok: !scenario.endsWith('_rejected'), headers: {get: name => {assert.equal(name, 'X-Easy-Waf-Applied'); return scenario.endsWith('_legacy') ? null : scenario.endsWith('_manual') ? 'false' : 'true'}}};
   },
   withBusy: async (button, operation) => operation(),
@@ -93,7 +96,7 @@ const context = {pendingApply: true, document: {getElementById: element},
   selectedPublicationCertificate: () => null,
   validatePublicationBasics: draft => draft.listen_mode !== 'http_only' && !draft.certificate_id
     ? {certificate: 'Choose a ready certificate for HTTPS.'} : {},
-  showPublicationErrors: () => {}, clearPublicationErrors: () => {},
+  showPublicationErrors: (_, message) => errors.push(message), clearPublicationErrors: () => {},
   securityForPublication: (mode, previous) => previous || {mode: mode || 'balanced'},
   withBodyPolicy: value => value,
   clearAppFormFields: () => {cleared++}, setAppFormCollapsed: on => {if (on) collapsed++}};
@@ -113,11 +116,12 @@ async function run() {
   if (scenario.startsWith('save_')) await element('save').onclick();
   else if (scenario.startsWith('mode_')) await context.postAppModeChange('fixture-app', select.value, select);
   else await context.setAppMaintenance('fixture-app', true, {});
-  if (scenario.endsWith('_cancelled') || scenario === 'save_missing_cert') {
+  if (scenario.endsWith('_cancelled') || scenario === 'save_missing_cert' || scenario === 'save_missing_revision') {
     assert.equal(requests.length, 0, 'cancelled or invalid input must not mutate');
     assert.equal(context.pendingApply, true);
     assert.equal(cleared + collapsed + refreshed, 0);
     if (scenario === 'mode_cancelled') assert.equal(select.value, 'balanced');
+    if (scenario === 'save_missing_revision') assert.ok(errors.some(message => /current settings/i.test(message)));
     return;
   }
   const mutations = requests.filter(([path]) => path !== '/api/v1/edge/status');
@@ -127,6 +131,7 @@ async function run() {
   if (scenario.startsWith('save_')) {
     const body = JSON.parse(mutations[0][1].body);
     assert.equal(body.id, scenario === 'save_new_success' ? undefined : 'fixture-app');
+    assert.equal(body.expected_updated_at, scenario === 'save_new_success' ? undefined : editedAt);
     assert.equal(body.enabled, scenario === 'save_new_success' ? true : undefined, 'editing a publication must preserve its stored state');
     assert.equal(body.health_path, sentHealthPath);
     assert.equal(body.maintenance, ['save_new_success', 'save_end_maintenance_success'].includes(scenario) ? false : undefined);
@@ -136,7 +141,12 @@ async function run() {
       {id:'deny', action:'block', match:{path_prefix:'/api', methods:['POST'], source_cidrs:[], header:'', header_prefix:''}}
     ]);
   }
-  if (scenario.endsWith('_rejected')) {
+  if (scenario === 'save_conflict') {
+    assert.equal(context.pendingApply, true, 'a conflict must preserve pending Apply state');
+    assert.equal(cleared + collapsed, 0, 'keep draft open on conflict');
+    assert.equal(refreshed, 1, 'refresh the publication list');
+    assert.ok(errors.some(message => /changed or was deleted.*draft/i.test(message)));
+  } else if (scenario.endsWith('_rejected')) {
     assert.equal(context.pendingApply, true, 'rejected mutation must preserve pending state');
     assert.equal(cleared + collapsed + refreshed, 0, 'keep rejected form for correction');
     assert.ok(notices.some(([, kind]) => kind === 'err'));

@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -207,6 +208,68 @@ func TestUpsertKeepsOmittedApplicationPaths(t *testing.T) {
 		if strings.Contains(edge.HAProxyConfig, httpCheck) != (tc.health != "") {
 			t.Fatalf("health_path %q did not reach the HAProxy configuration", tc.health)
 		}
+	}
+}
+
+func TestUpsertRejectsStalePublicationEdits(t *testing.T) {
+	s := applyFailingServer(t)
+	t.Setenv("EASY_WAF_NO_AUTO_APPLY", "1")
+	a := testApp(fmt.Sprintf("editconflict%d", time.Now().UnixNano()))
+	rec := putApp(t, s, a)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteApplication(context.Background(), a.ID) })
+
+	save := func(name string) *httptest.ResponseRecorder {
+		t.Helper()
+		draft := struct {
+			config.Application
+			ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
+		}{Application: a, ExpectedUpdatedAt: a.UpdatedAt}
+		draft.Name = name
+		raw, err := json.Marshal(draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		s.upsertApp(rec, httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(raw)))
+		return rec
+	}
+	winner := save("First operator")
+	if winner.Code != http.StatusOK {
+		t.Fatalf("save current draft: %d %s", winner.Code, winner.Body)
+	}
+	var saved config.Application
+	if err := json.Unmarshal(winner.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.UpdatedAt.After(a.UpdatedAt) {
+		t.Fatalf("revision did not advance: %s to %s", a.UpdatedAt, saved.UpdatedAt)
+	}
+
+	conflict := save("Second operator from old draft")
+	if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), `"code":"application_changed"`) {
+		t.Fatalf("save old draft: %d %s", conflict.Code, conflict.Body)
+	}
+	stored, err := s.Eng.Store.GetApplication(t.Context(), a.ID)
+	if err != nil || stored.Name != saved.Name || !stored.UpdatedAt.Equal(saved.UpdatedAt) {
+		t.Fatalf("conflict changed the stored publication: name=%q, updated_at=%s, error=%v", stored.Name, stored.UpdatedAt, err)
+	}
+
+	rec = httptest.NewRecorder()
+	s.deleteApp(rec, withURLParam(httptest.NewRequest(http.MethodDelete, "/api/v1/applications/x", nil), "id", a.ID))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := save("Deleted publication"); rec.Code != http.StatusConflict {
+		t.Fatalf("save deleted draft: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := s.Eng.Store.GetApplication(t.Context(), a.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("deleted draft recreated the publication: %v", err)
 	}
 }
 

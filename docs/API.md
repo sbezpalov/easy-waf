@@ -483,6 +483,7 @@ Creates or replaces an application (upsert), then applies it to HAProxy. A body 
 - **Request body:** a `config.Application`. Server-side processing:
   - `profile` is required and must be one of the names from `GET /profiles`.
   - `enabled` controls whether the application is published. An omitted or null value preserves the current state on update. On creation it defaults to `false`.
+  - `expected_updated_at` optionally protects an update. Send the exact `updated_at` value returned by the API with the application ID. If the application changed or was deleted, the API returns `409` with code `application_changed`. The panel leaves the draft open and refreshes the publication list.
   - `listen_mode` is normalised to `https_only` (default), `http_only`, `http_and_https` or `redirect_to_https`. Unknown values become `https_only`.
   - `certificate_id` is required unless `listen_mode` is `http_only`.
   - `id`, if given, must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` and be at most 128 bytes.

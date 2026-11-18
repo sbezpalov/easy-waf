@@ -271,7 +271,7 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	err = s.db.QueryRowContext(ctx, `
 		INSERT INTO applications (
 			id, name, public_host, backend_host, backend_port, backend_https,
 			backend_tls_verify, backend_tls_ca_file, backend_tls_server_name, websocket,
@@ -304,11 +304,15 @@ func (s *Store) UpsertApplication(ctx context.Context, a *config.Application) er
 			listen_mode = EXCLUDED.listen_mode,
 			enabled = EXCLUDED.enabled,
 			security = EXCLUDED.security,
-			updated_at = EXCLUDED.updated_at
+			updated_at = GREATEST(EXCLUDED.updated_at, applications.updated_at + interval '1 microsecond')
+		RETURNING updated_at
 	`, a.ID, a.Name, a.PublicHost, a.BackendHost, a.BackendPort, a.BackendHTTPS,
 		a.BackendTLSVerify, nullStrPtr(a.BackendTLSCAFile), nullStrPtr(a.BackendTLSServerName), a.WebSocket,
 		nullStrPtr(a.HealthPath), nullStrPtr(a.PathPrefix), rpJSON, ppJSON, a.Profile, nullStrPtr(a.CertificateID), a.ListenMode, a.Enabled, secJSON, a.CreatedAt, a.UpdatedAt,
-		bsJSON, a.BackendBalance, a.Maintenance, mbJSON, a.ForwardAuthURL, faJSON, rulesJSON)
+		bsJSON, a.BackendBalance, a.Maintenance, mbJSON, a.ForwardAuthURL, faJSON, rulesJSON).Scan(&a.UpdatedAt)
+	if err == nil {
+		a.UpdatedAt = a.UpdatedAt.UTC()
+	}
 	return err
 }
 

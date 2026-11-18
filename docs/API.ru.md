@@ -334,6 +334,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
 - `backend_tls_verify_disabled` — когда у сохранённого приложения `backend_https: true` и `backend_tls_verify: "none"`.
 - **Тело запроса:** `config.Application`. Обработка на сервере:
   - `profile` обязателен и должен быть одним из имён из `GET /profiles`.
+  - Для проверки версии записи передайте `expected_updated_at` с точным значением `updated_at` из ответа API и ID публикации. Если публикацию изменили или удалили, API вернёт `409` с кодом `application_changed`. Панель сохранит черновик открытым и обновит список публикаций.
   - `listen_mode` нормализуется к `https_only` (по умолчанию), `http_only`, `http_and_https` или `redirect_to_https`. Неизвестные значения превращаются в `https_only`.
   - `certificate_id` обязателен, если только `listen_mode` не равен `http_only`.
   - `id`, если указан, должен соответствовать `^[A-Za-z0-9][A-Za-z0-9_-]*$` и быть не длиннее 128 байт.

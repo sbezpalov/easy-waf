@@ -296,10 +296,11 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 	}
 	var payload struct {
 		config.Application
-		Enabled     *bool   `json:"enabled"`
-		Maintenance *bool   `json:"maintenance"`
-		HealthPath  *string `json:"health_path"`
-		PathPrefix  *string `json:"path_prefix"`
+		Enabled           *bool      `json:"enabled"`
+		Maintenance       *bool      `json:"maintenance"`
+		HealthPath        *string    `json:"health_path"`
+		PathPrefix        *string    `json:"path_prefix"`
+		ExpectedUpdatedAt *time.Time `json:"expected_updated_at"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -328,6 +329,10 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if payload.ExpectedUpdatedAt != nil && (a.ID == "" || payload.ExpectedUpdatedAt.IsZero()) {
+		http.Error(w, "expected_updated_at requires an application id and a nonzero timestamp", http.StatusBadRequest)
+		return
+	}
 
 	r, releaseMutation, ok := s.beginApplicationMutation(w, r)
 	if !ok {
@@ -346,6 +351,13 @@ func (s *Server) upsertApp(w http.ResponseWriter, r *http.Request) {
 			writeInternalError(w, err)
 			return
 		}
+	}
+	if expected := payload.ExpectedUpdatedAt; expected != nil && (!haveOld || !old.UpdatedAt.Equal(*expected)) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":  "application_changed",
+			"error": "The publication changed or was deleted. Reload its settings before saving.",
+		})
+		return
 	}
 
 	if haveOld && strings.TrimSpace(a.BackendTLSVerify) == "" {

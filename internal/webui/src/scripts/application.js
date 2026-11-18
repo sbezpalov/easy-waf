@@ -209,7 +209,9 @@
   }
 
   function clearAppFormFields() {
-    document.getElementById('app-edit-id').value = '';
+    const edit = document.getElementById('app-edit-id');
+    edit.value = '';
+    delete edit.dataset.updatedAt;
     document.getElementById('apps-edit-hint').classList.add('hidden');
     document.getElementById('name').value = '';
     document.getElementById('host').value = '';
@@ -1427,7 +1429,9 @@
     if (!a) return;
     setAppFormCollapsed(false);
     setAppFormTitle(a.name || '');
-    document.getElementById('app-edit-id').value = a.id;
+    const edit = document.getElementById('app-edit-id');
+    edit.value = a.id;
+    edit.dataset.updatedAt = a.updated_at || '';
     document.getElementById('apps-edit-hint').classList.remove('hidden');
     document.getElementById('name').value = a.name || '';
     document.getElementById('host').value = a.public_host || '';
@@ -3696,7 +3700,12 @@
   document.getElementById('save').onclick = async () => {
     const saveBtn = document.getElementById('save');
     await withBusy(saveBtn, async () => {
-      const editId = document.getElementById('app-edit-id').value.trim();
+      const edit = document.getElementById('app-edit-id');
+      const editId = edit.value.trim();
+      if (editId && !edit.dataset.updatedAt) {
+        showPublicationErrors({}, 'Open the publication from the list to load its current settings before saving.');
+        return;
+      }
       const draft = readPublicationBasics();
       const basicsErrors = validatePublicationBasics(draft, selectedPublicationCertificate());
       if (Object.keys(basicsErrors).length) {
@@ -3740,6 +3749,7 @@
       body.policy_rules = collectPublicationRules();
       if (editId) {
         body.id = editId;
+        body.expected_updated_at = edit.dataset.updatedAt;
         const prev = appsListCache.find((x) => x.id === editId);
         if (prev && prev.security) body.security = prev.security;
       } else {
@@ -3768,6 +3778,9 @@
         clearAppFormFields();
         setAppFormCollapsed(true);
         loadApps();
+      } else if (r.status === 409) {
+        showPublicationErrors({}, 'This publication changed or was deleted. Your draft is still open. Review the current settings before saving.');
+        void loadApps().catch(() => {});
       } else {
         const message = await apiMessage(r);
         showPublicationErrors({}, 'Application was not saved: ' + message + '. Your input is still available.');
