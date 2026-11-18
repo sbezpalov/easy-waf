@@ -3,6 +3,14 @@
 **Last updated:** 2026-11-18
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+
+**Windows developer verification:** `441d582` passed `go vet ./...` and
+`go test -p 1 -count=1 ./...` on Windows amd64 with Go 1.27.4 and Node.js
+26.13.1. The test run passed 795 top-level tests across 49 packages and
+skipped 84 top-level tests. The run used no PostgreSQL fixture or HAProxy,
+and platform-specific tests skipped where applicable. The publication
+test also passed under Git Bash.
+
 **Current local artifacts:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
