@@ -33,8 +33,9 @@
 #   EASY_WAF_NFT_MGMT_LAN=0         — skip nftables rules for management ports from RFC1918 (default: 1)
 #   EASY_WAF_NFT_MGMT_PORTS="8000 8443"
 #   EASY_WAF_EXTRA_LAN_CIDR=         — optional extra source CIDR for management ports
-#   EASY_WAF_NFT_EDGE=1             — open HAProxy edge tcp/80+443 (default 1)
+#   EASY_WAF_NFT_EDGE=1             — open HAProxy edge tcp/80+443 and udp/443 (default 1)
 #   EASY_WAF_NFT_EDGE=0             — skip edge rules in nftables
+#   EASY_WAF_NFT_ZABBIX_AGENT=1     — open TCP 10050 from RFC1918+loopback for an onboard Zabbix agent (default 0)
 #   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA DEB packages (default 1; set 0 to skip)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 1 = full appliance)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
@@ -175,6 +176,7 @@ easy_waf_load_nft_env_from_file_if_unset() {
   [[ -f "$f" ]] || return 0
   local key line val
   for key in EASY_WAF_NFT_EDGE EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_EXTRA_LAN_CIDR \
+    EASY_WAF_NFT_ZABBIX_AGENT \
     EASY_WAF_FIREWALLD_EDGE EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS; do
     if printenv "$key" &>/dev/null; then
       continue
@@ -1039,7 +1041,8 @@ configure_nftables_appliance() {
   local edge="${EASY_WAF_NFT_EDGE:-${EASY_WAF_FIREWALLD_EDGE:-1}}"
   # shellcheck source=lib/nftables-easy-waf.sh
   source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
-  easy_waf_nft_configure_appliance "$mgmt_lan" "$mgmt_ports" "$edge" "${EASY_WAF_EXTRA_LAN_CIDR:-}"
+  easy_waf_nft_configure_appliance "$mgmt_lan" "$mgmt_ports" "$edge" "${EASY_WAF_EXTRA_LAN_CIDR:-}" \
+    "${EASY_WAF_NFT_ZABBIX_AGENT:-0}"
 }
 
 # HAProxy is the public edge; ensure it is enabled at boot even when OS packages were skipped.
@@ -1154,7 +1157,10 @@ main() {
   fi
   easy_waf_post_install_summary
   log "Done. Management UI: use the EASY_WAF_LISTEN_HTTPS address from $CFG_DIR/easy-waf.env; cleartext HTTP is off unless explicitly enabled"
-  log "HAProxy edge: tcp 80+443 via nftables (disable with EASY_WAF_NFT_EDGE=0)"
+  log "HAProxy edge: tcp 80+443 and udp 443 via nftables (disable with EASY_WAF_NFT_EDGE=0)"
+  if [[ "${EASY_WAF_NFT_ZABBIX_AGENT:-0}" == "1" ]]; then
+    log "Zabbix agent: tcp 10050 allowed from RFC1918+loopback (EASY_WAF_NFT_ZABBIX_AGENT=1)"
+  fi
 }
 
 # Print appliance health after install (non-fatal; guides operator).

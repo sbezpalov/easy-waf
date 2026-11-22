@@ -775,6 +775,7 @@ Returns the current global settings.
   - `acme_email`: an empty string keeps the stored value, so the address cannot be cleared through this API. A nonempty contact must be one bare email address of at most 254 bytes, without display names, lists or surrounding whitespace. Invalid contacts return 400 without changing settings.
   - `management_allowed_cidrs`: `null` keeps the stored list. Otherwise the list must contain at least one entry, and every entry must be a valid CIDR prefix (`netip.ParsePrefix`, so a bare IP without `/n` is rejected). The new list is enforced from the next request on. A list that excludes your own address locks you out of the API and UI.
   - `prometheus_enabled`: turns `GET /metrics` on or off immediately.
+  - `firewall_zabbix_agent`: preference to allow **TCP 10050** (Zabbix agent) from RFC1918 + loopback in the managed nftables ruleset. Saving the preference alone does not open the port; apply with `POST /api/v1/host/firewall/zabbix-agent` or **Settings → Monitoring → Save & apply Zabbix firewall**. Easy Home WAF does not install or manage the Zabbix agent.
   - `notify_webhook_url`: empty disables certificate notifications. Otherwise it must be an absolute `http` or `https` URL. `easy-waf-acmed` POSTs JSON there once a day when a certificate needs attention. An empty string clears a stored URL. The value is not logged.
   - `notify_telegram_chat_id`, `notify_telegram_bot_token`: send the same notifications to a Telegram chat through the Bot API (`sendMessage`). The chat is a numeric ID or `@channel`; the token is the one @BotFather issued. The token is never returned: `GET` shows `notify_telegram_bot_token_set` instead, an empty token keeps the stored one, and clearing the chat ID clears the token.
   - `notify_blocked_spike_threshold` (default `0`, off): notify when the frontends refuse at least this many requests (HAProxy `dreq`) within 5 minutes; at most once per 30 minutes.
@@ -1395,6 +1396,7 @@ Routes that change the host (including netplan/firewall **commit**) need a passw
 | `PUT /api/v1/host/firewall/ruleset` | **410 Gone** — use apply-rollback + commit |
 | `POST /api/v1/host/firewall/apply` | **410 Gone** — use apply-rollback + commit |
 | `POST /api/v1/host/firewall/apply-rollback` | Apply a ruleset with automatic rollback; returns a token |
+| `POST /api/v1/host/firewall/zabbix-agent` | Enable/disable the marked LAN TCP 10050 accept; preference + apply-rollback (see [HOST-API.md](HOST-API.md)) |
 | `POST /api/v1/host/firewall/commit` | Confirm a pending firewall apply by token |
 | `GET /api/v1/host/services` | List the allowlisted systemd units and their state |
 | `POST /api/v1/host/services/{unit}/{action}` | Run `start`, `stop`, `restart`, `reload`, `enable`, `disable` or `try-restart` on an allowlisted unit |

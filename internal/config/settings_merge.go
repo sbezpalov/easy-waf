@@ -107,6 +107,8 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
 	case "prometheus_enabled":
 		return json.Unmarshal(raw, &out.PrometheusEnabled)
+	case "firewall_zabbix_agent":
+		return json.Unmarshal(raw, &out.FirewallZabbixAgent)
 	case "listen_ipv6":
 		return json.Unmarshal(raw, &out.ListenIPv6)
 	case "http3":

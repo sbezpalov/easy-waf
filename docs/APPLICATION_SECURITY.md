@@ -81,7 +81,7 @@ Presets are applied with `POST /api/v1/applications/{id}/security/mode` (see `in
 
 - **Home Assistant on a public IP** — profile `home-assistant` with the desired security-mode layers. One publication normally serves the web UI, Companion and API. Restricting `/api` to LAN CIDRs also blocks external `/api/websocket` and API clients; add such a restriction only when that is intended. See [HOME_ASSISTANT.md](HOME_ASSISTANT.md).
 - **Debugging a new upstream** — `reverse-proxy-only`: TLS + Host routing only; **no** WAF, CrowdSec, IPBL, or rate limit for that hostname. Intended for short-lived troubleshooting, not production.
-- **Internal Zabbix** — `trusted-lan` preset: no profile path blocks, basic WAF or bot heuristics while keeping rate limits and CrowdSec.
+- **Internal Zabbix (web UI as an application)** — `trusted-lan` preset: no profile path blocks, basic WAF or bot heuristics while keeping rate limits and CrowdSec. For an **on-host Zabbix agent** listening on TCP 10050 (not published through HAProxy), open the port in nftables via Settings → Monitoring — see [MONITORING.md](MONITORING.md#zabbix-agent-optional-on-host).
 - **Nextcloud with GeoIP deny list** — `custom`, enable **GeoIP**, policy `deny`, country list of regions to block; keep other layers as needed.
 
 ## API

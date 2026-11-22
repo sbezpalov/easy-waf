@@ -16,7 +16,8 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/staging"
 )
 
-const RulesPath = "/etc/nftables/easy-waf.nft"
+// RulesPath is the managed nftables file. Tests may override it.
+var RulesPath = "/etc/nftables/easy-waf.nft"
 
 // Status is the host firewall snapshot for the API.
 type Status struct {

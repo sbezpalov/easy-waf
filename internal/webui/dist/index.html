@@ -1162,9 +1162,16 @@
             <input type="checkbox" id="prometheus-enabled" />
             Enable Prometheus <code>/metrics</code>
           </label>
-          <div class="row" style="margin-top:0.5rem">
-            <button type="button" class="secondary" id="btn-prometheus-save">Save monitoring toggle</button>
+          <p class="dash-note">A Zabbix agent may already be installed on this appliance or host. Easy Home WAF does not install or manage the agent; this toggle only opens <strong>TCP 10050</strong> in the managed nftables ruleset from RFC1918 and loopback so the server can poll it. Do not expose 10050 to the WAN.</p>
+          <label style="display:flex;align-items:center;gap:0.5rem;margin:0.5rem 0">
+            <input type="checkbox" id="firewall-zabbix-agent" />
+            Allow Zabbix agent port <code>TCP 10050</code> (LAN / loopback)
+          </label>
+          <div class="row" style="margin-top:0.5rem;gap:0.5rem">
+            <button type="button" class="secondary" id="btn-prometheus-save">Save Prometheus toggle</button>
+            <button type="button" class="secondary" id="btn-zabbix-firewall-apply">Save &amp; apply Zabbix firewall</button>
           </div>
+          <p class="dash-note" style="margin-top:0.35rem">Zabbix firewall changes use the same 90s safety window as <a href="#network">Network → Firewall</a>: click <strong>Keep changes</strong> after apply, or the previous ruleset returns.</p>
         </div>
         <div class="panel" style="max-width:42rem;margin-top:0.75rem">
           <h3>Notifications</h3>
@@ -3755,6 +3762,8 @@
     document.getElementById('cs-engine-name').value = cachedSettings.crowdsec_engine_name || 'crowdsec';
     const promEl = document.getElementById('prometheus-enabled');
     if (promEl) promEl.checked = !!cachedSettings.prometheus_enabled;
+    const zabbixEl = document.getElementById('firewall-zabbix-agent');
+    if (zabbixEl) zabbixEl.checked = !!cachedSettings.firewall_zabbix_agent;
     const notifyEl = document.getElementById('notify-webhook-url');
     if (notifyEl) notifyEl.value = cachedSettings.notify_webhook_url || '';
     const tgChatEl = document.getElementById('notify-telegram-chat');
@@ -4806,7 +4815,97 @@
       }
       cachedSettings = await r.json();
       if (sm) {
-        sm.textContent = 'Monitoring toggle saved.';
+        sm.textContent = 'Prometheus toggle saved.';
+        sm.className = 'ok';
+      }
+    };
+  }
+  const btnZabbixFw = document.getElementById('btn-zabbix-firewall-apply');
+  if (btnZabbixFw) {
+    btnZabbixFw.onclick = async () => {
+      const sm = document.getElementById('settings-msg');
+      if (sm) {
+        sm.textContent = '';
+        sm.className = 'warn';
+      }
+      if (!cachedSettings) await loadSettingsPanel();
+      if (!cachedSettings) {
+        if (sm) sm.textContent = 'Use Load from server first.';
+        return;
+      }
+      const enabled = !!document.getElementById('firewall-zabbix-agent').checked;
+      const ok = await confirmDialog(
+        enabled
+          ? 'Open TCP 10050 for the Zabbix agent from RFC1918 and loopback in the managed firewall? A 90s safety window starts; click “Keep changes” to keep it.'
+          : 'Remove the Zabbix agent TCP 10050 allow rule from the managed firewall? A 90s safety window starts; click “Keep changes” to keep the removal.',
+        { danger: true, okLabel: 'Apply' }
+      );
+      if (!ok) return;
+      const r = await fetch('/api/v1/host/firewall/zabbix-agent', {
+        method: 'POST',
+        headers: hdr(),
+        body: JSON.stringify({ enabled, rollback_seconds: 90 })
+      });
+      if (!r.ok) {
+        const __m = await apiMessage(r);
+        toast(__m, 'err');
+        if (sm) sm.textContent = __m;
+        return;
+      }
+      const j = await r.json();
+      try {
+        const sr = await fetch('/api/v1/settings', { headers: hdr() });
+        if (sr.ok) {
+          cachedSettings = await sr.json();
+          const zabbixEl = document.getElementById('firewall-zabbix-agent');
+          if (zabbixEl) zabbixEl.checked = !!cachedSettings.firewall_zabbix_agent;
+        }
+      } catch (_) { /* keep local checkbox */ }
+      if (j && j.status === 'unchanged') {
+        const msg = enabled
+          ? 'Preference saved; TCP 10050 was already allowed.'
+          : 'Preference saved; TCP 10050 was already closed.';
+        if (sm) { sm.textContent = msg; sm.className = 'ok'; }
+        toast(msg, 'ok');
+        return;
+      }
+      if (!j || !j.token || !j.operation_id || !j.expires_at) {
+        clearHostRollbackCapability();
+        if (sm) {
+          sm.textContent = 'Applied, but the confirmation capability could not be verified. Waiting for the server safety rollback.';
+          sm.className = 'warn';
+        }
+        toast('Applied, but confirmation cannot be verified. Waiting for the safety rollback.', 'err', 12000);
+        await refreshHostRollbackStatus(true);
+        return;
+      }
+      const capability = {
+        kind: 'firewall',
+        token: j.token,
+        operation_id: j.operation_id,
+        expires_at: j.expires_at,
+        commit_url: '/api/v1/host/firewall/commit'
+      };
+      saveHostRollbackCapability(capability);
+      if (!showHostRollbackBanner({
+        kind: 'firewall',
+        operation_id: j.operation_id,
+        phase: 'pending',
+        expires_at: j.expires_at,
+        confirmable: true,
+        total: 1
+      }, capability)) {
+        if (sm) {
+          sm.textContent = 'Safety window expired. Verifying the current configuration.';
+          sm.className = 'warn';
+        }
+        await refreshHostRollbackStatus(true);
+        return;
+      }
+      await refreshHostRollbackStatus(false);
+      toast('Applied — confirm within the safety window.', 'warn', 8000);
+      if (sm) {
+        sm.textContent = 'Zabbix firewall applied. Click “Keep changes” before the timer ends.';
         sm.className = 'ok';
       }
     };

@@ -12,6 +12,19 @@ The management API (`easy-waf-api`) can expose a **Prometheus text exposition** 
 
 Enable the toggle in the UI (**Settings → Monitoring**) or `PATCH /api/v1/settings` with `{"prometheus_enabled": true}`.
 
+## Zabbix agent (optional, on-host)
+
+An operator may run a **Zabbix agent** on the same appliance or host (Easy Home WAF does **not** install, configure, or package the agent). The managed nftables policy drops unexpected inbound ports, so passive checks on the default agent port need an explicit allow.
+
+| Path | What it does |
+|------|----------------|
+| **Settings → Monitoring → Allow Zabbix agent port `TCP 10050`** then **Save & apply Zabbix firewall** | Sets `firewall_zabbix_agent` and patches `/etc/nftables/easy-waf.nft` with a marked rule that accepts **TCP 10050** only from **127.0.0.0/8** and **RFC1918**, then uses the same 90s apply-rollback window as Network → Firewall (**Keep changes** to commit). |
+| `POST /api/v1/host/firewall/zabbix-agent` | Body `{"enabled":true}` / `{"enabled":false}` (optional `rollback_seconds`). Same behaviour; needs step-up. |
+| `PATCH /api/v1/settings` `{"firewall_zabbix_agent":true}` | Stores the preference only; does **not** open the port. |
+| Install / repair | `EASY_WAF_NFT_ZABBIX_AGENT=1` with `install.sh` or `scripts/fix-nftables-edge.sh` writes the same marked rule into a fresh managed ruleset (default **0**). |
+
+Do **not** forward TCP 10050 from the WAN. After an automatic safety rollback, re-apply if the port must stay open. Active Zabbix checks initiated from the agent outbound are unaffected by this inbound allow.
+
 ## Prometheus scrape configuration
 
 Scrape the **management HTTPS** listener from an address allowed by `management_allowed_cidrs` (often a private network or VPN). Cleartext HTTP is disabled by default and should only be used when an explicit legacy listener is configured.

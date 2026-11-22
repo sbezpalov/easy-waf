@@ -321,6 +321,11 @@ type GlobalSettings struct {
 	// Not behind a session JWT: protected by management_allowed_cidrs and, when
 	// EASY_WAF_METRICS_TOKEN is set, a static bearer token. Default off.
 	PrometheusEnabled bool `json:"prometheus_enabled"`
+	// FirewallZabbixAgent records the operator preference to allow TCP 10050
+	// (Zabbix agent) from RFC1918 + loopback in the managed nftables ruleset.
+	// Saving the preference alone does not open the port; apply it with
+	// POST /api/v1/host/firewall/zabbix-agent (or the Settings UI button).
+	FirewallZabbixAgent bool `json:"firewall_zabbix_agent"`
 	// ListenIPv6 adds IPv6-only binds on :80 and :443 next to the IPv4 ones.
 	// The host must have IPv6 enabled, or HAProxy cannot bind on reload.
 	ListenIPv6 bool `json:"listen_ipv6"`
@@ -399,6 +404,7 @@ func DefaultSettings(stateDir string) GlobalSettings {
 		BlockedUserAgentsEnabled: false,
 		ManagementAllowedCIDRs:   DefaultManagementCIDRs(),
 		PrometheusEnabled:        false,
+		FirewallZabbixAgent:      false,
 		SecurityHeadersEnabled:   true,
 	}
 }

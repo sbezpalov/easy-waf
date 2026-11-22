@@ -20,6 +20,7 @@ easy_waf_nft_write_ruleset() {
   local mgmt_ports="${2:-8000 8443}"
   local edge="${3:-1}"
   local extra_cidr="${4:-}"
+  local zabbix="${5:-0}"
 
   local port_list=""
   local p
@@ -41,6 +42,14 @@ easy_waf_nft_write_ruleset() {
     udp dport 443 accept"
   fi
 
+  local zabbix_block=""
+  if [[ "$zabbix" == "1" ]]; then
+    local znets
+    znets="$(easy_waf_nft_private_nets "$extra_cidr")"
+    zabbix_block="    # easy-waf:zabbix-agent
+    ip saddr { ${znets} } tcp dport 10050 accept"
+  fi
+
   mkdir -p "$(dirname "$EASY_WAF_NFT_RULES")"
   cat >"$EASY_WAF_NFT_RULES" <<EOF
 #!/usr/sbin/nft -f
@@ -51,6 +60,8 @@ table inet easy_waf {
     type filter hook input priority filter; policy drop;
     ct state established,related accept
     iifname "lo" accept
+${zabbix_block:+
+$zabbix_block}
     tcp dport 22 accept
 ${mgmt_block:+
 $mgmt_block}
@@ -146,8 +157,9 @@ easy_waf_nft_configure_appliance() {
   local mgmt_ports="${2:-8000 8443}"
   local edge="${3:-1}"
   local extra_cidr="${4:-}"
+  local zabbix="${5:-${EASY_WAF_NFT_ZABBIX_AGENT:-0}}"
 
-  easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr"
+  easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr" "$zabbix"
   easy_waf_nft_write_guard "$mgmt_lan" "$mgmt_ports" "$extra_cidr"
   easy_waf_nft_ensure_main_conf
   easy_waf_nft_apply || return 1

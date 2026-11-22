@@ -94,19 +94,25 @@ func TestApplySettingsJSONPatch_prometheusEnabled(t *testing.T) {
 	if base.PrometheusEnabled {
 		t.Fatal("default should be off")
 	}
-	out, err := ApplySettingsJSONPatch(base, []byte(`{"prometheus_enabled":true}`))
+	out, err := ApplySettingsJSONPatch(base, []byte(`{"prometheus_enabled":true,"firewall_zabbix_agent":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !out.PrometheusEnabled {
 		t.Fatal("expected prometheus on")
 	}
-	out2, err := ApplySettingsJSONPatch(out, []byte(`{"prometheus_enabled":false}`))
+	if !out.FirewallZabbixAgent {
+		t.Fatal("expected firewall_zabbix_agent on")
+	}
+	out2, err := ApplySettingsJSONPatch(out, []byte(`{"prometheus_enabled":false,"firewall_zabbix_agent":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out2.PrometheusEnabled {
 		t.Fatal("expected prometheus off")
+	}
+	if out2.FirewallZabbixAgent {
+		t.Fatal("expected firewall_zabbix_agent off")
 	}
 }
 

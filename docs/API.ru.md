@@ -622,6 +622,7 @@ curl -sk -X POST "$BASE/api/v1/apply" \
   - `acme_email`: пустая строка сохраняет прежнее значение, поэтому очистить адрес через этот API нельзя. Непустой контакт должен быть одним email-адресом без отображаемого имени, списка и пробелов по краям, не длиннее 254 байт. Неверный контакт возвращает 400 без изменения настроек.
   - `management_allowed_cidrs`: `null` сохраняет прежний список. В остальных случаях список должен содержать хотя бы один элемент, и каждый элемент должен быть допустимым CIDR-префиксом (`netip.ParsePrefix`, поэтому голый IP без `/n` отклоняется). Новый список действует начиная со следующего запроса. Список, не включающий ваш собственный адрес, закроет вам доступ к API и UI.
   - `prometheus_enabled`: немедленно включает или выключает `GET /metrics`.
+  - `firewall_zabbix_agent`: предпочтение открыть **TCP 10050** (агент Zabbix) из RFC1918 и loopback в управляемом наборе nftables. Само сохранение настройки порт не открывает; применяйте через `POST /api/v1/host/firewall/zabbix-agent` или **Settings → Monitoring → Save & apply Zabbix firewall**. Easy Home WAF не устанавливает и не управляет агентом Zabbix.
   - `notify_webhook_url`: пустая строка выключает уведомления о сертификатах. Иначе это абсолютный URL `http` или `https`. `easy-waf-acmed` раз в сутки отправляет туда JSON, если сертификат требует внимания. Пустая строка стирает сохранённый URL. Значение не пишется в журнал.
   - `notify_telegram_chat_id`, `notify_telegram_bot_token`: те же уведомления в чат Telegram через Bot API (`sendMessage`). Чат — числовой ID или `@channel`, токен — выданный @BotFather. Токен никогда не возвращается: `GET` показывает вместо него `notify_telegram_bot_token_set`, пустой токен оставляет сохранённый, а очистка chat ID стирает и токен.
   - `notify_blocked_spike_threshold` (по умолчанию `0`, выключено): уведомить, если frontend отклонили не меньше этого числа запросов (HAProxy `dreq`) за 5 минут; не чаще раза в 30 минут.
@@ -1220,9 +1221,10 @@ Readiness-проба. Пингует PostgreSQL с таймаутом 2 секу
 | `POST /api/v1/host/network/netplan/apply` | Применить YAML netplan с автоматическим откатом; возвращает токен |
 | `POST /api/v1/host/network/netplan/commit` | Подтвердить ожидающий apply netplan по токену |
 | `GET /api/v1/host/firewall` | Статус и набор правил nftables |
-| `PUT /api/v1/host/firewall/ruleset` | Проверить, установить и сразу применить управляемый набор правил nftables, без отката |
-| `POST /api/v1/host/firewall/apply` | Загрузить установленный управляемый набор правил, без отката |
+| `PUT /api/v1/host/firewall/ruleset` | **410 Gone** — используйте apply-rollback + commit |
+| `POST /api/v1/host/firewall/apply` | **410 Gone** — используйте apply-rollback + commit |
 | `POST /api/v1/host/firewall/apply-rollback` | Применить набор правил с автоматическим откатом; возвращает токен |
+| `POST /api/v1/host/firewall/zabbix-agent` | Включить/выключить помеченный LAN-accept TCP 10050; preference + apply-rollback (см. [HOST-API.md](HOST-API.md)) |
 | `POST /api/v1/host/firewall/commit` | Подтвердить ожидающий apply файрвола по токену |
 | `GET /api/v1/host/services` | Список юнитов systemd из allowlist и их состояние |
 | `POST /api/v1/host/services/{unit}/{action}` | Выполнить `start`, `stop`, `restart`, `reload`, `enable`, `disable` или `try-restart` для юнита из allowlist |

@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
+	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/host/apt"
 	"github.com/easy-waf/easy-waf/internal/host/diag"
 	"github.com/easy-waf/easy-waf/internal/host/disk"
@@ -75,6 +76,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 			r.Post("/firewall/apply", s.hostApplyFirewall)
 			r.Post("/firewall/apply-rollback", s.hostFirewallApplyRB)
 			r.Post("/firewall/commit", s.hostFirewallCommit)
+			r.Post("/firewall/zabbix-agent", s.hostFirewallZabbixAgent)
 
 			r.Post("/services/{unit}/{action}", s.hostServiceAction)
 
@@ -278,6 +280,78 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 		"token_sha256": auditRollbackTokenDigest(body.Token),
 	}, false)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "committed"})
+}
+
+// hostFirewallZabbixAgent toggles the marked LAN-only TCP 10050 accept in the
+// managed nftables file and records the preference in global settings. When the
+// ruleset text changes, the same apply-rollback safety window as a manual
+// firewall edit is used.
+func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled         bool `json:"enabled"`
+		RollbackSeconds int  `json:"rollback_seconds"`
+	}
+	if err := decodeJSONRequest(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	current, err := nft.ReadManagedRuleset()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "managed nftables ruleset missing; run scripts/fix-nftables-edge.sh or install with EASY_WAF_NFT_EDGE",
+			})
+			return
+		}
+		writeInternalError(w, err)
+		return
+	}
+	next, changed := nft.EnsureZabbixAgentRule(current, body.Enabled)
+	if err := s.persistFirewallZabbixPreference(r.Context(), body.Enabled); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if !changed {
+		s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
+			"enabled": body.Enabled,
+			"changed": false,
+		}, false)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "unchanged",
+			"enabled": body.Enabled,
+			"port":    nft.ZabbixAgentPort,
+		})
+		return
+	}
+	sec := rollback.ClampRollbackSeconds(body.RollbackSeconds)
+	tok, expires, err := nft.ApplyRulesetWithRollback(r.Context(), next, sec)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
+		"enabled":          body.Enabled,
+		"changed":          true,
+		"token_sha256":     auditRollbackTokenDigest(tok),
+		"rollback_seconds": sec,
+		"expires_at":       expires.UTC().Format(time.RFC3339),
+	}, true)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":       "applied",
+		"enabled":      body.Enabled,
+		"port":         nft.ZabbixAgentPort,
+		"token":        tok,
+		"operation_id": auditRollbackTokenDigest(tok),
+		"expires_at":   expires.UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) persistFirewallZabbixPreference(ctx context.Context, enabled bool) error {
+	_, err := s.Eng.UpdateSettings(ctx, func(cur config.GlobalSettings) (config.GlobalSettings, error) {
+		cur.FirewallZabbixAgent = enabled
+		return cur, nil
+	})
+	return err
 }
 
 func (s *Server) hostListServices(w http.ResponseWriter, r *http.Request) {

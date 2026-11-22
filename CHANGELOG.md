@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Zabbix agent firewall toggle.** Optional LAN/loopback allow for **TCP 10050** when a Zabbix agent is already on the appliance or host (Easy Home WAF does not install the agent). Settings → Monitoring, `firewall_zabbix_agent`, `POST /api/v1/host/firewall/zabbix-agent` (apply-rollback), and installer env **`EASY_WAF_NFT_ZABBIX_AGENT=1`**. See [MONITORING.md](docs/MONITORING.md).
+
+### Documentation
+
+- Synced security/API/host docs with post-consilium behaviour: installer edge opens **443/udp** with **80/443 tcp**; package `postinst` installs polkit + HAProxy drop-in; Russian API host firewall table matches the **410 Gone** apply-rollback path; Zabbix 10050 documented.
+
 ## [1.6.1] - Unreleased
 
 ### Upgrade notes
