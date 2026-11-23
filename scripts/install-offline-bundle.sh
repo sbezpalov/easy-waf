@@ -45,7 +45,7 @@ cd "$SCRIPT_DIR"
   exit 1
 }
 echo "[offline-install] verifying bundle contents"
-sha256sum -c --quiet SHA256SUMS || {
+sha256sum -c --strict --quiet SHA256SUMS || {
   echo "[offline-install] bundle verification failed; do not install it" >&2
   exit 1
 }

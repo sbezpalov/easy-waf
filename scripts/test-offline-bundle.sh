@@ -15,6 +15,15 @@ printf 'test payload\n' >"${TEMP_DIR}/payload.txt"
 )
 
 "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null
+cp "${TEMP_DIR}/SHA256SUMS" "${TEMP_DIR}/original-sums"
+printf 'malformed checksum record\n' >>"${TEMP_DIR}/SHA256SUMS"
+if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >"${TEMP_DIR}/verify-error" 2>&1; then
+  echo "test-offline-bundle: accepted a malformed outer checksum manifest" >&2
+  exit 1
+fi
+grep -Fq 'bundle verification failed' "${TEMP_DIR}/verify-error"
+mv "${TEMP_DIR}/original-sums" "${TEMP_DIR}/SHA256SUMS"
+
 printf 'tampered\n' >>"${TEMP_DIR}/payload.txt"
 if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
   echo "test-offline-bundle: tampered bundle was accepted" >&2
