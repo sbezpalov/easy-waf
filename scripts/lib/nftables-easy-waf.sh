@@ -45,7 +45,7 @@ easy_waf_nft_write_ruleset() {
   local zabbix_block=""
   if [[ "$zabbix" == "1" ]]; then
     local znets
-    znets="$(easy_waf_nft_private_nets "$extra_cidr")"
+    znets="$(easy_waf_nft_private_nets)"
     zabbix_block="    # easy-waf:zabbix-agent
     ip saddr { ${znets} } tcp dport 10050 accept"
   fi

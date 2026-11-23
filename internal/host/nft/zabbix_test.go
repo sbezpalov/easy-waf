@@ -78,3 +78,21 @@ func TestEnsureZabbixAgentRuleCustomFileWithoutLo(t *testing.T) {
 		t.Fatalf("expected insert into custom chain, got changed=%v out=%q", changed, out)
 	}
 }
+
+func TestEnsureZabbixAgentRuleMatchesLegacyMultilineSet(t *testing.T) {
+	t.Parallel()
+	legacy := "    " + zabbixMarker + "\n" +
+		"    ip saddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16\n" +
+		", 198.51.100.0/24 } tcp dport 10050 accept\n"
+	base := strings.Replace(sampleRuleset, "    tcp dport 22 accept", "\n\n    tcp dport 22 accept", 1)
+	withRule := strings.Replace(base, "    tcp dport 22 accept", legacy+"    tcp dport 22 accept", 1)
+	if got, changed := EnsureZabbixAgentRule(withRule, true); changed || got != withRule {
+		t.Fatal("enabling an existing legacy rule should leave it in place")
+	}
+	if got, changed := EnsureZabbixAgentRule(withRule, false); !changed || got != base {
+		t.Fatalf("disabling should remove only the marked multiline rule, got %q", got)
+	}
+	if got, changed := EnsureZabbixAgentRule(base, false); changed || got != base {
+		t.Fatal("disabling an absent rule should preserve unrelated whitespace")
+	}
+}

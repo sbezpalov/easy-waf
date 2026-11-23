@@ -288,13 +288,18 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 // firewall edit is used.
 func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Enabled         bool `json:"enabled"`
-		RollbackSeconds int  `json:"rollback_seconds"`
+		Enabled         *bool `json:"enabled"`
+		RollbackSeconds int   `json:"rollback_seconds"`
 	}
 	if err := decodeJSONRequest(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	if body.Enabled == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enabled is required"})
+		return
+	}
+	enabled := *body.Enabled
 	current, err := nft.ReadManagedRuleset()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -306,19 +311,19 @@ func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request)
 		writeInternalError(w, err)
 		return
 	}
-	next, changed := nft.EnsureZabbixAgentRule(current, body.Enabled)
-	if err := s.persistFirewallZabbixPreference(r.Context(), body.Enabled); err != nil {
+	next, changed := nft.EnsureZabbixAgentRule(current, enabled)
+	if err := s.persistFirewallZabbixPreference(r.Context(), enabled); err != nil {
 		writeInternalError(w, err)
 		return
 	}
 	if !changed {
 		s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
-			"enabled": body.Enabled,
+			"enabled": enabled,
 			"changed": false,
 		}, false)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "unchanged",
-			"enabled": body.Enabled,
+			"enabled": enabled,
 			"port":    nft.ZabbixAgentPort,
 		})
 		return
@@ -330,7 +335,7 @@ func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
-		"enabled":          body.Enabled,
+		"enabled":          enabled,
 		"changed":          true,
 		"token_sha256":     auditRollbackTokenDigest(tok),
 		"rollback_seconds": sec,
@@ -338,7 +343,7 @@ func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request)
 	}, true)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       "applied",
-		"enabled":      body.Enabled,
+		"enabled":      enabled,
 		"port":         nft.ZabbixAgentPort,
 		"token":        tok,
 		"operation_id": auditRollbackTokenDigest(tok),

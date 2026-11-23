@@ -20,7 +20,8 @@ const (
 // Managed rulesets may carry a prior Zabbix block. The accept line may include
 // EASY_WAF_EXTRA_LAN_CIDR from the installer, so match by marker + port only.
 var zabbixBlockRE = regexp.MustCompile(`(?m)^[ \t]*` + regexp.QuoteMeta(zabbixMarker) + `\r?\n` +
-	`[ \t]*ip saddr \{[^}\n]+\} tcp dport 10050 accept\r?\n?`)
+	`[ \t]*ip saddr \{[0-9.,/ \t\r\n]+\} tcp dport 10050 accept[ \t]*\r?$` +
+	`\n?`)
 
 // ReadManagedRuleset returns the on-disk managed nftables file contents.
 // Live `nft list ruleset` output is not used: it includes the guard table and
@@ -42,26 +43,16 @@ func HasZabbixAgentRule(ruleset string) bool {
 // EnsureZabbixAgentRule adds or removes the marked TCP 10050 LAN accept block.
 // Returns the updated ruleset and whether the text changed.
 func EnsureZabbixAgentRule(ruleset string, enabled bool) (string, bool) {
-	trimmed := strings.TrimRight(ruleset, "\n") + "\n"
-	without := zabbixBlockRE.ReplaceAllString(trimmed, "")
-	without = collapseExtraBlankLines(without)
-
 	if !enabled {
-		if without == trimmed {
-			return ruleset, false
-		}
-		return without, true
+		updated := zabbixBlockRE.ReplaceAllString(ruleset, "")
+		return updated, updated != ruleset
 	}
-	if HasZabbixAgentRule(without) {
-		return without, without != trimmed
+	if HasZabbixAgentRule(ruleset) {
+		return ruleset, false
 	}
 
 	block := "    " + zabbixMarker + "\n    " + zabbixRule + "\n"
-	updated := insertZabbixBlock(without, block)
-	if updated == trimmed {
-		return ruleset, false
-	}
-	return updated, true
+	return insertZabbixBlock(ruleset, block), true
 }
 
 func insertZabbixBlock(ruleset, block string) string {
@@ -77,9 +68,4 @@ func insertZabbixBlock(ruleset, block string) string {
 		return ruleset[:loc[1]] + block + ruleset[loc[1]:]
 	}
 	return strings.TrimRight(ruleset, "\n") + "\n" + block
-}
-
-func collapseExtraBlankLines(s string) string {
-	re := regexp.MustCompile(`\n{3,}`)
-	return re.ReplaceAllString(s, "\n\n")
 }

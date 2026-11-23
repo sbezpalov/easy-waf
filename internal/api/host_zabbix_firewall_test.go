@@ -33,3 +33,15 @@ func TestHostFirewallZabbixAgentMissingRuleset(t *testing.T) {
 		t.Fatalf("body=%s", rec.Body.String())
 	}
 }
+
+func TestHostFirewallZabbixAgentRequiresEnabled(t *testing.T) {
+	s := &Server{}
+	for _, body := range []string{`{}`, `{"enabled":null}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/host/firewall/zabbix-agent", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.hostFirewallZabbixAgent(rec, req)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "enabled is required") {
+			t.Fatalf("request %s: code=%d body=%s", body, rec.Code, rec.Body.String())
+		}
+	}
+}

@@ -95,16 +95,29 @@ printf '#!/bin/sh\nprintf "0\\n"\n' >"$ROOT/bin/id"
 chmod 0700 "$ROOT/bin/id"
 export PATH="$ROOT/bin:$PATH"
 export EASY_WAF_ENV_FILE="$ROOT/firewall.env"
-printf 'UNUSED=%s\nROOT_ENV_UNUSED_SECRET=fixture-only\nEASY_WAF_NFT_MGMT_LAN=1\nEASY_WAF_NFT_MGMT_PORTS="8080 9443"\nEASY_WAF_NFT_EDGE=0\nEASY_WAF_EXTRA_LAN_CIDR=198.51.100.0/24\n' \
+printf 'UNUSED=%s\nROOT_ENV_UNUSED_SECRET=fixture-only\nEASY_WAF_NFT_MGMT_LAN=1\nEASY_WAF_NFT_MGMT_PORTS="8080 9443"\nEASY_WAF_NFT_EDGE=0\nEASY_WAF_EXTRA_LAN_CIDR=198.51.100.0/24\nEASY_WAF_NFT_ZABBIX_AGENT=1\n' \
   "\$(touch \"$marker\")" >"$EASY_WAF_ENV_FILE"
 export EASY_WAF_NFT_EDGE=1
 bash "$ROOT/repair/fix-nftables-edge.sh" >"$ROOT/repair-log" 2>&1
 [[ ! -e "$marker" ]] || fail 'repair executed env file'
-printf '%s\n' 1 '8080 9443' 0 '198.51.100.0/24' >"$ROOT/expected"
+printf '%s\n' 1 '8080 9443' 0 '198.51.100.0/24' 1 >"$ROOT/expected"
 cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'repair lost selected firewall options'
 printf 'EASY_WAF_FIREWALLD_MGMT_LAN=0\nEASY_WAF_FIREWALLD_MGMT_PORTS="9000 9443"\nEASY_WAF_FIREWALLD_EDGE=0\n' >"$EASY_WAF_ENV_FILE"
-unset EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_NFT_EDGE EASY_WAF_EXTRA_LAN_CIDR
+unset EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_NFT_EDGE EASY_WAF_EXTRA_LAN_CIDR EASY_WAF_NFT_ZABBIX_AGENT
 bash "$ROOT/repair/fix-nftables-edge.sh" >"$ROOT/repair-log" 2>&1
-printf '%s\n' 0 '9000 9443' 0 '' >"$ROOT/expected"
+printf '%s\n' 0 '9000 9443' 0 '' 0 >"$ROOT/expected"
 cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'repair lost legacy aliases'
+
+# shellcheck source=lib/nftables-easy-waf.sh
+source "$SCRIPT_DIR/lib/nftables-easy-waf.sh"
+EASY_WAF_NFT_RULES="$ROOT/rendered.nft"
+easy_waf_nft_write_ruleset 1 '8080 9443' 0 '198.51.100.0/24' 1
+grep -F '198.51.100.0/24 } tcp dport { 8080, 9443 } accept' "$EASY_WAF_NFT_RULES" >/dev/null ||
+  fail 'extra management CIDR was lost'
+grep -Fx '    ip saddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport 10050 accept' "$EASY_WAF_NFT_RULES" >/dev/null ||
+  fail 'Zabbix rule must use the default LAN ranges'
+easy_waf_nft_write_ruleset 1 '8080 9443' 0 '198.51.100.0/24' 0
+if grep -qF 'tcp dport 10050' "$EASY_WAF_NFT_RULES"; then
+  fail 'Zabbix rule was emitted with the switch off'
+fi
 echo 'OK: root env inputs stay data'
