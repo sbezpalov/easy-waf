@@ -3001,15 +3001,15 @@
       const enabled = !!document.getElementById('firewall-zabbix-agent').checked;
       const ok = await confirmDialog(
         enabled
-          ? 'Open TCP 10050 for the Zabbix agent from RFC1918 and loopback in the managed firewall? A 90s safety window starts; click “Keep changes” to keep it.'
-          : 'Remove the Zabbix agent TCP 10050 allow rule from the managed firewall? A 90s safety window starts; click “Keep changes” to keep the removal.',
+          ? 'Apply the managed firewall with TCP 10050 allowed for Zabbix from RFC1918 and loopback? Click “Keep changes” within 90s to retain it.'
+          : 'Apply the managed firewall with the Zabbix TCP 10050 rule removed? Click “Keep changes” within 90s to retain it.',
         { danger: true, okLabel: 'Apply' }
       );
       if (!ok) return;
       const r = await fetch('/api/v1/host/firewall/zabbix-agent', {
         method: 'POST',
         headers: hdr(),
-        body: JSON.stringify({ enabled, rollback_seconds: 90 })
+        body: JSON.stringify({ enabled, reapply: true, rollback_seconds: 90 })
       });
       if (!r.ok) {
         const __m = await apiMessage(r);

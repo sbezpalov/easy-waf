@@ -19,11 +19,13 @@ An operator may run a **Zabbix agent** on the same appliance or host (Easy Home 
 | Path | What it does |
 |------|----------------|
 | **Settings → Monitoring → Allow Zabbix agent port `TCP 10050`** then **Save & apply Zabbix firewall** | Sets `firewall_zabbix_agent` and patches `/etc/nftables/easy-waf.nft` with a marked rule that accepts **TCP 10050** only from **127.0.0.0/8** and **RFC1918**, then uses the same 90s apply-rollback window as Network → Firewall (**Keep changes** to commit). |
-| `POST /api/v1/host/firewall/zabbix-agent` | Body `{"enabled":true}` / `{"enabled":false}` (optional `rollback_seconds`). Same behaviour; needs step-up. |
+| `POST /api/v1/host/firewall/zabbix-agent` | Body `{"enabled":true}` / `{"enabled":false}` (optional `rollback_seconds` and `reapply`). Use `"reapply":true` to reload the managed firewall even when the file already has the requested setting. Requires step-up. |
 | `PATCH /api/v1/settings` `{"firewall_zabbix_agent":true}` | Stores the preference only; does **not** open the port. |
 | Install / repair | `EASY_WAF_NFT_ZABBIX_AGENT=1` with `install.sh` or `scripts/fix-nftables-edge.sh` writes the same marked rule into a fresh managed ruleset (default **0**). |
 
 **Managed Zabbix rule** in Settings → Monitoring shows whether the managed file contains the marked rule, including rules enabled by the installer. The checkbox shows the saved preference, which remains saved after a safety rollback. Use **Keep changes** to retain a staged rule. Confirm reachability separately from the Zabbix server.
+
+If the kernel still has an old rule after an upgrade, set the checkbox as desired, click **Save & apply Zabbix firewall**, and confirm within the safety window. The panel reapplies the managed file even when the checkbox already matches it.
 
 Do **not** forward TCP 10050 from the WAN. After an automatic safety rollback, re-apply if the port must stay open. Active Zabbix checks initiated from the agent outbound are unaffected by this inbound allow.
 

@@ -55,21 +55,25 @@ func TestNftApplyConfirmDisablesZabbixInKernel(t *testing.T) {
 	})
 	disabled, _ := firewall.EnsureZabbixAgentRule(baseline, false)
 	runner := &nftKernelRunner{}
-	if err := staging.WithFile("zabbix-test-*.nft", []byte(disabled), func(path string) error {
-		if resp := nftApplyConfirm(t.Context(), runner, path, "90", testToken); !resp.OK {
-			t.Fatalf("apply failed: %+v", resp)
+	applyDisabled := func(t *testing.T) {
+		t.Helper()
+		if err := staging.WithFile("zabbix-test-*.nft", []byte(disabled), func(path string) error {
+			if resp := nftApplyConfirm(t.Context(), runner, path, "90", testToken); !resp.OK {
+				t.Fatalf("apply failed: %+v", resp)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+		if got := nft("list", "table", "inet", table); strings.Contains(got, "tcp dport 10050") || strings.Count(got, "tcp dport 22 accept") != 1 {
+			t.Fatalf("apply retained old or duplicate rules:\n%s", got)
+		}
+		nft("list", "table", "inet", foreignTable)
 	}
-	if got := nft("list", "table", "inet", table); strings.Contains(got, "tcp dport 10050") || strings.Count(got, "tcp dport 22 accept") != 1 {
-		t.Fatalf("apply retained old or duplicate rules:\n%s", got)
-	}
+	applyDisabled(t)
 	if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != disabled {
 		t.Fatalf("apply did not save the submitted source: %q, %v", got, err)
 	}
-	nft("list", "table", "inet", foreignTable)
 	if err := RunRevert("nft", testToken); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +82,19 @@ func TestNftApplyConfirmDisablesZabbixInKernel(t *testing.T) {
 	}
 	if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != baseline {
 		t.Fatalf("rollback did not restore the original source: %q, %v", got, err)
+	}
+
+	// Older brokers saved the edited file without removing the old kernel
+	// rule. Applying the same file again must reconcile that existing drift.
+	if err := os.WriteFile(nftRulesPath, []byte(disabled), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applyDisabled(t)
+	if resp := nftCommit(t.Context(), runner, testToken); !resp.OK {
+		t.Fatalf("confirming the reapplied rules failed: %+v", resp)
+	}
+	if got := nft("list", "table", "inet", table); strings.Contains(got, "tcp dport 10050") {
+		t.Fatalf("confirming the reapplied rules restored the stale rule:\n%s", got)
 	}
 }
 

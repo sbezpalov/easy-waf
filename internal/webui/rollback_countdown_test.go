@@ -155,5 +155,32 @@ context.saveHostRollbackCapability(capability);
   delete snapshot.managed_ruleset;
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, '', 'editor exposed unrelated kernel tables');
+
+  const applyStart = page.indexOf('  const btnZabbixFw =');
+  const applyEnd = page.indexOf('  const btnNotifySave =', applyStart);
+  assert.ok(applyStart >= 0 && applyEnd > applyStart, 'Zabbix controls not found');
+  const posted = [];
+  const applied = {token: 'test-token', operation_id: operationID, expires_at: pendingFirewall.expires_at};
+  let savedCapability;
+  const applyContext = {
+    cachedSettings: {firewall_zabbix_agent: false},
+    document: {getElementById: element}, hdr: () => ({}), toast: () => {},
+    confirmDialog: async () => true, loadZabbixFirewallStatus: async () => {},
+    saveHostRollbackCapability: cap => {savedCapability = cap;},
+    showHostRollbackBanner: () => true, refreshHostRollbackStatus: async () => {},
+    fetch: async (path, init) => {
+      if (path === '/api/v1/settings') return {ok: true, json: async () => ({firewall_zabbix_agent: false})};
+      assert.equal(path, '/api/v1/host/firewall/zabbix-agent');
+      assert.equal(init.method, 'POST');
+      posted.push(JSON.parse(init.body));
+      return {ok: true, json: async () => applied};
+    }
+  };
+  element('firewall-zabbix-agent').checked = false;
+  vm.runInNewContext(page.slice(applyStart, applyEnd), applyContext);
+  await element('btn-zabbix-firewall-apply').onclick();
+  assert.deepEqual(posted, [{enabled: false, reapply: true, rollback_seconds: 90}]);
+  assert.equal(savedCapability.commit_url, '/api/v1/host/firewall/commit');
+  assert.equal(savedCapability.token, applied.token);
 })().catch(err => {console.error(err); process.exitCode = 1});
 `

@@ -60,14 +60,14 @@ jobs:
           cache: true
       - name: Install native nftables
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends nftables util-linux
-      - name: Rollback restores real nftables in a private network namespace
+      - name: Apply and rollback real nftables in a private network namespace
         run: |
           set -euo pipefail
           test_dir="$(mktemp -d)"
           trap 'rm -rf "$test_dir"' EXIT
           CGO_ENABLED=0 go test -tags=integration -c -o "$test_dir/hostd.test" ./internal/hostd
           sudo unshare --net -- env RUN_NFT_ROLLBACK_INTEGRATION=1 \
-            "$test_dir/hostd.test" -test.run '^TestNftRollbackReplacesManagedTables$' -test.v -test.timeout 30s
+            "$test_dir/hostd.test" -test.run '^TestNft(ApplyConfirmDisablesZabbixInKernel|RollbackReplacesManagedTables)$' -test.v -test.timeout 30s
 
   body-policy:
     runs-on: ubuntu-latest

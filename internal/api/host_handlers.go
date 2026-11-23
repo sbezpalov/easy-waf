@@ -283,12 +283,12 @@ func (s *Server) hostFirewallCommit(w http.ResponseWriter, r *http.Request) {
 }
 
 // hostFirewallZabbixAgent toggles the marked LAN-only TCP 10050 accept in the
-// managed nftables file and records the preference in global settings. When the
-// ruleset text changes, the same apply-rollback safety window as a manual
-// firewall edit is used.
+// managed nftables file and records the preference in global settings. A
+// change or an explicit reapply uses the manual firewall safety window.
 func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Enabled         *bool `json:"enabled"`
+		Reapply         bool  `json:"reapply"`
 		RollbackSeconds int   `json:"rollback_seconds"`
 	}
 	if err := decodeJSONRequest(r, &body); err != nil {
@@ -316,7 +316,7 @@ func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request)
 		writeInternalError(w, err)
 		return
 	}
-	if !changed {
+	if !changed && !body.Reapply {
 		s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
 			"enabled": enabled,
 			"changed": false,
@@ -336,7 +336,8 @@ func (s *Server) hostFirewallZabbixAgent(w http.ResponseWriter, r *http.Request)
 	}
 	s.hostAppendAudit(r.Context(), "host_firewall_zabbix_agent", map[string]any{
 		"enabled":          enabled,
-		"changed":          true,
+		"changed":          changed,
+		"reapplied":        !changed,
 		"token_sha256":     auditRollbackTokenDigest(tok),
 		"rollback_seconds": sec,
 		"expires_at":       expires.UTC().Format(time.RFC3339),
