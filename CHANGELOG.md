@@ -7,17 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **Zabbix agent firewall toggle.** Optional LAN/loopback allow for **TCP 10050** when a Zabbix agent is already on the appliance or host (Easy Home WAF does not install the agent). Settings → Monitoring, `firewall_zabbix_agent`, `POST /api/v1/host/firewall/zabbix-agent` (apply-rollback), and installer env **`EASY_WAF_NFT_ZABBIX_AGENT=1`**. See [MONITORING.md](docs/MONITORING.md).
-
-### Documentation
-
-- Synced security/API/host docs with post-consilium behaviour: installer edge opens **443/udp** with **80/443 tcp**; package `postinst` installs polkit + HAProxy drop-in; Russian API host firewall table matches the **410 Gone** apply-rollback path; Zabbix 10050 documented.
-
 ## [1.6.1] - Unreleased
 
 ### Upgrade notes
+
+- Installer reruns and firewall repair preserve an existing managed Zabbix
+  rule when `EASY_WAF_NFT_ZABBIX_AGENT` is unset. Set it to `0` or `1` to
+  override that state. Clean installs leave passive Zabbix access disabled.
 
 - Authenticated GeoIP lookup failures now fail the post-upgrade smoke test.
   Provider errors, authentication failures and network failures are no longer
@@ -169,6 +165,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Zabbix agent firewall toggle.** Settings → Monitoring can allow passive
+  checks on **TCP 10050** from RFC1918 and loopback for an existing Zabbix
+  agent. The panel shows the rule in the managed file and uses a 90-second
+  safety window when applying it. See [Monitoring](docs/MONITORING.md).
+
 - **Ordered publication rules.** An application can match the request path,
   method, client network and header. Count records a match and continues,
   Block returns 403, and Pass ends the ordered list and resumes the remaining
@@ -216,6 +217,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ADR 0006** (proposed): Easy Home WAF stays an edge and a reverse proxy. Optional Coraza/CRS through coraza-spoa is described, including fail-open when the sidecar is down and fail-closed on a rule match, and is not implemented.
 
 ### Fixed
+
+- **Firewall changes replace managed nftables tables atomically.** Deleted
+  rules take effect in the kernel, and unrelated tables are preserved. The
+  firewall editor loads the managed file. Reapplying from the Zabbix panel
+  also removes stale kernel rules left by older versions.
 
 - **Offline ISO installation.** The bundle contains the local DEB manifest
   required by the installer. The installer checks the DEB checksum, name,
@@ -285,6 +291,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Offline bundle checksums.** `SHA256SUMS` is written outside the ISO tree and then moved in, so the list no longer names a `SHA256SUMS.tmp` that is gone after the rename and makes `install.sh --verify-only` fail.
 
 ### Documentation
+
+- Documented UDP 443 for the edge, the package's polkit and HAProxy drop-in,
+  the retired direct firewall endpoints in the Russian API reference, and
+  the Zabbix monitoring options.
 
 - **Docs match the tree.** Release notes list amd64 and arm64 (the published 1.6.0 release stays amd64-only). Acceptance counts match the AC table. The product name in the CrowdSec, Fail2Ban, GeoIP and monitoring pages is Easy Home WAF. English remains the canonical documentation language.
 - **Test certificates are generated, not stored.** `go test ./internal/haproxy` writes throwaway bundles for the golden configs. The private keys are gitignored.
