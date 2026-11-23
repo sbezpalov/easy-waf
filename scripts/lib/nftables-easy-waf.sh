@@ -14,13 +14,44 @@ easy_waf_nft_private_nets() {
   fi
 }
 
+# Recognize the marked accept written by the installer or the API, including
+# the older multiline address set. A standalone marker does not enable access.
+easy_waf_nft_read_zabbix() {
+  if [[ ! -e "$EASY_WAF_NFT_RULES" ]]; then
+    printf '0\n'
+    return
+  fi
+  awk '
+    { sub(/\r$/, "") }
+    /^[[:blank:]]*# easy-waf:zabbix-agent[[:blank:]]*$/ {
+      pending = 1
+      rule = ""
+      next
+    }
+    pending {
+      rule = rule $0 "\n"
+      if (rule ~ /^[[:blank:]]*ip saddr \{[[:space:]0-9.,\/]+\} tcp dport 10050 accept[[:blank:]]*\n$/) {
+        found = 1
+        exit
+      }
+      if (rule !~ /^[[:blank:]]*ip saddr \{[[:space:]0-9.,\/]*$/) pending = 0
+    }
+    END { print found ? 1 : 0 }
+  ' "$EASY_WAF_NFT_RULES"
+}
+
 # Render managed ruleset to EASY_WAF_NFT_RULES (root).
 easy_waf_nft_write_ruleset() {
   local mgmt_lan="${1:-1}"
   local mgmt_ports="${2:-8000 8443}"
   local edge="${3:-1}"
   local extra_cidr="${4:-}"
-  local zabbix="${5:-0}"
+  local zabbix="${5:-}"
+  case "$zabbix" in
+    0|1) ;;
+    '') zabbix="$(easy_waf_nft_read_zabbix)" || return 1 ;;
+    *) printf '%s\n' '[easy-waf] EASY_WAF_NFT_ZABBIX_AGENT must be 0 or 1' >&2; return 1 ;;
+  esac
 
   local port_list=""
   local p
@@ -157,9 +188,9 @@ easy_waf_nft_configure_appliance() {
   local mgmt_ports="${2:-8000 8443}"
   local edge="${3:-1}"
   local extra_cidr="${4:-}"
-  local zabbix="${5:-${EASY_WAF_NFT_ZABBIX_AGENT:-0}}"
+  local zabbix="${5:-${EASY_WAF_NFT_ZABBIX_AGENT:-}}"
 
-  easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr" "$zabbix"
+  easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr" "$zabbix" || return 1
   easy_waf_nft_write_guard "$mgmt_lan" "$mgmt_ports" "$extra_cidr"
   easy_waf_nft_ensure_main_conf
   easy_waf_nft_apply || return 1

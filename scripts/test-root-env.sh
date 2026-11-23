@@ -105,19 +105,56 @@ cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'repair lost selected firew
 printf 'EASY_WAF_FIREWALLD_MGMT_LAN=0\nEASY_WAF_FIREWALLD_MGMT_PORTS="9000 9443"\nEASY_WAF_FIREWALLD_EDGE=0\n' >"$EASY_WAF_ENV_FILE"
 unset EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_NFT_EDGE EASY_WAF_EXTRA_LAN_CIDR EASY_WAF_NFT_ZABBIX_AGENT
 bash "$ROOT/repair/fix-nftables-edge.sh" >"$ROOT/repair-log" 2>&1
-printf '%s\n' 0 '9000 9443' 0 '' 0 >"$ROOT/expected"
+printf '%s\n' 0 '9000 9443' 0 '' '' >"$ROOT/expected"
 cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'repair lost legacy aliases'
+
+# The source installer (also used by upgrade.sh) leaves the unset choice to
+# the same privileged leaf as the repair script.
+(
+  function_source="$(sed -n '/^configure_nftables_appliance() {$/,/^}$/p' "$SCRIPT_DIR/install.sh")"
+  [[ -n "$function_source" ]] || fail 'missing installer firewall function'
+  eval "$function_source"
+  SCRIPT_DIR="$ROOT/repair" EASY_WAF_INSTALL_OS_PACKAGES=1 configure_nftables_appliance
+  printf '%s\n' 1 '8000 8443' 1 '' '' >"$ROOT/expected"
+  cmp "$ROOT/expected" "$ROOT_ENV_TEST_RESULT" || fail 'installer forced a Zabbix default on upgrade'
+)
 
 # shellcheck source=lib/nftables-easy-waf.sh
 source "$SCRIPT_DIR/lib/nftables-easy-waf.sh"
 EASY_WAF_NFT_RULES="$ROOT/rendered.nft"
+easy_waf_nft_write_ruleset
+[[ "$(easy_waf_nft_read_zabbix)" == 0 ]] || fail 'clean install enabled Zabbix'
+
 easy_waf_nft_write_ruleset 1 '8080 9443' 0 '198.51.100.0/24' 1
 grep -F '198.51.100.0/24 } tcp dport { 8080, 9443 } accept' "$EASY_WAF_NFT_RULES" >/dev/null ||
   fail 'extra management CIDR was lost'
 grep -Fx '    ip saddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport 10050 accept' "$EASY_WAF_NFT_RULES" >/dev/null ||
   fail 'Zabbix rule must use the default LAN ranges'
+easy_waf_nft_write_ruleset
+[[ "$(easy_waf_nft_read_zabbix)" == 1 ]] || fail 'upgrade discarded the existing Zabbix rule'
+
+printf '%s\n' '    # easy-waf:zabbix-agent' \
+  '    ip saddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16' \
+  ', 198.51.100.0/24 } tcp dport 10050 accept' >"$EASY_WAF_NFT_RULES"
+easy_waf_nft_write_ruleset
+[[ "$(easy_waf_nft_read_zabbix)" == 1 ]] || fail 'upgrade discarded a legacy multiline Zabbix rule'
+if grep -qF '198.51.100.0/24' "$EASY_WAF_NFT_RULES"; then
+  fail 'upgrade kept a legacy extra range in the Zabbix rule'
+fi
+
+cp "$EASY_WAF_NFT_RULES" "$ROOT/before-invalid.nft"
+if easy_waf_nft_write_ruleset 1 '8080 9443' 0 '' invalid >"$ROOT/invalid-zabbix.log" 2>&1; then
+  fail 'invalid Zabbix toggle was accepted'
+fi
+cmp "$ROOT/before-invalid.nft" "$EASY_WAF_NFT_RULES" || fail 'invalid toggle changed the ruleset'
+
 easy_waf_nft_write_ruleset 1 '8080 9443' 0 '198.51.100.0/24' 0
 if grep -qF 'tcp dport 10050' "$EASY_WAF_NFT_RULES"; then
   fail 'Zabbix rule was emitted with the switch off'
 fi
+
+# A marker without its associated allow rule must never grant access.
+printf '%s\n' '    # easy-waf:zabbix-agent' '    tcp dport 22 accept' >"$EASY_WAF_NFT_RULES"
+easy_waf_nft_write_ruleset
+[[ "$(easy_waf_nft_read_zabbix)" == 0 ]] || fail 'an orphaned marker enabled Zabbix'
 echo 'OK: root env inputs stay data'

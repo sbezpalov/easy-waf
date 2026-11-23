@@ -22,5 +22,5 @@ easy_waf_nft_configure_appliance \
   "${EASY_WAF_NFT_MGMT_PORTS:-${EASY_WAF_FIREWALLD_MGMT_PORTS:-8000 8443}}" \
   "${EASY_WAF_NFT_EDGE:-${EASY_WAF_FIREWALLD_EDGE:-1}}" \
   "${EASY_WAF_EXTRA_LAN_CIDR:-}" \
-  "${EASY_WAF_NFT_ZABBIX_AGENT:-0}"
+  "${EASY_WAF_NFT_ZABBIX_AGENT:-}"
 echo "nftables edge/management rules applied."

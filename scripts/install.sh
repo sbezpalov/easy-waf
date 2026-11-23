@@ -35,7 +35,7 @@
 #   EASY_WAF_EXTRA_LAN_CIDR=         — optional extra source CIDR for management ports
 #   EASY_WAF_NFT_EDGE=1             — open HAProxy edge tcp/80+443 and udp/443 (default 1)
 #   EASY_WAF_NFT_EDGE=0             — skip edge rules in nftables
-#   EASY_WAF_NFT_ZABBIX_AGENT=1     — open TCP 10050 from RFC1918+loopback for an onboard Zabbix agent (default 0)
+#   EASY_WAF_NFT_ZABBIX_AGENT=1     — allow TCP 10050 from RFC1918+loopback; 0 disables, unset preserves the managed rule
 #   EASY_WAF_INSTALL_CROWDSEC=0|1    — install CrowdSec + SPOA DEB packages (default 1; set 0 to skip)
 #   EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL=0|1 — after packages: start LAPI, register bouncers, write CROWDSEC_* to easy-waf.env (default 1 = full appliance)
 #   EASY_WAF_CROWDSEC_CONSOLE_TOKEN= — optional; passed to: cscli console enroll (when bootstrap runs)
@@ -1042,7 +1042,7 @@ configure_nftables_appliance() {
   # shellcheck source=lib/nftables-easy-waf.sh
   source "${SCRIPT_DIR}/lib/nftables-easy-waf.sh"
   easy_waf_nft_configure_appliance "$mgmt_lan" "$mgmt_ports" "$edge" "${EASY_WAF_EXTRA_LAN_CIDR:-}" \
-    "${EASY_WAF_NFT_ZABBIX_AGENT:-0}"
+    "${EASY_WAF_NFT_ZABBIX_AGENT:-}"
 }
 
 # HAProxy is the public edge; ensure it is enabled at boot even when OS packages were skipped.
