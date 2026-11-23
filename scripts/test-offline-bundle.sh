@@ -250,6 +250,19 @@ FIXTURE
   [[ ! -e "$HOST_CHANGES" && ! -e "$APT_WORKSPACE" ]]
 
   cp "$builder/$package" "$PAYLOAD/$package"
+  # A different build can have the same Debian name, version and architecture.
+  # Even a consistent outer checksum manifest must not authorize that mismatch.
+  printf 'different package contents\n' >"$builder/fixture/build-id"
+  dpkg-deb --build "$builder/fixture" "$STAGE/repository/${package##*/}" >/dev/null
+  write_bundle_checksums
+  if "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: installer accepted mismatched repository package bytes' >&2
+    exit 1
+  fi
+  grep -Fq "repository/${package##*/} does not match the verified installer payload" "$TEMP_DIR/error"
+  [[ ! -e "$HOST_CHANGES" && ! -e "$APT_WORKSPACE" ]]
+
+  cp "$builder/$package" "$STAGE/repository/${package##*/}"
   write_bundle_checksums
   if ! EASY_WAF_APT_UPDATED=1 CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
     echo 'test-offline-bundle: installer could not use the local APT repository' >&2

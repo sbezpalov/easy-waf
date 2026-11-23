@@ -110,6 +110,10 @@ if ! offline_package_checksum_matches "$payload_dist" "$package_name"; then
   exit 1
 fi
 offline_check_package_identity "$payload_dist/$package_name" "$BUNDLE_VERSION" "$ARCH"
+if ! cmp -s -- "$payload_dist/$package_name" "$SCRIPT_DIR/repository/$package_name"; then
+  echo "[offline-install] repository/$package_name does not match the verified installer payload" >&2
+  exit 1
+fi
 
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 case "$EASY_WAF_INSTALL_CROWDSEC" in
