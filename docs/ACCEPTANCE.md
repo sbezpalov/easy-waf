@@ -84,6 +84,9 @@ exact database/state recovery is required. Record cleanup and independent checks
 - Smoke HTTP probes allow up to 5 seconds to connect and 30 seconds for the
   transfer. The optional MMDB upload allows 120 seconds. An incomplete
   response fails the probe even when the server has sent HTTP 200.
+- Smoke requires HTTP 200 from both `/health` and `/health/ready`. For
+  each active Easy WAF daemon, it compares the running process executable
+  with the installed file to catch a restart that has yet to take effect.
 - Smoke checks the daily backup timer when it is enabled. The timer must be
   active with a scheduled run or a backup in progress. A disabled or masked
   timer is reported as skipped.

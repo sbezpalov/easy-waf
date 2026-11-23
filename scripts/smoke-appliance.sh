@@ -199,6 +199,20 @@ unit_installed() { systemctl list-unit-files "${1}.service" &>/dev/null; }
 # chroot) — a missing answer means "cannot tell", not "broken".
 unit_state() { systemctl is-active "${1}.service" 2>/dev/null; }
 
+check_running_binary() {
+  local unit="$1" installed="$2" pid running
+  if ! pid="$(systemctl show -p MainPID --value "$unit.service" 2>/dev/null)" || [[ ! "$pid" =~ ^[1-9][0-9]*$ ]]; then
+    fail "$unit is active but its main PID could not be verified"
+    return
+  fi
+  running="/proc/$pid/exe"
+  if [[ "$running" -ef "$installed" ]] || cmp -s -- "$running" "$installed"; then
+    pass "$unit is running the installed binary"
+  else
+    fail "$unit running binary does not match $installed"
+  fi
+}
+
 check_backup_timer() {
   local timer=easy-waf-backup.timer properties key value load='' enabled='' active='' sub='' next=''
   if ! properties="$(systemctl show -p LoadState -p UnitFileState -p ActiveState -p SubState \
@@ -253,7 +267,7 @@ for unit in easy-waf-hostd easy-waf-api easy-waf-acmed; do
   fi
   state="$(unit_state "$unit")"
   case "$state" in
-    active) pass "$unit active" ;;
+    active) pass "$unit active"; check_running_binary "$unit" "/usr/sbin/$unit" ;;
     "" | unknown) skip "$unit state unknown (systemd not running?)" ;;
     *) fail "$unit is $state" ;;
   esac
@@ -288,6 +302,12 @@ if [[ "$health" == "200" ]]; then
   pass "GET /health -> 200"
 else
   fail "GET /health -> ${health:-no answer}"
+fi
+ready="$(smoke_curl -o /dev/null -w '%{http_code}' "${BASE}/health/ready")" || ready=000
+if [[ "$ready" == "200" ]]; then
+  pass "GET /health/ready -> 200"
+else
+  fail "GET /health/ready -> ${ready:-no answer}"
 fi
 
 # 1.2.1 ignores a legacy token shorter than 24 characters; automation using one

@@ -30,6 +30,7 @@ for arg in "$@"; do
   fi
 done
 case "$url" in
+  */health/ready) code="${SMOKE_TEST_READY_STATUS:-200}" ;;
   */api/v1/auth/login) body='{"token":"fixture-session"}' ;;
   */api/v1/auth/confirm) body='{"token":"fixture-step-up"}' ;;
   */api/v1/auth/logout) : >"$SMOKE_TEST_LOGOUT_MARKER" ;;
@@ -149,9 +150,36 @@ assert_failed_transfer() {
   fi
 }
 assert_failed_transfer '/health' 'FAIL  GET /health -> 000'
+assert_failed_transfer '/health/ready' 'FAIL  GET /health/ready -> 000'
+SMOKE_TEST_READY_STATUS=503 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+grep -qF 'PASS  GET /health -> 200' "$ROOT/output"
+grep -qF 'FAIL  GET /health/ready -> 503' "$ROOT/output"
 assert_failed_transfer '/api/v1/status' 'FAIL  GET /api/v1/status -> 000'
 assert_failed_transfer '/api/v1/stats/haproxy' 'FAIL  HAProxy runtime stats unavailable after reload'
 assert_failed_transfer '/api/v1/geoip/lookup?ip=8.8.8.8&nocache=1' 'FAIL  GeoIP lookup -> 000'
+
+# On Linux, use the actual /proc executable and a copy so that different
+# inodes with identical bytes are accepted and stale binaries are rejected.
+if [[ -r "/proc/$$/exe" ]]; then
+  (
+    binary_probe="$(sed -n '/^check_running_binary() {$/,/^}$/p' "$SCRIPT_DIR/smoke-appliance.sh")"
+    [[ -n "$binary_probe" ]]
+    eval "$binary_probe"
+    fixture_pid="$$"
+    # shellcheck disable=SC2317,SC2329
+    systemctl() { printf '%s\n' "$fixture_pid"; }
+    # shellcheck disable=SC2317,SC2329
+    pass() { printf 'PASS %s\n' "$*"; }
+    # shellcheck disable=SC2317,SC2329
+    fail() { printf 'FAIL %s\n' "$*"; }
+    cp "/proc/$fixture_pid/exe" "$ROOT/installed"
+    [[ "$(check_running_binary easy-waf-api "$ROOT/installed")" == 'PASS easy-waf-api is running the installed binary' ]]
+    printf 'new version\n' >"$ROOT/installed"
+    [[ "$(check_running_binary easy-waf-api "$ROOT/installed")" == "FAIL easy-waf-api running binary does not match $ROOT/installed" ]]
+    fixture_pid=0
+    [[ "$(check_running_binary easy-waf-api "$ROOT/installed")" == 'FAIL easy-waf-api is active but its main PID could not be verified' ]]
+  )
+fi
 
 export EASY_WAF_SMOKE_USER=fixture EASY_WAF_SMOKE_PASSWORD=fixture-password EASY_WAF_SMOKE_TOTP_CODE=123456
 export EASY_WAF_SMOKE_MMDB="$ROOT/fixture.mmdb"
