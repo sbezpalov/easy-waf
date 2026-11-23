@@ -72,14 +72,6 @@ jobs:
           for arch in amd64 arm64; do
             rm -rf dist
             GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb
-            for binary in easy-waf-hostd easy-waf-api easy-waf-acmed easy-wafd easy-waf-admin; do
-              metadata="$(go version -m "dist/$binary")"
-              if ! grep -Fxq $'\tbuild\tvcs.revision='"$REVISION" <<<"$metadata" ||
-                 ! grep -Fxq $'\tbuild\tvcs.modified=false' <<<"$metadata"; then
-                echo "Unexpected source metadata in $arch $binary for $REVISION" >&2
-                exit 1
-              fi
-            done
             STAGE="$(mktemp -d)"
             mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults" "${STAGE}/scripts/lib"
             cp -a dist/easy-waf-hostd dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin "${STAGE}/dist/"
@@ -93,6 +85,7 @@ jobs:
             tar -czf "$OUTPUT/${NAME}" -C "${STAGE}" .
             mv "dist/${DEB}" "$OUTPUT/"
             rm -rf "${STAGE}"
+            bash scripts/verify-release-package.sh "$OUTPUT/$DEB" "$OUTPUT/$NAME" "$arch" "$VERSION" "$REVISION"
           done
           mv "$OUTPUT"/* .
           # Every artifact in one SHA256SUMS: scripts/lib/release-verify.sh looks

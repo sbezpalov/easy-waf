@@ -67,7 +67,7 @@ check-version-docs:
 # Shell LF + no committed .exe/.dll + gofmt (when go present); shellcheck on install scripts when installed
 shellcheck-sh:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -x -P SCRIPTDIR scripts/publish-release.sh scripts/test-publish-release.sh && \
+		shellcheck -x -P SCRIPTDIR scripts/publish-release.sh scripts/test-publish-release.sh scripts/verify-release-package.sh scripts/test-release-package.sh && \
 		shellcheck -x scripts/verify-offline-release-package.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/prepare-offline-crowdsec.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-haproxy-working-dir.sh scripts/testdata/haproxy-working-dir.sh && \
@@ -123,6 +123,10 @@ test-release-notes:
 test-publish-release:
 	bash scripts/test-publish-release.sh
 
+.PHONY: test-release-package
+test-release-package:
+	bash scripts/test-release-package.sh
+
 test-release-verify:
 	bash scripts/test-release-verify.sh
 
@@ -175,7 +179,7 @@ test-installer-crowdsec-keys:
 test-installer-units:
 	bash scripts/test-installer-units.sh
 
-verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-root-env test-management-listen test-package-restart test-release-verify test-release-notes test-publish-release test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow test-body-policy-e2e-output test-crowdsec-e2e-cleanup test-installer-crowdsec-keys test-installer-units
+verify: check-linux check-version-docs shellcheck-sh shellcheck-deb test-env-file test-smoke-env test-diagnostics-env test-root-env test-management-listen test-package-restart test-release-verify test-release-notes test-publish-release test-release-package test-release-unpack test-offline-bundle test-backup-rotate test-backup-restore-workflow test-body-policy-e2e-output test-crowdsec-e2e-cleanup test-installer-crowdsec-keys test-installer-units
 
 # Punctuation after "verify" in docs/shell often becomes `make verify.` — forward to verify.
 verify.:
