@@ -38,6 +38,18 @@ if ! sha256sum "${packages[@]}" | cmp -s - SHA256SUMS; then
   exit 1
 fi
 
+verify_iso_package() (
+  local iso="$1" deb="$2" work
+  work="$(mktemp -d)"
+  trap 'rm -rf -- "$work"' EXIT
+  mkdir -p "$work/repository" "$work/payload/dist"
+  xorriso -osirrox on -indev "$iso" \
+    -extract "/repository/$deb" "$work/repository/$deb" \
+    -extract "/payload/dist/$deb" "$work/payload/dist/$deb" \
+    -extract /payload/dist/SHA256SUMS "$work/payload/dist/SHA256SUMS"
+  bash "$SCRIPT_DIR/verify-offline-release-package.sh" "$work" "$deb"
+)
+
 for arch in amd64 arm64; do
   iso="easy-waf_${version}_offline_ubuntu24.04_${arch}.iso"
   easy_waf_verify_github_blob "$iso" "$iso.sigstore.json" "$repo" "$tag"
@@ -45,6 +57,7 @@ for arch in amd64 arm64; do
     echo "ERROR: checksum does not match $iso" >&2
     exit 1
   fi
+  verify_iso_package "$iso" "easy-waf_${version}_${arch}.deb"
 done
 
 release_flags=(--latest=true)

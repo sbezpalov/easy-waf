@@ -245,6 +245,11 @@ jobs:
           name: offline-iso-arm64
           path: release-assets
 
+      - name: Install ISO verification tool
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends xorriso
+
       - name: Verify and publish the complete release
         env:
           GH_TOKEN: ${{ github.token }}

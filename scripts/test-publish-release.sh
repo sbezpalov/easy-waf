@@ -23,7 +23,33 @@ set -euo pipefail
 [[ $6 == --certificate-identity && $7 == "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$GITHUB_REF_NAME" ]]
 [[ $(cat "$3") == "signed $8" ]]
 EOF
-chmod +x "$WORK/bin/gh" "$WORK/bin/cosign"
+cat >"$WORK/bin/xorriso" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# == 13 && $1 == -osirrox && $2 == on && $3 == -indev ]]
+archive="$4"
+shift 4
+while (( $# )); do
+  [[ "$1" == -extract && "$2" == /* ]]
+  tar -xOf "$archive" "${2#/}" >"$3"
+  shift 3
+done
+EOF
+chmod +x "$WORK/bin/gh" "$WORK/bin/cosign" "$WORK/bin/xorriso"
+
+write_iso() {
+  local iso="$1" deb="$2" tree="$WORK/iso-tree" location
+  mkdir -p "$tree/repository" "$tree/payload/dist"
+  for location in repository payload/dist; do
+    cp -- "$deb" "$tree/$location/$deb"
+  done
+  if [[ -n "${ISO_PACKAGE_MISMATCH:-}" ]]; then
+    printf 'different signed build\n' >>"$tree/$ISO_PACKAGE_MISMATCH/$deb"
+  fi
+  (cd "$tree/payload/dist" && sha256sum "$deb" >SHA256SUMS)
+  tar -cf "$iso" -C "$tree" "repository/$deb" "payload/dist/$deb" payload/dist/SHA256SUMS
+  sha256sum "$iso" >"$iso.sha256"
+}
 
 create_assets() {
   export GITHUB_REF_NAME="$1"
@@ -31,15 +57,15 @@ create_assets() {
   packages=("${prefix}_linux_amd64.tar.gz" "${prefix}_amd64.deb" "${prefix}_linux_arm64.tar.gz" "${prefix}_arm64.deb")
   amd_iso="${prefix}_offline_ubuntu24.04_amd64.iso"
   arm_iso="${prefix}_offline_ubuntu24.04_arm64.iso"
-  for file in "${packages[@]}" "$amd_iso" "$arm_iso"; do
+  for file in "${packages[@]}"; do
     printf 'fixture for %s\n' "$file" >"$file"
   done
   sha256sum "${packages[@]}" >SHA256SUMS
   for file in SHA256SUMS "$amd_iso" "$arm_iso"; do
     printf 'signed %s\n' "$file" >"$file.sigstore.json"
   done
-  sha256sum "$amd_iso" >"$amd_iso.sha256"
-  sha256sum "$arm_iso" >"$arm_iso.sha256"
+  write_iso "$amd_iso" "${packages[1]}"
+  write_iso "$arm_iso" "${packages[3]}"
   printf 'release notes\n' >release_notes.md
   printf 'private fixture\n' >"${prefix}_offline_ubuntu24.04_amd64_private.iso"
   : >"$GH_LOG"
@@ -96,3 +122,10 @@ reject 'arm64 ISO signature failure'
 create_assets v1.6.1
 printf 'invalid signature\n' >SHA256SUMS.sigstore.json
 reject 'package manifest signature failure'
+
+for location in repository payload/dist; do
+  create_assets v1.6.1
+  ISO_PACKAGE_MISMATCH="$location" write_iso "$arm_iso" "${packages[3]}"
+  reject "valid signature on a different ISO package ($location)"
+  grep -Fq "$location/${packages[3]} does not match the verified release package" "$WORK/error"
+done
