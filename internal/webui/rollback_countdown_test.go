@@ -38,26 +38,40 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 const start = page.indexOf('  function updateHostRollbackApplyButtons()');
 const end = page.indexOf('  async function loadSystemTab()', start);
 assert.ok(start >= 0 && end > start, 'countdown functions not found');
+const zabbixStart = page.indexOf('  let zabbixFirewallRead = 0;');
+const zabbixEnd = page.indexOf('  function loadSettingsTab()', zabbixStart);
+assert.ok(zabbixStart >= 0 && zabbixEnd > zabbixStart, 'Zabbix status loader not found');
 let now = Date.now(), nextTimer = 0;
 const timers = new Map(), notices = [], elements = new Map(), storage = new Map();
 const state = {timer: null, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false};
 const element = id => {
   if (!elements.has(id)) elements.set(id, {hidden: true, classList: {
     add: () => {element(id).hidden = true}, remove: () => {element(id).hidden = false},
-    toggle: (_, force) => {element(id).hidden = !!force}
+    toggle: (_, force) => {element(id).hidden = !!force},
+    contains: cls => id === 'tab-settings' && cls === 'active'
   }});
   return elements.get(id);
 };
 let applyPayload, statusPayload = {changes: []}, networkReloads = 0;
+let firewall = {}, firewallReads = 0;
 const context = {assert, hostRollback: state, Date: class extends Date {static now() {return now}},
+  currentRole: 'admin',
   HOST_ROLLBACK_STORAGE_KEY: 'test-host-rollback',
   document: {getElementById: element}, setInterval: fn => {timers.set(++nextTimer, fn); return nextTimer},
   clearInterval: id => timers.delete(id), toast: (...args) => notices.push(args),
   confirmDialog: async () => true, hdr: () => ({}), apiMessage: async () => 'failed',
   sessionStorage: {getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key)},
   loadNetworkTab: async () => {networkReloads++},
-  fetch: async url => ({ok: true, json: async () => url === '/api/v1/host/changes/pending' ? statusPayload : applyPayload})};
+  fetch: async (url, options) => {
+    if (url === '/api/v1/host/firewall') {
+      firewallReads++;
+      assert.equal(options.cache, 'no-store');
+      return {ok: true, json: async () => firewall};
+    }
+    return {ok: true, json: async () => url === '/api/v1/host/changes/pending' ? statusPayload : applyPayload};
+  }};
 vm.createContext(context);
+vm.runInContext(page.slice(zabbixStart, zabbixEnd), context);
 vm.runInContext(page.slice(start, end), context);
 const operationID = 'a'.repeat(64);
 const capability = {kind: 'netplan', token: 'test-token', operation_id: operationID,
@@ -104,5 +118,25 @@ context.saveHostRollbackCapability(capability);
   await context.applyHostWithRollback({kind: 'netplan', applyUrl: '/apply', commitUrl: '/commit', body: {}, msgEl: {}});
   assert.equal(state.token, null, 'expired apply response exposed confirmation');
   assert.ok(notices.some(args => String(args[0]).includes('expired')), 'expired response advertised success');
+
+  const rule = element('zabbix-firewall-status');
+  await context.loadZabbixFirewallStatus();
+  assert.equal(rule.textContent, 'Managed Zabbix rule: unavailable.');
+  firewall = {zabbix_agent_rule: true};
+  await context.loadZabbixFirewallStatus();
+  assert.equal(rule.textContent, 'Managed Zabbix rule: present.');
+  const firewallCapability = {...capability, kind: 'firewall', expires_at: new Date(now + 90000).toISOString()};
+  const pendingFirewall = {kind: 'firewall', operation_id: operationID, phase: 'pending',
+    expires_at: firewallCapability.expires_at, confirmable: true};
+  context.showHostRollbackBanner(pendingFirewall, firewallCapability);
+  firewall = {zabbix_agent_rule: false};
+  await context.refreshHostRollbackStatus(true);
+  assert.equal(rule.textContent, 'Managed Zabbix rule: absent.', 'rule status did not reload after rollback');
+
+  context.showHostRollbackBanner(pendingFirewall, firewallCapability);
+  firewall = {zabbix_agent_rule: true};
+  await element('btn-host-rollback-keep').onclick();
+  assert.equal(rule.textContent, 'Managed Zabbix rule: present.', 'rule status did not reload after confirmation');
+  assert.equal(firewallReads, 4);
 })().catch(err => {console.error(err); process.exitCode = 1});
 `

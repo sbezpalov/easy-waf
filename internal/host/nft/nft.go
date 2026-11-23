@@ -21,9 +21,10 @@ var RulesPath = "/etc/nftables/easy-waf.nft"
 
 // Status is the host firewall snapshot for the API.
 type Status struct {
-	RulesPath   string `json:"rules_path"`
-	Ruleset     string `json:"ruleset,omitempty"`
-	HelperReady bool   `json:"helper_ready"`
+	RulesPath       string `json:"rules_path"`
+	Ruleset         string `json:"ruleset,omitempty"`
+	HelperReady     bool   `json:"helper_ready"`
+	ZabbixAgentRule *bool  `json:"zabbix_agent_rule,omitempty"` // Presence in the managed file, if readable.
 }
 
 // GetStatus returns the managed ruleset file and live ruleset when possible.
@@ -34,8 +35,10 @@ func GetStatus(ctx context.Context) (Status, error) {
 	}
 	if b, err := os.ReadFile(RulesPath); err == nil {
 		st.Ruleset = string(b)
+		present := HasZabbixAgentRule(st.Ruleset)
+		st.ZabbixAgentRule = &present
 	}
-	if runner.BrokerAvailable() {
+	if st.HelperReady {
 		out, err := runner.Privileged(ctx, "nft-list")
 		if err == nil {
 			st.Ruleset = string(out)

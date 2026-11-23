@@ -4,6 +4,9 @@
 package nft
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,6 +26,50 @@ table inet easy_waf {
   }
 }
 `
+
+func TestStatusReportsZabbixRuleFromManagedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "easy-waf.nft")
+	t.Setenv("EASY_WAF_HOSTD_SOCKET", filepath.Join(filepath.Dir(path), "absent.sock"))
+	previous := RulesPath
+	RulesPath = path
+	t.Cleanup(func() { RulesPath = previous })
+
+	readRule := func() string {
+		t.Helper()
+		status, err := GetStatus(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatal(err)
+		}
+		return string(payload["zabbix_agent_rule"])
+	}
+	writeRules := func(rules string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(rules), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := readRule(); got != "" {
+		t.Fatalf("missing file reported rule state %q", got)
+	}
+	withRule, _ := EnsureZabbixAgentRule(sampleRuleset, true)
+	writeRules(withRule)
+	if got := readRule(); got != "true" {
+		t.Fatalf("enabled rule reported state %q", got)
+	}
+	writeRules(sampleRuleset)
+	if got := readRule(); got != "false" {
+		t.Fatalf("restored ruleset reported state %q", got)
+	}
+}
 
 func TestEnsureZabbixAgentRuleEnableDisable(t *testing.T) {
 	t.Parallel()

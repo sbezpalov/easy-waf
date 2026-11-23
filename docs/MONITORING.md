@@ -23,6 +23,8 @@ An operator may run a **Zabbix agent** on the same appliance or host (Easy Home 
 | `PATCH /api/v1/settings` `{"firewall_zabbix_agent":true}` | Stores the preference only; does **not** open the port. |
 | Install / repair | `EASY_WAF_NFT_ZABBIX_AGENT=1` with `install.sh` or `scripts/fix-nftables-edge.sh` writes the same marked rule into a fresh managed ruleset (default **0**). |
 
+**Managed Zabbix rule** in Settings → Monitoring shows whether the managed file contains the marked rule, including rules enabled by the installer. The checkbox shows the saved preference, which remains saved after a safety rollback. Use **Keep changes** to retain a staged rule. Confirm reachability separately from the Zabbix server.
+
 Do **not** forward TCP 10050 from the WAN. After an automatic safety rollback, re-apply if the port must stay open. Active Zabbix checks initiated from the agent outbound are unaffected by this inbound allow.
 
 ## Prometheus scrape configuration

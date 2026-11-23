@@ -359,7 +359,7 @@
         void refreshEdgeStatus();
         break;
       case 'settings':
-        loadSettingsPanel();
+        void loadSettingsTab();
         break;
       case 'logs':
         loadBlocked();
@@ -1859,6 +1859,29 @@
     status.className = warnings.length ? 'warn' : 'dash-note';
   }
 
+  let zabbixFirewallRead = 0;
+
+  async function loadZabbixFirewallStatus() {
+    const status = document.getElementById('zabbix-firewall-status');
+    const read = ++zabbixFirewallRead;
+    if (currentRole !== 'admin') {
+      status.textContent = 'Administrator access is required to read the managed Zabbix rule.';
+      return;
+    }
+    let rule;
+    try {
+      const response = await fetch('/api/v1/host/firewall', { headers: hdr(), cache: 'no-store' });
+      if (response.ok) rule = (await response.json()).zabbix_agent_rule;
+    } catch (_) { /* report unavailable */ }
+    if (read !== zabbixFirewallRead || currentRole !== 'admin') return;
+    status.textContent = rule === true ? 'Managed Zabbix rule: present.'
+      : rule === false ? 'Managed Zabbix rule: absent.' : 'Managed Zabbix rule: unavailable.';
+  }
+
+  function loadSettingsTab() {
+    return Promise.all([loadSettingsPanel(), loadZabbixFirewallStatus()]);
+  }
+
   async function loadSettingsPanel() {
     const sm = document.getElementById('settings-msg');
     const cm = document.getElementById('certs-settings-msg');
@@ -2934,7 +2957,7 @@
   document.getElementById('btn-dashboard-refresh').onclick = () => {
     void withBusy(document.getElementById('btn-dashboard-refresh'), loadDashboard);
   };
-  document.getElementById('btn-settings-load').onclick = loadSettingsPanel;
+  document.getElementById('btn-settings-load').onclick = loadSettingsTab;
 
   const btnPromSave = document.getElementById('btn-prometheus-save');
   if (btnPromSave) {
@@ -2995,6 +3018,7 @@
         return;
       }
       const j = await r.json();
+      void loadZabbixFirewallStatus();
       try {
         const sr = await fetch('/api/v1/settings', { headers: hdr() });
         if (sr.ok) {
@@ -3005,8 +3029,8 @@
       } catch (_) { /* keep local checkbox */ }
       if (j && j.status === 'unchanged') {
         const msg = enabled
-          ? 'Preference saved; TCP 10050 was already allowed.'
-          : 'Preference saved; TCP 10050 was already closed.';
+          ? 'Preference saved. The managed Zabbix rule is already present.'
+          : 'Preference saved. The managed Zabbix rule is already absent.';
         if (sm) { sm.textContent = msg; sm.className = 'ok'; }
         toast(msg, 'ok');
         return;
@@ -3046,10 +3070,6 @@
       }
       await refreshHostRollbackStatus(false);
       toast('Applied — confirm within the safety window.', 'warn', 8000);
-      if (sm) {
-        sm.textContent = 'Zabbix firewall applied. Click “Keep changes” before the timer ends.';
-        sm.className = 'ok';
-      }
     };
   }
   const btnNotifySave = document.getElementById('btn-notify-save');
@@ -4287,9 +4307,14 @@
       hostRollback.statusUnknown = false;
       hostRollback.statusWarned = false;
       if (changes.length === 0) {
-        const hadPending = !!hostRollback.kind;
+        const settledKind = hostRollback.kind;
         hideHostRollbackBanner(true);
-        if (hadPending && reloadOnSettled) await loadNetworkTab({ skipRollbackStatus: true });
+        if (settledKind && reloadOnSettled) {
+          await Promise.all([
+            loadNetworkTab({ skipRollbackStatus: true }),
+            refreshZabbixFirewallAfterSettlement(settledKind)
+          ]);
+        }
         return;
       }
       let capability = readHostRollbackCapability();
@@ -4318,6 +4343,12 @@
     }
   }
 
+  function refreshZabbixFirewallAfterSettlement(kind) {
+    if (kind === 'firewall' && document.getElementById('tab-settings').classList.contains('active')) {
+      return loadZabbixFirewallStatus();
+    }
+  }
+
   document.getElementById('btn-host-rollback-keep').onclick = async () => {
     if (!hostRollback.token || !hostRollback.commitUrl) return;
     const r = await fetch(hostRollback.commitUrl, {
@@ -4331,8 +4362,9 @@
       return;
     }
     toast('Changes kept.', 'ok');
+    const settledKind = hostRollback.kind;
     hideHostRollbackBanner(true);
-    await loadNetworkTab();
+    await Promise.all([loadNetworkTab(), refreshZabbixFirewallAfterSettlement(settledKind)]);
   };
 
   async function applyHostWithRollback(opts) {
