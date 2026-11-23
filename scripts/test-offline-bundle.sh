@@ -26,6 +26,40 @@ fi
 [[ "$(apt_repository_uri '/tmp/large disk #1%/repository')" == 'file:/tmp/large%20disk%20%231%25/repository' ]]
 [[ "$(apt_repository_uri '/tmp/архив/repository')" == 'file:/tmp/%D0%B0%D1%80%D1%85%D0%B8%D0%B2/repository' ]]
 
+# Exercise the actual builder step without relying on a platform's dpkg.
+(
+  manifest_step="$(sed -n '/^write_package_manifest() {$/,/^}$/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
+  [[ -n "$manifest_step" ]]
+  eval "$manifest_step"
+  repository="$TEMP_DIR/metadata fixture"
+  mkdir "$repository"
+  touch "$repository/one.deb"
+  mode=ok
+  # Called by the builder function loaded through eval.
+  # shellcheck disable=SC2329,SC2317
+  dpkg-deb() {
+    [[ "$*" == "-f $repository/one.deb Package Version Architecture Source" ]] || return 90
+    printf 'Package: fixture\nArchitecture: arm64\n'
+    [[ "$mode" == missing_version ]] || printf 'Version: 2:1.0-1\n'
+    [[ "$mode" != with_source ]] || printf 'Source: fixture-source (2:1.0-1)\n'
+    [[ "$mode" != read_failure ]]
+  }
+  for mode in ok with_source; do
+    source_field=''
+    [[ "$mode" != with_source ]] || source_field='fixture-source (2:1.0-1)'
+    printf 'package\tversion\tarchitecture\tsource\nfixture\t2:1.0-1\tarm64\t%s\n' "$source_field" >"$TEMP_DIR/expected.tsv"
+    write_package_manifest "$repository" >"$TEMP_DIR/actual.tsv"
+    cmp "$TEMP_DIR/expected.tsv" "$TEMP_DIR/actual.tsv"
+  done
+  for mode in missing_version read_failure; do
+    if write_package_manifest "$repository" >"$TEMP_DIR/actual.tsv" 2>"$TEMP_DIR/metadata-error"; then
+      echo "test-offline-bundle: accepted invalid package metadata ($mode)" >&2
+      exit 1
+    fi
+    grep -Fq 'could not read package metadata: one.deb' "$TEMP_DIR/metadata-error"
+  done
+)
+
 # Use the actual builder's checksum step. The nested manifest must be verified
 # by the outer one, and the outer manifest cannot list a temporary self-entry.
 STAGE="${TEMP_DIR}/stage #1%"
@@ -42,7 +76,7 @@ checksum_step="$(sed -n '/^write_bundle_checksums() {$/,/^}$/p' "$SCRIPT_DIR/bui
 eval "$checksum_step"
 write_bundle_checksums
 (cd "$PAYLOAD/dist" && sha256sum -c --quiet SHA256SUMS)
-grep -qF '  ./payload/dist/SHA256SUMS' "${STAGE}/SHA256SUMS"
+grep -Eq ' [ *]\./payload/dist/SHA256SUMS$' "${STAGE}/SHA256SUMS"
 if grep -q 'SHA256SUMS\.tmp' "${STAGE}/SHA256SUMS"; then
   echo "test-offline-bundle: checksum list includes SHA256SUMS.tmp" >&2
   exit 1

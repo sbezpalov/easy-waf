@@ -203,16 +203,31 @@ chmod 0755 "${STAGE}/install.sh"
   apt-ftparchive release . >Release
 )
 
-{
+write_package_manifest() {
+  local repository="$1" package_files package_file
+  package_files="$(find "$repository" -maxdepth 1 -type f -name '*.deb' | LC_ALL=C sort)" || return 1
   printf 'package\tversion\tarchitecture\tsource\n'
   while IFS= read -r package_file; do
-    printf '%s\t%s\t%s\t%s\n' \
-      "$(dpkg-deb -f "$package_file" Package)" \
-      "$(dpkg-deb -f "$package_file" Version)" \
-      "$(dpkg-deb -f "$package_file" Architecture)" \
-      "$(dpkg-deb -f "$package_file" Source 2>/dev/null || true)"
-  done < <(find "$APT_REPO" -maxdepth 1 -type f -name '*.deb' | LC_ALL=C sort)
-} >"${STAGE}/PACKAGE-MANIFEST.tsv"
+    if ! dpkg-deb -f "$package_file" Package Version Architecture Source | awk '
+      /^[^[:space:]:]+:/ {
+        key = tolower(substr($0, 1, index($0, ":") - 1))
+        value = $0
+        sub(/^[^:]+:[[:blank:]]*/, "", value)
+        sub(/[[:blank:]]+$/, "", value)
+        fields[key] = value
+      }
+      END {
+        if (fields["package"] == "" || fields["version"] == "" || fields["architecture"] == "") exit 1
+        printf "%s\t%s\t%s\t%s\n", fields["package"], fields["version"], fields["architecture"], fields["source"]
+      }
+    '; then
+      printf '[offline-build] could not read package metadata: %s\n' "${package_file##*/}" >&2
+      return 1
+    fi
+  done <<<"$package_files"
+}
+
+write_package_manifest "$APT_REPO" >"${STAGE}/PACKAGE-MANIFEST.tsv"
 
 cat >"${STAGE}/BUNDLE.env" <<EOF
 EASY_WAF_BUNDLE_VERSION=${VERSION}
