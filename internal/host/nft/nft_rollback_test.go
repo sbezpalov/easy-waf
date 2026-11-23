@@ -7,16 +7,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestApplyRulesetWithRollback_invalidRuleset(t *testing.T) {
-	_, _, err := ApplyRulesetWithRollback(context.Background(), "table inet easy_waf { garbage", 90)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if errors.Is(err, os.ErrInvalid) {
-		t.Fatal("expected nft -c error, not empty")
+func TestApplyRulesetWithRollbackRejectsInclude(t *testing.T) {
+	_, _, err := ApplyRulesetWithRollback(t.Context(), `include "other.nft"`, 90)
+	if err == nil || !strings.Contains(err.Error(), "must not use include") {
+		t.Fatalf("expected local validation error for include, got %v", err)
 	}
 }
 

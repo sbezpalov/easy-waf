@@ -5064,7 +5064,7 @@
     const fwTa = document.getElementById('net-firewall-rules');
     if (fwR.ok && fwTa) {
       const fw = await fwR.json();
-      fwTa.value = fw.ruleset || '';
+      fwTa.value = fw.managed_ruleset ?? '';
     }
     updateHostRollbackApplyButtons();
   }

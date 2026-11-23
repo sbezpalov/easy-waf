@@ -13,7 +13,73 @@ import (
 	"testing"
 
 	firewall "github.com/easy-waf/easy-waf/internal/host/nft"
+	"github.com/easy-waf/easy-waf/internal/host/staging"
 )
+
+type nftKernelRunner struct{ recordingRunner }
+
+func (r *nftKernelRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	if name == binNft {
+		return (osRunner{}).Run(ctx, name, args...)
+	}
+	return r.recordingRunner.Run(ctx, name, args...)
+}
+
+// Run in an isolated network namespace. Only timer management is simulated.
+func TestNftApplyConfirmDisablesZabbixInKernel(t *testing.T) {
+	if os.Getenv("RUN_NFT_ROLLBACK_INTEGRATION") != "1" {
+		t.Skip("requires an explicitly enabled disposable network namespace")
+	}
+	rollbackTestEnv(t)
+	DefaultRunner = osRunner{}
+	const table = "easy_waf_zabbix_test"
+	const foreignTable = "easy_waf_zabbix_foreign_test"
+	const base = "table inet " + table + " {\n  chain input {\n    tcp dport 22 accept\n  }\n}\n"
+	baseline, _ := firewall.EnsureZabbixAgentRule(base, true)
+	if err := os.WriteFile(nftRulesPath, []byte(baseline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nft := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command(binNft, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("nft %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	nft("-f", nftRulesPath)
+	nft("add", "table", "inet", foreignTable)
+	t.Cleanup(func() {
+		nft("delete", "table", "inet", table)
+		nft("delete", "table", "inet", foreignTable)
+	})
+	disabled, _ := firewall.EnsureZabbixAgentRule(baseline, false)
+	runner := &nftKernelRunner{}
+	if err := staging.WithFile("zabbix-test-*.nft", []byte(disabled), func(path string) error {
+		if resp := nftApplyConfirm(t.Context(), runner, path, "90", testToken); !resp.OK {
+			t.Fatalf("apply failed: %+v", resp)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := nft("list", "table", "inet", table); strings.Contains(got, "tcp dport 10050") || strings.Count(got, "tcp dport 22 accept") != 1 {
+		t.Fatalf("apply retained old or duplicate rules:\n%s", got)
+	}
+	if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != disabled {
+		t.Fatalf("apply did not save the submitted source: %q, %v", got, err)
+	}
+	nft("list", "table", "inet", foreignTable)
+	if err := RunRevert("nft", testToken); err != nil {
+		t.Fatal(err)
+	}
+	if got := nft("list", "table", "inet", table); strings.Count(got, "tcp dport 10050 accept") != 1 {
+		t.Fatalf("rollback did not restore the Zabbix rule:\n%s", got)
+	}
+	if got, err := os.ReadFile(nftRulesPath); err != nil || string(got) != baseline {
+		t.Fatalf("rollback did not restore the original source: %q, %v", got, err)
+	}
+}
 
 // Run only in a disposable network namespace: this test changes real nftables.
 func TestNftRollbackReplacesManagedTables(t *testing.T) {

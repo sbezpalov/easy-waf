@@ -34,7 +34,7 @@ func TestStatusReportsZabbixRuleFromManagedFile(t *testing.T) {
 	RulesPath = path
 	t.Cleanup(func() { RulesPath = previous })
 
-	readRule := func() string {
+	readStatus := func() map[string]json.RawMessage {
 		t.Helper()
 		status, err := GetStatus(t.Context())
 		if err != nil {
@@ -48,7 +48,7 @@ func TestStatusReportsZabbixRuleFromManagedFile(t *testing.T) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatal(err)
 		}
-		return string(payload["zabbix_agent_rule"])
+		return payload
 	}
 	writeRules := func(rules string) {
 		t.Helper()
@@ -57,17 +57,22 @@ func TestStatusReportsZabbixRuleFromManagedFile(t *testing.T) {
 		}
 	}
 
-	if got := readRule(); got != "" {
-		t.Fatalf("missing file reported rule state %q", got)
+	if payload := readStatus(); payload["zabbix_agent_rule"] != nil || payload["managed_ruleset"] != nil {
+		t.Fatalf("missing file reported managed state: %v", payload)
 	}
 	withRule, _ := EnsureZabbixAgentRule(sampleRuleset, true)
 	writeRules(withRule)
-	if got := readRule(); got != "true" {
+	if got := string(readStatus()["zabbix_agent_rule"]); got != "true" {
 		t.Fatalf("enabled rule reported state %q", got)
 	}
 	writeRules(sampleRuleset)
-	if got := readRule(); got != "false" {
+	payload := readStatus()
+	if got := string(payload["zabbix_agent_rule"]); got != "false" {
 		t.Fatalf("restored ruleset reported state %q", got)
+	}
+	var managed string
+	if err := json.Unmarshal(payload["managed_ruleset"], &managed); err != nil || managed != sampleRuleset {
+		t.Fatalf("expected the editable file verbatim: %q, %v", managed, err)
 	}
 }
 

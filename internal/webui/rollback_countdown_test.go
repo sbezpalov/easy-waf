@@ -138,5 +138,22 @@ context.saveHostRollbackCapability(capability);
   await element('btn-host-rollback-keep').onclick();
   assert.equal(rule.textContent, 'Managed Zabbix rule: present.', 'rule status did not reload after confirmation');
   assert.equal(firewallReads, 4);
+
+  const networkStart = page.indexOf('  async function loadNetworkTab(');
+  const networkEnd = page.indexOf("  document.getElementById('btn-net-netplan-apply').onclick", networkStart);
+  assert.ok(networkStart >= 0 && networkEnd > networkStart, 'network loader not found');
+  const editor = {value: ''};
+  const snapshot = {managed_ruleset: 'managed file', ruleset: 'all kernel tables'};
+  const networkContext = {
+    document: {getElementById: id => id === 'net-firewall-rules' ? editor : null},
+    hdr: () => ({}), updateHostRollbackApplyButtons: () => {},
+    fetch: async path => ({ok: true, json: async () => path === '/api/v1/host/firewall' ? snapshot : {}})
+  };
+  vm.runInNewContext(page.slice(networkStart, networkEnd), networkContext);
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(editor.value, snapshot.managed_ruleset);
+  delete snapshot.managed_ruleset;
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(editor.value, '', 'editor exposed unrelated kernel tables');
 })().catch(err => {console.error(err); process.exitCode = 1});
 `

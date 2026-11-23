@@ -108,17 +108,9 @@ func runRevert(kind, token string) error {
 //
 // The write also goes through descriptor-anchored state-directory helpers.
 func saveRollbackBackup(kind, src, bak string, mode os.FileMode) error {
-	var data []byte
-	f, err := os.Open(src)
-	if err != nil && !os.IsNotExist(err) {
+	data, err := readRollbackSource(src)
+	if err != nil {
 		return err
-	}
-	if err == nil {
-		defer f.Close()
-		data, err = readRollbackContents(f)
-		if err != nil {
-			return err
-		}
 	}
 	// Reject a baseline that the safety revert would refuse, before arming
 	// anything or replacing the live file.
@@ -136,6 +128,18 @@ func saveRollbackBackup(kind, src, bak string, mode os.FileMode) error {
 		}
 	}
 	return stateWriteFile(bak, data, mode)
+}
+
+func readRollbackSource(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readRollbackContents(f)
 }
 
 func readRollbackContents(f *os.File) ([]byte, error) {
@@ -308,26 +312,33 @@ func nftDestroyScript(ruleset []byte) string {
 }
 
 func runNftScript(ctx context.Context, script string) error {
-	if err := os.MkdirAll(runtimeDir, 0o750); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(runtimeDir, "revert-*.nft")
+	path, cleanup, err := stageNftScript(script)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	if _, err := f.WriteString(script); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	_, stderr, code, err := runCmd(ctx, DefaultRunner, "/usr/sbin/nft", "-f", f.Name())
+	defer cleanup()
+	_, stderr, code, err := runCmd(ctx, DefaultRunner, binNft, "-f", path)
 	if err != nil || code != 0 {
 		return fmt.Errorf("nft -f: %w", commandFailure(stderr, code, err))
 	}
 	return nil
+}
+
+func stageNftScript(script string) (string, func(), error) {
+	if err := os.MkdirAll(runtimeDir, 0o750); err != nil {
+		return "", nil, err
+	}
+	f, err := os.CreateTemp(runtimeDir, "transaction-*.nft")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.Remove(f.Name()) }
+	_, writeErr := f.WriteString(script)
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return f.Name(), cleanup, nil
 }
 
 func revertNetplan(token string) error {
@@ -536,13 +547,32 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 		return failResp("invalid staged path: "+err.Error(), 1)
 	}
 	defer cleanup()
-	staged = stagedCopy
-	if err := validateNftFile(staged); err != nil {
+	next, err := os.ReadFile(stagedCopy)
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	if err := hostspec.ValidateNftRuleset(next); err != nil {
 		return failResp("nft-apply-confirm: "+err.Error(), 1)
 	}
+	current, err := readRollbackSource(nftRulesPath)
+	if err != nil {
+		return failResp("read current managed ruleset: "+err.Error(), 1)
+	}
+	// A declarative load appends rules to existing tables. Recreate the old
+	// and new managed tables in one transaction so deletions take effect too.
+	tables := append(append(current, '\n'), next...)
+	prefix := nftDestroyScript(tables)
+	if prefix == "" {
+		return failResp("managed rulesets declare no tables to replace", 1)
+	}
+	transaction, cleanTransaction, err := stageNftScript(prefix + string(next))
+	if err != nil {
+		return failResp(err.Error(), 1)
+	}
+	defer cleanTransaction()
 	timeoutSec, _ := strconv.Atoi(timeoutStr)
 	// Validation changes nothing, so it runs before anything is armed.
-	stdout, stderr, code, err := runCmd(ctx, r, binNft, "-c", "-f", staged)
+	stdout, stderr, code, err := runCmd(ctx, r, binNft, "-c", "-f", transaction)
 	if err != nil || code != 0 {
 		return failExec(stdout, stderr, code, err)
 	}
@@ -556,10 +586,10 @@ func nftApplyConfirm(ctx context.Context, r CommandRunner, staged, timeoutStr, t
 		}
 		return resp
 	}
-	if err := copyFile(staged, nftRulesPath, nftRulesMode); err != nil {
+	if err := writeFileAtomic(nftRulesPath, next, nftRulesMode); err != nil {
 		return fail(failResp(err.Error(), 1))
 	}
-	stdout, stderr, code, err = runCmd(ctx, r, binNft, "-f", nftRulesPath)
+	stdout, stderr, code, err = runCmd(ctx, r, binNft, "-f", transaction)
 	if err != nil || code != 0 {
 		return fail(failExec(stdout, stderr, code, err))
 	}

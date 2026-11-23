@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/rollback"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 	"github.com/easy-waf/easy-waf/internal/host/staging"
@@ -21,10 +22,11 @@ var RulesPath = "/etc/nftables/easy-waf.nft"
 
 // Status is the host firewall snapshot for the API.
 type Status struct {
-	RulesPath       string `json:"rules_path"`
-	Ruleset         string `json:"ruleset,omitempty"`
-	HelperReady     bool   `json:"helper_ready"`
-	ZabbixAgentRule *bool  `json:"zabbix_agent_rule,omitempty"` // Presence in the managed file, if readable.
+	RulesPath       string  `json:"rules_path"`
+	Ruleset         string  `json:"ruleset,omitempty"`
+	ManagedRuleset  *string `json:"managed_ruleset,omitempty"`
+	HelperReady     bool    `json:"helper_ready"`
+	ZabbixAgentRule *bool   `json:"zabbix_agent_rule,omitempty"` // Presence in the managed file, if readable.
 }
 
 // GetStatus returns the managed ruleset file and live ruleset when possible.
@@ -34,8 +36,10 @@ func GetStatus(ctx context.Context) (Status, error) {
 		HelperReady: runner.BrokerAvailable(),
 	}
 	if b, err := os.ReadFile(RulesPath); err == nil {
-		st.Ruleset = string(b)
-		present := HasZabbixAgentRule(st.Ruleset)
+		managed := string(b)
+		st.ManagedRuleset = &managed
+		st.Ruleset = managed
+		present := HasZabbixAgentRule(managed)
 		st.ZabbixAgentRule = &present
 	}
 	if st.HelperReady {
@@ -74,6 +78,9 @@ func ApplyRulesetWithRollback(ctx context.Context, content string, timeoutSec in
 	if content == "" {
 		return "", time.Time{}, os.ErrInvalid
 	}
+	if err := hostspec.ValidateNftRuleset([]byte(content)); err != nil {
+		return "", time.Time{}, err
+	}
 	timeoutSec = rollback.ClampRollbackSeconds(timeoutSec)
 	tok, err := rollback.GenerateToken()
 	if err != nil {
@@ -81,9 +88,7 @@ func ApplyRulesetWithRollback(ctx context.Context, content string, timeoutSec in
 	}
 	var deadline time.Time
 	if err := staging.WithFile("easy-waf-*.nft", []byte(content+"\n"), func(path string) error {
-		if _, err := runner.Run(ctx, 30*time.Second, "/usr/sbin/nft", "-c", "-f", path); err != nil {
-			return fmt.Errorf("nft -c: %w", err)
-		}
+		// The broker runs nft -c on the exact transaction it will apply.
 		var err error
 		deadline, err = runner.PrivilegedWithRollback(ctx, time.Duration(timeoutSec)*time.Second, "nft-apply-confirm", path, strconv.Itoa(timeoutSec), tok)
 		return err
