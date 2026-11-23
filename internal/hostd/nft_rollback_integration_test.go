@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	firewall "github.com/easy-waf/easy-waf/internal/host/nft"
 )
 
 // Run only in a disposable network namespace: this test changes real nftables.
@@ -29,7 +31,9 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 		return string(out)
 	}
 	const baseline = "table inet easy_waf_test {\n chain input {\n tcp dport 80 accept\n }\n}\n"
-	const changed = "table inet easy_waf_test {\n chain input {\n tcp dport 443 drop\n }\n}\ntable ip easy_waf_test_added {\n chain extra {\n counter\n }\n}\n"
+	const changedBase = "table inet easy_waf_test {\n  chain input {\n    tcp dport 443 drop\n  }\n}\ntable ip easy_waf_test_added {\n chain extra {\n counter\n }\n}\n"
+	changed, _ := firewall.EnsureZabbixAgentRule(changedBase, true)
+	const zabbixAccept = "tcp dport 10050 accept"
 	// No base-chain hooks: fixtures cannot affect the container's traffic.
 	if err := os.WriteFile(nftRulesPath, []byte(baseline+"table inet easy_waf_test_foreign {\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -47,12 +51,18 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	nft("-f", nftRulesPath)
+	if live := nft("list", "table", "inet", "easy_waf_test"); strings.Count(live, zabbixAccept) != 1 {
+		t.Fatalf("staged Zabbix rule was not loaded exactly once:\n%s", live)
+	}
 	if err := RunRevert("nft", testToken); err != nil {
 		t.Fatal(err)
 	}
 	got := nft("list", "table", "inet", "easy_waf_test")
 	if strings.Count(got, "tcp dport 80 accept") != 1 || strings.Contains(got, "443") {
 		t.Fatalf("rollback merged or duplicated rules:\n%s", got)
+	}
+	if strings.Contains(got, zabbixAccept) {
+		t.Fatalf("rollback retained the staged Zabbix rule:\n%s", got)
 	}
 	if out, err := exec.Command(binNft, "list", "table", "ip", "easy_waf_test_added").CombinedOutput(); err == nil {
 		t.Fatalf("new managed table survived rollback: %s", out)
@@ -127,6 +137,9 @@ func TestNftRollbackReplacesManagedTables(t *testing.T) {
 	restored := nft("list", "table", "inet", "easy_waf_test")
 	if strings.Count(restored, "tcp dport 80 accept") != 1 || strings.Contains(restored, "443") {
 		t.Fatalf("failed confirmation did not restore kernel rules:\n%s", restored)
+	}
+	if strings.Contains(restored, zabbixAccept) {
+		t.Fatalf("failed confirmation retained the staged Zabbix rule:\n%s", restored)
 	}
 	if _, err := exec.Command(binNft, "list", "table", "ip", "easy_waf_test_added").CombinedOutput(); err == nil {
 		t.Fatal("failed confirmation retained the added table")
