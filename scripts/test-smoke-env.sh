@@ -52,6 +52,9 @@ MOCK
 cat >"$ROOT/bin/admin" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >>"$SMOKE_TEST_ADMIN_ARGS"
+if [[ "$1" == --version ]]; then
+  printf 'easy-waf-admin %s\n' "${SMOKE_TEST_ADMIN_VERSION:-1.6.1}"
+fi
 exit 0
 MOCK
 cat >"$ROOT/bin/systemctl" <<'MOCK'
@@ -157,6 +160,19 @@ grep -qF 'FAIL  GET /health/ready -> 503' "$ROOT/output"
 assert_failed_transfer '/api/v1/status' 'FAIL  GET /api/v1/status -> 000'
 assert_failed_transfer '/api/v1/stats/haproxy' 'FAIL  HAProxy runtime stats unavailable after reload'
 assert_failed_transfer '/api/v1/geoip/lookup?ip=8.8.8.8&nocache=1' 'FAIL  GeoIP lookup -> 000'
+
+expected_status=0
+: >"$SMOKE_TEST_ADMIN_ARGS"
+EASY_WAF_SMOKE_EXPECTED_VERSION=1.6.1 SMOKE_TEST_ADMIN_VERSION=1.6.0 EASY_WAF_SMOKE_SKIP_APPLY=0 \
+  bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || expected_status=$?
+[[ "$expected_status" == 1 ]]
+grep -qF 'FAIL  easy-waf-admin does not report expected version 1.6.1' "$ROOT/output"
+grep -qF 'FAIL  easy-waf-api not installed' "$ROOT/output"
+grep -qxF -- '--version' "$SMOKE_TEST_ADMIN_ARGS"
+if grep -qxF 'apply-edge' "$SMOKE_TEST_ADMIN_ARGS"; then
+  echo 'FAIL: expected-release mismatch reached the HAProxy apply step' >&2
+  exit 1
+fi
 
 # On Linux, use the actual /proc executable and a copy so that different
 # inodes with identical bytes are accepted and stale binaries are rejected.

@@ -26,6 +26,7 @@
 #   EASY_WAF_SMOKE_USER / EASY_WAF_SMOKE_PASSWORD  operator login for logout and privileged API checks
 #   EASY_WAF_SMOKE_TOTP_CODE  current TOTP code when the operator has TOTP enabled
 #   EASY_WAF_SMOKE_SKIP_APPLY=1  do not call easy-waf-admin apply-edge
+#   EASY_WAF_SMOKE_EXPECTED_VERSION  require this installed release and active daemons before proceeding
 
 set -uo pipefail
 umask 077
@@ -42,6 +43,11 @@ API_BASE="${EASY_WAF_API_BASE:-https://127.0.0.1:8443}"
 BASE="${API_BASE%/}"
 API_CA_CERT="${EASY_WAF_API_CA_CERT:-${STATE}/secrets/management.crt}"
 ADMIN_BIN="${EASY_WAF_ADMIN_BIN:-/usr/sbin/easy-waf-admin}"
+EXPECTED_VERSION="${EASY_WAF_SMOKE_EXPECTED_VERSION:-}"
+if [[ -n "$EXPECTED_VERSION" && ! "$EXPECTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then
+  echo 'ERROR: EASY_WAF_SMOKE_EXPECTED_VERSION must be a release version such as 1.6.1' >&2
+  exit 2
+fi
 
 pass_n=0
 fail_n=0
@@ -213,6 +219,18 @@ check_running_binary() {
   fi
 }
 
+check_expected_version() {
+  local name="$1" installed="$2" output
+  [[ -n "$EXPECTED_VERSION" ]] || return 0
+  if [[ ! -x "$installed" ]] || ! output="$("$installed" --version 2>/dev/null)"; then
+    fail "could not read $name version from $installed"
+  elif [[ "$output" != "$name $EXPECTED_VERSION" ]]; then
+    fail "$name does not report expected version $EXPECTED_VERSION"
+  else
+    pass "$name reports expected version $EXPECTED_VERSION"
+  fi
+}
+
 check_backup_timer() {
   local timer=easy-waf-backup.timer properties key value load='' enabled='' active='' sub='' next=''
   if ! properties="$(systemctl show -p LoadState -p UnitFileState -p ActiveState -p SubState \
@@ -261,17 +279,33 @@ fi
 
 section "systemd units"
 for unit in easy-waf-hostd easy-waf-api easy-waf-acmed; do
+  check_expected_version "$unit" "/usr/sbin/$unit"
   if ! unit_installed "$unit"; then
-    skip "$unit not installed"
+    if [[ -n "$EXPECTED_VERSION" ]]; then
+      fail "$unit not installed"
+    else
+      skip "$unit not installed"
+    fi
     continue
   fi
   state="$(unit_state "$unit")"
   case "$state" in
     active) pass "$unit active"; check_running_binary "$unit" "/usr/sbin/$unit" ;;
-    "" | unknown) skip "$unit state unknown (systemd not running?)" ;;
+    "" | unknown)
+      if [[ -n "$EXPECTED_VERSION" ]]; then
+        fail "$unit state could not be verified"
+      else
+        skip "$unit state unknown (systemd not running?)"
+      fi
+      ;;
     *) fail "$unit is $state" ;;
   esac
 done
+check_expected_version easy-waf-admin "$ADMIN_BIN"
+if [[ -n "$EXPECTED_VERSION" ]] && ((fail_n)); then
+  echo "ERROR: appliance did not pass verification for expected release $EXPECTED_VERSION" >&2
+  exit 1
+fi
 check_backup_timer
 
 # 1.2.1 shipped ProtectHome=false for the broker; with true, /home is invisible

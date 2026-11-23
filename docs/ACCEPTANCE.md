@@ -87,6 +87,10 @@ exact database/state recovery is required. Record cleanup and independent checks
 - Smoke requires HTTP 200 from both `/health` and `/health/ready`. For
   each active Easy WAF daemon, it compares the running process executable
   with the installed file to catch a restart that has yet to take effect.
+- After an upgrade, set `EASY_WAF_SMOKE_EXPECTED_VERSION` to the target
+  release, for example `sudo EASY_WAF_SMOKE_EXPECTED_VERSION=1.6.1 bash
+  scripts/smoke-appliance.sh`. This also rejects missing daemons or an older
+  set of binaries that still matches the running processes.
 - Smoke checks the daily backup timer when it is enabled. The timer must be
   active with a scheduled run or a backup in progress. A disabled or masked
   timer is reported as skipped.
