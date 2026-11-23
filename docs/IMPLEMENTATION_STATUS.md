@@ -20,7 +20,11 @@ and Windows verified the artifacts, including the extracted 1.6.1 notes.
 Both images passed the isolated APT solve and bundle verification. Their
 embedded Easy WAF DEBs match the verified packages from the same revision.
 
-**Offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
+**Current amd64 offline installation:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#amd64-appliance-installation).
+The current amd64 image passed clean installation, reboot, authenticated
+About and repeat installation on a disconnected Ubuntu VMware guest.
+
+**Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
 Both ISOs passed installation, reboot, live About verification and repeat
