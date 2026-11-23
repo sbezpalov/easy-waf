@@ -16,7 +16,11 @@ A disconnected Ubuntu VMware guest ran `make verify` on a clean checkout
 and built both DEBs and tarballs with the Zabbix and nftables changes. Linux
 and Windows verified the artifacts, including the extracted 1.6.1 notes.
 
-**Offline ISO acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
+**Current local offline ISOs:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#offline-isos).
+Both images passed the isolated APT solve and bundle verification. Their
+embedded Easy WAF DEBs match the verified packages from the same revision.
+
+**Offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
 Both ISOs passed installation, reboot, live About verification and repeat
