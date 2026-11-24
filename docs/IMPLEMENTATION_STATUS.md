@@ -95,6 +95,11 @@ The local HAProxy body policy and CrowdSec scenarios passed all 31 cases,
 including selective blocking and fail-open. The scheduled GitHub E2E passed on
 the earlier `e34b562` revision.
 
+**Current Docker installer and backup E2E:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-installer-and-backup-e2e).
+The installer conffile, HAProxy working directory, backup and restore launchers
+passed with a pinned Ubuntu 24.04 amd64 base. The isolated systemd/APT package
+lifecycle fixture passed all seven cases.
+
 **Current native E2E checks:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#native-vmware-e2e).
 An isolated VMware fixture passed the installer conffile, HAProxy working
 directory, backup publication, restore permissions, archive locking and
