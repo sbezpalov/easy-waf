@@ -56,8 +56,12 @@ export PATH="$ROOT/bin:$PATH"
 REPO_ROOT="$ROOT/repo"
 export EASY_WAF_PKG_MGR=apt
 EASY_WAF_PKG_INSTALLED=0
+# shellcheck source=../lib/os-pkg.sh
+source "$SCRIPT_DIR/lib/os-pkg.sh"
 log() { printf '%s\n' "$*"; }
 die() { fail "$*"; }
+# Called by install_release_package, which the fixture loads below.
+# shellcheck disable=SC2329
 easy_waf_apt_get_update() { :; }
 for function_name in easy_waf_target_version install_release_package; do
   function_source="$(sed -n "/^${function_name}() {$/,/^}$/p" "$SCRIPT_DIR/install.sh")"
@@ -127,25 +131,22 @@ fi
 grep -Fq 'APT failed to install the verified easy-waf package' "$ROOT/partial.log" ||
   fail 'partial package failure lacks an APT recovery diagnostic'
 
-function_source="$(sed -n '/^require_unmanaged_install() {$/,/^}$/p' "$SCRIPT_DIR/install.sh")"
-[[ -n "$function_source" ]] || fail 'missing unpackaged install guard'
-eval "$function_source"
 dpkg-query() { command dpkg-query --admindir="$CONFFILE_TEST_ROOT/var/lib/dpkg" "$@"; }
-if (require_unmanaged_install) >"$ROOT/retry.log" 2>&1; then
+if easy_waf_require_unmanaged_install >"$ROOT/retry.log" 2>&1; then
   fail 'retry accepted an unpacked package on the unpackaged path'
 fi
 grep -Fq 'dpkg status: unpacked' "$ROOT/retry.log" || fail 'retry lacks package status'
 CONFFILE_TEST_ROOT="$ROOT/fresh"
-if (require_unmanaged_install) >"$ROOT/retry.log" 2>&1; then
+if easy_waf_require_unmanaged_install >"$ROOT/retry.log" 2>&1; then
   fail 'unpackaged path accepted the configured package'
 fi
 grep -Fq 'dpkg status: installed' "$ROOT/retry.log" || fail 'installed package lacks status'
 "$DPKG_REAL" --root="$CONFFILE_TEST_ROOT" --log="$CONFFILE_TEST_ROOT/log/dpkg.log" --remove easy-waf >/dev/null
 [[ "$(dpkg-query -W -f='${db:Status-Status}' easy-waf)" == config-files ]] ||
   fail 'fixture did not retain only conffiles'
-require_unmanaged_install
+easy_waf_require_unmanaged_install
 new_root clean_unmanaged
-require_unmanaged_install
+easy_waf_require_unmanaged_install
 
 new_root offline
 sums="$REPO_ROOT/dist/SHA256SUMS"

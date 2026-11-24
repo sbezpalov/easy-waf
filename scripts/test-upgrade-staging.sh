@@ -12,7 +12,27 @@ mkdir -p "$ROOT/repo/scripts/lib" "$ROOT/input" "$ROOT/private temp" "$ROOT/bin"
 grep -Eq '^(if ! )?/usr/sbin/easy-waf-hostd restart-after-packages' "$SOURCE_DIR/upgrade.sh"
 # shellcheck disable=SC2016
 sed 's|/usr/sbin/easy-waf-hostd|"$TEST_RESTART_HELPER"|' "$SOURCE_DIR/upgrade.sh" >"$ROOT/repo/scripts/upgrade.sh"
-cp "$SOURCE_DIR/lib/release-unpack.sh" "$ROOT/repo/scripts/lib/"
+cp "$SOURCE_DIR/lib/"{os-pkg,release-unpack}.sh "$ROOT/repo/scripts/lib/"
+cat >"$ROOT/bin/apt-get" <<'STUB'
+#!/usr/bin/env bash
+exit 2
+STUB
+cat >"$ROOT/bin/dpkg-query" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" == 3 && "$1" == -W && "$2" == '-f=${db:Status-Status}' && "$3" == easy-waf ]] || exit 2
+case "${TEST_DPKG_STATUS:-absent}" in
+  absent) exit 1 ;;
+  error) exit 2 ;;
+  *) printf '%s\n' "$TEST_DPKG_STATUS" ;;
+esac
+STUB
+cat >"$ROOT/bin/mktemp" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'staging\n' >"$TEST_STAGING_MARKER"
+exec "$TEST_REAL_MKTEMP" "$@"
+STUB
 cat >"$ROOT/bin/easy-waf-hostd" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -31,7 +51,9 @@ case "$3" in
   *) exit 2 ;;
 esac
 STUB
-chmod +x "$ROOT/bin/"{easy-waf-hostd,systemctl}
+export TEST_REAL_MKTEMP
+TEST_REAL_MKTEMP="$(type -P mktemp)"
+chmod +x "$ROOT/bin/"{apt-get,dpkg-query,mktemp,easy-waf-hostd,systemctl}
 export PATH="$ROOT/bin:$PATH" TEST_RESTART_HELPER="$ROOT/bin/easy-waf-hostd"
 cat >"$ROOT/repo/scripts/install.sh" <<'STUB'
 set -euo pipefail
@@ -59,7 +81,7 @@ run_case() {
   export TMPDIR="$ROOT/private temp/$name"
   mkdir -p "$TMPDIR"
   export TEST_INSTALL_MARKER="$ROOT/$name.called" TEST_STAGE_PATH="$ROOT/$name.stage" TEST_INSTALL_EXIT="$install_exit"
-  export TEST_RESTART_LOG="$ROOT/$name.restarts"
+  export TEST_RESTART_LOG="$ROOT/$name.restarts" TEST_STAGING_MARKER="$ROOT/$name.staging"
   export TEST_BROKER_EXIT="${6:-0}" TEST_API_EXIT="${7:-0}" TEST_ACME_EXIT="${8:-0}"
   unset EASY_WAF_INSTALL_POSTGRES
   bash "$ROOT/repo/scripts/upgrade.sh" "$input" >"$ROOT/$name.log" 2>&1 || status=$?
@@ -88,6 +110,18 @@ run_case() {
 populate "$ROOT/input/flat"
 tar -czf "$ROOT/flat.tar.gz" -C "$ROOT/input/flat" .
 run_case flat "$ROOT/flat.tar.gz" yes
+TEST_DPKG_STATUS=config-files run_case removed_package "$ROOT/flat.tar.gz" yes
+for state in installed unpacked error; do
+  TEST_DPKG_STATUS="$state" run_case "package_$state" "$ROOT/flat.tar.gz" no
+  [[ ! -e "$TEST_STAGING_MARKER" ]] || fail "package state $state reached staging"
+  if [[ "$state" == error ]]; then
+    grep -Fq 'could not determine the easy-waf package state' "$ROOT/package_$state.log" ||
+      fail 'missing dpkg query failure message'
+  else
+    grep -Fq "dpkg status: $state); install or repair a verified DEB through APT" "$ROOT/package_$state.log" ||
+      fail "missing APT guidance for package state $state"
+  fi
+done
 run_case installer_failure "$ROOT/flat.tar.gz" yes 7
 run_case broker_failure "$ROOT/flat.tar.gz" yes 0 1 3
 grep -Fq 'ERROR: package-safe APT/broker restart failed' "$ROOT/broker_failure.log" || fail 'missing broker failure message'

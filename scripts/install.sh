@@ -600,19 +600,6 @@ install_release_package() {
   log "Installed easy-waf ${ver} from the Debian package"
 }
 
-require_unmanaged_install() {
-  [[ "${EASY_WAF_PKG_MGR:-}" == apt ]] || return 0
-  local status
-  if status="$(dpkg-query -W -f='${db:Status-Status}' easy-waf 2>/dev/null)"; then
-    case "$status" in
-      not-installed|config-files) return 0 ;;
-    esac
-    die "easy-waf is managed by dpkg (dpkg status: $status); install or repair a verified DEB through APT"
-  elif [[ "$?" -ne 1 ]]; then
-    die "could not determine the easy-waf package state; inspect sudo dpkg --audit"
-  fi
-}
-
 # Units installed into /etc/systemd/system by an older run of this script take
 # precedence over the packaged ones in /lib. Left alone, an upgrade would look
 # applied while systemd kept starting the previous unit definition.
@@ -1092,7 +1079,7 @@ main() {
   # path that is not already occupied by a file it did not install.
   if ! install_release_package; then
     [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline mode requires the verified local easy-waf package"
-    require_unmanaged_install
+    easy_waf_require_unmanaged_install || exit 1
   fi
   create_user_and_layout
   ensure_haproxy_run_dir

@@ -6,6 +6,11 @@ set -euo pipefail
 
 SRC="${1:?usage: upgrade.sh <directory-with-binaries-or-tarball>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/os-pkg.sh
+source "${SCRIPT_DIR}/lib/os-pkg.sh"
+easy_waf_detect_pkg_mgr
+easy_waf_require_unmanaged_install || exit 1
+
 # shellcheck source=lib/release-unpack.sh
 source "${SCRIPT_DIR}/lib/release-unpack.sh"
 

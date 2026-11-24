@@ -322,11 +322,11 @@ PostgreSQL database, or the nftables policy — `postrm` prints how to remove th
 state directory once you are sure. See [OPERATIONS.md](OPERATIONS.md).
 
 **Script path (no package).** [`scripts/upgrade.sh`](../scripts/upgrade.sh) takes a
-directory or `.tar.gz` of new binaries. Authenticate the local input before
-running it; staging is not signature verification. It does not update dpkg's
-installed version or payload inventory. Use the APT procedure above for a
-package-managed appliance. Flat, nested `dist/` and
-single-wrapper archive layouts are supported. It stages all four required
+directory or `.tar.gz` of new binaries. Verify the source and integrity of the
+input before running the script. It checks dpkg before staging and stops if a package
+installation is present or incomplete. Use the APT procedure above for a
+package-managed appliance. Flat, nested `dist/` and single-wrapper archive
+layouts are supported. The script stages all four required
 binaries privately (`easy-wafd` is optional), rejects incomplete or ambiguous
 archives before installation, preserves the input directory, and removes its
 temporary files on success or failure. It reuses

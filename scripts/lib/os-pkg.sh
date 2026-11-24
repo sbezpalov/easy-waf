@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Package manager helpers: Ubuntu (apt) only.
-# Sourced by scripts/install.sh after SCRIPT_DIR is known.
+# Sourced by the installer and the binary upgrade script.
 
 easy_waf_detect_pkg_mgr() {
   if command -v apt-get &>/dev/null; then
@@ -8,6 +8,22 @@ easy_waf_detect_pkg_mgr() {
   else
     export EASY_WAF_PKG_MGR=
   fi
+}
+
+easy_waf_require_unmanaged_install() {
+  [[ "${EASY_WAF_PKG_MGR:-}" == apt ]] || return 0
+  local status
+  if status="$(dpkg-query -W -f='${db:Status-Status}' easy-waf 2>/dev/null)"; then
+    case "$status" in
+      not-installed|config-files) return 0 ;;
+    esac
+    printf '[easy-waf] ERROR: easy-waf is managed by dpkg (dpkg status: %s); install or repair a verified DEB through APT\n' "$status" >&2
+  elif [[ "$?" -eq 1 ]]; then
+    return 0
+  else
+    echo '[easy-waf] ERROR: could not determine the easy-waf package state; inspect sudo dpkg --audit' >&2
+  fi
+  return 1
 }
 
 easy_waf_pkg_installed() {
