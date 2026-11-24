@@ -25,6 +25,8 @@ const (
 	// MaxMMDBBytes caps an accepted database. GeoLite2-Country is a few MB and
 	// GeoLite2-City is under 100 MB; anything larger is not a GeoLite2 database.
 	MaxMMDBBytes int64 = 128 << 20
+	// Allow tar headers and ancillary files in addition to the database.
+	maxMMDBArchiveBytes = MaxMMDBBytes + (16 << 20)
 	// mmdbProbeIP is looked up to prove the database actually answers queries
 	// before it replaces a working one.
 	mmdbProbeIP = "8.8.8.8"
@@ -133,7 +135,7 @@ func ExtractMMDB(src io.Reader, dstDir string) (string, error) {
 	body := io.MultiReader(strings.NewReader(string(head)), src)
 
 	if len(head) == 2 && head[0] == 0x1f && head[1] == 0x8b {
-		err = copyMMDBFromTarGz(body, tmp)
+		err = copyMMDBFromTarGz(body, tmp, maxMMDBArchiveBytes)
 	} else {
 		err = copyCapped(tmp, body)
 	}
@@ -159,16 +161,23 @@ func ExtractMMDB(src io.Reader, dstDir string) (string, error) {
 // copyMMDBFromTarGz pulls the single *.mmdb member out of a MaxMind tarball.
 // Only regular files are considered and nothing is written using a name from the
 // archive, so neither path traversal nor a symlink member can escape dstDir.
-func copyMMDBFromTarGz(r io.Reader, dst io.Writer) error {
+func copyMMDBFromTarGz(r io.Reader, dst io.Writer, archiveLimit int64) error {
 	zr, err := gzip.NewReader(io.LimitReader(r, MaxMMDBBytes+1))
 	if err != nil {
 		return fmt.Errorf("mmdb: gzip: %w", err)
 	}
 	defer zr.Close()
 
-	tr := tar.NewReader(zr)
+	// Bound decompression before the tar parser can skip unrelated members or
+	// consume metadata. One extra byte distinguishes the limit from overflow.
+	archive := &io.LimitedReader{R: zr, N: archiveLimit + 1}
+	tr := tar.NewReader(archive)
+	tooLarge := fmt.Errorf("mmdb: %w (decompressed tar exceeds %d bytes)", ErrMMDBTooLarge, archiveLimit)
 	for {
 		hdr, err := tr.Next()
+		if archive.N == 0 {
+			return tooLarge
+		}
 		if err == io.EOF {
 			return fmt.Errorf("mmdb: archive contains no .mmdb file")
 		}
@@ -182,11 +191,15 @@ func copyMMDBFromTarGz(r io.Reader, dst io.Writer) error {
 		if !strings.EqualFold(filepath.Ext(filepath.Base(filepath.FromSlash(hdr.Name))), ".mmdb") {
 			continue
 		}
-		return copyCapped(dst, tr)
+		err = copyCapped(dst, tr)
+		if archive.N == 0 {
+			return tooLarge
+		}
+		return err
 	}
 }
 
-// ErrMMDBTooLarge marks an upload or extracted database over MaxMMDBBytes.
+// ErrMMDBTooLarge marks an upload, extracted database or archive over its limit.
 var ErrMMDBTooLarge = errors.New("database exceeds the size limit")
 
 // copyCapped writes at most MaxMMDBBytes, refusing input that claims to be larger

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- GeoIP uploads bound decompression of archive metadata and ancillary files
+  as well as the database itself. The API returns HTTP 413 when the archive
+  exceeds the budget.
+
 ## [1.6.1] - Unreleased
 
 ### Upgrade notes

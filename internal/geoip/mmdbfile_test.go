@@ -7,10 +7,13 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,7 +55,8 @@ func tarGz(t *testing.T, entries map[string][]byte) []byte {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(zw)
-	for name, body := range entries {
+	for _, name := range slices.Sorted(maps.Keys(entries)) {
+		body := entries[name]
 		if err := tw.WriteHeader(&tar.Header{
 			Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg,
 		}); err != nil {
@@ -204,6 +208,39 @@ func TestExtractMMDB_capsDecompressedSize(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("rejected upload left %d files", len(entries))
+	}
+}
+
+func TestCopyMMDBFromTarGzCapsArchiveScan(t *testing.T) {
+	database := []byte("test database contents")
+	archive := tarGz(t, map[string][]byte{
+		"COPYRIGHT.txt": []byte("archive metadata"),
+		"database.mmdb": database,
+	})
+	// Two headers, one padded ancillary file, and the database bytes.
+	exact := 3*512 + int64(len(database))
+	for _, tc := range []struct {
+		name  string
+		limit int64
+	}{
+		{"ancillary file", 520},
+		{"database header", 1535},
+		{"database content", exact - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			err := copyMMDBFromTarGz(bytes.NewReader(archive), &dst, tc.limit)
+			if !errors.Is(err, ErrMMDBTooLarge) {
+				t.Fatalf("expected size error, got %v", err)
+			}
+		})
+	}
+	var dst bytes.Buffer
+	if err := copyMMDBFromTarGz(bytes.NewReader(archive), &dst, exact); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(dst.Bytes(), database) {
+		t.Fatalf("extracted bytes = %q, want %q", dst.Bytes(), database)
 	}
 }
 
