@@ -72,6 +72,12 @@ standalone test. Hosted CI passed on `578161a`, including PostgreSQL race
 coverage. The arm64 appliance boot for the exact candidate and published
 signature validation remain open.
 
+**Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
+An isolated VMware fixture passed the installer conffile, HAProxy working
+directory, backup publication, restore permissions, archive locking and
+PostgreSQL SCRAM checks. A private network namespace passed both native
+nftables checks, including closing the managed Zabbix port and rollback.
+
 **Earlier Linux race coverage:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
 The race suite with PostgreSQL, the separate root cases and the CI HAProxy
 integration selection passed. The [earlier 85d8332 run](release-evidence/1.6.1-local-gates-85d8332.md)
