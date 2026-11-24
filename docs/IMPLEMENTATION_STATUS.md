@@ -27,7 +27,7 @@ smoke and repeat installation on a disconnected Ubuntu VMware guest. Installed
 backup and restore also recovered synthetic database, state and configuration
 values and returned the appliance to trusted HTTPS readiness.
 
-**Last verified direct amd64 upgrade:** [1.6.0 to 9f2f493](release-evidence/1.6.1-packages-9f2f493.md#direct-amd64-package-upgrade).
+**Current direct amd64 upgrade:** [1.6.0 to 142b669](release-evidence/1.6.1-packages-142b669.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
