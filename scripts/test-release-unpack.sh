@@ -164,7 +164,7 @@ done
   if (EASY_WAF_SKIP_BINARY_FETCH=1 acquire_dist_binaries) >/dev/null 2>&1; then
     fail 'installer accepted an empty local binary'
   fi
-  # shellcheck disable=SC2329 # Called by the installer function loaded with eval.
+  # shellcheck disable=SC2317,SC2329 # Called by the installer function loaded with eval.
   install() { : >"$ROOT/local-install-called"; }
   if (install_binaries) >/dev/null 2>&1; then fail 'incomplete set passed installation preflight'; fi
   [[ ! -e "$ROOT/local-install-called" ]] || fail 'installer copied a file before rejecting the incomplete set'
@@ -182,7 +182,7 @@ easy_waf_apt_get_update() { : >"$ROOT/toolchain-attempt"; }
 apt-get() { return 0; }
 easy_waf_go_version_meets() { return 0; }
 go() { return 0; }
-# shellcheck disable=SC2329 # Called by the installer function loaded with eval.
+# shellcheck disable=SC2317,SC2329 # Called by the installer function loaded with eval.
 make() { return 1; }
 export EASY_WAF_INSTALL_BUILD_DEPS=1
 export EASY_WAF_PKG_MGR=apt
