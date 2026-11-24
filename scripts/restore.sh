@@ -57,7 +57,7 @@ file_restore_stage=''
 cleanup() {
   local status=$?
   if ((status != 0)) && [[ -n "$file_restore_stage" ]]; then
-    echo "ERROR: database restored, but replacement of $file_restore_stage failed. Keep the archive and finish file recovery before starting appliance services." >&2
+    echo "ERROR: database restored, but $file_restore_stage failed. Keep the archive and finish file recovery before starting appliance services." >&2
   fi
   rm -rf "$WORKDIR"
 }
@@ -181,7 +181,7 @@ if ! python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" pg_restore \
   exit 1
 fi
 
-file_restore_stage='state files'
+file_restore_stage='replacement of state files'
 mkdir -p "$STATE"
 # Wipe then replace: extract-over-existing left orphan PEMs, edge tokens, DNS
 # env, rollback/staging and mixed old secrets with the restored DB.
@@ -195,23 +195,27 @@ tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 # when the console apply below is skipped.
 rm -f "$STATE/haproxy/.loaded-certs.json"
 
-file_restore_stage='configuration files'
+file_restore_stage='replacement of configuration files'
+# Keep group access closed until ownership and secret permissions are set.
+chmod 0700 "$CFG"
 echo "[easy-waf-restore] wiping $CFG before restore (replace, not merge)…"
 find "$CFG" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 echo "[easy-waf-restore] restoring $CFG from backup…"
-tar -C "$ROOT/etc" -cf - . | tar --no-same-owner -C "$CFG" -xf -
+tar -C "$ROOT/etc" -cf - . | tar --no-same-owner -C "$CFG" --no-overwrite-dir -xf -
 
-chown -R easy-waf:easy-waf "$STATE" 2>/dev/null || true
-find "$CFG" -type d -exec chmod 0750 {} + 2>/dev/null || true
-find "$CFG" -type f -exec chmod 0640 {} + 2>/dev/null || true
-chown -R root:easy-waf "$CFG" 2>/dev/null || true
+file_restore_stage='setting file permissions'
+chown -R easy-waf:easy-waf "$STATE"
+find "$CFG" -mindepth 1 -type d -exec chmod 0750 {} +
+find "$CFG" -type f ! -name '*.env' -exec chmod 0640 {} +
+find "$CFG" -type f -name '*.env' -exec chmod 0600 {} +
+chown -R root:easy-waf "$CFG"
 # Secrets must not stay readable by group easy-waf, which includes haproxy.
 # DNS credential files are opened by easy-waf-acmed itself, so that account owns them.
-find "$CFG" -type f -name '*.env' -exec chown easy-waf:easy-waf {} + 2>/dev/null || true
-find "$CFG" -type f -name '*.env' -exec chmod 0600 {} + 2>/dev/null || true
+find "$CFG" -type f -name '*.env' ! -path "$CFG/easy-waf.env" -exec chown easy-waf:easy-waf {} +
 if [[ -f "$CFG/easy-waf.env" ]]; then
   easy_waf_secure_env_file "$CFG/easy-waf.env"
 fi
+chmod 0750 "$CFG"
 
 if command -v restorecon &>/dev/null; then
   echo "[easy-waf-restore] restorecon (legacy SELinux hosts only)…"

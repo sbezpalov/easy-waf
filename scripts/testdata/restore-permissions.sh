@@ -17,6 +17,8 @@ printf 'fixture-secret\n' >"$state/secrets/private"
 printf 'private-cert\n' >"$state/certs/private.pem"
 printf 'fixture-dump\n' >"$ROOT/source/backup/easywaf.dump"
 printf 'DATABASE_URL=postgres://fixture.invalid/never-connected\n' >"$ROOT/source/backup/etc/easy-waf.env"
+printf 'SYNTHETIC_CREDENTIAL=fixture\n' >"$ROOT/source/backup/etc/provider.env"
+chmod 0640 "$ROOT/source/backup/etc/provider.env"
 chmod 0750 "$state" "$state/haproxy" "$state/certs" "$state/certs/nested" "$state/revisions"
 chmod 0640 "$state/haproxy/haproxy.cfg" "$state/certs/nested/test.pem"
 chmod 0700 "$state/secrets"
@@ -88,6 +90,8 @@ for entrypoint in "$RESTORE_SCRIPT" "$ROOT/operator commands/easy-waf-restore"; 
     [[ "$(stat -c %a "$ROOT/state/$file")" == 600 ]] || fail 'private file widened'
   done
   [[ "$(stat -c %a /etc/easy-waf/easy-waf.env)" == 600 ]] || fail 'environment file widened'
+  [[ "$(stat -c %a /etc/easy-waf/provider.env)" == 600 ]] || fail 'provider credentials widened'
+  [[ "$(stat -c %a /etc/easy-waf)" == 750 ]] || fail 'configuration directory did not reopen to its group'
 done
 echo 'OK: restore retains edge group access and private secret modes inside private staging'
 
@@ -126,7 +130,7 @@ RESTORE_TEST_REAL_TAR="$(type -P tar)"
 cat >"$ROOT/bin/tar" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
-if [[ "$1" == --no-same-owner && "$2" == -C && "$3" == "$RESTORE_TEST_COPY_TARGET" ]]; then
+if [[ "$1" == --no-same-owner && "$2" == -C && "$3" == "${RESTORE_TEST_COPY_TARGET:-}" ]]; then
   echo 'fixture: file replacement failed' >&2
   exit 46
 fi
@@ -145,3 +149,31 @@ for target in "$ROOT/state" /etc/easy-waf; do
   if grep -q '^\[easy-waf-restore\] done\.' "$ROOT/log"; then fail "$stage failure printed false completion"; fi
 done
 echo 'OK: failed file replacement reports the affected phase and keeps services stopped'
+
+export RESTORE_TEST_REAL_CHMOD
+RESTORE_TEST_REAL_CHMOD="$(type -P chmod)"
+cat >"$ROOT/bin/chmod" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+if [[ "$1" == 0600 ]]; then
+  for path in "${@:2}"; do
+    if [[ "$path" == /etc/easy-waf/provider.env ]]; then
+      echo 'fixture: provider credential permissions failed' >&2
+      exit 47
+    fi
+  done
+fi
+exec "$RESTORE_TEST_REAL_CHMOD" "$@"
+MOCK
+chmod 0700 "$ROOT/bin/chmod"
+: >"$RESTORE_TEST_STARTS"
+RESTORE_TEST_FAILURE=''
+if PATH="$ROOT/bin:$PATH" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_SKIP_APPLY=1 \
+  "$ROOT/operator commands/easy-waf-restore" "$ROOT/archive.tar.gz" >"$ROOT/log" 2>&1; then
+  fail 'restore ignored a credential permission error'
+fi
+grep -Fq 'fixture: provider credential permissions failed' "$ROOT/log" || fail 'fixture did not reach the permission error'
+grep -Fq 'database restored, but setting file permissions failed' "$ROOT/log" || fail 'permission failure lost recovery context'
+[[ ! -s "$RESTORE_TEST_STARTS" ]] || fail 'permission failure restarted services'
+[[ "$(stat -c %a /etc/easy-waf)" == 700 ]] || fail 'group could access configuration before all credentials were secured'
+echo 'OK: credential permission failures keep configuration private and services stopped'

@@ -158,7 +158,11 @@ Steps:
    appliance services stopped. Verify the database outcome before restarting
    services, especially after a connection loss.
 4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
-5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
+5. Assigns state ownership to `easy-waf:easy-waf`. Keeps `/etc/easy-waf`
+   private during replacement and permission setup. Configuration files use
+   `root:easy-waf 0640`, except `easy-waf.env` (`root:root 0600`) and other
+   `*.env` files (`easy-waf:easy-waf 0600`). If permission setup fails, the
+   services stay stopped and the configuration directory stays private.
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
 7. Runs **`easy-waf-admin apply-edge`** locally to regenerate HAProxy config and reload HAProxy (unless skipped). Restore does not depend on management HTTPS or a bearer token; the legacy automation token cannot satisfy API step-up.
 8. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
