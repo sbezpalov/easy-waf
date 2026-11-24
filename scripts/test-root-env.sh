@@ -189,8 +189,14 @@ easy_waf_nft_write_ruleset
   }
   systemctl() {
     printf '%s\n' "$*" >>"$ROOT/nft-service"
-    [[ "$1" != is-enabled ]]
+    case "$*" in
+      'start nftables') return "${nft_start_status:-0}" ;;
+      'is-enabled ufw') return 1 ;;
+      'enable nftables') return 0 ;;
+      *) return 99 ;;
+    esac
   }
+  unset EASY_WAF_SKIP_SYSTEMD
   for reject in check load; do
     if easy_waf_nft_configure_appliance 0 '8000 8443' 1 '' 1 >"$ROOT/nft-log" 2>&1; then
       fail "firewall reported success after nft rejected $reject"
@@ -207,5 +213,16 @@ easy_waf_nft_write_ruleset
   grep -Fq 'tcp dport 10050 accept' "$ROOT/loaded.nft"
   [[ "$(easy_waf_nft_read_zabbix)" == 1 && ! -e "$EASY_WAF_NFT_GUARD" ]] ||
     fail 'successful transaction did not persist the requested firewall configuration'
+  printf '%s\n' 'enable nftables' 'start nftables' 'is-enabled ufw' >"$ROOT/expected-service"
+  cmp "$ROOT/expected-service" "$ROOT/nft-service" || fail 'firewall restarted or otherwise disturbed existing services'
+  : >"$ROOT/nft-service"
+  if nft_start_status=1 easy_waf_nft_configure_appliance >"$ROOT/nft-log" 2>&1; then
+    fail 'firewall reported success after the nftables service failed to start'
+  fi
+  printf '%s\n' 'enable nftables' 'start nftables' >"$ROOT/expected-service"
+  cmp "$ROOT/expected-service" "$ROOT/nft-service" || fail 'failed nftables activation touched ufw'
+  : >"$ROOT/nft-service"
+  EASY_WAF_SKIP_SYSTEMD=1 easy_waf_nft_configure_appliance >"$ROOT/nft-log" 2>&1
+  [[ ! -s "$ROOT/nft-service" ]] || fail 'firewall touched services when systemd was skipped'
 )
 echo 'OK: root env inputs stay data'

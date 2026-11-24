@@ -25,7 +25,7 @@ An operator may run a **Zabbix agent** on the same appliance or host (Easy Home 
 
 **Managed Zabbix rule** in Settings → Monitoring shows whether the managed file contains the marked rule, including rules enabled by the installer. The checkbox shows the saved preference, which remains saved after a safety rollback. Use **Keep changes** to retain a staged rule. Confirm reachability separately from the Zabbix server.
 
-The CLI firewall repair validates and loads the managed firewall table and management guard in one nftables transaction. If nftables rejects that transaction, the repair stops before replacing the files used at boot.
+The CLI firewall repair validates and loads the managed firewall table and management guard in one nftables transaction. If nftables rejects that transaction, the repair stops before replacing the files used at boot. The repair leaves an active nftables service running and starts it if inactive.
 
 If the kernel still has an old rule after an upgrade, set the checkbox as desired, click **Save & apply Zabbix firewall**, and confirm within the safety window. The panel reapplies the managed file even when the checkbox already matches it.
 

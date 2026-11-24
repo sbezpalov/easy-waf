@@ -215,13 +215,15 @@ easy_waf_nft_configure_appliance() (
   easy_waf_nft_ensure_main_conf || return 1
   echo "[easy-waf] nftables: applied $EASY_WAF_NFT_RULES"
 
-  if command -v systemctl &>/dev/null; then
-    systemctl enable nftables 2>/dev/null || true
-    systemctl restart nftables 2>/dev/null || systemctl start nftables 2>/dev/null || true
-  fi
-  # Ubuntu may ship ufw — disable to avoid fighting our ruleset.
-  if systemctl is-enabled ufw &>/dev/null 2>&1; then
-    systemctl disable --now ufw 2>/dev/null || true
-    echo "[easy-waf] disabled ufw (host firewall is nftables/easy-waf)"
+  if [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" != "1" ]] && command -v systemctl &>/dev/null; then
+    # On Ubuntu, stopping nftables flushes all rules. The batch already
+    # updated the live managed tables, so start only if the unit is inactive.
+    systemctl enable nftables || return 1
+    systemctl start nftables || return 1
+    # Ubuntu may ship ufw. Disable it only once nftables is active.
+    if systemctl is-enabled ufw &>/dev/null &&
+      systemctl disable --now ufw; then
+      echo "[easy-waf] disabled ufw (host firewall is nftables/easy-waf)"
+    fi
   fi
 )
