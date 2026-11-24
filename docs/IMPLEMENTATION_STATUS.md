@@ -4,6 +4,13 @@
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
+**Rollback status fix candidate:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md).
+Native Linux build checks and independent Windows hash and payload checks
+passed for both architectures. The broker, API and panel regression tests
+passed. The PostgreSQL-backed race suite passed 923 tests with four skips,
+and the live HAProxy and root checks passed. Appliance acceptance on the
+corrected ISOs remains open.
+
 **Windows developer verification:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#windows-developer-checks)
 passed the full Go test command and golangci-lint on Windows amd64 with
 Go 1.27.4 and Node.js 26.13.1. An [earlier
