@@ -29,6 +29,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/envflag"
 	"github.com/easy-waf/easy-waf/internal/geoip"
+	"github.com/easy-waf/easy-waf/internal/host/hosttime"
 	"github.com/easy-waf/easy-waf/internal/ipbl"
 	"github.com/easy-waf/easy-waf/internal/metrics"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
@@ -221,6 +222,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"state_dir": s.Eng.StateDir,
 		"version":   easywaf.Version(),
+		"timezone":  hosttime.CurrentTimezone(),
 	})
 }
 

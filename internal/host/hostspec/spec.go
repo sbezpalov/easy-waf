@@ -33,6 +33,7 @@ type PendingRollback struct {
 }
 
 const (
+	TimedatectlPath    = "/usr/bin/timedatectl"
 	StagingDirPrefix   = "/var/lib/easy-waf/staging/"
 	RollbackDefaultSec = 90
 	RollbackMinSec     = 30
@@ -40,6 +41,7 @@ const (
 )
 
 var (
+	timezoneNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+\-]*(/[A-Za-z][A-Za-z0-9_+\-]*)*$`)
 	usernameRE     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	journalSinceRE = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$|^[0-9]+[smhdw]?$`)
 	journalUTCRE   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6} UTC$`)
@@ -59,6 +61,12 @@ var (
 		"emerg": {}, "alert": {}, "crit": {}, "err": {}, "warning": {}, "notice": {}, "info": {}, "debug": {},
 	}
 )
+
+// ValidTimezoneName checks the syntax of an IANA name before it reaches a
+// command. The broker also checks membership in the host's installed list.
+func ValidTimezoneName(name string) bool {
+	return len(name) <= 128 && timezoneNameRE.MatchString(name)
+}
 
 // ValidToken reports whether token matches rollback unit naming (hex, 8–64 chars).
 func ValidToken(token string) bool {

@@ -177,7 +177,7 @@ async function scenario(mode) {
     });
   }
   const context = {console, document: {getElementById: id => elements[id]}, sessionExpired: false,
-    Date: class extends Date { toLocaleTimeString() { return clock; } },
+    Date: class extends Date { static now() { return Date.parse('2026-01-01T' + clock + 'Z'); } },
     fetch: async (path, options) => {
       if (pollRuntimeError && path === '/api/v1/stats/haproxy') {
         return response({backends: null, error: 'Runtime poll unavailable'});
@@ -214,7 +214,8 @@ async function scenario(mode) {
     alertView: (tone, title, message) => '<alert data-tone="' + tone + '">' + title + ': ' + message + '</alert>',
     stateView: (state, message) => '<state data-state="' + state + '">' + message + '</state>',
     renderApplicationVersion: value => { elements['dash-version'].textContent = value || 'Unknown'; },
-    renderPersistentEdgeStatus: status => status != null, formatAuditTime: value => value,
+    renderPersistentEdgeStatus: status => status != null,
+    formatHostTime: value => typeof value === 'number' ? new Date(value).toISOString().slice(11, 19) : value,
     apiMessage: async r => (await r.json()).error, shortSha: value => String(value || '').slice(0, 8),
     withBusy: async (_button, fn) => fn(),
     setTimeout: (callback, delay) => { timeouts.set(++timeoutID, {callback, delay}); return timeoutID; },

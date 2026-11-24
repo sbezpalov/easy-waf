@@ -25,7 +25,7 @@ func TestBuildJournalArgs_allowlistedUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(args) < 4 || args[len(args)-2] != "-u" || args[len(args)-1] != "haproxy.service" {
+	if !slices.Equal(args, []string{"journal", "--no-pager", "-n", "50", "-u", "haproxy.service", "--output", "short-iso"}) {
 		t.Fatalf("args: %v", args)
 	}
 }

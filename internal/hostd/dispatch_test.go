@@ -11,12 +11,41 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 type mockRunner struct {
 	lastName string
 	lastArgs []string
 	err      error
+}
+
+func TestDispatchTimezoneSet(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want []string
+		ok   bool
+	}{
+		{argv: []string{"timezone-set"}},
+		{argv: []string{"timezone-set", "Europe/Amsterdam", "UTC"}},
+		{argv: []string{"timezone-set", "--help"}},
+		{argv: []string{"timezone-set", "Europe/../UTC"}},
+		{argv: []string{"timezone-set", "Unknown/City"}, want: []string{"list-timezones"}},
+		{argv: []string{"timezone-set", "Europe/Amsterdam"}, want: []string{"list-timezones", "set-timezone Europe/Amsterdam"}, ok: true},
+	} {
+		var calls []string
+		r := packageRestartRunner(func(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+			if name != hostspec.TimedatectlPath {
+				t.Fatalf("unexpected program %q", name)
+			}
+			calls = append(calls, strings.Join(args, " "))
+			return []byte("Etc/UTC\nEurope/Amsterdam\n"), nil, 0, nil
+		})
+		got := (&Dispatcher{Runner: r}).Dispatch(t.Context(), tc.argv)
+		if got.OK != tc.ok || !slices.Equal(calls, tc.want) {
+			t.Errorf("%q: response %+v, calls %q, want success=%v and calls %q", tc.argv, got, calls, tc.ok, tc.want)
+		}
+	}
 }
 
 func (m *mockRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {

@@ -69,7 +69,7 @@ func buildJournalArgs(q Query) ([]string, error) {
 	if !hostsystemd.AllowedUnit(u) {
 		return nil, fmt.Errorf("unit not allowed")
 	}
-	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", u}
+	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", u, "--output", "short-iso"}
 	if s := strings.TrimSpace(q.Since); s != "" {
 		if !journalSinceRE.MatchString(s) {
 			return nil, fmt.Errorf("invalid since")

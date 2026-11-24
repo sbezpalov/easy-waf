@@ -298,7 +298,7 @@ Optional per user (ADR 0004, option C). When it is on, `POST /api/v1/auth/login`
 
 ### `GET /api/v1/status`
 Minimal status for the control plane.
-- **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.6.1"}`. `version` comes from root `VERSION` embedded in the running binary. It does not require or accept an `EASY_WAF_VERSION` environment override. The panel header and Dashboard use this value.
+- **Response:** `200` `{"state_dir": "/var/lib/easy-waf", "version": "1.6.1", "timezone": "Etc/UTC"}`. `version` comes from root `VERSION` embedded in the running binary. The panel uses the system IANA `timezone` to display event times, while API timestamps retain their existing format.
 
 ### `GET /api/v1/about`
 Provides the data for **Overview → About** to authenticated viewers and administrators.
@@ -1399,8 +1399,10 @@ Routes that change the host (including netplan/firewall **commit**) need a passw
 | `POST /api/v1/host/firewall/zabbix-agent` | Enable/disable the marked LAN TCP 10050 accept; preference + apply-rollback (see [HOST-API.md](HOST-API.md)) |
 | `POST /api/v1/host/firewall/commit` | Confirm a pending firewall apply by token |
 | `GET /api/v1/host/services` | List the allowlisted systemd units and their state |
+| `GET /api/v1/host/timezone` | Return the host `timezone` and selectable `available` IANA zones |
+| `PUT /api/v1/host/timezone` | Set the host time zone with `{"timezone":"Europe/Amsterdam"}` and return the resulting `timezone`. Requires step-up and writes an audit event |
 | `POST /api/v1/host/services/{unit}/{action}` | Run `start`, `stop`, `restart`, `reload`, `enable`, `disable` or `try-restart` on an allowlisted unit |
-| `GET /api/v1/host/journal` | Read journal lines (`unit`, `since`, `until`, `priority`, `lines`) |
+| `GET /api/v1/host/journal` | Read journal lines with host-local ISO timestamps and offsets (`unit`, `since`, `until`, `priority`, `lines`) |
 | `GET /api/v1/host/updates` | List available package updates |
 | `POST /api/v1/host/updates/update` | Run `apt update` |
 | `POST /api/v1/host/updates/upgrade` | Run `apt upgrade` |

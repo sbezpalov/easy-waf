@@ -45,7 +45,7 @@ function element(id) {
 }
 let lists = 0, pending = null, edgeRefreshes = 0;
 const context = {document: {getElementById: element}, hdr: () => ({}), encodeURIComponent,
-  esc: text => String(text), shortSha: text => String(text).slice(0, 12), copyBtn: () => '',
+  esc: text => String(text), formatHostTime: String, shortSha: text => String(text).slice(0, 12), copyBtn: () => '',
   tableState: (_box, state) => tableStates.push(state), refreshSession: () => {throw Error('unexpected auth refresh')},
   toast: (...args) => notices.push(args), markPendingApply: on => {pending = on},
   refreshEdgeStatus: async () => {edgeRefreshes++; pending = null},

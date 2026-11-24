@@ -19,6 +19,56 @@ func TestAboutShowsVersionsAndAttribution(t *testing.T) {
 	runVersionUI(t, aboutInteractionTest)
 }
 
+func TestHostTimezoneUpdatesPanelDates(t *testing.T) {
+	runVersionUI(t, hostTimezoneInteractionTest)
+}
+
+const hostTimezoneInteractionTest = `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const form = {}, status = {};
+const save = {getAttribute: () => null};
+const select = {value: '', options: [], replaceChildren(...options) { this.options = options; }};
+const elements = {'system-timezone-form': form, 'system-timezone': select,
+  'system-timezone-status': status, 'btn-sys-timezone-save': save};
+let snapshotsCleared = 0;
+const context = vm.createContext({
+  document: {getElementById: id => elements[id]},
+  Option: function(text, value) { this.text = text; this.value = value; },
+  hdr: () => ({}), withFocusableBusy: (_, run) => run(),
+  clearHostJournalSnapshot: () => { snapshotsCleared++; },
+  fetch: async (pathname, init) => {
+    assert.equal(pathname, '/api/v1/host/timezone');
+    if (init.method === 'PUT') {
+      assert.deepEqual(JSON.parse(init.body), {timezone: 'America/New_York'});
+      return {ok: true, json: async () => ({timezone: 'America/New_York'})};
+    }
+    return {ok: true, json: async () => ({timezone: 'Etc/UTC', available: ['America/New_York', 'Etc/UTC']})};
+  }
+});
+function evaluate(start, end) {
+  const first = page.indexOf(start), last = page.indexOf(end, first);
+  assert.ok(first >= 0 && last > first);
+  vm.runInContext(page.slice(first, last), context);
+}
+evaluate('  let hostTimeFormatter =', '  let aboutGeneration =');
+evaluate('  let hostTimezoneLoadGeneration =', '  function formatBytes(');
+async function run() {
+  await context.loadHostTimezone();
+  assert.equal(select.value, 'Etc/UTC');
+  assert.equal(context.formatHostTime('2026-01-15T12:00:00Z'), '2026-01-15 12:00:00 UTC');
+  select.value = 'America/New_York';
+  await form.onsubmit({preventDefault() {}});
+  assert.equal(status.textContent, 'Host time zone set to America/New_York.');
+  assert.equal(context.formatHostTime('2026-01-15T12:00:00Z'), '2026-01-15 07:00:00 GMT-5');
+  assert.equal(context.formatHostTime('2026-07-15T12:00:00Z'), '2026-07-15 08:00:00 GMT-4');
+  assert.equal(snapshotsCleared, 1);
+  assert.equal(context.setHostTimezone('Unsupported/Future_Zone'), false);
+  assert.equal(context.formatHostTime('2026-07-15T12:00:00Z'), '2026-07-15 12:00:00 UTC');
+}
+run().catch(error => {console.error(error); process.exitCode = 1});
+`
+
 func runVersionUI(t *testing.T, script string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
@@ -75,7 +125,7 @@ assert.ok(page.includes('href="#about"'));
 assert.ok(page.includes("case 'about':\n        void loadAbout();"));
 assert.ok(page.includes('Sergey Bezpalov and Easy Home WAF contributors'));
 assert.ok(page.includes('<summary>Terms of use (Apache License 2.0)</summary>'));
-const start = page.indexOf('  let aboutGeneration = 0;');
+const start = page.indexOf('  let hostTimeFormatter =');
 const end = page.indexOf('  const VIEWER_SAFE_ACTIONS', start);
 assert.ok(start >= 0 && end > start);
 function element() {
@@ -121,7 +171,7 @@ async function run() {
     assert.equal(elements.get('about-revision').textContent, 'abc123 (modified source)');
     const sourceTime = scenario === 'success' ? '2026-11-18T08:30:00Z' : '';
     assert.equal(elements.get('about-source-time').dateTime, sourceTime);
-    assert.equal(elements.get('about-source-time').textContent, sourceTime);
+    assert.equal(elements.get('about-source-time').textContent, sourceTime ? '2026-11-18 08:30:00 UTC' : '—');
     assert.equal(elements.get('about-source-time-row').hidden, !sourceTime);
     assert.equal(elements.get('about-license').textContent, 'Apache terms');
     assert.equal(elements.get('about-notice').textContent, '<notice>');

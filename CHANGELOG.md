@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Host time zone.** Administrators can choose an installed IANA zone in
+  System. The panel and host journals use the selected zone for display.
+  Machine-readable event timestamps and safety deadlines keep their format.
+
 - **Clearer publication and apply status.** The dashboard distinguishes missing
   data from service failures. The application flow guides first publication,
   shows whether saved changes reached HAProxy, and reports application-specific

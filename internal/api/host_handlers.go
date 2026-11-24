@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/host/diag"
 	"github.com/easy-waf/easy-waf/internal/host/disk"
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
+	"github.com/easy-waf/easy-waf/internal/host/hosttime"
 	"github.com/easy-waf/easy-waf/internal/host/journal"
 	"github.com/easy-waf/easy-waf/internal/host/network"
 	"github.com/easy-waf/easy-waf/internal/host/nft"
@@ -47,6 +49,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Use(auth.RequireAdmin)
 
 		r.Get("/network", s.hostGetNetwork)
+		r.Get("/timezone", s.hostGetTimezone)
 		r.Get("/firewall", s.hostGetFirewall)
 		r.Get("/changes/pending", s.hostGetPendingChanges)
 		r.Get("/services", s.hostListServices)
@@ -66,6 +69,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireStepUp(stepUpWindow))
+			r.Put("/timezone", s.hostPutTimezone)
 
 			// Soft-deprecated immediate apply — use apply + commit instead.
 			r.Put("/network/netplan", s.hostPutNetplan)
@@ -94,6 +98,42 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 			r.Put("/users/{name}/ssh-keys", s.hostPutSSHKeys)
 		})
 	})
+}
+
+func (s *Server) hostGetTimezone(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	zones, err := hosttime.ListTimezones(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"timezone": hosttime.CurrentTimezone(), "available": zones})
+}
+
+func (s *Server) hostPutTimezone(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Timezone string `json:"timezone"`
+	}
+	if err := decodeJSONRequest(r, &body); err != nil || !hostspec.ValidTimezoneName(body.Timezone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid time zone"})
+		return
+	}
+	zones, err := hosttime.ListTimezones(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if !slices.Contains(zones, body.Timezone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "time zone is not installed on the host"})
+		return
+	}
+	if err := hosttime.SetTimezone(r.Context(), body.Timezone); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	current := hosttime.CurrentTimezone()
+	s.hostAppendAudit(r.Context(), "host_timezone_set", map[string]any{"requested": body.Timezone, "timezone": current}, false)
+	writeJSON(w, http.StatusOK, map[string]string{"timezone": current})
 }
 
 func (s *Server) hostGetNetwork(w http.ResponseWriter, r *http.Request) {

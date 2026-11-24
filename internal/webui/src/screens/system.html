@@ -1,6 +1,18 @@
       <div id="tab-system" class="tab-panel">
         <h2>▦ System</h2>
         <p class="dash-note" style="margin-top:0">Host services, package updates, and power control (requires privileged helper on the appliance).</p>
+        <section class="panel" aria-labelledby="system-timezone-title" style="max-width:100%">
+          <h3 id="system-timezone-title">Date and time</h3>
+          <form id="system-timezone-form">
+            <div class="row" style="flex-wrap:wrap">
+              <label for="system-timezone">Host time zone</label>
+              <select id="system-timezone" required disabled aria-describedby="system-timezone-status"></select>
+              <button type="submit" class="secondary" id="btn-sys-timezone-save" disabled>Save time zone</button>
+            </div>
+          </form>
+          <p class="dash-note">Used for host journals and dates in the panel.</p>
+          <p id="system-timezone-status" role="status" aria-live="polite"></p>
+        </section>
         <div class="panel" style="max-width:100%">
           <h3>Services</h3>
           <div class="row">

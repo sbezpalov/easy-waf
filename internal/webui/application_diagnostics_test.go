@@ -83,7 +83,7 @@ async function run() {
   const context = {console, encodeURIComponent, esc,
     statusBadge: (label, tone) => '<badge data-tone="' + esc(tone) + '">' + esc(label) + '</badge>',
     stateView: (state, message) => '<state data-state="' + esc(state) + '">' + esc(message) + '</state>',
-    formatAuditTime: value => value, hdr: () => ({Authorization: 'fixture'}),
+    formatHostTime: value => value, hdr: () => ({Authorization: 'fixture'}),
     fetch: async path => {calls.push(path); return response(payload)},
     document: {getElementById: () => panel},
     withBusy: async (_button, operation) => operation()};

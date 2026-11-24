@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
@@ -46,6 +47,23 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	}
 
 	switch op {
+	case "timezone-set":
+		if len(argv) != 2 || !hostspec.ValidTimezoneName(argv[1]) {
+			return failResp("invalid time zone", 1)
+		}
+		out, stderr, code, err := runCmd(ctx, r, hostspec.TimedatectlPath, "list-timezones")
+		if err != nil || code != 0 {
+			return failExec(out, stderr, code, err)
+		}
+		if !slices.Contains(strings.Fields(string(out)), argv[1]) {
+			return failResp("time zone is not installed on the host", 1)
+		}
+		out, stderr, code, err = runCmd(ctx, r, hostspec.TimedatectlPath, "set-timezone", argv[1])
+		if err != nil || code != 0 {
+			return failExec(out, stderr, code, err)
+		}
+		return okResp(nil, nil, 0)
+
 	case "systemctl":
 		if len(argv) != 3 {
 			return failResp("systemctl: want action unit", 1)

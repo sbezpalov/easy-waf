@@ -98,7 +98,7 @@ const elements = Object.fromEntries([
 const context = vm.createContext({
   document: {getElementById: id => elements[id]},
   panelFromHash: () => 'logs', hdr: () => ({}), esc: String,
-  blockedRuleLabel: String, formatAuditTime: String, blockedGen: 0, policyMatchesGen: 0,
+  blockedRuleLabel: String, formatHostTime: String, blockedGen: 0, policyMatchesGen: 0,
   apiMessage: response => response.text()
 });
 vm.runInContext(page.slice(start, end), context);

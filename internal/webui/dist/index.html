@@ -763,7 +763,7 @@
                 <th>Domain</th>
                 <th>Mode</th>
                 <th>Status</th>
-                <th>Expires (UTC)</th>
+                <th>Expires</th>
                 <th>Days left</th>
                 <th>Actions</th>
               </tr>
@@ -1016,6 +1016,18 @@
       <div id="tab-system" class="tab-panel">
         <h2>▦ System</h2>
         <p class="dash-note" style="margin-top:0">Host services, package updates, and power control (requires privileged helper on the appliance).</p>
+        <section class="panel" aria-labelledby="system-timezone-title" style="max-width:100%">
+          <h3 id="system-timezone-title">Date and time</h3>
+          <form id="system-timezone-form">
+            <div class="row" style="flex-wrap:wrap">
+              <label for="system-timezone">Host time zone</label>
+              <select id="system-timezone" required disabled aria-describedby="system-timezone-status"></select>
+              <button type="submit" class="secondary" id="btn-sys-timezone-save" disabled>Save time zone</button>
+            </div>
+          </form>
+          <p class="dash-note">Used for host journals and dates in the panel.</p>
+          <p id="system-timezone-status" role="status" aria-live="polite"></p>
+        </section>
         <div class="panel" style="max-width:100%">
           <h3>Services</h3>
           <div class="row">
@@ -1221,7 +1233,7 @@
           </div>
           <table style="margin-top:0.75rem">
             <thead>
-              <tr><th>Time (UTC)</th><th>Client</th><th>Host</th><th>Request</th><th>Status</th><th>Rule</th></tr>
+              <tr><th>Time</th><th>Client</th><th>Host</th><th>Request</th><th>Status</th><th>Rule</th></tr>
             </thead>
             <tbody id="blocked-tbody"></tbody>
           </table>
@@ -1240,7 +1252,7 @@
             <span id="policy-matches-status" class="dash-note" role="status"></span>
           </div>
           <table>
-            <thead><tr><th>Time (UTC)</th><th>Host</th><th>Matched rules, in order</th><th>HTTP status</th></tr></thead>
+            <thead><tr><th>Time</th><th>Host</th><th>Matched rules, in order</th><th>HTTP status</th></tr></thead>
             <tbody id="policy-matches-tbody"></tbody>
           </table>
         </section>
@@ -1318,7 +1330,7 @@
         <div class="panel" style="max-width:100%;overflow-x:auto">
           <table>
             <thead>
-              <tr><th>Date (UTC)</th><th>User</th><th>Action</th><th>IP</th><th>Details</th></tr>
+              <tr><th>Time</th><th>User</th><th>Action</th><th>IP</th><th>Details</th></tr>
             </thead>
             <tbody id="audit-tbody"></tbody>
           </table>
@@ -2264,11 +2276,44 @@
 
   async function loadApplicationVersion() {
     try {
-      const response = await fetch('/api/v1/status', { headers: hdr() });
-      renderApplicationVersion(response.ok ? (await response.json()).version : '');
+      const response = await fetch('/api/v1/status', { headers: hdr(), cache: 'no-store' });
+      const status = response.ok ? await response.json() : {};
+      renderApplicationVersion(status.version);
+      setHostTimezone(status.timezone);
     } catch (_) {
       renderApplicationVersion('');
     }
+  }
+
+  let hostTimeFormatter = null;
+  setHostTimezone('UTC');
+
+  function hostTimezoneFormatter(timeZone) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'shortOffset'
+    });
+  }
+
+  function setHostTimezone(timezone) {
+    try {
+      hostTimeFormatter = hostTimezoneFormatter(timezone || 'UTC');
+      return true;
+    } catch (_) {
+      hostTimeFormatter = null;
+      return false;
+    }
+  }
+
+  function formatHostTime(value) {
+    if (!value) return '—';
+    const time = new Date(value);
+    if (!Number.isFinite(time.getTime())) return String(value);
+    if (!hostTimeFormatter) return time.toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
+    const parts = Object.fromEntries(hostTimeFormatter.formatToParts(time).map(({type, value}) => [type, value]));
+    const zone = parts.timeZoneName.replace('−', '-');
+    const offset = /^GMT(?:[+-]0(?::00)?)?$/.test(zone) ? 'UTC' : zone;
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${offset}`;
   }
 
   let aboutGeneration = 0;
@@ -2293,7 +2338,7 @@
       document.getElementById('about-source-time-row').classList.toggle('hidden', !data.source_time);
       const sourceTime = document.getElementById('about-source-time');
       sourceTime.dateTime = data.source_time || '';
-      sourceTime.textContent = sourceTime.dateTime;
+      sourceTime.textContent = formatHostTime(sourceTime.dateTime);
       components.replaceChildren();
       for (const component of data.components || []) {
         const row = document.createElement('tr');
@@ -2374,8 +2419,9 @@
       }
       applyRoleCapabilities(me.role);
       renderTOTPStatus(!!me.totp_enabled);
-      void loadApplicationVersion();
+      const status = loadApplicationVersion();
       await loadSettingsPanel();
+      await status;
       loadProfileSelect();
       initRestrictedPathRows();
       if (!location.hash || !HASH_TO_PANEL[location.hash.toLowerCase().split('?')[0]]) {
@@ -3475,7 +3521,7 @@
         statusBadge(state.label, state.tone) + '</div><p>' + esc(step && step.summary || 'No result was reported.') + '</p>' +
         evidenceHTML + '</li>';
     }).join('');
-    const checked = payload && payload.checked_at ? formatAuditTime(payload.checked_at) : 'Unknown';
+    const checked = payload && payload.checked_at ? formatHostTime(payload.checked_at) : 'Unknown';
     return '<div class="app-diagnostics-summary"><div><strong>Availability diagnosis</strong><p>' +
       esc(payload && payload.summary || 'Some checks could not be verified.') + '</p></div>' +
       statusBadge(overallLabel, overall.tone) + '</div>' +
@@ -3617,7 +3663,7 @@
       const st = row.is_current ? 'current' : 'previous';
       const rb = row.is_current ? '' : `<button type="button" class="secondary btn-rollback" data-id="${row.id}" data-sha="${esc(row.sha)}">Rollback</button>`;
       const prev = esc((row.config_snippet_preview || '').slice(0, 120));
-      const dt = esc(row.created_at || '');
+      const dt = esc(formatHostTime(row.created_at));
       const shaFull = row.sha || '';
       return `<tr><td><code>${esc(shortSha(shaFull))}</code> ${copyBtn(shaFull)}</td><td>${dt}</td><td>${st}</td><td style="font-size:11px;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.config_snippet_preview || '')}">${prev}</td><td>${rb}</td></tr>`;
     }).join('');
@@ -3903,17 +3949,8 @@
   function certFailedTitle(c) {
     if (c.status !== 'failed') return '';
     let t = c.last_error || 'ACME issuance failed';
-    if (c.next_attempt_at) t += ' — automatic retry at ' + formatCertNotAfter(c.next_attempt_at) + ' UTC';
+    if (c.next_attempt_at) t += ' — automatic retry at ' + formatHostTime(c.next_attempt_at);
     return t;
-  }
-
-  function formatCertNotAfter(iso) {
-    if (!iso) return '—';
-    try {
-      return new Date(iso).toISOString().slice(0, 19).replace('T', ' ');
-    } catch (_) {
-      return esc(String(iso));
-    }
   }
 
   async function loadCertDashboard() {
@@ -3964,7 +4001,7 @@
         '<td><code>' + esc(c.primary_domain || '') + '</code></td>' +
         '<td><code>' + esc(c.mode || '') + '</code></td>' +
         '<td>' + certStatusPillHTML(c.status || '', certFailedTitle(c)) + '</td>' +
-        '<td><code>' + formatCertNotAfter(c.not_after) + '</code></td>' +
+        '<td><code>' + esc(formatHostTime(c.not_after)) + '</code></td>' +
         '<td>' + (c.days_remaining == null ? '—' : esc(String(c.days_remaining))) + '</td>' +
         '<td class="row" style="gap:0.35rem;flex-wrap:wrap">' + actions.join(' ') + '</td>';
       tbody.appendChild(tr);
@@ -4082,15 +4119,6 @@
       }
     }
     return JSON.stringify(d);
-  }
-
-  function formatAuditTime(ts) {
-    if (!ts) return '—';
-    try {
-      return new Date(ts).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' Z');
-    } catch (_) {
-      return String(ts);
-    }
   }
 
   const BLOCKED_RULES = {
@@ -4263,7 +4291,7 @@
       '<tr><td>' + esc(c.key) + '</td><td>' + c.count + '</td></tr>');
     const empty = data.truncated ? 'No blocked requests in the available journal sample.' : 'Nothing blocked in this period.';
     tbody.innerHTML = events.map((ev) =>
-      '<tr><td>' + esc(formatAuditTime(ev.time)) + '</td><td><code>' + esc(ev.client_ip) + '</code></td><td>' +
+      '<tr><td>' + esc(formatHostTime(ev.time)) + '</td><td><code>' + esc(ev.client_ip) + '</code></td><td>' +
       esc(ev.host || '—') + '</td><td><code>' + esc((ev.method || '') + ' ' + (ev.path || '')) + '</code></td><td>' +
       ev.status + '</td><td>' + esc(blockedRuleLabel(ev.rule)) + '</td></tr>').join('') ||
       '<tr><td colspan="6" class="dash-note">' + empty + '</td></tr>';
@@ -4286,7 +4314,7 @@
       if (gen !== policyMatchesGen) return;
       tbody.innerHTML = data.events.map((event) => {
         const matches = event.matches.map((match) => esc(match.id) + ' (' + esc(match.action) + ')').join(', ');
-        return '<tr><td>' + esc(formatAuditTime(event.time)) + '</td><td>' + esc(event.host) +
+        return '<tr><td>' + esc(formatHostTime(event.time)) + '</td><td>' + esc(event.host) +
           '</td><td>' + matches + '</td><td>' + esc(String(event.status)) + '</td></tr>';
       }).join('');
       if (data.events.length === 0) {
@@ -4380,7 +4408,7 @@
       const c2 = document.createElement('td');
       const c3 = document.createElement('td');
       const c4 = document.createElement('td');
-      c0.innerHTML = '<code>' + esc(formatAuditTime(e.timestamp)) + '</code>';
+      c0.innerHTML = '<code>' + esc(formatHostTime(e.timestamp)) + '</code>';
       c1.textContent = e.user_name || '';
       c2.innerHTML = '<code>' + esc(e.action || '') + '</code>';
       c3.textContent = e.source_ip || '';
@@ -4498,10 +4526,10 @@
     const runtime = edge.runtime && typeof edge.runtime === 'object' ? edge.runtime : null;
     if (runtime && runtime.state === 'known' && runtime.revision_sha) {
       runtimeEl.textContent = 'Managed haproxy.cfg observed · SHA ' + shortSha(runtime.revision_sha) +
-        (runtime.checked_at ? ' · checked ' + formatAuditTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
+        (runtime.checked_at ? ' · checked ' + formatHostTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
     } else {
       runtimeEl.textContent = 'Managed haproxy.cfg could not be identified' +
-        (runtime && runtime.checked_at ? ' at ' + formatAuditTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
+        (runtime && runtime.checked_at ? ' at ' + formatHostTime(runtime.checked_at) : '') + '. Process and backend health are separate.';
       attention.push(alertView('unknown', 'Managed edge artifact is unknown',
         'The API could not identify the current managed haproxy.cfg. Check the state path and API logs.'));
     }
@@ -4511,7 +4539,7 @@
       lastEl.textContent = 'No persistent edge operation has been recorded yet.';
       return;
     }
-    lastEl.textContent = (last.at ? formatAuditTime(last.at) : 'Time unavailable') + ' · ' +
+    lastEl.textContent = (last.at ? formatHostTime(last.at) : 'Time unavailable') + ' · ' +
       String(last.outcome || 'unknown') +
       (last.revision_sha ? ' · SHA ' + shortSha(last.revision_sha) : '') +
       (last.error_code ? ' · ' + String(last.error_code) : '');
@@ -4736,7 +4764,7 @@
       if (revisions.length) {
         const current = revisions.find((revision) => revision.is_current);
         document.getElementById('dash-revision-line').textContent = current
-          ? 'Revision row matches managed SHA ' + shortSha(current.sha) + ' · ' + (current.created_at || 'time unavailable') + '.'
+          ? 'Revision row matches managed SHA ' + shortSha(current.sha) + ' · ' + (current.created_at ? formatHostTime(current.created_at) : 'time unavailable') + '.'
           : 'No revision row matches the managed live config checksum.';
         if (!current) attention.push(alertView('unknown', 'Recorded revision does not match', 'No revision row matches the managed live config checksum. Persistent generations remain the apply source of truth.'));
       } else {
@@ -4765,7 +4793,7 @@
       servicesBox.innerHTML = stateView('error', 'systemd service state is unavailable. Use Refresh after checking API host access to systemd.');
     }
 
-    const snapshot = { successCount, failedSources, attention, loadedAt: new Date().toLocaleTimeString() };
+    const snapshot = { successCount, failedSources, attention, loadedAt: formatHostTime(Date.now()) };
     renderDashboardStatus(snapshot, trafficResult);
     dashStatsTimer = setInterval(() => {
       if (dashboardController) return;
@@ -4801,7 +4829,7 @@
     } else if (failedSources.length) {
       state = 'error';
       message = 'Partial data loaded. Unavailable sources remain Unknown.';
-      freshness = snapshot.successCount === 0 ? 'HAProxy loaded at ' + new Date().toLocaleTimeString() :
+      freshness = snapshot.successCount === 0 ? 'HAProxy loaded at ' + formatHostTime(Date.now()) :
         'Partial data at ' + snapshot.loadedAt;
     } else {
       state = 'ready';
@@ -5243,7 +5271,7 @@
       const btnLabel = isWL ? 'Remove' : 'Unban';
       const scen = esc(d.scenario || '');
       const dur = esc(d.duration || d.decision || '');
-      const exp = esc(d.expires_at || d.until || '');
+      const exp = esc(formatHostTime(d.expires_at || d.until));
       return (
         '<tr><td><code>' + esc(id) + '</code></td><td><code>' + esc(ip) + '</code></td><td>' + typ + '</td><td>' + scen +
         '</td><td>' + dur + '</td><td>' + exp + '</td><td><button type="button" class="secondary cs-unban" data-id="' +
@@ -6284,12 +6312,73 @@
   }
 
   async function loadSystemTab() {
+    void loadHostTimezone();
     await loadSystemServicesTable();
     const aptOut = document.getElementById('sys-apt-output');
     if (aptOut && !aptOut.textContent) aptOut.textContent = 'Click “Check for updates”.';
     void loadHostDiskPanel();
     void tryAttachRunningAptUpgrade();
   }
+
+  let hostTimezoneLoadGeneration = 0;
+
+  async function loadHostTimezone() {
+    const select = document.getElementById('system-timezone');
+    const save = document.getElementById('btn-sys-timezone-save');
+    const status = document.getElementById('system-timezone-status');
+    if (save.getAttribute('aria-busy') === 'true') return;
+    const generation = ++hostTimezoneLoadGeneration;
+    select.disabled = save.disabled = true;
+    status.textContent = 'Loading host time zone…';
+    try {
+      const response = await fetch('/api/v1/host/timezone', {headers: hdr(), cache: 'no-store'});
+      if (!response.ok) throw new Error(await apiMessage(response));
+      const data = await response.json();
+      if (generation !== hostTimezoneLoadGeneration) return;
+      const zones = new Set([data.timezone, ...data.available]);
+      select.replaceChildren(...Array.from(zones).sort().map(zone => new Option(zone, zone)));
+      select.value = data.timezone;
+      const supported = setHostTimezone(data.timezone);
+      select.disabled = save.disabled = false;
+      status.textContent = supported ? '' : 'This browser displays panel times in UTC for the selected zone.';
+    } catch (err) {
+      if (generation === hostTimezoneLoadGeneration) {
+        status.textContent = err.message || 'The host time zone could not be loaded.';
+      }
+    }
+  }
+
+  document.getElementById('system-timezone-form').onsubmit = (event) => {
+    event.preventDefault();
+    const select = document.getElementById('system-timezone');
+    const save = document.getElementById('btn-sys-timezone-save');
+    if (select.disabled || !select.value) return;
+    const status = document.getElementById('system-timezone-status');
+    return withFocusableBusy(save, async () => {
+      const timezone = select.value;
+      select.disabled = true;
+      status.textContent = 'Saving host time zone…';
+      try {
+        const response = await fetch('/api/v1/host/timezone', {
+          method: 'PUT', headers: hdr(), body: JSON.stringify({timezone})
+        });
+        if (!response.ok) throw new Error(await apiMessage(response));
+        const data = await response.json();
+        if (!Array.from(select.options).some(option => option.value === data.timezone)) {
+          select.add(new Option(data.timezone, data.timezone));
+        }
+        select.value = data.timezone;
+        const supported = setHostTimezone(data.timezone);
+        clearHostJournalSnapshot('Load a new journal snapshot to see times in the updated zone.');
+        status.textContent = 'Host time zone set to ' + data.timezone + '.' +
+          (supported ? '' : ' This browser displays panel times in UTC for this zone.');
+      } catch (err) {
+        status.textContent = err.message || 'The host time zone could not be changed.';
+      } finally {
+        select.disabled = false;
+      }
+    });
+  };
 
   function formatBytes(n) {
     const x = Number(n);
