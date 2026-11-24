@@ -64,6 +64,14 @@ approval and validation of the signed assets remain open. DNS-01 is deferred.
 The PostgreSQL-backed suite passed 893 top-level tests, and all five live
 HAProxy integration checks passed. This run used `CGO_ENABLED=0`.
 
+**Current Linux race and hosted CI:** [local and hosted results](release-evidence/1.6.1-runtime-gates-e02aebb.md#linux-race-checks).
+The local PostgreSQL-backed race suite passed 912 top-level tests. The
+separate golden, live HAProxy and root checks passed. APT log testing also
+reproduced an intermittent Go 1.27.4 race warning in a sequential
+standalone test. Hosted CI passed on `578161a`, including PostgreSQL race
+coverage. The arm64 appliance boot for the exact candidate and published
+signature validation remain open.
+
 **Earlier Linux race coverage:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
 The race suite with PostgreSQL, the separate root cases and the CI HAProxy
 integration selection passed. The [earlier 85d8332 run](release-evidence/1.6.1-local-gates-85d8332.md)
