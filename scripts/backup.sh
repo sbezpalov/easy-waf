@@ -88,7 +88,7 @@ if ! command -v flock &>/dev/null; then
 fi
 # All outputs/state paths share these writer services. Lock the fixed config
 # directory inode, without a writable lockfile or stale marker to remove.
-# Keep this descriptor open through rotation and EXIT's writer restart.
+# Keep this descriptor open through writer restart and archive rotation.
 exec {BACKUP_LOCK_FD}<"$CFG"
 if ! flock -n "$BACKUP_LOCK_FD"; then
   echo "ERROR: cannot acquire backup lock; another backup or restore may be running" >&2
@@ -102,22 +102,28 @@ fi
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-backup.XXXXXX")"
 OUTPUT_WORKDIR=""
 BACKUP_PUBLISHED=0
-# Track which writers we stopped so cleanup can restart them even on failure.
+BACKUP_RESTART_FAILED=0
+# Track which writers we stopped so failures during capture still resume them.
 BACKUP_STOPPED_UNITS=()
-# A failed run leaves no truncated archive for rotation to count.
-cleanup() {
-  local result=$? u restart_failed=0
+resume_writers() {
+  local u
   for u in "${BACKUP_STOPPED_UNITS[@]}"; do
     if ! systemctl start "$u"; then
       echo "ERROR: could not resume $u — check journalctl -u $u" >&2
-      restart_failed=1
+      BACKUP_RESTART_FAILED=1
     fi
   done
+  BACKUP_STOPPED_UNITS=()
+}
+# A failed run leaves no truncated archive for rotation to count.
+cleanup() {
+  local result=$?
+  resume_writers
   rm -rf "$WORKDIR"
   if [[ -n "$OUTPUT_WORKDIR" ]]; then
     rm -rf "$OUTPUT_WORKDIR"
   fi
-  if ((restart_failed)); then
+  if ((BACKUP_RESTART_FAILED)); then
     if ((BACKUP_PUBLISHED)); then
       echo "ERROR: backup archive saved at $OUT, but writer recovery is incomplete" >&2
     fi
@@ -235,6 +241,9 @@ tar --anchored --no-wildcards-match-slash \
   --exclude='./easy-waf.env' \
   --exclude='./easy-waf.env.rotation.??????' --exclude='./easy-waf.env.new-db-password' \
   -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
+
+# Packing reads only the private copy. Keep the operation lock while publishing.
+resume_writers
 
 echo "[easy-waf-backup] packing → $OUT"
 # Own the staging path, on the output filesystem; never follow a preexisting

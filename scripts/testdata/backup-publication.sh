@@ -82,7 +82,17 @@ exit 91
 MOCK
 cat >"$ROOT/bin/tar" <<'MOCK'
 #!/usr/bin/env bash
+if [[ "$BACKUP_TEST_MODE" == capture-order && "$1" == -C ]]; then
+  [[ -f "$BACKUP_TEST_ROOT/inactive-easy-waf-api.service" &&
+     -f "$BACKUP_TEST_ROOT/inactive-easy-waf-acmed.service" ]] || exit 27
+fi
 if [[ "$1" == -czf ]]; then
+  if [[ "$BACKUP_TEST_MODE" == capture-order &&
+        ( -e "$BACKUP_TEST_ROOT/inactive-easy-waf-api.service" ||
+          -e "$BACKUP_TEST_ROOT/inactive-easy-waf-acmed.service" ) ]]; then
+    echo 'writers still paused during compression' >&2
+    exit 28
+  fi
   if [[ "$BACKUP_TEST_MODE" == pack-fail ]]; then printf 'partial-output' >"$2"; exit 22; fi
   if [[ "$BACKUP_TEST_MODE" == inspect ]]; then
     [[ -f "$2" && "$(stat -c %a "$2")" == 600 ]] || exit 23
@@ -143,6 +153,11 @@ ln -s "$ROOT/protected" "$out"
 backup pass "$out"
 [[ ! -L "$out" ]] || fail 'final output symlink not replaced'
 cmp -s "$ROOT/protected" "$ROOT/expected" || fail 'final output symlink target changed'
+BACKUP_TEST_MODE=capture-order backup pass "$out"
+for unit in easy-waf-api.service easy-waf-acmed.service; do
+  [[ "$(grep -xcF "start $unit" "$ROOT/services")" == 1 ]] || fail 'writer resumed more than once'
+done
+echo 'OK: writers are stopped for capture and resumed before compression'
 rm "$out"
 ln "$ROOT/protected" "$out"
 backup pass "$out"

@@ -31,14 +31,16 @@ run's temporary directories; existing `<output>.partial` files are left alone.
 The script checks the output path and creates its parent directory before
 pausing services. It checks `easy-waf-api` and `easy-waf-acmed` and confirms both are
 stopped before running `pg_dump`. It aborts if systemd cannot report or stop
-the writers. Cleanup attempts to resume the services it paused, including
-when backup fails. HAProxy keeps serving the last applied configuration during
-the pause. If resuming a writer fails after publication, the command exits
-nonzero and reports the path to the complete archive, which remains usable.
+the writers. The script resumes the services it paused after copying the dump,
+state and configuration into private staging, before compressing or publishing
+the archive. Cleanup resumes paused services if capture fails. HAProxy keeps
+serving the last applied configuration during the pause. If a writer fails to
+resume, the script still attempts to publish the captured archive, reports its
+path if publication succeeds, and exits nonzero.
 
 Only one backup or restore invocation can own that pause. A nonblocking `flock` on the
-existing `/etc/easy-waf` directory is held until cleanup restarts the writers,
-including packing and rotation. An overlapping manual or timer run fails before
+existing `/etc/easy-waf` directory is held through writer recovery, packing and
+rotation. An overlapping manual or timer run fails before
 touching services or invoking `pg_dump`; retry after the active backup finishes.
 The lock is shared across output/state paths and systemd's private `/tmp`.
 Restore takes the same lock before archive extraction and retains it through
