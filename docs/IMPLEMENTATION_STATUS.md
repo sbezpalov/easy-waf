@@ -112,8 +112,13 @@ The separate golden, live HAProxy and root checks passed. An [earlier run and
 standalone diagnostic](release-evidence/1.6.1-runtime-gates-e02aebb.md#linux-race-checks)
 reproduced an intermittent Go 1.27.4 race warning in a sequential APT log test.
 
-**Current hosted CI:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#hosted-ci).
-The push workflow passed `verify`, `lint-and-test` and `haproxy-config-test`.
+**Current hosted CI:** [5eda6d7](release-evidence/1.6.1-local-gates-6fe3be2.md#hosted-ci).
+The main push workflow passed `verify`, `lint-and-test` and
+`haproxy-config-test` with the `6fe3be2` candidate code.
+
+**Current installed CrowdSec:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#installed-crowdsec-enforcement-and-recovery).
+The isolated appliance passed selective blocking, unban, fail-open while the
+bouncer was stopped, enforcement after restart and cleanup.
 
 **Current Docker edge E2E:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-edge-e2e).
 The local HAProxy body policy and CrowdSec scenarios passed all 31 cases,
