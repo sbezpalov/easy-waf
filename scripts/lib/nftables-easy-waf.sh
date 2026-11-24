@@ -192,17 +192,18 @@ easy_waf_nft_apply() {
 
 # Install ruleset + enable nftables.service (idempotent).
 easy_waf_nft_configure_appliance() (
-  local mgmt_lan="${1:-1}"
-  local mgmt_ports="${2:-8000 8443}"
-  local edge="${3:-1}"
+  local requested_mgmt_lan="${1:-1}"
+  local requested_mgmt_ports="${2:-8000 8443}"
+  local requested_edge="${3:-1}"
   local extra_cidr="${4:-}"
   local zabbix="${5:-${EASY_WAF_NFT_ZABBIX_AGENT:-}}"
   local stage
   stage="$(mktemp -d)" || return 1
   trap 'rm -rf -- "$stage"' EXIT
 
-  easy_waf_nft_write_ruleset "$mgmt_lan" "$mgmt_ports" "$edge" "$extra_cidr" "$zabbix" "$stage/rules.nft" || return 1
-  easy_waf_nft_write_guard "$mgmt_lan" "$mgmt_ports" "$extra_cidr" "$stage/guard.nft" || return 1
+  easy_waf_nft_write_ruleset "$requested_mgmt_lan" "$requested_mgmt_ports" "$requested_edge" \
+    "$extra_cidr" "$zabbix" "$stage/rules.nft" || return 1
+  easy_waf_nft_write_guard "$requested_mgmt_lan" "$requested_mgmt_ports" "$extra_cidr" "$stage/guard.nft" || return 1
   easy_waf_nft_apply "$stage" || return 1
 
   mkdir -p "$(dirname "$EASY_WAF_NFT_RULES")" || return 1
