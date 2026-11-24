@@ -73,6 +73,13 @@ if [[ "$operation" == pg_restore && "$1" == --list ]]; then
 fi
 [[ "$1" == --dbname=service=easy-waf-archive && -n "$MOCK_PG_DSN" ]]
 printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$operation" >>"$RESTORE_LOCK_TEST_ROOT/database"
+if [[ "$operation" == psql ]]; then
+  [[ "$*" == '--dbname=service=easy-waf-archive -XwAt -v ON_ERROR_STOP=1 -c SELECT 1' ]]
+  if [[ "${RESTORE_DB_UNREACHABLE:-0}" == 1 ]]; then exit 44; fi
+  printf '1\n'
+  exit 0
+fi
+if [[ "$operation" == pg_restore && "${RESTORE_DB_FAIL:-0}" == 1 ]]; then exit 45; fi
 if [[ "${RESTORE_LOCK_HOLD:-}" == "$operation" ]]; then
   "$RESTORE_LOCK_TEST_ROOT/bin/barrier"
 fi
@@ -86,6 +93,7 @@ cp "$(dirname "${BASH_SOURCE[0]}")/pg-archive-mock.sh" "$ROOT/bin/python3"
 chmod 0700 "$ROOT/bin/"*
 ln -s database "$ROOT/bin/pg_restore"
 ln -s database "$ROOT/bin/pg_dump"
+ln -s database "$ROOT/bin/psql"
 export PATH="$ROOT/bin:$PATH"
 
 if [[ "$mode" != locks ]]; then
@@ -123,6 +131,15 @@ if [[ "$mode" != locks ]]; then
   grep -qF 'flock not found' "$ROOT/no-flock.log" || fail 'missing flock was not diagnosed'
   [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'missing flock touched services/database'
   echo 'OK: missing flock rejected before service/database access'
+  : >"$ROOT/services"; : >"$ROOT/database"
+  if RESTORE_DB_UNREACHABLE=1 bash "$RESTORE_SCRIPT" "$ROOT/valid.tar.gz" >"$ROOT/unreachable.log" 2>&1; then
+    fail 'restore accepted an unreachable database'
+  fi
+  [[ ! -s "$ROOT/services" ]] || fail 'unreachable database touched services'
+  [[ "$(<"$ROOT/database")" == 'preflight psql' ]] || fail 'unreachable database attempted more than a connectivity check'
+  grep -Fq 'cannot connect to the database configured in the backup' "$ROOT/unreachable.log" ||
+    fail 'unreachable database was not diagnosed'
+  echo 'OK: unreachable restore database rejected before service changes'
   for fault in initial-query stop-error still-active; do
     : >"$ROOT/services"; : >"$ROOT/database"
     rm -f "$ROOT/stop-attempt"
@@ -132,7 +149,8 @@ if [[ "$mode" != locks ]]; then
     RESTORE_STOP_FAULT="$fault" bash "$RESTORE_SCRIPT" "$ROOT/valid.tar.gz" >"$ROOT/quiesce.log" 2>&1 || rc=$?
     [[ "$rc" == 1 ]] || fail "$fault did not abort restore"
     grep -Fq 'restore aborted before database changes' "$ROOT/quiesce.log" || fail "$fault did not explain the abort"
-    [[ ! -s "$ROOT/database" && ! -e "$ROOT/state/data" && -f "$ROOT/state/original" ]] || fail "$fault changed database or state"
+    [[ "$(<"$ROOT/database")" == 'preflight psql' &&
+       ! -e "$ROOT/state/data" && -f "$ROOT/state/original" ]] || fail "$fault changed database or state"
     cmp -s "$ROOT/original-env" /etc/easy-waf/easy-waf.env || fail "$fault changed configuration"
     if [[ "$fault" == initial-query ]]; then
       if grep -Eq '^preflight (stop|start) ' "$ROOT/services"; then fail 'initial query failure changed services'; fi
@@ -142,6 +160,17 @@ if [[ "$mode" != locks ]]; then
     fi
   done
   echo 'OK: restore requires confirmed writer quiescence before replacing data'
+  : >"$ROOT/services"; : >"$ROOT/database"
+  rm -f "$ROOT/stop-attempt"
+  if RESTORE_DB_FAIL=1 bash "$RESTORE_SCRIPT" "$ROOT/valid.tar.gz" >"$ROOT/failed-db.log" 2>&1; then
+    fail 'restore ignored pg_restore failure'
+  fi
+  [[ "$(<"$ROOT/database")" == $'preflight psql\npreflight pg_restore' &&
+     -f "$ROOT/state/original" && ! -e "$ROOT/state/data" ]] || fail 'pg_restore failure changed live state'
+  if grep -q '^preflight start ' "$ROOT/services"; then fail 'pg_restore failure restarted services'; fi
+  grep -Fq 'Verify the database outcome before restarting appliance services' "$ROOT/failed-db.log" ||
+    fail 'pg_restore failure did not explain recovery'
+  echo 'OK: failed pg_restore keeps existing files and leaves services stopped'
 fi
 
 if [[ "$mode" != preflight ]]; then

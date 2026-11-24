@@ -112,6 +112,15 @@ if ! pg_restore --list "$ROOT/easywaf.dump" >/dev/null; then
   echo "ERROR: cannot read the PostgreSQL archive table of contents — restore aborted before stopping services" >&2
   exit 1
 fi
+if ! command -v psql &>/dev/null; then
+  echo "ERROR: psql not found (install postgresql client packages)" >&2
+  exit 1
+fi
+if ! python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" psql \
+  -XwAt -v ON_ERROR_STOP=1 -c 'SELECT 1' <<<"$DATABASE_URL" >/dev/null; then
+  echo "ERROR: cannot connect to the database configured in the backup — restore aborted before stopping services" >&2
+  exit 1
+fi
 
 echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
 restore_units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)
@@ -161,7 +170,7 @@ echo "[easy-waf-restore] pg_restore into configured database (single transaction
 # rolls back instead of leaving a half-destroyed schema.
 if ! python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" pg_restore \
   --single-transaction --clean --if-exists --no-owner --no-acl "$ROOT/easywaf.dump" <<<"$DATABASE_URL"; then
-  echo "ERROR: pg_restore failed — database left unchanged; refusing to replace on-disk state" >&2
+  echo "ERROR: pg_restore failed — on-disk state was not replaced. Verify the database outcome before restarting appliance services." >&2
   exit 1
 fi
 

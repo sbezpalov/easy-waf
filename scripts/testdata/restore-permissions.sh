@@ -33,6 +33,13 @@ fi
 parent="$(dirname "$(dirname "${@: -1}")")"
 [[ "$(stat -c %a "$parent")" == 700 ]] || exit 91
 MOCK
+cat >"$ROOT/bin/psql" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+[[ "$*" == '--dbname=service=easy-waf-archive -XwAt -v ON_ERROR_STOP=1 -c SELECT 1' &&
+   "$MOCK_PG_DSN" == postgres://fixture.invalid/never-connected ]]
+printf '1\n'
+MOCK
 printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/chown"
 cat >"$ROOT/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash

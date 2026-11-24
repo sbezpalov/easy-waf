@@ -71,7 +71,7 @@ For an archive made by an older backup with an alternate env file, verify
 that its archived `etc/easy-waf.env` identifies the intended database
 before running restore.
 
-Requires **`pg_dump`** and **`pg_restore`** (PostgreSQL client packages with
+Requires **`pg_dump`**, **`pg_restore`** and **`psql`** (PostgreSQL client packages with
 libpq), **Python 3** with its standard library, and **`flock`** (`util-linux`).
 Backup and restore use a temporary mode-0600 libpq service file to keep the
 connection string out of the client arguments. The file is removed with the
@@ -146,12 +146,17 @@ Steps:
 1. Requires `flock` and acquires the shared backup/restore lock on `/etc/easy-waf`.
 2. Extracts the archive privately, checks the required directories and
    nonempty `DATABASE_URL` in the backed-up env, and reads the dump's table of
-   contents with `pg_restore --list` before stopping
+   contents with `pg_restore --list`. Runs `SELECT 1` with the archived
+   connection settings before stopping
    **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
-   Checks their initial state and confirms they have stopped before touching
-   the database or replacing files. If stopping or verification fails, restore
+   Checks their initial state and confirms they have stopped before starting
+   `pg_restore` or replacing files. If stopping or verification fails, restore
    aborts and attempts to resume only the services that were running or starting.
-3. **`pg_restore --single-transaction --clean --if-exists --no-owner --no-acl`** into the database from **`DATABASE_URL`** in the **backed-up** `etc/easy-waf.env` (must still be valid on this host). A failed restore leaves the database unchanged and **does not** replace on-disk state.
+3. Runs **`pg_restore --single-transaction --clean --if-exists --no-owner --no-acl`**
+   into the database from **`DATABASE_URL`** in the archived configuration.
+   If `pg_restore` fails, the script preserves existing files and keeps the
+   appliance services stopped. Verify the database outcome before restarting
+   services, especially after a connection loss.
 4. **Wipes** `EASY_WAF_STATE_DIR` and `/etc/easy-waf` contents, then restores **`state/`** and **`etc/`** (replace, not merge-over) so orphan PEMs, DNS env, rollback/staging and edge tokens cannot mix with the restored DB.
 5. **`chown`**: `easy-waf:easy-waf` on state; **`root:easy-waf`** and **`0640`** on files under `/etc/easy-waf`, except secrets: **`root:root 0600`** on `easy-waf.env` and **`easy-waf:easy-waf 0600`** on other `*.env` files (DNS credentials).
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
