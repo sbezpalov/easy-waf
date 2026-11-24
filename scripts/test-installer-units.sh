@@ -83,28 +83,28 @@ echo 'OK: installer reports service failures and starts the enabled backup timer
 # Run the real installer entry point with a private payload and stop before
 # provisioning. Any OS-package or service step is recorded without running it.
 (
-  # shellcheck disable=SC2329 # Invoked by main or by the sourced package helpers.
+  # shellcheck disable=SC2317,SC2329 # Invoked by main or by the sourced package helpers.
   require_root() { :; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   detect_os() { :; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   apt-get() { return 99; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   dpkg() { return 99; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   dpkg-query() {
     [[ "${fixture_dpkg_status:-absent}" != absent ]] || return 1
     printf '%s\n' "$fixture_dpkg_status"
   }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   install_os_packages() { printf 'os-packages\n' >>"$ROOT/main-steps"; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   ensure_haproxy_systemd_enabled() { printf 'haproxy\n' >>"$ROOT/main-steps"; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   install_release_package() { return 1; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   acquire_dist_binaries() { printf 'acquire\n' >>"$ROOT/main-steps"; exit 42; }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   create_user_and_layout() { printf 'create-user\n' >>"$ROOT/main-steps"; exit 43; }
 
   DIST_DIR="$ROOT/local binaries"
