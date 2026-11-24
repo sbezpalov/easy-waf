@@ -39,12 +39,13 @@ done
 tar -czf "$work/fixture.tar.gz" -C "$work/input" .
 
 check() {
-  bash "$script_dir/verify-release-package.sh" fixture.deb "$work/fixture.tar.gz" arm64 1.6.1 \
+  bash "$script_dir/verify-release-package.sh" fixture.deb "$work/fixture.tar.gz" arm64 "${1:-1.6.1}" \
     0123456789012345678901234567890123456789
 }
 reject() {
   local pattern="$1"
-  if check >"$work/result" 2>&1; then
+  shift
+  if check "$@" >"$work/result" 2>&1; then
     printf 'test-release-package: accepted %s\n' "$pattern" >&2
     exit 1
   fi
@@ -52,6 +53,10 @@ reject() {
 }
 
 check
+FIXTURE_DEB_VERSION=1.7.0~rc.1 check 1.7.0-rc.1
+FIXTURE_DEB_VERSION=1.7.0~rc.1+build.2 check 1.7.0-rc.1+build.2
+FIXTURE_DEB_VERSION=1.7.0-rc.1 reject 'wrong DEB version' 1.7.0-rc.1
+FIXTURE_DEB_VERSION=1.7.0~rc.2 reject 'wrong DEB version' 1.7.0-rc.1
 FIXTURE_DEB_ARCH=amd64 reject 'wrong DEB architecture'
 FIXTURE_DEB_VERSION=1.6.0 reject 'wrong DEB version'
 FIXTURE_GO_ARCH=amd64 reject 'missing build setting GOARCH=arm64'

@@ -18,7 +18,8 @@ offline_package_checksum_matches() (
 )
 
 offline_check_package_identity() {
-  local deb="$1" version="${2//-/~}" arch="$3"
+  # Match EASY_WAF_DEB_VERSION in Makefile without Bash tilde expansion.
+  local deb="$1" version="${2//-/\~}" arch="$3"
   local actual_package actual_version actual_arch
   actual_package="$(dpkg-deb -f "$deb" Package)" &&
     actual_version="$(dpkg-deb -f "$deb" Version)" &&

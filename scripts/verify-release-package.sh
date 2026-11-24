@@ -16,7 +16,8 @@ fail() { printf 'ERROR: release package %s: %s\n' "$arch" "$*" >&2; exit 1; }
 
 [[ "$(dpkg-deb -f "$deb" Package)" == easy-waf ]] || fail 'wrong DEB package name'
 [[ "$(dpkg-deb -f "$deb" Architecture)" == "$arch" ]] || fail 'wrong DEB architecture'
-[[ "$(dpkg-deb -f "$deb" Version)" == "$version" ]] || fail 'wrong DEB version'
+# Match EASY_WAF_DEB_VERSION in Makefile; keep the tag spelling for asset names.
+[[ "$(dpkg-deb -f "$deb" Version)" == "${version//-/\~}" ]] || fail 'wrong DEB version'
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT

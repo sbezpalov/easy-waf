@@ -35,6 +35,30 @@ fi
 [[ "$(apt_repository_uri '/tmp/large disk #1%/repository')" == 'file:/tmp/large%20disk%20%231%25/repository' ]]
 [[ "$(apt_repository_uri '/tmp/архив/repository')" == 'file:/tmp/%D0%B0%D1%80%D1%85%D0%B8%D0%B2/repository' ]]
 
+# The offline builder and installer must accept the same prerelease DEB as
+# the release workflow. A bare tilde in a Bash substitution can expand.
+(
+  fixture_version='1.7.0~rc.1'
+  dpkg-deb() {
+    case "$*" in
+      '-f fixture.deb Package') printf '%s\n' easy-waf ;;
+      '-f fixture.deb Architecture') printf '%s\n' arm64 ;;
+      '-f fixture.deb Version') printf '%s\n' "$fixture_version" ;;
+      *) return 90 ;;
+    esac
+  }
+  dpkg() {
+    [[ "$*" == '--compare-versions 1.7.0~rc.1 eq 1.7.0~rc.1' ]]
+  }
+  offline_check_package_identity fixture.deb 1.7.0-rc.1 arm64
+  fixture_version='1.7.0~rc.2'
+  if offline_check_package_identity fixture.deb 1.7.0-rc.1 arm64 2>"$TEMP_DIR/identity-error"; then
+    echo "test-offline-bundle: accepted the wrong prerelease" >&2
+    exit 1
+  fi
+  grep -Fq 'expected easy-waf 1.7.0~rc.1 (arm64)' "$TEMP_DIR/identity-error"
+)
+
 # Exercise the actual builder step without relying on a platform's dpkg.
 (
   manifest_step="$(sed -n '/^write_package_manifest() {$/,/^}$/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
