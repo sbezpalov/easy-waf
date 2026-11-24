@@ -7,7 +7,8 @@
 **GeoIP archive budget:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md).
 Both architectures' packages and ISOs passed local build and payload checks.
 The PostgreSQL-backed race suite passed 924 tests with four skips. Live
-HAProxy and the separate root checks passed.
+HAProxy and the separate root checks passed. The installed [amd64 check](release-evidence/1.6.1-local-gates-a457e58.md#amd64-offline-appliance-and-geoip-upload)
+accepted the synthetic archive and preserved the exact MMDB bytes.
 
 **Rollback status fix candidate:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md).
 Native Linux build checks and independent Windows hash and payload checks
@@ -25,22 +26,22 @@ passed the full Go test command and golangci-lint on Windows amd64 with Go
 1.27.4. The [707f279 run](release-evidence/1.6.1-local-gates-707f279.md#windows-developer-checks)
 also recorded `go vet`.
 
-**Current local packages:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#build-and-payload-checks).
+**Current local packages:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#build-and-payload-checks).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. The packaged backup
 and restore scripts match the source. Windows independently verified the
 package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#build-and-payload-checks).
+**Current local offline ISOs:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#build-and-payload-checks).
 Both images passed the isolated APT solve and full bundle verification. The
-verified DEBs include the rollback status polling fix from the same revision.
+verified DEBs include the rollback status polling fix and GeoIP archive budget.
 
-**Current amd64 offline installation:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#amd64-offline-appliance-installation).
+**Current amd64 offline installation:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#amd64-offline-appliance-and-geoip-upload).
 A disconnected Ubuntu VMware guest passed clean installation under `umask
 077`, reboot, API time zone and journal checks, nftables confirmation and
 rollback, both Zabbix service and package inventory cases, repeat installation
 without the snapshot and backup and restore. The installed pending status API
-also passed both contention cases. The [707f279 run](release-evidence/1.6.1-local-gates-707f279.md#amd64-offline-appliance-installation)
+also passed both contention cases. The [6fe3be2 run](release-evidence/1.6.1-local-gates-6fe3be2.md#amd64-offline-appliance-installation)
 records the previous candidate.
 
 **Current Apply and WebSocket checks:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#installed-apply-rollback-and-websocket)
@@ -112,8 +113,8 @@ approval and validation of the signed assets remain open. DNS-01 is deferred.
 The PostgreSQL-backed suite passed 893 top-level tests, and all five live
 HAProxy integration checks passed. This run used `CGO_ENABLED=0`.
 
-**Current local Linux race:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#linux-race-and-integration-checks).
-The PostgreSQL-backed race suite passed 923 top-level tests with four skips.
+**Current local Linux race:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#geoip-archive-regression-and-linux-race).
+The PostgreSQL-backed race suite passed 924 top-level tests with four skips.
 The separate golden, live HAProxy and root checks passed. An [earlier run and
 standalone diagnostic](release-evidence/1.6.1-runtime-gates-e02aebb.md#linux-race-checks)
 reproduced an intermittent Go 1.27.4 race warning in a sequential APT log test.
