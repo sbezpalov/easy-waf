@@ -43,6 +43,12 @@ firewall confirmation and rollback, and Zabbix inventory checks. The exact
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
+**Current unpackaged amd64 upgrade:** [1.6.0 to 707f279](release-evidence/1.6.1-local-gates-707f279.md#unpackaged-amd64-tarball-upgrade).
+The verified tarball and exact upgrade wrapper restarted the three daemons,
+migrated schema 019 to 029 and preserved the synthetic publication and its TLS
+certificate. An authenticated API Apply returned the same trusted HTTPS
+response with an active backend and matching saved and applied generations.
+
 **Signed release verification:** [offline replay on c11cea7](release-evidence/1.6.1-packages-9f2f493.md#signed-release-verification).
 The current downloader accepted the genuine 1.6.0 signature and rejected
 tampered assets using Cosign. Verification of published 1.6.1 assets remains open.
