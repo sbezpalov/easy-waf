@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-
-- GeoIP uploads bound decompression of archive metadata and ancillary files
-  as well as the database itself. The API returns HTTP 413 when the archive
-  exceeds the budget.
-
 ## [1.6.1] - Unreleased
 
 ### Upgrade notes
@@ -148,6 +142,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **VERSION** is `1.6.1` on `main` so clone/install scripts no longer advertise a stale `1.6.0` package while Unreleased changes accumulate.
 
 ### Security
+
+- GeoIP uploads bound decompression of archive metadata and ancillary files
+  as well as the database itself. The API returns HTTP 413 when the archive
+  exceeds the budget.
 
 - **Private release mirror URLs.** The downloader keeps URLs that may contain
   credentials out of curl arguments and download logs.

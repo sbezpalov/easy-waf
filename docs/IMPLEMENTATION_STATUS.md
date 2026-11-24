@@ -22,7 +22,7 @@ appliance acceptance.
 An isolated VMware clone retained schema 029, settings, management TLS and
 HAProxy configuration. The three restarted daemons ran the exact new binaries.
 
-**Windows developer verification:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#rollback-status-regression-tests)
+**Windows developer verification:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#geoip-archive-regression-and-linux-race)
 passed the full Go test command and golangci-lint on Windows amd64 with Go
 1.27.4. The [707f279 run](release-evidence/1.6.1-local-gates-707f279.md#windows-developer-checks)
 also recorded `go vet`.
@@ -83,9 +83,10 @@ response with an active backend and matching saved and applied generations.
 The current downloader accepted the genuine 1.6.0 signature and rejected
 tampered assets using Cosign. Verification of published 1.6.1 assets remains open.
 
-**Current local publication preflight:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#local-publication-preflight-with-the-built-assets).
-The publication script verified both real ISOs and the complete local asset
-set and rejected a mismatched arm64 ISO before the recorded publication call.
+**Current local publication preflight:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#local-publication-preflight-and-hosted-checks).
+The release notes include the GeoIP fix. The publication script verified both
+real ISOs and the complete local asset set, and rejected a signature failure
+and a mismatched arm64 ISO before the recorded publication call.
 
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
