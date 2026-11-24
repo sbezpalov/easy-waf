@@ -200,6 +200,8 @@ EOF
 echo "[offline-install] using only the verified local repository"
 export APT_CONFIG="${TEMP_DIR}/apt.conf"
 unset EASY_WAF_APT_UPDATED
+# The verified ISO package is the only source for an offline installation.
+unset EASY_WAF_DIST_DIR EASY_WAF_INSTALL_FROM_PACKAGE EASY_WAF_SKIP_BINARY_FETCH
 export EASY_WAF_OFFLINE=1
 export EASY_WAF_REPO_ROOT="${SCRIPT_DIR}/payload"
 export EASY_WAF_RELEASE_VERSION="$BUNDLE_VERSION"

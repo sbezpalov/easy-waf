@@ -253,6 +253,12 @@ set -eu
 [[ "$EASY_WAF_INSTALL_CROWDSEC" == "${EXPECTED_CROWDSEC:-0}" ]]
 [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == "${EXPECTED_AGENT:-}" ]]
 [[ ! -v EASY_WAF_APT_UPDATED ]]
+for setting in EASY_WAF_DIST_DIR EASY_WAF_INSTALL_FROM_PACKAGE EASY_WAF_SKIP_BINARY_FETCH; do
+  if [[ -v "$setting" ]]; then
+    printf 'offline payload inherited package selection setting %s\n' "$setting" >&2
+    exit 1
+  fi
+done
 if [[ "${CHECK_APT_REPOSITORY:-0}" == 1 ]]; then
   apt_dir="${APT_CONFIG%/*}"
   printf '%s\n' "$apt_dir" >"$APT_WORKSPACE"
@@ -320,7 +326,10 @@ FIXTURE
 
   cp "$builder/$package" "$STAGE/repository/${package##*/}"
   write_bundle_checksums
-  if ! EASY_WAF_APT_UPDATED=1 CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
+  mkdir "$TEMP_DIR/local binaries"
+  printf 'outside bundle\n' >"$TEMP_DIR/local binaries/easy-waf-api"
+  if ! EASY_WAF_APT_UPDATED=1 EASY_WAF_INSTALL_FROM_PACKAGE=0 EASY_WAF_SKIP_BINARY_FETCH=1 \
+    EASY_WAF_DIST_DIR="$TEMP_DIR/local binaries" CHECK_APT_REPOSITORY=1 "${BASH}" "$STAGE/install.sh" >/dev/null; then
     echo 'test-offline-bundle: installer could not use the local APT repository' >&2
     exit 1
   fi
