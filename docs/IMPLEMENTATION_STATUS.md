@@ -30,8 +30,11 @@ values and returned the appliance to trusted HTTPS readiness.
 
 **Current amd64 installed API checks:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#installed-firewall-access-and-time-zone).
 An offline full-profile install under `umask 077` rebooted with working
-HTTPS and confirmed time zone, audit, journal and managed-firewall access.
-Full confirmation and rollback verification for this image remains open.
+HTTPS and confirmed time zone, audit, journal and managed-firewall access. A
+clone of the installed appliance passed firewall confirmation, time-based
+rollback and management guard checks, plus service and About inventory checks
+for both Zabbix package names. A separate clean retry hit a CrowdSec startup
+failure that remains under investigation.
 
 **Current arm64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#arm64-appliance-installation).
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
