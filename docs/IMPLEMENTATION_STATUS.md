@@ -40,9 +40,8 @@ without the snapshot and backup and restore. The installed pending status API
 also passed both contention cases. The [707f279 run](release-evidence/1.6.1-local-gates-707f279.md#amd64-offline-appliance-installation)
 records the previous candidate.
 
-**Current Apply and WebSocket checks:** [rejected Apply and revision rollback](release-evidence/1.6.1-local-gates-707f279.md#installed-apply-rejection-and-rollback)
-and [WSS across Apply](release-evidence/1.6.1-local-gates-707f279.md#installed-websocket-continuity-across-apply)
-passed on two fresh VMware guests with `707f279`. HAProxy validation rejection
+**Current Apply and WebSocket checks:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#installed-apply-rollback-and-websocket)
+passed on two fresh VMware guests. HAProxy validation rejection
 preserved live HTTPS, and revision rollback recovered HTTPS from maintenance.
 A separate WSS connection survived worker replacement and 62 seconds idle.
 
@@ -60,7 +59,7 @@ firewall confirmation and rollback, and Zabbix inventory checks. The
 completed full installation and reboot but hit HTTP 500 while reading pending
 status during a successful firewall rollback. Final ARM64 acceptance remains open.
 
-**Current PostgreSQL recovery and reboot:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#postgresql-recovery-and-surviving-https-across-reboot).
+**Current PostgreSQL recovery and reboot:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#postgresql-recovery-and-published-https-across-reboot).
 An installed VMware guest continued serving trusted HTTPS while PostgreSQL
 was down. API and ACME recovered automatically, and the same route and
 certificate survived a reboot.
