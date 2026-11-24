@@ -4,12 +4,11 @@
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
-**Windows developer verification:** `441d582` passed `go vet ./...` and
-`go test -p 1 -count=1 ./...` on Windows amd64 with Go 1.27.4 and Node.js
-26.13.1. The test run passed 795 top-level tests across 49 packages and
-skipped 84 top-level tests. The run used no PostgreSQL fixture or HAProxy,
-and platform-specific tests skipped where applicable. The publication
-test also passed under Git Bash.
+**Windows developer verification:** [11ff90f](release-evidence/1.6.1-runtime-gates-11ff90f.md#windows-developer-checks)
+passed `go vet -p 1 ./...` and the full Go test run on Windows amd64 with
+Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
+across 49 packages and skipped 85, including the PostgreSQL-dependent
+cases. An earlier publication test also passed under Git Bash.
 
 **Current local packages:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
