@@ -66,8 +66,12 @@ MOCK
 cat >"$ROOT/bin/database" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
-[[ "$1" == --dbname=service=easy-waf-archive && -n "$MOCK_PG_DSN" ]]
 operation="$(basename "$0")"
+if [[ "$operation" == pg_restore && "$1" == --list ]]; then
+  [[ $# == 2 && "$(cat "$2")" == 'fixture dump' ]]
+  exit
+fi
+[[ "$1" == --dbname=service=easy-waf-archive && -n "$MOCK_PG_DSN" ]]
 printf '%s %s\n' "${RESTORE_LOCK_RUN:-preflight}" "$operation" >>"$RESTORE_LOCK_TEST_ROOT/database"
 if [[ "${RESTORE_LOCK_HOLD:-}" == "$operation" ]]; then
   "$RESTORE_LOCK_TEST_ROOT/bin/barrier"
@@ -99,6 +103,16 @@ if [[ "$mode" != locks ]]; then
     [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail "$invalid env touched services/database"
   done
   echo 'OK: invalid restore env rejected before service/database access'
+  : >"$ROOT/services"; : >"$ROOT/database"
+  cp /etc/easy-waf/easy-waf.env "$ROOT/source/backup/etc/easy-waf.env"
+  printf 'unreadable fixture dump\n' >"$ROOT/source/backup/easywaf.dump"
+  tar -czf "$ROOT/invalid.tar.gz" -C "$ROOT/source" backup
+  if bash "$RESTORE_SCRIPT" "$ROOT/invalid.tar.gz" >"$ROOT/invalid.log" 2>&1; then
+    fail 'restore accepted an unreadable dump'
+  fi
+  [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'unreadable dump touched services/database'
+  grep -Fq 'cannot read the PostgreSQL archive table of contents' "$ROOT/invalid.log" +    || fail 'unreadable dump was not diagnosed'
+  echo 'OK: unreadable PostgreSQL archive rejected before service/database access'
   mkdir "$ROOT/no-flock"
   for tool in bash dirname readlink id; do ln -s "$(type -P "$tool")" "$ROOT/no-flock/$tool"; done
   ln -s "$ROOT/bin/database" "$ROOT/no-flock/pg_restore"

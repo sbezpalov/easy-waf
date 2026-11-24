@@ -25,6 +25,10 @@ tar -czf "$ROOT/archive.tar.gz" -C "$ROOT/source" backup
 cat >"$ROOT/bin/pg_restore" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
+if [[ "$1" == --list ]]; then
+  [[ $# == 2 && "$(cat "$2")" == fixture-dump ]]
+  exit
+fi
 [[ "$1" == --dbname=service=easy-waf-archive && "$MOCK_PG_DSN" == postgres://fixture.invalid/never-connected ]]
 parent="$(dirname "$(dirname "${@: -1}")")"
 [[ "$(stat -c %a "$parent")" == 700 ]] || exit 91

@@ -108,6 +108,10 @@ if ! command -v python3 &>/dev/null || [[ ! -r "$SCRIPT_DIR/lib/pg-archive.py" ]
   echo "ERROR: Python 3 or the PostgreSQL archive helper is missing" >&2
   exit 1
 fi
+if ! pg_restore --list "$ROOT/easywaf.dump" >/dev/null; then
+  echo "ERROR: cannot read the PostgreSQL archive table of contents — restore aborted before stopping services" >&2
+  exit 1
+fi
 
 echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
 restore_units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)

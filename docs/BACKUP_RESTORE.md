@@ -141,8 +141,9 @@ resuming scheduled backups.
 Steps:
 
 1. Requires `flock` and acquires the shared backup/restore lock on `/etc/easy-waf`.
-2. Extracts the archive privately and checks the required directories, dump and
-   nonempty `DATABASE_URL` in the backed-up env before stopping
+2. Extracts the archive privately, checks the required directories and
+   nonempty `DATABASE_URL` in the backed-up env, and reads the dump's table of
+   contents with `pg_restore --list` before stopping
    **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
    Checks their initial state and confirms they have stopped before touching
    the database or replacing files. If stopping or verification fails, restore
