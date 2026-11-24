@@ -11,10 +11,10 @@ skipped 84 top-level tests. The run used no PostgreSQL fixture or HAProxy,
 and platform-specific tests skipped where applicable. The publication
 test also passed under Git Bash.
 
-**Current local packages:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md).
-A disconnected Ubuntu VMware guest ran `make verify` on a clean checkout
-and built both DEBs and tarballs with the Zabbix and nftables changes. Linux
-and Windows verified the artifacts, including the extracted 1.6.1 notes.
+**Current local packages:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md).
+A disconnected Ubuntu VMware guest passed `make verify` and the native Go
+suite, then built and verified both DEBs and tarballs. Windows independently
+verified the package hashes and the embedded source revision in both tarballs.
 
 **Current local offline ISOs:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#offline-isos).
 Both images passed the isolated APT solve and bundle verification. Their
