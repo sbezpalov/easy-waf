@@ -30,6 +30,10 @@ values and returned the appliance to trusted HTTPS readiness.
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
+**Signed release verification:** [offline replay on c11cea7](release-evidence/1.6.1-packages-9f2f493.md#signed-release-verification).
+The current downloader accepted the genuine 1.6.0 signature and rejected
+tampered assets using Cosign. Verification of published 1.6.1 assets remains open.
+
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
