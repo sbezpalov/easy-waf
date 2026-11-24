@@ -29,16 +29,22 @@ set -euo pipefail
 [[ $# == 13 && $1 == -osirrox && $2 == on && $3 == -indev ]]
 archive="$4"
 shift 4
+scratch="$(mktemp -d)"
+trap 'rm -rf -- "$scratch"' EXIT
 while (( $# )); do
-  [[ "$1" == -extract && "$2" == /* ]]
-  tar -xOf "$archive" "${2#/}" >"$3"
+  [[ "$1" == -extract && "$2" == /* && "${2##*/}" == "${3##*/}" ]]
+  tar -xf "$archive" -C "$scratch" "${2#/}"
+  cp -a -- "$scratch/${2#/}" "$3"
   shift 3
 done
 EOF
 chmod +x "$WORK/bin/gh" "$WORK/bin/cosign" "$WORK/bin/xorriso"
 
 write_iso() {
-  local iso="$1" deb="$2" tree="$WORK/iso-tree" location
+  local iso="$1" deb="$2" tree location arch
+  tree="$(mktemp -d "$WORK/iso-tree.XXXXXXXX")"
+  arch="${deb##*_}"
+  arch="${arch%.deb}"
   mkdir -p "$tree/repository" "$tree/payload/dist"
   for location in repository payload/dist; do
     cp -- "$deb" "$tree/$location/$deb"
@@ -47,7 +53,14 @@ write_iso() {
     printf 'different signed build\n' >>"$tree/$ISO_PACKAGE_MISMATCH/$deb"
   fi
   (cd "$tree/payload/dist" && sha256sum "$deb" >SHA256SUMS)
-  tar -cf "$iso" -C "$tree" "repository/$deb" "payload/dist/$deb" payload/dist/SHA256SUMS
+  printf '%s\n' "EASY_WAF_BUNDLE_VERSION=${ISO_BUNDLE_VERSION:-${GITHUB_REF_NAME#v}}" \
+    "EASY_WAF_BUNDLE_UBUNTU=${ISO_BUNDLE_UBUNTU:-24.04}" "EASY_WAF_BUNDLE_ARCH=${ISO_BUNDLE_ARCH:-$arch}" \
+    "EASY_WAF_BUNDLE_CROWDSEC=${ISO_BUNDLE_CROWDSEC:-1}" >"$tree/BUNDLE.env"
+  case "${ISO_SNAPSHOT:-}" in
+    directory) mkdir "$tree/payload/crowdsec-snapshot" ;;
+    symlink) ln -s missing "$tree/payload/crowdsec-snapshot" ;;
+  esac
+  tar -cf "$iso" -C "$tree" "repository/$deb" payload BUNDLE.env
   sha256sum "$iso" >"$iso.sha256"
 }
 
@@ -91,6 +104,9 @@ reject() {
     echo "FAIL: invoked gh for $description" >&2
     exit 1
   fi
+  if [[ $# -eq 2 ]]; then
+    grep -Fq "$2" "$WORK/error" || { cat "$WORK/error" >&2; exit 1; }
+  fi
   echo "PASS: $description blocks publication"
 }
 
@@ -128,4 +144,27 @@ for location in repository payload/dist; do
   ISO_PACKAGE_MISMATCH="$location" write_iso "$arm_iso" "${packages[3]}"
   reject "valid signature on a different ISO package ($location)"
   grep -Fq "$location/${packages[3]} does not match the verified release package" "$WORK/error"
+done
+
+create_assets v1.6.1
+ISO_BUNDLE_ARCH=amd64 write_iso "$arm_iso" "${packages[3]}"
+reject 'signed arm64 ISO with the wrong bundle architecture' 'unexpected public bundle metadata'
+create_assets v1.6.1
+ISO_BUNDLE_VERSION=1.6.0 write_iso "$arm_iso" "${packages[3]}"
+reject 'signed ISO with the wrong bundle version' 'unexpected public bundle metadata'
+create_assets v1.6.1
+ISO_BUNDLE_UBUNTU=22.04 write_iso "$arm_iso" "${packages[3]}"
+reject 'signed ISO with the wrong Ubuntu baseline' 'unexpected public bundle metadata'
+create_assets v1.6.1
+ISO_BUNDLE_CROWDSEC=0 write_iso "$arm_iso" "${packages[3]}"
+reject 'signed ISO without the public CrowdSec profile' 'unexpected public bundle metadata'
+
+snapshot_kinds=(directory)
+if ln -s missing "$WORK/link-probe" 2>/dev/null && [[ -L "$WORK/link-probe" ]]; then
+  snapshot_kinds+=(symlink)
+fi
+for kind in "${snapshot_kinds[@]}"; do
+  create_assets v1.6.1
+  ISO_SNAPSHOT="$kind" write_iso "$arm_iso" "${packages[3]}"
+  reject "signed ISO with a CrowdSec snapshot $kind" 'embedded CrowdSec snapshot'
 done

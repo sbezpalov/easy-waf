@@ -38,15 +38,24 @@ if ! sha256sum "${packages[@]}" | cmp -s - SHA256SUMS; then
   exit 1
 fi
 
-verify_iso_package() (
-  local iso="$1" deb="$2" work
+verify_public_iso() (
+  local iso="$1" deb="$2" arch="$3" work
   work="$(mktemp -d)"
   trap 'rm -rf -- "$work"' EXIT
-  mkdir -p "$work/repository" "$work/payload/dist"
+  mkdir "$work/repository"
   xorriso -osirrox on -indev "$iso" \
     -extract "/repository/$deb" "$work/repository/$deb" \
-    -extract "/payload/dist/$deb" "$work/payload/dist/$deb" \
-    -extract /payload/dist/SHA256SUMS "$work/payload/dist/SHA256SUMS"
+    -extract /payload "$work/payload" \
+    -extract /BUNDLE.env "$work/BUNDLE.env"
+  if ! printf '%s\n' "EASY_WAF_BUNDLE_VERSION=$version" EASY_WAF_BUNDLE_UBUNTU=24.04 \
+    "EASY_WAF_BUNDLE_ARCH=$arch" EASY_WAF_BUNDLE_CROWDSEC=1 | cmp -s -- - "$work/BUNDLE.env"; then
+    echo "ERROR: unexpected public bundle metadata in $iso" >&2
+    exit 1
+  fi
+  if [[ -e "$work/payload/crowdsec-snapshot" || -L "$work/payload/crowdsec-snapshot" ]]; then
+    echo "ERROR: embedded CrowdSec snapshot in $iso" >&2
+    exit 1
+  fi
   bash "$SCRIPT_DIR/verify-offline-release-package.sh" "$work" "$deb"
 )
 
@@ -57,7 +66,7 @@ for arch in amd64 arm64; do
     echo "ERROR: checksum does not match $iso" >&2
     exit 1
   fi
-  verify_iso_package "$iso" "easy-waf_${version}_${arch}.deb"
+  verify_public_iso "$iso" "easy-waf_${version}_${arch}.deb" "$arch"
 done
 
 release_flags=(--latest=true)
