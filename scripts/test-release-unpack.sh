@@ -109,7 +109,7 @@ log_relv() { printf '%s\n' "$*"; }
 MOCK
 printf 'easy_waf_github_repo() { echo fixture/repo; }\n' >"$SCRIPT_DIR/lib/github-repo.sh"
 printf 'easy_waf_release_arch() { echo amd64; }\n' >"$SCRIPT_DIR/lib/release-arch.sh"
-function_source="$(sed -n -e '/^dist_binaries_complete() {$/,/^}$/p' \
+function_source="$(sed -n -e '/^dist_binaries_complete() {$/,/^}$/p' -e '/^check_local_only_binaries() {$/,/^}$/p' \
   -e '/^acquire_dist_binaries() {$/,/^}$/p' -e '/^install_binaries() {$/,/^}$/p' "$SOURCE_DIR/install.sh")"
 [[ -n "$function_source" ]] || fail 'missing installer acquisition function'
 eval "$function_source"

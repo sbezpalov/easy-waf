@@ -63,7 +63,7 @@ die() { fail "$*"; }
 # Called by install_release_package, which the fixture loads below.
 # shellcheck disable=SC2329
 easy_waf_apt_get_update() { :; }
-for function_name in easy_waf_target_version install_release_package; do
+for function_name in easy_waf_target_version release_package_enabled install_release_package; do
   function_source="$(sed -n "/^${function_name}() {$/,/^}$/p" "$SCRIPT_DIR/install.sh")"
   [[ -n "$function_source" ]] || fail 'installer function missing'
   eval "$function_source"

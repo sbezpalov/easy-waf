@@ -9,7 +9,7 @@ trap 'rm -rf -- "$ROOT"' EXIT
 mkdir -p "$ROOT/scripts/lib"
 [[ "$(tail -n 1 "$SOURCE_DIR/install.sh")" == 'main "$@"' ]]
 sed '$d' "$SOURCE_DIR/install.sh" >"$ROOT/scripts/install.sh"
-cp "$SOURCE_DIR/lib/env-file.sh" "$ROOT/scripts/lib/"
+cp "$SOURCE_DIR/lib/"{env-file,os-pkg}.sh "$ROOT/scripts/lib/"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/install.sh"
 
@@ -79,3 +79,59 @@ EASY_WAF_ENABLE_SYSTEMD_UNITS=1
 export EASY_WAF_SKIP_SYSTEMD=1
 run_case 'systemd skipped' 0 ''
 echo 'OK: installer reports service failures and starts the enabled backup timer after provisioning'
+
+# Run the real installer entry point with a private payload and stop before
+# provisioning. Any OS-package or service step is recorded without running it.
+(
+  # shellcheck disable=SC2329 # Invoked by main or by the sourced package helpers.
+  require_root() { :; }
+  # shellcheck disable=SC2329
+  detect_os() { :; }
+  # shellcheck disable=SC2329
+  apt-get() { return 99; }
+  # shellcheck disable=SC2329
+  dpkg() { return 99; }
+  # shellcheck disable=SC2329
+  dpkg-query() {
+    [[ "${fixture_dpkg_status:-absent}" != absent ]] || return 1
+    printf '%s\n' "$fixture_dpkg_status"
+  }
+  # shellcheck disable=SC2329
+  install_os_packages() { printf 'os-packages\n' >>"$ROOT/main-steps"; }
+  # shellcheck disable=SC2329
+  ensure_haproxy_systemd_enabled() { printf 'haproxy\n' >>"$ROOT/main-steps"; }
+  # shellcheck disable=SC2329
+  install_release_package() { return 1; }
+  # shellcheck disable=SC2329
+  acquire_dist_binaries() { printf 'acquire\n' >>"$ROOT/main-steps"; exit 42; }
+  # shellcheck disable=SC2329
+  create_user_and_layout() { printf 'create-user\n' >>"$ROOT/main-steps"; exit 43; }
+
+  DIST_DIR="$ROOT/local binaries"
+  mkdir "$DIST_DIR"
+  printf 'fixture binary\n' >"$DIST_DIR/easy-waf-api"
+  unset EASY_WAF_DIST_DIR EASY_WAF_OFFLINE EASY_WAF_INSTALL_FROM_PACKAGE EASY_WAF_SKIP_BINARY_FETCH
+  run_main_case() {
+    local name="$1" expected_status="$2" expected_steps="$3" status=0
+    : >"$ROOT/main-steps"
+    (main) >"$ROOT/main.log" 2>&1 || status=$?
+    if [[ "$status" != "$expected_status" || "$(cat "$ROOT/main-steps")" != "$expected_steps" ]]; then
+      printf 'FAIL: %s. Exit status %s, installer steps:\n' "$name" "$status" >&2
+      cat "$ROOT/main-steps" "$ROOT/main.log" >&2
+      exit 1
+    fi
+  }
+
+  EASY_WAF_SKIP_BINARY_FETCH=1 run_main_case 'incomplete local-only binaries' 1 ''
+  grep -Fq 'EASY_WAF_SKIP_BINARY_FETCH=1 requires nonempty' "$ROOT/main.log"
+  EASY_WAF_DIST_DIR="$DIST_DIR" fixture_dpkg_status=installed run_main_case 'explicit binaries on a package-managed host' 1 ''
+  grep -Fq 'dpkg status: installed' "$ROOT/main.log"
+  EASY_WAF_INSTALL_FROM_PACKAGE=0 EASY_WAF_OFFLINE=1 run_main_case 'offline with packages disabled' 1 ''
+  grep -Fq 'offline mode requires the verified local easy-waf package' "$ROOT/main.log"
+  run_main_case 'unavailable release without application provisioning' 42 $'os-packages\nhaproxy\nacquire'
+  for binary in easy-waf-acmed easy-waf-hostd easy-waf-admin; do
+    printf 'fixture binary\n' >"$DIST_DIR/$binary"
+  done
+  EASY_WAF_SKIP_BINARY_FETCH=1 run_main_case 'complete local-only binaries' 42 $'os-packages\nhaproxy\nacquire'
+)
+echo 'OK: installer checks local-only input before provisioning and acquires binaries before creating application state'

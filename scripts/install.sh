@@ -502,6 +502,13 @@ setup_local_postgres_database() {
   fi
 }
 
+release_package_enabled() {
+  [[ "${EASY_WAF_INSTALL_FROM_PACKAGE:-1}" == "1" && "${EASY_WAF_SKIP_BINARY_FETCH:-0}" != "1" ]] ||
+    return 1
+  [[ -z "${EASY_WAF_DIST_DIR:-}" || ! -f "${EASY_WAF_DIST_DIR}/easy-waf-api" ]] || return 1
+  [[ "${EASY_WAF_PKG_MGR:-}" == apt ]] && command -v dpkg &>/dev/null
+}
+
 # Install the release .deb — the primary path (docs/adr/0001-packaging-and-installer.md).
 #
 # What this buys over unpacking a tarball: apt resolves haproxy/nftables/fail2ban
@@ -512,19 +519,7 @@ setup_local_postgres_database() {
 # Returns 1 when no verified package is selected. Once APT attempts installation,
 # failures are fatal because dpkg may already own a partial installation.
 install_release_package() {
-  if [[ "${EASY_WAF_INSTALL_FROM_PACKAGE:-1}" != "1" ]]; then
-    return 1
-  fi
-  if [[ -n "${EASY_WAF_DIST_DIR:-}" ]] && [[ -f "${EASY_WAF_DIST_DIR}/easy-waf-api" ]]; then
-    log "EASY_WAF_DIST_DIR holds binaries — skipping the release package"
-    return 1
-  fi
-  if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
-    return 1
-  fi
-  if [[ "${EASY_WAF_PKG_MGR:-}" != "apt" ]] || ! command -v dpkg &>/dev/null; then
-    return 1
-  fi
+  release_package_enabled || return 1
   local ver
   ver="$(easy_waf_target_version)"
   [[ -n "$ver" ]] || return 1
@@ -627,6 +622,13 @@ dist_binaries_complete() {
   done
 }
 
+check_local_only_binaries() {
+  if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
+    dist_binaries_complete ||
+      die "EASY_WAF_SKIP_BINARY_FETCH=1 requires nonempty easy-waf-api, easy-waf-acmed, easy-waf-hostd and easy-waf-admin in EASY_WAF_DIST_DIR=$DIST_DIR"
+  fi
+}
+
 # Plug-and-play: populate REPO_ROOT/dist — try GitHub release, else install toolchain + make build.
 acquire_dist_binaries() {
   if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
@@ -637,18 +639,14 @@ acquire_dist_binaries() {
     die "offline mode requires the verified local easy-waf package; network fallback is disabled"
   fi
 
-  mkdir -p "${REPO_ROOT}/dist"
-
+  check_local_only_binaries
   if dist_binaries_complete; then
     log "Using existing binaries: $DIST_DIR/easy-waf-api"
     return 0
   fi
 
-  if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
-    die "EASY_WAF_SKIP_BINARY_FETCH=1 requires nonempty easy-waf-api, easy-waf-acmed, easy-waf-hostd and easy-waf-admin in EASY_WAF_DIST_DIR=$DIST_DIR"
-  fi
-
   DIST_DIR="${REPO_ROOT}/dist"
+  mkdir -p "$DIST_DIR"
 
   local ver
   ver="$(easy_waf_target_version)"
@@ -1072,6 +1070,11 @@ main() {
   source "${SCRIPT_DIR}/lib/os-pkg.sh"
   easy_waf_detect_pkg_mgr
   log "repo root: $REPO_ROOT (package manager: ${EASY_WAF_PKG_MGR:-none})"
+  if ! release_package_enabled; then
+    [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline mode requires the verified local easy-waf package"
+    easy_waf_require_unmanaged_install || exit 1
+    check_local_only_binaries
+  fi
   install_os_packages
   ensure_haproxy_systemd_enabled
   # Before create_user_and_layout and install_env_file on purpose: dpkg ships
@@ -1081,6 +1084,7 @@ main() {
     [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline mode requires the verified local easy-waf package"
     easy_waf_require_unmanaged_install || exit 1
   fi
+  acquire_dist_binaries
   create_user_and_layout
   ensure_haproxy_run_dir
   install_env_file
@@ -1093,7 +1097,6 @@ main() {
     exit 1
   fi
   setup_local_postgres_database
-  acquire_dist_binaries
   install_binaries
   easy_waf_sync_settings_to_db
   install_systemd_units
