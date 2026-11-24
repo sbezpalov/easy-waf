@@ -65,11 +65,11 @@ An installed VMware guest continued serving trusted HTTPS while PostgreSQL
 was down. API and ACME recovered automatically, and the same route and
 certificate survived a reboot.
 
-**Current direct amd64 upgrade:** [1.6.0 to 707f279](release-evidence/1.6.1-local-gates-707f279.md#direct-amd64-package-upgrade).
+**Current direct amd64 upgrade:** [1.6.0 to 6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#amd64-upgrades-from-160).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
-**Current unpackaged amd64 upgrade:** [1.6.0 to 707f279](release-evidence/1.6.1-local-gates-707f279.md#unpackaged-amd64-tarball-upgrade).
+**Current unpackaged amd64 upgrade:** [1.6.0 to 6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#amd64-upgrades-from-160).
 The verified tarball and exact upgrade wrapper restarted the three daemons,
 migrated schema 019 to 029 and preserved the synthetic publication and its TLS
 certificate. An authenticated API Apply returned the same trusted HTTPS
