@@ -47,7 +47,11 @@ full Linux suite, live HAProxy tests and all six local E2E launchers passed
 at the scopes in the report. Remote CI for the release commit, release
 approval and validation of the signed assets remain open. DNS-01 is deferred.
 
-**Current local Linux runtime checks:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
+**Current local Linux runtime checks:** [11ff90f](release-evidence/1.6.1-runtime-gates-11ff90f.md#ubuntu-runtime-checks).
+The PostgreSQL-backed suite passed 893 top-level tests, and all five live
+HAProxy integration checks passed. This run used `CGO_ENABLED=0`.
+
+**Earlier Linux race coverage:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
 The race suite with PostgreSQL, the separate root cases and the CI HAProxy
 integration selection passed. The [earlier 85d8332 run](release-evidence/1.6.1-local-gates-85d8332.md)
 also covered lint, repository verification and amd64/arm64 DEB payloads.
