@@ -4,7 +4,7 @@
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
-**Windows developer verification:** [11ff90f](release-evidence/1.6.1-runtime-gates-11ff90f.md#windows-developer-checks)
+**Windows developer verification:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#windows-developer-checks)
 passed `go vet -p 1 ./...` and the full Go test run on Windows amd64 with
 Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
 across 49 packages and skipped 85, including the PostgreSQL-dependent
@@ -60,7 +60,7 @@ full Linux suite, live HAProxy tests and all six local E2E launchers passed
 at the scopes in the report. Remote CI for the release commit, release
 approval and validation of the signed assets remain open. DNS-01 is deferred.
 
-**Current local Linux runtime checks:** [11ff90f](release-evidence/1.6.1-runtime-gates-11ff90f.md#ubuntu-runtime-checks).
+**Current local Linux runtime checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#ubuntu-runtime-checks).
 The PostgreSQL-backed suite passed 893 top-level tests, and all five live
 HAProxy integration checks passed. This run used `CGO_ENABLED=0`.
 
