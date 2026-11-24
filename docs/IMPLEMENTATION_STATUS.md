@@ -8,8 +8,8 @@
 Native Linux build checks and independent Windows hash and payload checks
 passed for both architectures. The broker, API and panel regression tests
 passed. The PostgreSQL-backed race suite passed 923 tests with four skips,
-and the live HAProxy and root checks passed. ARM64 appliance acceptance on the
-corrected ISO remains open.
+and the live HAProxy and root checks passed. Both corrected ISOs passed local
+appliance acceptance.
 
 **Current same-version amd64 reinstall:** [707f279 to 6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#same-version-amd64-package-reinstall).
 An isolated VMware clone retained schema 029, settings, management TLS and
@@ -48,14 +48,13 @@ An intermittent CrowdSec startup crash left the verified snapshot receipt in
 place. The updated bootstrap retry recovered the original snapshot on an
 isolated clone after one injected restart failure.
 
-**Latest completed arm64 offline installation:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#arm64-offline-appliance-installation).
-A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
-APT metadata passed clean installation, reboot, authenticated About and
-repeat installation without the snapshot. The installed API passed time zone,
-firewall confirmation and rollback, and Zabbix inventory checks. The
-[exact `707f279` ARM64 run](release-evidence/1.6.1-local-gates-707f279.md#arm64-offline-installation-and-firewall-status-failure)
-completed full installation and reboot but hit HTTP 500 while reading pending
-status during a successful firewall rollback. Final ARM64 acceptance remains open.
+**Current arm64 offline installation:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#arm64-offline-appliance-installation).
+A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's APT
+metadata passed installation, reboot, authenticated About and repeat installation
+without the snapshot. The installed API passed time zone, rollback status under
+contention, nftables confirmation and automatic rollback, and Zabbix inventory.
+The [707f279 ARM64 run](release-evidence/1.6.1-local-gates-707f279.md#arm64-offline-installation-and-firewall-status-failure)
+records the HTTP 500 that led to the fix.
 
 **Current PostgreSQL recovery and reboot:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#postgresql-recovery-and-published-https-across-reboot).
 An installed VMware guest continued serving trusted HTTPS while PostgreSQL
