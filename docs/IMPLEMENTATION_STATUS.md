@@ -28,6 +28,12 @@ disconnected Ubuntu VMware guest. Installed
 backup and restore also recovered synthetic database, state and configuration
 values and returned the appliance to trusted HTTPS readiness.
 
+**Current arm64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#arm64-appliance-installation).
+A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
+APT metadata passed clean installation, reboot, authenticated About and
+repeat installation without the snapshot. The test verified the shipped
+binaries and preserved the system APT and CrowdSec files.
+
 **Current direct amd64 upgrade:** [1.6.0 to e02aebb](release-evidence/1.6.1-packages-e02aebb.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
@@ -70,7 +76,7 @@ separate golden, live HAProxy and root checks passed. APT log testing also
 reproduced an intermittent Go 1.27.4 race warning in a sequential
 standalone test. Hosted CI passed on `578161a`, including PostgreSQL race
 coverage, and [also passed for the clock-skew fix](release-evidence/1.6.1-offline-clock-dfc3ada.md#hosted-checks).
-The exact arm64 installation and published signature validation remain open.
+Published signature validation remains open.
 
 **Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
 An isolated VMware fixture passed the installer conffile, HAProxy working
