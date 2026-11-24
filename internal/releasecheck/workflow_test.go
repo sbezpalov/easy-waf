@@ -110,15 +110,13 @@ func TestReleaseVerifiesSignedArtifactsBeforePublishing(t *testing.T) {
 		case "Build amd64 and arm64 tarballs and packages":
 			built = index
 			run, _ := step["run"].(string)
-			for _, command := range []string{
-				`GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb`,
-				`go version -m "dist/$binary"`,
-				"vcs.revision",
-				"vcs.modified=false",
-			} {
-				if !strings.Contains(run, command) {
-					t.Errorf("release build must check source provenance with %q", command)
-				}
+			build := strings.Index(run, `GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb`)
+			tarball := strings.Index(run, `tar -czf "$OUTPUT/${NAME}"`)
+			deb := strings.Index(run, `mv "dist/${DEB}" "$OUTPUT/"`)
+			verify := strings.Index(run, `bash scripts/verify-release-package.sh "$OUTPUT/$DEB" "$OUTPUT/$NAME" "$arch" "$VERSION" "$REVISION"`)
+			sums := strings.Index(run, `sha256sum easy-waf_"${VERSION}"_linux_amd64.tar.gz`)
+			if build < 0 || tarball <= build || deb <= build || verify <= tarball || verify <= deb || sums <= verify {
+				t.Error("release build must verify the assembled DEB and tarball before generating SHA256SUMS")
 			}
 			if step["if"] != nil || step["continue-on-error"] != nil {
 				t.Error("source provenance verification must not be skipped or softened")
