@@ -7,8 +7,9 @@
 **GeoIP archive budget:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md).
 Both architectures' packages and ISOs passed local build and payload checks.
 The PostgreSQL-backed race suite passed 924 tests with four skips. Live
-HAProxy and the separate root checks passed. The installed [amd64 check](release-evidence/1.6.1-local-gates-a457e58.md#amd64-offline-appliance-and-geoip-upload)
-accepted the synthetic archive and preserved the exact MMDB bytes.
+HAProxy and the separate root checks passed. The installed [amd64](release-evidence/1.6.1-local-gates-a457e58.md#amd64-offline-appliance-and-geoip-upload)
+and [arm64](release-evidence/1.6.1-local-gates-a457e58.md#arm64-offline-appliance-and-geoip-upload)
+APIs accepted the synthetic archive and preserved the exact MMDB bytes.
 
 **Rollback status fix candidate:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md).
 Native Linux build checks and independent Windows hash and payload checks
@@ -54,11 +55,12 @@ An intermittent CrowdSec startup crash left the verified snapshot receipt in
 place. The updated bootstrap retry recovered the original snapshot on an
 isolated clone after one injected restart failure.
 
-**Current arm64 offline installation:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#arm64-offline-appliance-installation).
+**Current arm64 offline installation:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md#arm64-offline-appliance-and-geoip-upload).
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's APT
 metadata passed installation, reboot, authenticated About and repeat installation
 without the snapshot. The installed API passed time zone, rollback status under
-contention, nftables confirmation and automatic rollback, and Zabbix inventory.
+contention, nftables confirmation and automatic rollback, Zabbix inventory,
+and a GeoIP archive upload that preserved the exact MMDB bytes.
 The [707f279 ARM64 run](release-evidence/1.6.1-local-gates-707f279.md#arm64-offline-installation-and-firewall-status-failure)
 records the HTTP 500 that led to the fix.
 
