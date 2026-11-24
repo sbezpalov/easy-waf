@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Inner fixture: never run on an appliance. The launcher supplies a private mount.
 set -euo pipefail
-BACKUP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/backup.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKUP_SCRIPT="${EASY_WAF_TEST_BACKUP_SCRIPT:-$SCRIPT_DIR/backup.sh}"
 [[ "$(id -u)" == 0 ]] || { echo 'Fixture requires container root' >&2; exit 1; }
 awk '$2 == "/etc/easy-waf" && $3 == "tmpfs" { found=1 } END { exit !found }' /proc/mounts || {
   echo 'Refusing backup fixture without private config tmpfs' >&2; exit 1;
@@ -108,6 +109,23 @@ backup() {
   done
 }
 out="$ROOT/output/backup.tar.gz"
+mkdir "$ROOT/output/directory"
+printf 'parent file\n' >"$ROOT/output/parent-file"
+for invalid in "$ROOT/output/directory" "$ROOT/output/parent-file/backup.tar.gz" "$ROOT/output/missing/"; do
+  rm -f "$ROOT/dump-called"
+  : >"$ROOT/services"
+  if bash "$BACKUP_SCRIPT" "$invalid" >"$ROOT/log" 2>&1; then
+    fail 'backup accepted an invalid output path'
+  fi
+  [[ ! -s "$ROOT/services" && ! -e "$ROOT/dump-called" ]] || fail 'invalid output path touched services or pg_dump'
+  grep -Fq 'backup output' "$ROOT/log" || fail 'invalid output path was not diagnosed'
+done
+[[ -z "$(find "$ROOT/output/directory" -mindepth 1 -print)" ]] || fail 'backup moved inside output directory'
+ln -s "$ROOT/output/directory" "$ROOT/output/directory-link"
+backup pass "$ROOT/output/directory-link"
+[[ -f "$ROOT/output/directory-link" && ! -L "$ROOT/output/directory-link" ]] || fail 'final directory symlink not replaced'
+[[ -z "$(find "$ROOT/output/directory" -mindepth 1 -print)" ]] || fail 'backup modified output symlink target directory'
+echo 'OK: backup rejects invalid output paths before stopping writers'
 printf 'protected-target\n' >"$ROOT/protected"
 cp "$ROOT/protected" "$ROOT/expected"
 ln -s "$ROOT/protected" "$out.partial"
@@ -158,10 +176,6 @@ grep -Fq 'but writer recovery is incomplete' "$ROOT/log" || fail 'restart failur
 if grep -q '^\[easy-waf-backup\] done:' "$ROOT/log"; then fail 'restart failure printed success'; fi
 "$BACKUP_TEST_REAL_TAR" -tzf "$out" >/dev/null || fail 'restart failure lost the complete archive'
 echo 'OK: backup keeps the complete archive and reports restart failure'
-export BACKUP_TEST_MODE=ok
-mkdir "$ROOT/output/directory"
-backup fail "$ROOT/output/directory"
-[[ -z "$(find "$ROOT/output/directory" -mindepth 1 -print)" ]] || fail 'backup moved inside output directory'
 export BACKUP_TEST_MODE=inspect
 (umask 000; backup pass "$out")
 [[ "$(stat -c %a "$out")" == 600 ]] || fail 'backup permissions not private'
@@ -174,6 +188,8 @@ top="$(head -n 1 "$ROOT/members")"
 if grep -E -q '/etc/easy-waf\.env\.(rotation\.[[:alnum:]]{6}|new-db-password)$' "$ROOT/members"; then
   fail 'backup copied a transient password recovery file'
 fi
+backup pass --dir "$ROOT/new-private-output"
+[[ "$(stat -c %a "$ROOT/new-private-output")" == 700 ]] || fail 'new output directory permissions not private'
 [[ "$(< /etc/easy-waf/easy-waf.env.rotation.ABC123)" == fixture-recovery-candidate &&
    "$(< /etc/easy-waf/easy-waf.env.new-db-password)" == fixture-legacy-recovery ]] ||
   fail 'backup removed or changed a local recovery file'

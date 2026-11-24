@@ -28,7 +28,8 @@ replaced rather than followed, and other hardlink names keep their old contents.
 Failed packing leaves the previous backup intact. Cleanup removes only this
 run's temporary directories; existing `<output>.partial` files are left alone.
 
-The script checks `easy-waf-api` and `easy-waf-acmed` and confirms both are
+The script checks the output path and creates its parent directory before
+pausing services. It checks `easy-waf-api` and `easy-waf-acmed` and confirms both are
 stopped before running `pg_dump`. It aborts if systemd cannot report or stop
 the writers. Cleanup attempts to resume the services it paused, including
 when backup fails. HAProxy keeps serving the last applied configuration during

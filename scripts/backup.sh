@@ -156,8 +156,14 @@ if [[ -z "$DATABASE_URL" ]]; then
   echo "ERROR: DATABASE_URL not set in $ENV_FILE" >&2
   exit 1
 fi
-if [[ -n "$DIR" && ! -d "$DIR" ]]; then
-  install -d -m 0700 "$DIR"
+if [[ "$OUT" == */ || ( -d "$OUT" && ! -L "$OUT" ) ]]; then
+  echo "ERROR: backup output must be a file path: $OUT" >&2
+  exit 1
+fi
+output_dir="$(dirname -- "$OUT")"
+if ! mkdir -p -- "$output_dir"; then
+  echo "ERROR: cannot prepare backup output directory: $output_dir" >&2
+  exit 1
 fi
 
 {
@@ -230,11 +236,10 @@ tar --anchored --no-wildcards-match-slash \
   --exclude='./easy-waf.env.rotation.??????' --exclude='./easy-waf.env.new-db-password' \
   -C "$CFG" -cf - . | tar -C "$ROOT/etc" -xf -
 
-mkdir -p "$(dirname "$OUT")"
 echo "[easy-waf-backup] packing → $OUT"
 # Own the staging path, on the output filesystem; never follow a preexisting
 # .partial link or remove another run's files. Replace the final pathname only.
-OUTPUT_WORKDIR="$(mktemp -d "$(dirname "$OUT")/.easy-waf-backup.XXXXXX")"
+OUTPUT_WORKDIR="$(mktemp -d "$output_dir/.easy-waf-backup.XXXXXX")"
 ARCHIVE="$OUTPUT_WORKDIR/bundle.tar.gz"
 : >"$ARCHIVE"
 tar -czf "$ARCHIVE" -C "$WORKDIR" "$TOP"
