@@ -181,6 +181,7 @@ func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 				}
 				if scenario == "backup removal failure" {
 					m.onStop = func() {
+						m.onStop = nil
 						// Simulate a filesystem failure after pending-state inspection.
 						if err := os.Remove(backup); err != nil {
 							t.Fatal(err)
@@ -227,9 +228,10 @@ func TestCommitCancelsRollbackAndReportsFailures(t *testing.T) {
 					t.Fatalf("commit: %+v", resp)
 				}
 				unit := "easy-waf-rb-" + kind + "-" + testToken
-				stop := binSystemctl + " stop " + unit + ".timer " + unit + ".service"
-				if indexOf(m.calls, stop) < 0 {
-					t.Fatalf("timer and service not both stopped: %v", m.calls)
+				timer := indexOf(m.calls, binSystemctl+" stop "+unit+".timer")
+				service := indexOf(m.calls, binSystemctl+" stop "+unit+".service")
+				if timer < 0 || service <= timer {
+					t.Fatalf("timer must stop before the service: %v", m.calls)
 				}
 				if _, err := os.Stat(backup); !os.IsNotExist(err) {
 					t.Fatalf("backup remains after commit: %v", err)

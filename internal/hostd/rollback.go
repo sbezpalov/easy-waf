@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,16 +65,27 @@ func scheduleRevert(ctx context.Context, r CommandRunner, kind, token string, ti
 
 func stopRollbackUnit(ctx context.Context, r CommandRunner, kind, token string) error {
 	unit := fmt.Sprintf("easy-waf-rb-%s-%s", kind, token)
-	// systemd-run --on-active creates a timer as well as a service. Stopping
-	// only the service leaves the timer armed and able to start it again.
-	_, stderr, code, err := runCmd(ctx, r, binSystemctl, "stop", unit+".timer", unit+".service")
-	if err != nil {
-		return fmt.Errorf("stop rollback units: %w", err)
+	timer, service := unit+".timer", unit+".service"
+	// Disarm the timer first so it cannot queue another service invocation.
+	if _, stderr, code, err := runCmd(ctx, r, binSystemctl, "stop", timer); err != nil || code != 0 {
+		return fmt.Errorf("stop rollback units: %s: %w", timer, commandFailure(stderr, code, err))
 	}
-	if code != 0 {
-		return fmt.Errorf("stop rollback units (exit %d): %s", code, strings.TrimSpace(string(stderr)))
+	_, stderr, code, err := runCmd(ctx, r, binSystemctl, "stop", service)
+	if err != nil || code != 0 {
+		// With --collect, stopping the timer can leave the service unloaded.
+		// Exit 5 alone does not establish that no rollback job can run.
+		if err == nil && code == 5 {
+			out, _, stateCode, stateErr := runCmd(ctx, r, binSystemctl, "show", "--all",
+				"--property=LoadState", "--property=ActiveState", "--property=Job", service)
+			state := strings.Split(strings.TrimSpace(string(out)), "\n")
+			if stateErr == nil && stateCode == 0 && slices.Contains(state, "LoadState=not-found") &&
+				slices.Contains(state, "ActiveState=inactive") && slices.Contains(state, "Job=") {
+				return nil
+			}
+		}
+		return fmt.Errorf("stop rollback units: %s: %w", service, commandFailure(stderr, code, err))
 	}
-	_, _, _, _ = runCmd(ctx, r, binSystemctl, "reset-failed", unit+".service")
+	_, _, _, _ = runCmd(ctx, r, binSystemctl, "reset-failed", service)
 	return nil
 }
 

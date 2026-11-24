@@ -11,6 +11,69 @@ import (
 	"testing"
 )
 
+type collectedRollbackServiceRunner struct {
+	*recordingRunner
+	state     string
+	stateCode int
+}
+
+func (r collectedRollbackServiceRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+	out, stderr, code, err := r.recordingRunner.Run(ctx, name, args...)
+	if name == binSystemctl && len(args) > 1 && strings.HasSuffix(args[len(args)-1], ".service") {
+		switch args[0] {
+		case "stop":
+			return nil, []byte("Unit not loaded."), 5, nil
+		case "show":
+			return []byte(r.state), nil, r.stateCode, nil
+		}
+	}
+	return out, stderr, code, err
+}
+
+func TestConfirmationVerifiesCollectedRollbackService(t *testing.T) {
+	const collected = "LoadState=not-found\nActiveState=inactive\nJob=\n"
+	for _, test := range []struct {
+		name      string
+		state     string
+		stateCode int
+		keep      bool
+	}{
+		{name: "collected", state: collected, keep: true},
+		{name: "active", state: "LoadState=not-found\nActiveState=active\nJob=\n"},
+		{name: "queued", state: "LoadState=not-found\nActiveState=inactive\nJob=123\n"},
+		{name: "loaded", state: "LoadState=loaded\nActiveState=inactive\nJob=\n"},
+		{name: "unknown job state", state: "LoadState=not-found\nActiveState=inactive\n"},
+		{name: "status failed", state: collected, stateCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, live := seedReceiptChange(t, "nft")
+			before, err := os.ReadFile(live)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pending := string(before) + "# pending change\n"
+			if err := os.WriteFile(live, []byte(pending), nftRulesMode); err != nil {
+				t.Fatal(err)
+			}
+			r := collectedRollbackServiceRunner{recordingRunner: m, state: test.state, stateCode: test.stateCode}
+			resp := nftCommit(t.Context(), r, testToken)
+			if resp.OK != test.keep {
+				t.Fatalf("confirmation result: %+v, keep=%v", resp, test.keep)
+			}
+			want, receipt := string(before), ""
+			if test.keep {
+				want, receipt = pending, testToken
+			}
+			if data, err := os.ReadFile(live); err != nil || string(data) != want {
+				t.Fatalf("unexpected live ruleset: %q, %v", data, err)
+			}
+			if got, err := readRollbackReceipt("nft"); err != nil || got != receipt {
+				t.Fatalf("unexpected confirmation receipt: %q, %v", got, err)
+			}
+		})
+	}
+}
+
 func TestFailedConfirmationAttemptsSafetyRecovery(t *testing.T) {
 	for _, kind := range []string{"nft", "netplan"} {
 		for _, recoveryFails := range []bool{false, true} {

@@ -218,6 +218,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Confirming firewall and network changes.** Confirmation keeps a change
+  when systemd has already discarded the inactive rollback service after
+  its timer was stopped. An active or queued rollback still prevents confirmation.
+
 - **Offline installation with an unsynchronized clock.** The installer can
   load the verified local APT repository when the appliance clock predates the
   ISO. System APT sources retain their usual date checks.
