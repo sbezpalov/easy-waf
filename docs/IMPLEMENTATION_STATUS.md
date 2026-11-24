@@ -20,9 +20,9 @@ verified the package hashes and the embedded source revision in both tarballs.
 Both images passed the isolated APT solve and bundle verification. Their
 embedded Easy WAF DEBs match the verified packages from the same revision.
 
-**Current amd64 offline installation:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#amd64-appliance-installation).
-That amd64 image passed clean installation, reboot, authenticated About
-and repeat installation on a disconnected Ubuntu VMware guest.
+**Current amd64 offline installation:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md#amd64-appliance-installation).
+The image passed clean installation, reboot, authenticated About, the shipped
+read-only smoke and repeat installation on a disconnected Ubuntu VMware guest.
 
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
