@@ -20,9 +20,11 @@ package hashes and the embedded source revision in both tarballs.
 Both images passed the isolated APT solve and full bundle verification. They
 include the updated installer and the verified DEBs from the same revision.
 
-**Current amd64 offline installation:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md#amd64-appliance-installation).
-The image passed clean installation, reboot, authenticated About, the shipped
-read-only smoke and repeat installation on a disconnected Ubuntu VMware guest.
+**Current amd64 offline installation:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md#amd64-appliance-installation).
+The image passed clean installation, reboot, authenticated About, read-only
+smoke and repeat installation on a disconnected Ubuntu VMware guest. Installed
+backup and restore also recovered synthetic database, state and configuration
+values and returned the appliance to trusted HTTPS readiness.
 
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
