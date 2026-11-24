@@ -16,13 +16,13 @@ A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. Windows independently
 verified the package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#offline-isos).
+**Current local offline ISOs:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md#offline-isos).
 Both images passed the isolated APT solve and bundle verification. Their
 embedded Easy WAF DEBs match the verified packages from the same revision.
 
 **Current amd64 offline installation:** [5d5e418](release-evidence/1.6.1-packages-5d5e418.md#amd64-appliance-installation).
-The current amd64 image passed clean installation, reboot, authenticated
-About and repeat installation on a disconnected Ubuntu VMware guest.
+That amd64 image passed clean installation, reboot, authenticated About
+and repeat installation on a disconnected Ubuntu VMware guest.
 
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
