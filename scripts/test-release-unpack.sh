@@ -34,6 +34,39 @@ cp "$ROOT/input/dist/easy-waf-api" "$ROOT/input/easy-waf-api"
 tar -czf "$ROOT/duplicate.tgz" -C "$ROOT/input" .
 if easy_waf_unpack_release "$ROOT/duplicate.tgz" "$ROOT/output" 2>/dev/null; then fail 'ambiguous component accepted'; fi
 unchanged
+(
+  mv() {
+    if [[ "$2" == */.release-stage.*/easy-waf-api && "$3" == "$ROOT/output/easy-waf-api" ]]; then
+      return 48
+    fi
+    command mv "$@"
+  }
+  if easy_waf_unpack_release "$ROOT/full.tgz" "$ROOT/output" 2>/dev/null; then fail 'promotion failure reported success'; fi
+  unchanged
+  rm -- "$ROOT/output/easy-waf-hostd"
+  if easy_waf_unpack_release "$ROOT/full.tgz" "$ROOT/output" 2>/dev/null; then fail 'promotion failure reported success for a new file'; fi
+  [[ ! -e "$ROOT/output/easy-waf-hostd" ]] || fail 'promotion failure left a new binary'
+  printf 'old easy-waf-hostd\n' >"$ROOT/output/easy-waf-hostd"
+  unchanged
+)
+(
+  degraded="$ROOT/degraded"
+  mkdir "$degraded"
+  printf 'previous hostd\n' >"$degraded/easy-waf-hostd"
+  mv() {
+    case "$2" in
+      */.release-stage.*/easy-waf-api|*/.release-stage.*/previous/easy-waf-hostd) return 48 ;;
+    esac
+    command mv "$@"
+  }
+  if easy_waf_unpack_release "$ROOT/full.tgz" "$degraded" >"$ROOT/rollback.log" 2>&1; then
+    fail 'incomplete rollback reported success'
+  fi
+  grep -Fq 'rollback incomplete; recovery files retained' "$ROOT/rollback.log" || fail 'missing rollback recovery notice'
+  previous=("$degraded"/.release-stage.*/previous/easy-waf-hostd)
+  [[ ${#previous[@]} == 1 && -f "${previous[0]}" && "$(cat "${previous[0]}")" == 'previous hostd' ]] ||
+    fail 'incomplete rollback lost the previous binary'
+)
 easy_waf_unpack_release "$ROOT/full.tgz" "$ROOT/output" || fail 'complete release rejected'
 for binary in "${required[@]}"; do
   [[ "$(cat "$ROOT/output/$binary")" == "new $binary" ]] || fail "wrong promoted $binary"

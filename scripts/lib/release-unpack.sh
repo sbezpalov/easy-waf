@@ -3,14 +3,15 @@
 # Authentication belongs to the caller; extraction is not an integrity check.
 
 easy_waf_unpack_release() (
-  local archive="${1:?}" destination="${2:?}" prefix="${3:-}" stage members member binary
+  local archive="${1:?}" destination="${2:?}" prefix="${3:-}" stage members member binary target restored
   local required=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin)
   local optional=(easy-wafd)
+  local promoted=() retain_stage=0
   gzip -t "$archive" || return 1
   members="$(tar -tzf "$archive")" || return 1
   mkdir -p "$destination" || return 1
   stage="$(mktemp -d "${destination}/.release-stage.XXXXXX")" || return 1
-  trap 'rm -rf "$stage"' EXIT
+  trap 'if (( ! retain_stage )); then rm -rf -- "$stage"; fi' EXIT
   for binary in "${required[@]}" "${optional[@]}"; do
     if ! member="$(printf '%s\n' "$members" | EASY_WAF_RELEASE_MEMBER_PREFIX="$prefix" awk -v b="$binary" '
       { normalized=$0; sub(/^\.\//,"",normalized)
@@ -36,15 +37,35 @@ easy_waf_unpack_release() (
     [[ -s "${stage}/${binary}" ]] || return 1
     chmod 0755 "${stage}/${binary}" || return 1
   done
+  # Preserve the old set before renaming any staged binary into place.
+  mkdir "$stage/previous" || return 1
   for binary in "${required[@]}" "${optional[@]}"; do
     [[ -f "${stage}/${binary}" ]] || continue
-    if [[ -L "${destination}/${binary}" || -d "${destination}/${binary}" ]]; then
+    target="$destination/$binary"
+    if [[ -L "$target" || ( -e "$target" && ! -f "$target" ) ]]; then
       echo "[easy-waf-release] unsafe binary destination: $binary" >&2
       return 1
+    fi
+    if [[ -f "$target" ]]; then
+      cp -p -- "$target" "$stage/previous/$binary" || return 1
     fi
   done
   for binary in "${required[@]}" "${optional[@]}"; do
     [[ -f "${stage}/${binary}" ]] || continue
-    mv -f "${stage}/${binary}" "${destination}/${binary}" || return 1
+    if ! mv -f "$stage/$binary" "$destination/$binary"; then
+      echo "[easy-waf-release] could not replace binary: $binary" >&2
+      for restored in "${promoted[@]}"; do
+        if [[ -f "$stage/previous/$restored" ]]; then
+          mv -f "$stage/previous/$restored" "$destination/$restored" || retain_stage=1
+        else
+          rm -- "$destination/$restored" || retain_stage=1
+        fi
+      done
+      if ((retain_stage)); then
+        echo "[easy-waf-release] rollback incomplete; recovery files retained in $stage" >&2
+      fi
+      return 1
+    fi
+    promoted+=("$binary")
   done
 )
