@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Zabbix agent visibility.** System discovers locally defined Zabbix Agent and
+  Agent 2 services and offers the existing service controls. About reports the
+  installed package version for either agent when present.
+
 - **Host time zone.** Administrators can choose an installed IANA zone in
   System. The panel and host journals use the selected zone for display.
   Machine-readable event timestamps and safety deadlines keep their format.

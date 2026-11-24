@@ -304,6 +304,7 @@ Minimal status for the control plane.
 Provides the data for **Overview → About** to authenticated viewers and administrators.
 - **Response:** `200` with the running product `version`, `go_version`, `platform` and optional source `revision`, its RFC 3339 timestamp `source_time` and the `modified` flag.
 - `components` has entries with `name`, `source` and an optional `version`. The Easy Home WAF package, HAProxy, CrowdSec, its HAProxy bouncer, Fail2Ban and nftables report local installed package versions. PostgreSQL reports the connected server version, including when that server is remote. Missing versions appear as **Unavailable**.
+- Zabbix Agent and Zabbix Agent 2 appear when their corresponding Debian packages are installed. Their versions come from the host package database at request time.
 - `license` is the SPDX identifier. `license_text` and `notice` contain the complete `LICENSE` and `NOTICE` files embedded in the running build.
 - The PostgreSQL driver, MaxMind DB reader and Prometheus client report their module versions from the running management API's Go build metadata.
 
@@ -1398,7 +1399,7 @@ Routes that change the host (including netplan/firewall **commit**) need a passw
 | `POST /api/v1/host/firewall/apply-rollback` | Apply a ruleset with automatic rollback; returns a token |
 | `POST /api/v1/host/firewall/zabbix-agent` | Enable/disable the marked LAN TCP 10050 accept; preference + apply-rollback (see [HOST-API.md](HOST-API.md)) |
 | `POST /api/v1/host/firewall/commit` | Confirm a pending firewall apply by token |
-| `GET /api/v1/host/services` | List the allowlisted systemd units and their state |
+| `GET /api/v1/host/services` | List the allowlisted systemd units and their state. `zabbix-agent.service` and `zabbix-agent2.service` appear when their unit definitions are present locally |
 | `GET /api/v1/host/timezone` | Return the host `timezone` and selectable `available` IANA zones |
 | `PUT /api/v1/host/timezone` | Set the host time zone with `{"timezone":"Europe/Amsterdam"}` and return the resulting `timezone`. Requires step-up and writes an audit event |
 | `POST /api/v1/host/services/{unit}/{action}` | Run `start`, `stop`, `restart`, `reload`, `enable`, `disable` or `try-restart` on an allowlisted unit |

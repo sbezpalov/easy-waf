@@ -34,13 +34,18 @@ type aboutResponse struct {
 	Notice     string           `json:"notice"`
 }
 
-var aboutPackages = []struct{ key, name string }{
-	{"easy-waf", "Easy Home WAF (API, ACME worker, host broker and CLI)"},
-	{"haproxy", "HAProxy"},
-	{"crowdsec", "CrowdSec"},
-	{"crowdsec-haproxy-spoa-bouncer", "CrowdSec HAProxy bouncer"},
-	{"fail2ban", "Fail2Ban"},
-	{"nftables", "nftables"},
+var aboutPackages = []struct {
+	key, name string
+	optional  bool
+}{
+	{key: "easy-waf", name: "Easy Home WAF (API, ACME worker, host broker and CLI)"},
+	{key: "haproxy", name: "HAProxy"},
+	{key: "crowdsec", name: "CrowdSec"},
+	{key: "crowdsec-haproxy-spoa-bouncer", name: "CrowdSec HAProxy bouncer"},
+	{key: "fail2ban", name: "Fail2Ban"},
+	{key: "nftables", name: "nftables"},
+	{key: "zabbix-agent", name: "Zabbix Agent", optional: true},
+	{key: "zabbix-agent2", name: "Zabbix Agent 2", optional: true},
 }
 
 var aboutModules = []struct{ path, name string }{
@@ -121,9 +126,17 @@ func installedAboutComponents(ctx context.Context) []aboutComponent {
 		out, _ := runner.Run(ctx, aboutCheckTimeout, "/usr/bin/dpkg-query", args...)
 		versions = parseInstalledAboutVersions(string(out))
 	}
+	return installedAboutComponentRows(versions)
+}
+
+func installedAboutComponentRows(versions map[string]string) []aboutComponent {
 	components := make([]aboutComponent, 0, len(aboutPackages))
 	for _, pkg := range aboutPackages {
-		components = append(components, aboutComponent{Name: pkg.name, Version: versions[pkg.key], Source: "Installed package"})
+		version := versions[pkg.key]
+		if pkg.optional && version == "" {
+			continue
+		}
+		components = append(components, aboutComponent{Name: pkg.name, Version: version, Source: "Installed package"})
 	}
 	return components
 }

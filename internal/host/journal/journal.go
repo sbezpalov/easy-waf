@@ -16,7 +16,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
-	hostsystemd "github.com/easy-waf/easy-waf/internal/host/systemd"
+	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
 )
 
 // Query parameters for journalctl.
@@ -66,7 +66,7 @@ func buildJournalArgs(q Query) ([]string, error) {
 	if !strings.HasSuffix(u, ".service") {
 		u += ".service"
 	}
-	if !hostsystemd.AllowedUnit(u) {
+	if !systemdallow.AllowedJournalUnit(u) {
 		return nil, fmt.Errorf("unit not allowed")
 	}
 	args := []string{"journal", "--no-pager", "-n", strconv.Itoa(lines), "-u", u, "--output", "short-iso"}

@@ -183,7 +183,7 @@ func ValidateJournalArgs(args []string) error {
 			if !strings.HasSuffix(u, ".service") {
 				u += ".service"
 			}
-			if !systemdallow.AllowedUnit(u) {
+			if !systemdallow.AllowedJournalUnit(u) {
 				return fmt.Errorf("journal: unit not allowed")
 			}
 			units++

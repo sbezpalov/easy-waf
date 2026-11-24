@@ -4,6 +4,11 @@
 // Package systemdallow is the shared systemd unit/action whitelist (no runner dependency).
 package systemdallow
 
+const (
+	zabbixAgentUnit  = "zabbix-agent.service"
+	zabbixAgent2Unit = "zabbix-agent2.service"
+)
+
 // AllowedUnits matches scripts/host/privileged.sh allowed_systemd_unit().
 var AllowedUnits = []string{
 	"easy-waf-api.service",
@@ -14,6 +19,8 @@ var AllowedUnits = []string{
 	"fail2ban.service",
 	"nftables.service",
 	"postgresql.service",
+	zabbixAgentUnit,
+	zabbixAgent2Unit,
 }
 
 var allowedActions = map[string]struct{}{
@@ -38,6 +45,16 @@ var allowedUnits = func() map[string]struct{} {
 func AllowedUnit(unit string) bool {
 	_, ok := allowedUnits[unit]
 	return ok
+}
+
+// IsOptionalUnit reports whether the service list should require a local unit definition.
+func IsOptionalUnit(unit string) bool {
+	return unit == zabbixAgentUnit || unit == zabbixAgent2Unit
+}
+
+// AllowedJournalUnit limits journal snapshots to the appliance's core services.
+func AllowedJournalUnit(unit string) bool {
+	return AllowedUnit(unit) && !IsOptionalUnit(unit)
 }
 
 // AllowedAction reports whether action is on the appliance whitelist.

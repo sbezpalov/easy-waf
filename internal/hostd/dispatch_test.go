@@ -83,6 +83,18 @@ func TestDispatch_systemctlReject(t *testing.T) {
 	}
 }
 
+func TestDispatchZabbixServiceManagement(t *testing.T) {
+	for _, unit := range []string{"zabbix-agent.service", "zabbix-agent2.service"} {
+		runner := &mockRunner{}
+		d := &Dispatcher{Runner: runner}
+		want := []string{"restart", unit}
+		response := d.Dispatch(t.Context(), append([]string{"systemctl"}, want...))
+		if !response.OK || runner.lastName != binSystemctl || !slices.Equal(runner.lastArgs, want) {
+			t.Fatalf("%s: response %+v, command %q %q", unit, response, runner.lastName, runner.lastArgs)
+		}
+	}
+}
+
 func TestDispatch_userdelRoot(t *testing.T) {
 	d := &Dispatcher{Runner: &mockRunner{}}
 	r := d.Dispatch(context.Background(), []string{"userdel", "root"})

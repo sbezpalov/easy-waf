@@ -43,12 +43,17 @@ func TestScopedJournalUIContract(t *testing.T) {
 		t.Fatal("journal unit select is incomplete")
 	}
 	unitSelect := html[unitStart : unitStart+unitEnd]
+	var journalUnits int
 	for _, unit := range systemdallow.AllowedUnits {
+		if !systemdallow.AllowedJournalUnit(unit) {
+			continue
+		}
+		journalUnits++
 		if !strings.Contains(unitSelect, `option value="`+unit+`"`) {
 			t.Errorf("journal allowlisted unit missing %q", unit)
 		}
 	}
-	if got, want := strings.Count(unitSelect, `<option value="`), len(systemdallow.AllowedUnits); got != want {
+	if got, want := strings.Count(unitSelect, `<option value="`), journalUnits; got != want {
 		t.Errorf("journal unit options = %d, want exactly %d allowlisted units", got, want)
 	}
 	if strings.Contains(html, `input id="host-journal-unit"`) {

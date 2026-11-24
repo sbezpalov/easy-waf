@@ -65,10 +65,48 @@ func TestAboutReportsShippedVersionAndTerms(t *testing.T) {
 func TestAboutReportsConnectedDatabaseVersion(t *testing.T) {
 	s := applyFailingServer(t)
 	info := readAboutForTest(t, s)
-	got := info.Components[len(aboutPackages)]
+	i := slices.IndexFunc(info.Components, func(component aboutComponent) bool { return component.Name == "PostgreSQL" })
+	if i < 0 {
+		t.Fatal("missing PostgreSQL component")
+	}
+	got := info.Components[i]
 	want, err := s.Eng.Store.ServerVersion(t.Context())
 	if err != nil || want == "" || got.Version != want || got.Name != "PostgreSQL" {
 		t.Fatalf("database version: got %+v, want %q, error %v", got, want, err)
+	}
+}
+
+func TestAboutIncludesOnlyInstalledZabbixPackages(t *testing.T) {
+	const classic = "zabbix-agent\tinstalled\t1:7.0.15-1+ubuntu24.04\n"
+	const agent2 = "zabbix-agent2\tinstalled\t1:7.4.3-1+ubuntu24.04\n"
+	for _, tc := range []struct {
+		name, output string
+		want         []aboutComponent
+	}{
+		{name: "removed agent and truncated package query", output: "zabbix-agent\tconfig-files\t1:7.0.1\nzabbix-agent2\tinstalled\t1:7.4.3"},
+		{
+			name: "agent 2 only", output: agent2,
+			want: []aboutComponent{{Name: "Zabbix Agent 2", Version: "1:7.4.3-1+ubuntu24.04", Source: "Installed package"}},
+		},
+		{
+			name: "both installed", output: classic + agent2,
+			want: []aboutComponent{
+				{Name: "Zabbix Agent", Version: "1:7.0.15-1+ubuntu24.04", Source: "Installed package"},
+				{Name: "Zabbix Agent 2", Version: "1:7.4.3-1+ubuntu24.04", Source: "Installed package"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []aboutComponent
+			for _, component := range installedAboutComponentRows(parseInstalledAboutVersions(tc.output)) {
+				if strings.HasPrefix(component.Name, "Zabbix ") {
+					got = append(got, component)
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("Zabbix components = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
