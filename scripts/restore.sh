@@ -53,7 +53,14 @@ if ! flock -n "$RESTORE_LOCK_FD"; then
 fi
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/easy-waf-restore.XXXXXX")"
-cleanup() { rm -rf "$WORKDIR"; }
+file_restore_stage=''
+cleanup() {
+  local status=$?
+  if ((status != 0)) && [[ -n "$file_restore_stage" ]]; then
+    echo "ERROR: database restored, but replacement of $file_restore_stage failed. Keep the archive and finish file recovery before starting appliance services." >&2
+  fi
+  rm -rf "$WORKDIR"
+}
 trap cleanup EXIT
 
 echo "[easy-waf-restore] extracting archive…"
@@ -174,7 +181,8 @@ if ! python3 -I "$SCRIPT_DIR/lib/pg-archive.py" "$WORKDIR" pg_restore \
   exit 1
 fi
 
-mkdir -p "$STATE" "$CFG"
+file_restore_stage='state files'
+mkdir -p "$STATE"
 # Wipe then replace: extract-over-existing left orphan PEMs, edge tokens, DNS
 # env, rollback/staging and mixed old secrets with the restored DB.
 echo "[easy-waf-restore] wiping $STATE before restore (replace, not merge)…"
@@ -187,6 +195,7 @@ tar -C "$ROOT/state" -cf - . | tar --no-same-owner -C "$STATE" -xf -
 # when the console apply below is skipped.
 rm -f "$STATE/haproxy/.loaded-certs.json"
 
+file_restore_stage='configuration files'
 echo "[easy-waf-restore] wiping $CFG before restore (replace, not merge)…"
 find "$CFG" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 echo "[easy-waf-restore] restoring $CFG from backup…"
@@ -213,6 +222,7 @@ fi
 if command -v semanage &>/dev/null && [[ -f "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" ]]; then
   EASY_WAF_STATE_DIR="$STATE" bash "${SCRIPT_DIR}/lib/selinux-easy-waf-haproxy.sh" 2>/dev/null || true
 fi
+file_restore_stage=''
 
 post_restore_failed=0
 if [[ "${EASY_WAF_SKIP_APPLY:-0}" == "1" ]]; then

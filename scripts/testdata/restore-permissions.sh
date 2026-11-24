@@ -120,3 +120,28 @@ for selection in success skip missing apply reload hostd api acmed; do
   [[ "$(<"$ROOT/state/haproxy/haproxy.cfg")" == fixture-config ]] || fail "$selection lost restored data"
 done
 echo 'OK: restore reports incomplete recovery and attempts every start'
+
+export RESTORE_TEST_REAL_TAR
+RESTORE_TEST_REAL_TAR="$(type -P tar)"
+cat >"$ROOT/bin/tar" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+if [[ "$1" == --no-same-owner && "$2" == -C && "$3" == "$RESTORE_TEST_COPY_TARGET" ]]; then
+  echo 'fixture: file replacement failed' >&2
+  exit 46
+fi
+exec "$RESTORE_TEST_REAL_TAR" "$@"
+MOCK
+chmod 0700 "$ROOT/bin/tar"
+for target in "$ROOT/state" /etc/easy-waf; do
+  stage='state files'
+  if [[ "$target" == /etc/easy-waf ]]; then stage='configuration files'; fi
+  : >"$RESTORE_TEST_STARTS"
+  rc=0
+  PATH="$ROOT/bin:$PATH" RESTORE_TEST_COPY_TARGET="$target" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_SKIP_APPLY=1 \
+    "$ROOT/operator commands/easy-waf-restore" "$ROOT/archive.tar.gz" >"$ROOT/log" 2>&1 || rc=$?
+  [[ "$rc" == 46 && ! -s "$RESTORE_TEST_STARTS" ]] || fail "copy failure restarted services or lost exit status"
+  grep -Fq "database restored, but replacement of $stage failed" "$ROOT/log" || fail "$stage failure lost recovery context"
+  if grep -q '^\[easy-waf-restore\] done\.' "$ROOT/log"; then fail "$stage failure printed false completion"; fi
+done
+echo 'OK: failed file replacement reports the affected phase and keeps services stopped'

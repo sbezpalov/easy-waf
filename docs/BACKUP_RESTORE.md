@@ -179,6 +179,11 @@ Environment:
 | `EASY_WAF_ADMIN_BIN` | `/usr/sbin/easy-waf-admin` | Console CLI used for apply |
 | `EASY_WAF_SKIP_APPLY` | `0` | Set to **`1`** to skip `easy-waf-admin apply-edge` |
 
+If file replacement fails after the database restore, the script reports
+whether it was replacing state or configuration and leaves the appliance
+services stopped. Keep the archive and complete file recovery before starting
+the services.
+
 If Apply is requested and fails, the admin command is unavailable, or a systemd
 reload or start command fails, restore exits nonzero after attempting all three
 service starts. The restored database and files are already in place. Keep the
