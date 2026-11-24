@@ -10,23 +10,24 @@ Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
 across 49 packages and skipped 85, including the PostgreSQL-dependent
 cases. An earlier publication test also passed under Git Bash.
 
-**Current local packages:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md).
+**Current local packages:** [142b669](release-evidence/1.6.1-packages-142b669.md).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. The packaged backup
 and restore scripts match the source. Windows independently verified the
 package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md#offline-isos).
+**Current local offline ISOs:** [142b669](release-evidence/1.6.1-packages-142b669.md#offline-isos).
 Both images passed the isolated APT solve and full bundle verification. They
-include the updated installer and the verified DEBs from the same revision.
+include the updated installer, upgrade helpers and the verified DEBs from
+the same revision.
 
-**Current amd64 offline installation:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md#amd64-appliance-installation).
+**Current amd64 offline installation:** [142b669](release-evidence/1.6.1-packages-142b669.md#amd64-appliance-installation).
 The image passed clean installation, reboot, authenticated About, read-only
 smoke and repeat installation on a disconnected Ubuntu VMware guest. Installed
 backup and restore also recovered synthetic database, state and configuration
 values and returned the appliance to trusted HTTPS readiness.
 
-**Current direct amd64 upgrade:** [1.6.0 to 9f2f493](release-evidence/1.6.1-packages-9f2f493.md#direct-amd64-package-upgrade).
+**Last verified direct amd64 upgrade:** [1.6.0 to 9f2f493](release-evidence/1.6.1-packages-9f2f493.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
