@@ -42,8 +42,15 @@ isolated clone after one injected restart failure.
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
 APT metadata passed clean installation, reboot, authenticated About and
 repeat installation without the snapshot. The installed API passed time zone,
-firewall confirmation and rollback, and Zabbix inventory checks. The exact
-`707f279` arm64 installation remains open.
+firewall confirmation and rollback, and Zabbix inventory checks. The
+[exact `707f279` ARM64 run](release-evidence/1.6.1-local-gates-707f279.md#arm64-offline-installation-and-firewall-status-failure)
+completed full installation and reboot but hit HTTP 500 while reading pending
+status during a successful firewall rollback. Final ARM64 acceptance remains open.
+
+**Current PostgreSQL recovery and reboot:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#postgresql-recovery-and-surviving-https-across-reboot).
+An installed VMware guest continued serving trusted HTTPS while PostgreSQL
+was down. API and ACME recovered automatically, and the same route and
+certificate survived a reboot.
 
 **Current direct amd64 upgrade:** [1.6.0 to 707f279](release-evidence/1.6.1-local-gates-707f279.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
