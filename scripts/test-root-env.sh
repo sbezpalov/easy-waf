@@ -165,4 +165,47 @@ fi
 printf '%s\n' '    # easy-waf:zabbix-agent' '    tcp dport 22 accept' >"$EASY_WAF_NFT_RULES"
 easy_waf_nft_write_ruleset
 [[ "$(easy_waf_nft_read_zabbix)" == 0 ]] || fail 'an orphaned marker enabled Zabbix'
+
+# Use the real render and configure helpers and simulate rejected nft batches.
+(
+  EASY_WAF_NFT_GUARD="$ROOT/guard.nft"
+  EASY_WAF_NFT_CONF="$ROOT/nftables.conf"
+  easy_waf_nft_write_guard
+  printf '# fixture boot configuration\n' >"$EASY_WAF_NFT_CONF"
+  for file in "$EASY_WAF_NFT_RULES" "$EASY_WAF_NFT_GUARD" "$EASY_WAF_NFT_CONF"; do
+    cp "$file" "$file.previous"
+  done
+  nft() {
+    if [[ "$1" == -c ]]; then
+      shift
+      if [[ "$reject" == check ]]; then return 1; fi
+      cp "$2" "$ROOT/checked.nft"
+      return 0
+    fi
+    if [[ "$reject" == load ]]; then return 1; fi
+    [[ "$1" == -f && "$#" == 2 ]] || return 1
+    cmp "$2" "$ROOT/checked.nft" || return 1
+    cp "$2" "$ROOT/loaded.nft"
+  }
+  systemctl() {
+    printf '%s\n' "$*" >>"$ROOT/nft-service"
+    [[ "$1" != is-enabled ]]
+  }
+  for reject in check load; do
+    if easy_waf_nft_configure_appliance 0 '8000 8443' 1 '' 1 >"$ROOT/nft-log" 2>&1; then
+      fail "firewall reported success after nft rejected $reject"
+    fi
+    for file in "$EASY_WAF_NFT_RULES" "$EASY_WAF_NFT_GUARD" "$EASY_WAF_NFT_CONF"; do
+      cmp "$file.previous" "$file" || fail "nft $reject failure changed the boot configuration"
+    done
+    [[ ! -e "$ROOT/nft-service" ]] || fail "nft $reject failure touched services"
+  done
+  reject=
+  easy_waf_nft_configure_appliance 0 '8000 8443' 1 '' 1 >"$ROOT/nft-log" 2>&1
+  grep -Fxq 'delete table inet easy_waf' "$ROOT/loaded.nft"
+  grep -Fxq 'delete table inet easy_waf_guard' "$ROOT/loaded.nft"
+  grep -Fq 'tcp dport 10050 accept' "$ROOT/loaded.nft"
+  [[ "$(easy_waf_nft_read_zabbix)" == 1 && ! -e "$EASY_WAF_NFT_GUARD" ]] ||
+    fail 'successful transaction did not persist the requested firewall configuration'
+)
 echo 'OK: root env inputs stay data'
