@@ -10,16 +10,16 @@ Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
 across 49 packages and skipped 85, including the PostgreSQL-dependent
 cases. An earlier publication test also passed under Git Bash.
 
-**Current local packages:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#local-rebuild).
+**Current local packages:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#local-rebuild).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. The packaged backup
 and restore scripts match the source. Windows independently verified the
 package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#local-rebuild).
+**Current local offline ISOs:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#local-rebuild).
 Both images passed the isolated APT solve and full bundle verification. They
-include the clock-skew fix, upgrade helpers and the verified DEBs from the
-same revision.
+include the clock-skew and firewall directory fixes, upgrade helpers and the
+verified DEBs from the same revision.
 
 **Current amd64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#amd64-appliance-installation).
 The image passed clean installation, reboot, authenticated About, read-only
@@ -28,13 +28,18 @@ disconnected Ubuntu VMware guest. Installed
 backup and restore also recovered synthetic database, state and configuration
 values and returned the appliance to trusted HTTPS readiness.
 
+**Current amd64 installed API checks:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#installed-firewall-access-and-time-zone).
+An offline full-profile install under `umask 077` rebooted with working
+HTTPS and confirmed time zone, audit, journal and managed-firewall access.
+Full confirmation and rollback verification for this image remains open.
+
 **Current arm64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#arm64-appliance-installation).
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
 APT metadata passed clean installation, reboot, authenticated About and
 repeat installation without the snapshot. The test verified the shipped
 binaries and preserved the system APT and CrowdSec files.
 
-**Current direct amd64 upgrade:** [1.6.0 to e02aebb](release-evidence/1.6.1-packages-e02aebb.md#direct-amd64-package-upgrade).
+**Current direct amd64 upgrade:** [1.6.0 to 3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
