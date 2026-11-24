@@ -135,3 +135,30 @@ echo 'OK: installer reports service failures and starts the enabled backup timer
   EASY_WAF_SKIP_BINARY_FETCH=1 run_main_case 'complete local-only binaries' 42 $'os-packages\nhaproxy\nacquire'
 )
 echo 'OK: installer checks local-only input before provisioning and acquires binaries before creating application state'
+
+(
+  # shellcheck source=lib/nftables-easy-waf.sh
+  source "$SOURCE_DIR/lib/nftables-easy-waf.sh"
+  export EASY_WAF_SKIP_SYSTEMD=1
+  # shellcheck disable=SC2329 # Called by easy_waf_nft_apply instead of the host's nft.
+  nft() { :; }
+  umask 077
+  for scenario in fresh existing; do
+    rules_dir="$ROOT/$scenario"
+    expected_mode=0755
+    if [[ "$scenario" == existing ]]; then
+      mkdir -m 0700 "$rules_dir"
+      expected_mode=0700
+    fi
+    EASY_WAF_NFT_RULES="$rules_dir/easy-waf.nft"
+    EASY_WAF_NFT_GUARD="$rules_dir/easy-waf-guard.nft"
+    EASY_WAF_NFT_CONF="$ROOT/$scenario.conf"
+    easy_waf_nft_configure_appliance 1 '8000 8443' 1 '' 0 >"$ROOT/nft.log"
+    [[ "$(find "$rules_dir" -prune -perm "$expected_mode" -print)" == "$rules_dir" ]] || {
+      printf 'FAIL: mode of %s firewall directory must be %s\n' "$scenario" "$expected_mode" >&2
+      exit 1
+    }
+    [[ "$(find "$EASY_WAF_NFT_RULES" -perm 0644 -print)" == "$EASY_WAF_NFT_RULES" ]]
+  done
+)
+echo 'OK: installer creates a readable managed firewall path under a restrictive umask and preserves existing directory permissions'

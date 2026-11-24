@@ -206,7 +206,9 @@ easy_waf_nft_configure_appliance() (
   easy_waf_nft_write_guard "$requested_mgmt_lan" "$requested_mgmt_ports" "$extra_cidr" "$stage/guard.nft" || return 1
   easy_waf_nft_apply "$stage" || return 1
 
-  mkdir -p "$(dirname "$EASY_WAF_NFT_RULES")" || return 1
+  # The unprivileged API reads the managed rules file. Set the mode when
+  # creating its directory, even when the installer inherits a strict umask.
+  (umask 022; mkdir -p -- "$(dirname "$EASY_WAF_NFT_RULES")") || return 1
   install -m 0644 "$stage/rules.nft" "$EASY_WAF_NFT_RULES" || return 1
   if [[ -f "$stage/guard.nft" ]]; then
     install -m 0644 "$stage/guard.nft" "$EASY_WAF_NFT_GUARD" || return 1

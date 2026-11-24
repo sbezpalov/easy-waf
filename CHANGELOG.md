@@ -226,6 +226,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Firewall on a fresh installation.** The installer creates the managed
+  nftables directory with mode `0755` even under a restrictive process umask,
+  so the management API can read its rules. Existing directory permissions are
+  preserved.
+
 - **Confirming firewall and network changes.** Confirmation keeps a change
   when systemd has already discarded the inactive rollback service after
   its timer was stopped. An active or queued rollback still prevents confirmation.
