@@ -10,18 +10,18 @@ Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
 across 49 packages and skipped 85, including the PostgreSQL-dependent
 cases. An earlier publication test also passed under Git Bash.
 
-**Current local packages:** [e02aebb](release-evidence/1.6.1-packages-e02aebb.md).
+**Current local packages:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#local-rebuild).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. The packaged backup
 and restore scripts match the source. Windows independently verified the
 package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [e02aebb](release-evidence/1.6.1-packages-e02aebb.md#offline-isos).
+**Current local offline ISOs:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#local-rebuild).
 Both images passed the isolated APT solve and full bundle verification. They
-include the updated installer, upgrade helpers and the verified DEBs from
-the same revision.
+include the clock-skew fix, upgrade helpers and the verified DEBs from the
+same revision.
 
-**Current amd64 offline installation:** [e02aebb](release-evidence/1.6.1-packages-e02aebb.md#amd64-appliance-installation).
+**Current amd64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#amd64-appliance-installation).
 The image passed clean installation, reboot, authenticated About, read-only
 smoke, repeat installation and the shipped firewall repair on a
 disconnected Ubuntu VMware guest. Installed
@@ -69,8 +69,8 @@ The local PostgreSQL-backed race suite passed 912 top-level tests. The
 separate golden, live HAProxy and root checks passed. APT log testing also
 reproduced an intermittent Go 1.27.4 race warning in a sequential
 standalone test. Hosted CI passed on `578161a`, including PostgreSQL race
-coverage. The arm64 appliance boot for the exact candidate and published
-signature validation remain open.
+coverage, and [also passed for the clock-skew fix](release-evidence/1.6.1-offline-clock-dfc3ada.md#hosted-checks).
+The exact arm64 installation and published signature validation remain open.
 
 **Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
 An isolated VMware fixture passed the installer conffile, HAProxy working
