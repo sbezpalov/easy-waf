@@ -109,11 +109,12 @@ log_relv() { printf '%s\n' "$*"; }
 MOCK
 printf 'easy_waf_github_repo() { echo fixture/repo; }\n' >"$SCRIPT_DIR/lib/github-repo.sh"
 printf 'easy_waf_release_arch() { echo amd64; }\n' >"$SCRIPT_DIR/lib/release-arch.sh"
-function_source="$(sed -n '/^acquire_dist_binaries() {$/,/^}$/p' "$SOURCE_DIR/install.sh")"
+function_source="$(sed -n -e '/^dist_binaries_complete() {$/,/^}$/p' \
+  -e '/^acquire_dist_binaries() {$/,/^}$/p' -e '/^install_binaries() {$/,/^}$/p' "$SOURCE_DIR/install.sh")"
 [[ -n "$function_source" ]] || fail 'missing installer acquisition function'
 eval "$function_source"
 log() { :; }
-die() { exit 1; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
 easy_waf_target_version() { echo 9.9.9; }
 curl() { fail 'unexpected direct network call'; }
 export EASY_WAF_PKG_INSTALLED=0
@@ -157,6 +158,17 @@ bash "$SCRIPT_DIR/download-release.sh" >/dev/null || fail 'versioned downloader 
 for binary in "${required[@]}"; do
   [[ "$(cat "$DIST_DIR/$binary")" == "new $binary" ]] || fail "downloader did not publish $binary"
 done
+(
+  EASY_WAF_SKIP_BINARY_FETCH=1 acquire_dist_binaries
+  : >"$DIST_DIR/easy-waf-hostd"
+  if (EASY_WAF_SKIP_BINARY_FETCH=1 acquire_dist_binaries) >/dev/null 2>&1; then
+    fail 'installer accepted an empty local binary'
+  fi
+  # shellcheck disable=SC2329 # Called by the installer function loaded with eval.
+  install() { : >"$ROOT/local-install-called"; }
+  if (install_binaries) >/dev/null 2>&1; then fail 'incomplete set passed installation preflight'; fi
+  [[ ! -e "$ROOT/local-install-called" ]] || fail 'installer copied a file before rejecting the incomplete set'
+)
 
 # A missing download capability is not permission to install a compiler. Model
 # that host without removing tools from the developer's machine or real PATH.
@@ -170,6 +182,7 @@ easy_waf_apt_get_update() { : >"$ROOT/toolchain-attempt"; }
 apt-get() { return 0; }
 easy_waf_go_version_meets() { return 0; }
 go() { return 0; }
+# shellcheck disable=SC2329 # Called by the installer function loaded with eval.
 make() { return 1; }
 export EASY_WAF_INSTALL_BUILD_DEPS=1
 export EASY_WAF_PKG_MGR=apt
@@ -178,4 +191,7 @@ if (acquire_dist_binaries) >/dev/null 2>&1; then fail 'missing curl unexpectedly
 export EASY_WAF_BUILD_FROM_SOURCE=1
 (acquire_dist_binaries) >/dev/null 2>&1 || true # fixture make deliberately fails
 [[ -e "$ROOT/toolchain-attempt" ]] || fail 'explicit source build was not honored'
+make() { printf 'partial build\n' >"$DIST_DIR/easy-waf-api"; }
+if (acquire_dist_binaries) >"$ROOT/partial-build.log" 2>&1; then fail 'installer accepted a partial source build'; fi
+grep -Fq 'Build did not produce a complete binary set' "$ROOT/partial-build.log" || fail 'missing partial build diagnosis'
 echo 'OK: release unpack checks passed'

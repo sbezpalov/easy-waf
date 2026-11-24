@@ -633,6 +633,13 @@ retire_script_installed_units() {
   fi
 }
 
+dist_binaries_complete() {
+  local binary
+  for binary in easy-waf-api easy-waf-acmed easy-waf-hostd easy-waf-admin; do
+    [[ -f "$DIST_DIR/$binary" && -s "$DIST_DIR/$binary" ]] || return 1
+  done
+}
+
 # Plug-and-play: populate REPO_ROOT/dist — try GitHub release, else install toolchain + make build.
 acquire_dist_binaries() {
   if [[ "$EASY_WAF_PKG_INSTALLED" == "1" ]]; then
@@ -645,14 +652,13 @@ acquire_dist_binaries() {
 
   mkdir -p "${REPO_ROOT}/dist"
 
-  if [[ -f "${DIST_DIR}/easy-waf-api" && -f "${DIST_DIR}/easy-waf-acmed" &&
-        -f "${DIST_DIR}/easy-waf-hostd" && -f "${DIST_DIR}/easy-waf-admin" ]]; then
+  if dist_binaries_complete; then
     log "Using existing binaries: $DIST_DIR/easy-waf-api"
     return 0
   fi
 
   if [[ "${EASY_WAF_SKIP_BINARY_FETCH:-0}" == "1" ]]; then
-    die "EASY_WAF_SKIP_BINARY_FETCH=1 requires easy-waf-api, easy-waf-acmed, easy-waf-hostd and easy-waf-admin in EASY_WAF_DIST_DIR=$DIST_DIR"
+    die "EASY_WAF_SKIP_BINARY_FETCH=1 requires nonempty easy-waf-api, easy-waf-acmed, easy-waf-hostd and easy-waf-admin in EASY_WAF_DIST_DIR=$DIST_DIR"
   fi
 
   DIST_DIR="${REPO_ROOT}/dist"
@@ -762,7 +768,7 @@ EOF
     chown -R "${SUDO_USER}:${SUDO_USER}" "${REPO_ROOT}/dist" 2>/dev/null || true
     log "chown ${REPO_ROOT}/dist → ${SUDO_USER} (avoid permission denied on go build without sudo)"
   fi
-  [[ -f "${DIST_DIR}/easy-waf-api" ]] || die "Build did not produce $DIST_DIR/easy-waf-api"
+  dist_binaries_complete || die "Build did not produce a complete binary set in $DIST_DIR"
   log "Built binaries in $DIST_DIR"
 }
 
@@ -771,27 +777,17 @@ install_binaries() {
     log "Binaries come from the easy-waf package (dpkg -L easy-waf)"
     return 0
   fi
-  local found=0
-  if [[ -f "${DIST_DIR}/easy-waf-api" ]]; then
-    install -m 0755 "${DIST_DIR}/easy-waf-api" "$API_BIN"
-    log "Installed $API_BIN"
-    found=1
-  fi
-  if [[ -f "${DIST_DIR}/easy-waf-acmed" ]]; then
-    install -m 0755 "${DIST_DIR}/easy-waf-acmed" "$ACME_BIN"
-    log "Installed $ACME_BIN"
-    found=1
-  fi
-  if [[ -f "${DIST_DIR}/easy-wafd" ]]; then
+  dist_binaries_complete || die "Installation requires a complete binary set in $DIST_DIR"
+  install -m 0755 "${DIST_DIR}/easy-waf-api" "$API_BIN"
+  log "Installed $API_BIN"
+  install -m 0755 "${DIST_DIR}/easy-waf-acmed" "$ACME_BIN"
+  log "Installed $ACME_BIN"
+  if [[ -f "${DIST_DIR}/easy-wafd" && -s "${DIST_DIR}/easy-wafd" ]]; then
     install -m 0755 "${DIST_DIR}/easy-wafd" "$LEGACY_BIN"
     log "Installed $LEGACY_BIN"
-    found=1
   fi
-  if [[ -f "${DIST_DIR}/easy-waf-admin" ]]; then
-    install -m 0755 "${DIST_DIR}/easy-waf-admin" "$ADMIN_BIN"
-    log "Installed $ADMIN_BIN (emergency: management-config, reset-control-panel-access, reset-appliance, factory-reset)"
-    found=1
-  fi
+  install -m 0755 "${DIST_DIR}/easy-waf-admin" "$ADMIN_BIN"
+  log "Installed $ADMIN_BIN (emergency: management-config, reset-control-panel-access, reset-appliance, factory-reset)"
   if [[ -f "${REPO_ROOT}/scripts/diagnostics.sh" ]]; then
     install -d -m 0755 /usr/share/easy-waf/scripts/lib
     install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" /usr/share/easy-waf/scripts/diagnostics.sh
@@ -806,27 +802,6 @@ install_binaries() {
     install -m 0644 "${REPO_ROOT}/scripts/lib/pg-archive.py" /usr/share/easy-waf/scripts/lib/
     ln -sfn /usr/share/easy-waf/scripts/backup.sh /usr/sbin/easy-waf-backup
     log "Installed /usr/sbin/easy-waf-backup (see docs/BACKUP_RESTORE.md)"
-  fi
-  if [[ "$found" -eq 0 ]]; then
-    cat >&2 <<EOF
-
-[easy-waf] ERROR: no binaries in DIST_DIR=$DIST_DIR
-
-Build from source on this machine (needs Go 1.27+, make):
-  cd $REPO_ROOT
-  go mod tidy
-  make build
-
-Then install (binaries are in dist/):
-  sudo EASY_WAF_DIST_DIR=$REPO_ROOT/dist bash $REPO_ROOT/scripts/install.sh
-
-Plug-and-play (default): re-run install — it installs golang via dnf/apt (or go.dev tarball on older Debian) and builds.
-
-GitHub Release tarball (see .github/workflows/release.yml): nested dist/<binaries> is flattened into repo/dist/ automatically. Manual path: EASY_WAF_DIST_DIR must contain easy-waf-api at top level:
-  sudo EASY_WAF_DIST_DIR=/path/to/dist bash $REPO_ROOT/scripts/install.sh
-
-EOF
-    exit 1
   fi
 }
 
