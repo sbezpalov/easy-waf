@@ -3999,7 +3999,7 @@
   const HOST_CRITICAL_UNITS = ['easy-waf-api.service', 'haproxy.service', 'postgresql.service'];
   const HOST_SERVICE_ACTIONS = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
   const HOST_ROLLBACK_STORAGE_KEY = 'easy-waf.host-rollback-capability.v1';
-  let hostRollback = { kind: null, token: null, operationID: null, commitUrl: null, phase: null, timer: null, deadline: 0, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false };
+  let hostRollback = { kind: null, token: null, operationID: null, commitUrl: null, phase: null, timer: null, statusRetry: null, deadline: 0, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false };
 
   const HOST_PROTECTED_USERNAMES = ['root', 'easy-waf'];
   const HOST_USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
@@ -4311,11 +4311,17 @@
 
   async function refreshHostRollbackStatus(reloadOnSettled = false) {
     if (hostRollback.polling) return;
+    clearTimeout(hostRollback.statusRetry);
+    hostRollback.statusRetry = null;
     hostRollback.polling = true;
     hostRollback.statusUnknown = true;
     updateHostRollbackApplyButtons();
     try {
       const r = await fetch('/api/v1/host/changes/pending', { headers: hdr(), cache: 'no-store' });
+      if (r.status === 503 && r.headers.get('Retry-After') === '1') {
+        hostRollback.statusRetry = setTimeout(() => void refreshHostRollbackStatus(reloadOnSettled), 1000);
+        return;
+      }
       if (!r.ok) throw new Error(await apiMessage(r));
       const payload = await r.json();
       if (!payload || !Array.isArray(payload.changes)) throw new Error('Invalid rollback status response');

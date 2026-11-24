@@ -6,8 +6,9 @@
 package hostd
 
 import (
-	"fmt"
 	"sync"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // Development-only fallback. The appliance ships only on Linux, where flock
@@ -18,7 +19,7 @@ func lockRollback(wait bool) (func(), error) {
 	if wait {
 		rollbackOperationMu.Lock()
 	} else if !rollbackOperationMu.TryLock() {
-		return nil, fmt.Errorf("network/firewall operation busy; retry after it completes")
+		return nil, hostspec.ErrRollbackStatusBusy
 	}
 	return rollbackOperationMu.Unlock, nil
 }

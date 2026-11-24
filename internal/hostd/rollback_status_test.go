@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 func TestPendingRollbackStatusUsesPersistedDeadlineWithoutToken(t *testing.T) {
@@ -59,9 +61,42 @@ func TestPendingRollbackStatusUsesPersistedDeadlineWithoutToken(t *testing.T) {
 			t.Fatalf("change %+v, want %+v", got, want)
 		}
 	}
-	resp := rollbackStatus()
+	resp := rollbackStatus(t.Context())
 	if !resp.OK || strings.Contains(resp.Stdout, testToken) || !strings.Contains(resp.Stdout, rollbackOperationID(testToken)) {
 		t.Fatalf("status leaked token or lost operation id: %+v", resp)
+	}
+}
+
+func TestRollbackStatusWaitsForMutation(t *testing.T) {
+	rollbackTestEnv(t)
+	unlock, err := lockRollback(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan struct{})
+	time.AfterFunc(100*time.Millisecond, func() {
+		unlock()
+		close(released)
+	})
+	resp := rollbackStatus(t.Context())
+	<-released
+	if !resp.OK || resp.Stdout != `{"changes":[]}` {
+		t.Fatalf("status after mutation: %+v", resp)
+	}
+}
+
+func TestRollbackStatusReportsPersistentContention(t *testing.T) {
+	rollbackTestEnv(t)
+	unlock, err := lockRollback(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	resp := rollbackStatus(ctx)
+	if resp.OK || resp.Code != hostspec.RollbackStatusBusyCode || resp.Stdout != "" {
+		t.Fatalf("status while busy: %+v", resp)
 	}
 }
 

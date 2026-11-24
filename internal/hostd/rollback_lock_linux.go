@@ -8,6 +8,7 @@ package hostd
 import (
 	"fmt"
 
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"golang.org/x/sys/unix"
 )
 
@@ -33,7 +34,7 @@ func lockRollback(wait bool) (func(), error) {
 	if err != nil {
 		_ = unix.Close(fd)
 		if err == unix.EWOULDBLOCK {
-			return nil, fmt.Errorf("network/firewall operation busy; retry after it completes")
+			return nil, hostspec.ErrRollbackStatusBusy
 		}
 		return nil, fmt.Errorf("lock rollback state: %w", err)
 	}

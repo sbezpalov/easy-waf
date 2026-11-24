@@ -5,6 +5,7 @@
 package hostspec
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -16,6 +17,12 @@ import (
 	"github.com/easy-waf/easy-waf/internal/blocklog"
 	"github.com/easy-waf/easy-waf/internal/host/systemdallow"
 )
+
+// RollbackStatusBusyCode is the broker response code for transient contention
+// when reading rollback status.
+const RollbackStatusBusyCode = 75
+
+var ErrRollbackStatusBusy = errors.New("network/firewall operation busy; retry after it completes")
 
 // RollbackStatus is the broker's read-only view of confirm-or-revert changes.
 // It deliberately carries an operation digest, never the commit token.

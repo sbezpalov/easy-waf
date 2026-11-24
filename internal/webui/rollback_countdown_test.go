@@ -42,8 +42,8 @@ const zabbixStart = page.indexOf('  let zabbixFirewallRead = 0;');
 const zabbixEnd = page.indexOf('  function loadSettingsTab()', zabbixStart);
 assert.ok(zabbixStart >= 0 && zabbixEnd > zabbixStart, 'Zabbix status loader not found');
 let now = Date.now(), nextTimer = 0;
-const timers = new Map(), notices = [], elements = new Map(), storage = new Map();
-const state = {timer: null, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false};
+const timers = new Map(), timeouts = new Map(), notices = [], elements = new Map(), storage = new Map();
+const state = {timer: null, statusRetry: null, polling: false, statusUnknown: true, statusWarned: false, expiryNotified: false};
 const element = id => {
   if (!elements.has(id)) elements.set(id, {hidden: true, classList: {
     add: () => {element(id).hidden = true}, remove: () => {element(id).hidden = false},
@@ -52,13 +52,14 @@ const element = id => {
   }});
   return elements.get(id);
 };
-let applyPayload, statusPayload = {changes: []}, networkReloads = 0;
+let applyPayload, statusPayload = {changes: []}, networkReloads = 0, busy = false;
 let firewall = {}, firewallReads = 0;
 const context = {assert, hostRollback: state, Date: class extends Date {static now() {return now}},
   currentRole: 'admin',
   HOST_ROLLBACK_STORAGE_KEY: 'test-host-rollback',
   document: {getElementById: element}, setInterval: fn => {timers.set(++nextTimer, fn); return nextTimer},
   clearInterval: id => timers.delete(id), toast: (...args) => notices.push(args),
+  setTimeout: fn => {timeouts.set(++nextTimer, fn); return nextTimer}, clearTimeout: id => timeouts.delete(id),
   confirmDialog: async () => true, hdr: () => ({}), apiMessage: async () => 'failed',
   sessionStorage: {getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key)},
   loadNetworkTab: async () => {networkReloads++},
@@ -67,6 +68,9 @@ const context = {assert, hostRollback: state, Date: class extends Date {static n
       firewallReads++;
       assert.equal(options.cache, 'no-store');
       return {ok: true, json: async () => firewall};
+    }
+    if (url === '/api/v1/host/changes/pending' && busy) {
+      return {ok: false, status: 503, headers: {get: name => name === 'Retry-After' ? '1' : null}};
     }
     return {ok: true, json: async () => url === '/api/v1/host/changes/pending' ? statusPayload : applyPayload};
   }};
@@ -80,8 +84,17 @@ statusPayload = {changes: [{kind: 'netplan', operation_id: operationID, phase: '
   expires_at: capability.expires_at, confirmable: true}]};
 context.saveHostRollbackCapability(capability);
 (async () => {
+  busy = true;
   await context.refreshHostRollbackStatus();
+  assert.equal(state.statusUnknown, true, 'busy response was treated as settled');
+  assert.equal(element('btn-net-netplan-apply').disabled, true);
+  assert.equal(notices.length, 0, 'transient contention showed a connection warning');
+  assert.equal(timeouts.size, 1);
+  busy = false;
+  [...timeouts.values()][0]();
+  await new Promise(setImmediate);
   assert.equal(state.statusUnknown, false);
+  assert.equal(timeouts.size, 0);
   assert.equal(state.token, 'test-token', 'same-tab reload lost commit capability');
   assert.match(element('host-rollback-message').textContent, /90s/);
   assert.equal(element('btn-host-rollback-keep').hidden, false);

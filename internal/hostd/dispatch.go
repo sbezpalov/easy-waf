@@ -213,7 +213,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 		if len(argv) != 1 {
 			return failResp("rollback-status: takes no arguments", 1)
 		}
-		return rollbackStatus()
+		return rollbackStatus(ctx)
 
 	case "apt-update":
 		return dispatchAptSynchronous(ctx, r, "update")

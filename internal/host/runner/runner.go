@@ -15,6 +15,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/commandprocess"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // Privileged sends a validated subcommand to easy-waf-hostd over the unix socket.
@@ -72,6 +73,9 @@ func privileged(ctx context.Context, args ...string) (brokerResponse, error) {
 		}
 		if resp.OutputLimited {
 			return resp, brokerOutputError(msg)
+		}
+		if args[0] == "rollback-status" && resp.Code == hostspec.RollbackStatusBusyCode {
+			return resp, hostspec.ErrRollbackStatusBusy
 		}
 		return resp, errors.New(msg)
 	}

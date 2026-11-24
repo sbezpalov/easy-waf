@@ -197,6 +197,12 @@ func (s *Server) hostNetplanApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostGetPendingChanges(w http.ResponseWriter, r *http.Request) {
 	status, err := rollback.PendingChanges(r.Context())
+	if errors.Is(err, hostspec.ErrRollbackStatusBusy) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "1")
+		writeClientError(w, http.StatusServiceUnavailable, "Network or firewall operation in progress. Retry shortly.", nil)
+		return
+	}
 	if err != nil {
 		writeInternalError(w, err)
 		return

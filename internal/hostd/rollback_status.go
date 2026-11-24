@@ -4,9 +4,11 @@
 package hostd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -137,12 +139,26 @@ func pendingRollbackStatus(now time.Time) (hostspec.RollbackStatus, error) {
 	return status, nil
 }
 
-func rollbackStatus() Response {
-	unlock, err := lockRollback(false)
-	if err != nil {
-		return failResp(err.Error(), 1)
+func rollbackStatus(ctx context.Context) Response {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	retry := time.NewTicker(50 * time.Millisecond)
+	defer retry.Stop()
+	for {
+		unlock, err := lockRollback(false)
+		if err == nil {
+			defer unlock()
+			break
+		}
+		if !errors.Is(err, hostspec.ErrRollbackStatusBusy) {
+			return failResp(err.Error(), 1)
+		}
+		select {
+		case <-ctx.Done():
+			return failResp(err.Error(), hostspec.RollbackStatusBusyCode)
+		case <-retry.C:
+		}
 	}
-	defer unlock()
 	status, err := pendingRollbackStatus(time.Now().UTC())
 	if err != nil {
 		return failResp(err.Error(), 1)
