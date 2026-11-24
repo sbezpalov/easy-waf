@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from threading import Thread
+import time
 
 
 CONFIG = Path("/etc/crowdsec")
@@ -20,6 +21,7 @@ RUN = Path("/run/lock")
 PENDING = ".easy-waf-offline-install"
 INDEX_ROUTE = "/snapshot/.index.json"
 INDEX_SOCKET_TIMEOUT = 5
+AGENT_RESTART_ATTEMPTS = 3
 ACQUISITION = b"""source: file
 filenames:
   - /var/log/haproxy.log
@@ -46,6 +48,18 @@ labels:
 
 def output(*command):
     return subprocess.check_output(command, text=True).strip()
+
+
+def restart_agent():
+    for attempt in range(1, AGENT_RESTART_ATTEMPTS + 1):
+        try:
+            subprocess.run(["systemctl", "restart", "crowdsec.service"], check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == AGENT_RESTART_ATTEMPTS:
+                raise
+            print(f"[offline-install] CrowdSec restart failed (attempt {attempt}); retrying", file=sys.stderr)
+            time.sleep(2)
 
 
 def package_status():
@@ -215,7 +229,7 @@ def prepare_agent(snapshot, repository):
 
         subprocess.run(["crowdsec", "-t"], check=True)
         if os.environ.get("EASY_WAF_CROWDSEC_AUTO_START_AFTER_INSTALL", "1") == "1":
-            subprocess.run(["systemctl", "restart", "crowdsec.service"], check=True)
+            restart_agent()
         shutil.rmtree(pending)
         print("[offline-install] activated CrowdSec from the verified local snapshot")
 

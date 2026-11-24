@@ -34,7 +34,8 @@ HTTPS and confirmed time zone, audit, journal and managed-firewall access. A
 clone of the installed appliance passed firewall confirmation, time-based
 rollback and management guard checks, plus service and About inventory checks
 for both Zabbix package names. A separate clean retry hit a CrowdSec startup
-failure that remains under investigation.
+crash. The updated bootstrap retry recovered the original snapshot on an
+isolated clone after one injected restart failure.
 
 **Current arm64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#arm64-appliance-installation).
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's

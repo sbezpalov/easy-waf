@@ -226,6 +226,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CrowdSec offline startup.** The installer retries a failed agent restart
+  after validating the snapshot configuration. A persistent restart error
+  stops the install and retains the verified snapshot receipt.
+
 - **Firewall on a fresh installation.** The installer creates the managed
   nftables directory with mode `0755` even under a restrictive process umask,
   so the management API can read its rules. Existing directory permissions are

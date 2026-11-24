@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 import socket
 import stat
+import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -72,6 +73,27 @@ class OfflineInstallTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(existing.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(target.parent.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
+
+    def test_agent_restart_recovers_after_one_failure(self):
+        args = ["systemctl", "restart", "crowdsec.service"]
+        failure = subprocess.CalledProcessError(1, args)
+        with patch.object(installer.subprocess, "run", side_effect=[failure, None]) as run, patch.object(
+            installer.time, "sleep"
+        ) as sleep:
+            installer.restart_agent()
+        self.assertEqual(run.call_args_list, [call(args, check=True)] * 2)
+        sleep.assert_called_once_with(2)
+
+    def test_agent_restart_stops_after_three_failures(self):
+        args = ["systemctl", "restart", "crowdsec.service"]
+        failure = subprocess.CalledProcessError(1, args)
+        with patch.object(installer.subprocess, "run", side_effect=failure) as run, patch.object(
+            installer.time, "sleep"
+        ) as sleep:
+            with self.assertRaises(subprocess.CalledProcessError):
+                installer.restart_agent()
+        self.assertEqual(run.call_args_list, [call(args, check=True)] * 3)
+        self.assertEqual(sleep.call_args_list, [call(2)] * 2)
 
     def test_mirror_serves_only_embedded_index(self):
         index = b'{"fixture": {}}'
