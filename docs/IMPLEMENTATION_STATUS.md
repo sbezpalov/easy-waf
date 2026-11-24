@@ -4,6 +4,11 @@
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
+**GeoIP archive budget:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md).
+Both architectures' packages and ISOs passed local build and payload checks.
+The PostgreSQL-backed race suite passed 924 tests with four skips. Live
+HAProxy and the separate root checks passed.
+
 **Rollback status fix candidate:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md).
 Native Linux build checks and independent Windows hash and payload checks
 passed for both architectures. The broker, API and panel regression tests
