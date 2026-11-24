@@ -118,17 +118,17 @@ The main push workflow passed `verify`, `lint-and-test` and
 The isolated appliance passed selective blocking, unban, fail-open while the
 bouncer was stopped, enforcement after restart and cleanup.
 
-**Current Docker edge E2E:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-edge-e2e).
+**Current Docker edge E2E:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#local-e2e-workflow-checks).
 The local HAProxy body policy and CrowdSec scenarios passed all 31 cases,
 including selective blocking and fail-open. The scheduled GitHub E2E passed on
 the earlier `e34b562` revision.
 
-**Current Docker installer and backup E2E:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-installer-and-backup-e2e).
+**Earlier Docker installer and backup launchers:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-installer-and-backup-e2e).
 The installer conffile, HAProxy working directory, backup and restore launchers
-passed with a pinned Ubuntu 24.04 amd64 base. The isolated systemd/APT package
-lifecycle fixture passed all seven cases.
+passed with a pinned Ubuntu 24.04 amd64 base.
 
-**Current native E2E checks:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#native-vmware-e2e).
+**Current systemd/APT and native E2E:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#local-e2e-workflow-checks).
+The isolated Docker package lifecycle fixture passed all seven cases.
 An isolated VMware fixture passed the installer conffile, HAProxy working
 directory, backup publication, restore permissions, archive locking and
 PostgreSQL SCRAM checks. A private network namespace passed both native
