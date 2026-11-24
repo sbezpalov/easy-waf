@@ -95,11 +95,13 @@ The local HAProxy body policy and CrowdSec scenarios passed all 31 cases,
 including selective blocking and fail-open. The scheduled GitHub E2E passed on
 the earlier `e34b562` revision.
 
-**Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
+**Current native E2E checks:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#native-vmware-e2e).
 An isolated VMware fixture passed the installer conffile, HAProxy working
 directory, backup publication, restore permissions, archive locking and
 PostgreSQL SCRAM checks. A private network namespace passed both native
 nftables checks, including closing the managed Zabbix port and rollback.
+The [earlier e02aebb checks](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks)
+also record results on that revision.
 
 **Earlier Linux race coverage:** [41debb4](release-evidence/1.6.1-runtime-gates-41debb4.md).
 The race suite with PostgreSQL, the separate root cases and the CI HAProxy
