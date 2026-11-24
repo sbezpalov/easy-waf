@@ -4,46 +4,42 @@
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
-**Windows developer verification:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#windows-developer-checks)
-passed `go vet -p 1 ./...` and the full Go test run on Windows amd64 with
-Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
-across 49 packages and skipped 85, including the PostgreSQL-dependent
-cases. An earlier publication test also passed under Git Bash.
+**Windows developer verification:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#windows-developer-checks)
+passed the full Go test command and golangci-lint on Windows amd64 with
+Go 1.27.4 and Node.js 26.13.1. An [earlier
+run](release-evidence/1.6.1-runtime-gates-e02aebb.md#windows-developer-checks)
+also recorded `go vet` and the Git Bash publication test.
 
-**Current local packages:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#local-rebuild).
+**Current local packages:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#build-and-payload-checks).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
 suite, then built and verified both DEBs and tarballs. The packaged backup
 and restore scripts match the source. Windows independently verified the
 package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#local-rebuild).
+**Current local offline ISOs:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#build-and-payload-checks).
 Both images passed the isolated APT solve and full bundle verification. They
-include the clock-skew and firewall directory fixes, upgrade helpers and the
-verified DEBs from the same revision.
+include the clock-skew and firewall directory fixes, the CrowdSec startup
+retry and the verified DEBs from the same revision.
 
-**Current amd64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#amd64-appliance-installation).
-The image passed clean installation, reboot, authenticated About, read-only
-smoke, repeat installation and the shipped firewall repair on a
-disconnected Ubuntu VMware guest. Installed
-backup and restore also recovered synthetic database, state and configuration
-values and returned the appliance to trusted HTTPS readiness.
+**Current amd64 offline installation:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#amd64-offline-appliance-installation).
+A disconnected Ubuntu VMware guest passed clean installation under `umask
+077`, reboot, API time zone and journal checks, nftables confirmation and
+rollback, both Zabbix service and package inventory cases, repeat installation
+without the snapshot and backup and restore.
 
-**Current amd64 installed API checks:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#installed-firewall-access-and-time-zone).
-An offline full-profile install under `umask 077` rebooted with working
-HTTPS and confirmed time zone, audit, journal and managed-firewall access. A
-clone of the installed appliance passed firewall confirmation, time-based
-rollback and management guard checks, plus service and About inventory checks
-for both Zabbix package names. A separate clean retry hit a CrowdSec startup
-crash. The updated bootstrap retry recovered the original snapshot on an
+**Earlier amd64 installer failure and recovery:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#installed-firewall-access-and-time-zone).
+An intermittent CrowdSec startup crash left the verified snapshot receipt in
+place. The updated bootstrap retry recovered the original snapshot on an
 isolated clone after one injected restart failure.
 
-**Current arm64 offline installation:** [dfc3ada](release-evidence/1.6.1-offline-clock-dfc3ada.md#arm64-appliance-installation).
+**Latest completed arm64 offline installation:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#arm64-offline-appliance-installation).
 A disconnected Ubuntu 24.04.5 QEMU guest with a clock behind the bundle's
 APT metadata passed clean installation, reboot, authenticated About and
-repeat installation without the snapshot. The test verified the shipped
-binaries and preserved the system APT and CrowdSec files.
+repeat installation without the snapshot. The installed API passed time zone,
+firewall confirmation and rollback, and Zabbix inventory checks. The exact
+`707f279` arm64 installation remains open.
 
-**Current direct amd64 upgrade:** [1.6.0 to 3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#direct-amd64-package-upgrade).
+**Current direct amd64 upgrade:** [1.6.0 to 707f279](release-evidence/1.6.1-local-gates-707f279.md#direct-amd64-package-upgrade).
 Offline APT migrated schema 019 to 029, preserved a database marker and
 management files, and brought the new binaries to trusted HTTPS readiness.
 
@@ -79,13 +75,14 @@ approval and validation of the signed assets remain open. DNS-01 is deferred.
 The PostgreSQL-backed suite passed 893 top-level tests, and all five live
 HAProxy integration checks passed. This run used `CGO_ENABLED=0`.
 
-**Current Linux race and hosted CI:** [local and hosted results](release-evidence/1.6.1-runtime-gates-e02aebb.md#linux-race-checks).
-The local PostgreSQL-backed race suite passed 912 top-level tests. The
-separate golden, live HAProxy and root checks passed. APT log testing also
-reproduced an intermittent Go 1.27.4 race warning in a sequential
-standalone test. Hosted CI passed on `578161a`, including PostgreSQL race
-coverage, and [also passed for the clock-skew fix](release-evidence/1.6.1-offline-clock-dfc3ada.md#hosted-checks).
-Published signature validation remains open.
+**Current local Linux race:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#linux-race-and-integration-checks).
+The PostgreSQL-backed race suite passed 920 top-level tests with four skips.
+The separate golden, live HAProxy and root checks passed. An [earlier run and
+standalone diagnostic](release-evidence/1.6.1-runtime-gates-e02aebb.md#linux-race-checks)
+reproduced an intermittent Go 1.27.4 race warning in a sequential APT log test.
+
+**Current hosted CI:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#hosted-ci).
+The push workflow passed `verify`, `lint-and-test` and `haproxy-config-test`.
 
 **Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
 An isolated VMware fixture passed the installer conffile, HAProxy working
