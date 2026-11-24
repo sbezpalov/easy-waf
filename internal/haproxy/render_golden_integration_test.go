@@ -10,8 +10,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func haproxySocketDir(t *testing.T) string {
+	t.Helper()
+	// HAProxy's Unix address limit also applies during configuration checks.
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = os.TempDir()
+	}
+	dir, err := os.MkdirTemp(base, "ewf-hx-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 // TestGoldenConfigsPassHaproxyCheck requires:
 //   - haproxy in PATH
@@ -29,6 +45,7 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 	fixturePaths := func(body []byte) []byte {
 		return bytes.ReplaceAll(body, []byte("testdata/golden/"), []byte(filepath.ToSlash(goldenDir)+"/"))
 	}
+	absSock := filepath.Join(haproxySocketDir(t), "s.sock")
 
 	for _, name := range goldenScenarioNames {
 		t.Run(name, func(t *testing.T) {
@@ -37,8 +54,6 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// HAProxy 3.x requires an absolute stats socket path, but sun_path is limited (~97 bytes).
-			// t.TempDir() already includes a long test name; keep socket filename very short.
 			d := t.TempDir()
 			// The appliance validator runs from a traversable directory.
 			// Materialize the list with absolute PEM paths, and resolve shared
@@ -54,7 +69,6 @@ func TestGoldenConfigsPassHaproxyCheck(t *testing.T) {
 			}
 			raw = fixturePaths(raw)
 			raw = bytes.ReplaceAll(raw, []byte(filepath.ToSlash(filepath.Join(goldenDir, listName))), []byte(filepath.ToSlash(listPath)))
-			absSock := filepath.Join(d, "s.sock")
 			cfgBody := rewriteStatsSocketPathForHAProxyCheck(raw, absSock)
 			// Backend-TLS fixtures record an operator CA path that exists only on the
 			// appliance they were written for, and haproxy -c opens ca-file for real.

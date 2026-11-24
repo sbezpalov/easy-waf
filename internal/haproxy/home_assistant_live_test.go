@@ -43,12 +43,7 @@ func testLiveApplicationProfiles(t *testing.T, passthrough bool) {
 	backend := httptestServer(t)
 	defer backend.Close()
 	dir := t.TempDir()
-	// Keep the chained Unix listener short even when TMPDIR has a long path.
-	socketDir, err := os.MkdirTemp("", "ewf-ha-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	socketDir := haproxySocketDir(t)
 	settings := config.DefaultSettings(dir)
 	settings.SPOEConfigPath = ""
 	settings.BlockEmptyUA = false
