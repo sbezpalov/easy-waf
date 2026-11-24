@@ -9,10 +9,12 @@ source "${SCRIPT_DIR}/lib/env-file.sh"
 [[ "$(id -u)" -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 ENV_FILE="${EASY_WAF_ENV_FILE:-/etc/easy-waf/easy-waf.env}"
 if [[ -f "$ENV_FILE" ]]; then
-  easy_waf_export_env_keys "$ENV_FILE" EASY_WAF_NFT_MGMT_LAN \
-    EASY_WAF_NFT_MGMT_PORTS EASY_WAF_NFT_EDGE EASY_WAF_EXTRA_LAN_CIDR \
-    EASY_WAF_NFT_ZABBIX_AGENT \
-    EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS EASY_WAF_FIREWALLD_EDGE || {
+  keys=(EASY_WAF_NFT_MGMT_LAN EASY_WAF_NFT_MGMT_PORTS EASY_WAF_NFT_EDGE EASY_WAF_EXTRA_LAN_CIDR
+    EASY_WAF_FIREWALLD_MGMT_LAN EASY_WAF_FIREWALLD_MGMT_PORTS EASY_WAF_FIREWALLD_EDGE)
+  if [[ ! -v EASY_WAF_NFT_ZABBIX_AGENT ]]; then
+    keys+=(EASY_WAF_NFT_ZABBIX_AGENT)
+  fi
+  easy_waf_export_env_keys "$ENV_FILE" "${keys[@]}" || {
     echo "cannot read firewall environment" >&2
     exit 1
   }
