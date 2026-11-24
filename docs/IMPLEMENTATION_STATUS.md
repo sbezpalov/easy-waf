@@ -90,6 +90,11 @@ reproduced an intermittent Go 1.27.4 race warning in a sequential APT log test.
 **Current hosted CI:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#hosted-ci).
 The push workflow passed `verify`, `lint-and-test` and `haproxy-config-test`.
 
+**Current Docker edge E2E:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#local-docker-edge-e2e).
+The local HAProxy body policy and CrowdSec scenarios passed all 31 cases,
+including selective blocking and fail-open. The scheduled GitHub E2E passed on
+the earlier `e34b562` revision.
+
 **Current native E2E checks:** [e02aebb](release-evidence/1.6.1-runtime-gates-e02aebb.md#native-end-to-end-checks).
 An isolated VMware fixture passed the installer conffile, HAProxy working
 directory, backup publication, restore permissions, archive locking and
