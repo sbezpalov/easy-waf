@@ -27,6 +27,12 @@ A disconnected Ubuntu VMware guest passed clean installation under `umask
 rollback, both Zabbix service and package inventory cases, repeat installation
 without the snapshot and backup and restore.
 
+**Current Apply and WebSocket checks:** [rejected Apply and revision rollback](release-evidence/1.6.1-local-gates-707f279.md#installed-apply-rejection-and-rollback)
+and [WSS across Apply](release-evidence/1.6.1-local-gates-707f279.md#installed-websocket-continuity-across-apply)
+passed on two fresh VMware guests with `707f279`. HAProxy validation rejection
+preserved live HTTPS, and revision rollback recovered HTTPS from maintenance.
+A separate WSS connection survived worker replacement and 62 seconds idle.
+
 **Earlier amd64 installer failure and recovery:** [3463cfd](release-evidence/1.6.1-firewall-directory-3463cfd.md#installed-firewall-access-and-time-zone).
 An intermittent CrowdSec startup crash left the verified snapshot receipt in
 place. The updated bootstrap retry recovered the original snapshot on an
