@@ -45,10 +45,17 @@ cd "$SCRIPT_DIR"
   exit 1
 }
 echo "[offline-install] verifying bundle contents"
-sha256sum -c --strict --quiet SHA256SUMS || {
+# Reproduce the builder's sorted regular-file manifest. Checking only its
+# listed entries would miss files that were added or omitted.
+if ! nonregular="$(find . ! -type d ! -type f -print -quit)" ||
+  [[ -n "$nonregular" ]] ||
+  ! find . -type f ! -path './SHA256SUMS' -print0 |
+    LC_ALL=C sort -z |
+    xargs -0 -r sha256sum -- |
+    cmp -s -- - SHA256SUMS; then
   echo "[offline-install] bundle verification failed; do not install it" >&2
   exit 1
-}
+fi
 if [[ "$VERIFY_ONLY" == "1" ]]; then
   echo "[offline-install] bundle contents verified"
   exit 0

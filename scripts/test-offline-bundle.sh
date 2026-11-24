@@ -7,25 +7,48 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
-cp "${SCRIPT_DIR}/install-offline-bundle.sh" "${TEMP_DIR}/install.sh"
-printf 'test payload\n' >"${TEMP_DIR}/payload.txt"
+probe="$TEMP_DIR/probe"
+mkdir "$probe"
+cp "${SCRIPT_DIR}/install-offline-bundle.sh" "$probe/install.sh"
+printf 'test payload\n' >"$probe/payload.txt"
 (
-  cd "$TEMP_DIR"
-  sha256sum install.sh payload.txt >SHA256SUMS
+  cd "$probe"
+  sha256sum ./install.sh ./payload.txt >SHA256SUMS
 )
 
-"${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null
-cp "${TEMP_DIR}/SHA256SUMS" "${TEMP_DIR}/original-sums"
-printf 'malformed checksum record\n' >>"${TEMP_DIR}/SHA256SUMS"
-if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >"${TEMP_DIR}/verify-error" 2>&1; then
+"${BASH}" "$probe/install.sh" --verify-only >/dev/null
+original_sums="$TEMP_DIR/original-sums"
+cp "$probe/SHA256SUMS" "$original_sums"
+reject_verification() {
+  local description="$1"
+  if "${BASH}" "$probe/install.sh" --verify-only >/dev/null 2>&1; then
+    echo "test-offline-bundle: accepted $description" >&2
+    exit 1
+  fi
+}
+(
+  cd "$probe"
+  sha256sum ./install.sh >SHA256SUMS
+)
+reject_verification 'a checksum manifest omitting a file'
+cp "$original_sums" "$probe/SHA256SUMS"
+printf 'extra file\n' >"$probe/unlisted.txt"
+reject_verification 'an unlisted file'
+rm -- "$probe/unlisted.txt"
+if ln -s missing "$probe/unlisted-link" 2>/dev/null && [[ -L "$probe/unlisted-link" ]]; then
+  reject_verification 'an unlisted dangling symlink'
+fi
+rm -f -- "$probe/unlisted-link"
+printf 'malformed checksum record\n' >>"$probe/SHA256SUMS"
+if "${BASH}" "$probe/install.sh" --verify-only >"$TEMP_DIR/verify-error" 2>&1; then
   echo "test-offline-bundle: accepted a malformed outer checksum manifest" >&2
   exit 1
 fi
-grep -Fq 'bundle verification failed' "${TEMP_DIR}/verify-error"
-mv "${TEMP_DIR}/original-sums" "${TEMP_DIR}/SHA256SUMS"
+grep -Fq 'bundle verification failed' "$TEMP_DIR/verify-error"
+mv "$original_sums" "$probe/SHA256SUMS"
 
-printf 'tampered\n' >>"${TEMP_DIR}/payload.txt"
-if "${BASH}" "${TEMP_DIR}/install.sh" --verify-only >/dev/null 2>&1; then
+printf 'tampered\n' >>"$probe/payload.txt"
+if "${BASH}" "$probe/install.sh" --verify-only >/dev/null 2>&1; then
   echo "test-offline-bundle: tampered bundle was accepted" >&2
   exit 1
 fi
