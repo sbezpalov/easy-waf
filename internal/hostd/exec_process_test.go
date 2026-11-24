@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -259,7 +260,7 @@ func TestOSRunnerBoundsInheritedPipesAndCleansControlChildren(t *testing.T) {
 				limit := time.Now().Add(2 * time.Second)
 				for {
 					data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-					if os.IsNotExist(err) {
+					if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 						break
 					}
 					if err != nil {

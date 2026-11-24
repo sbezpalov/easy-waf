@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -86,8 +87,9 @@ func TestAptCommandBoundsInheritedPipes(t *testing.T) {
 				for {
 					data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 					_, tail, found := strings.Cut(string(data), ") ")
-					dead := os.IsNotExist(err) || (found && strings.HasPrefix(tail, "Z "))
-					if err != nil && !os.IsNotExist(err) {
+					gone := os.IsNotExist(err) || errors.Is(err, syscall.ESRCH)
+					dead := gone || (found && strings.HasPrefix(tail, "Z "))
+					if err != nil && !gone {
 						t.Fatal(err)
 					}
 					if mode == "closed" {
