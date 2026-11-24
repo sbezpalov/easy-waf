@@ -20,8 +20,8 @@ dpkg database, APT pinning preferences and archive cache.
 
 ## Download and verify
 
-Download these three files for the same release and architecture on a connected,
-trusted workstation:
+On a connected, trusted workstation, open the published release and download
+these three files for the same tag and architecture. [GitHub Releases](https://github.com/sbezpalov/easy-waf/releases)
 
 - `easy-waf_<version>_offline_ubuntu24.04_<arch>.iso`
 - the matching `.iso.sha256`
@@ -43,6 +43,28 @@ cosign verify-blob \
 ```
 
 On macOS, replace the checksum command with `shasum -a 256 -c "${ISO}.sha256"`.
+On Windows, run the following in PowerShell from the download directory, with
+Cosign on `PATH`. Use the version and architecture of the appliance media.
+
+```powershell
+$version = '1.6.1'
+$arch = 'amd64'
+$iso = "easy-waf_${version}_offline_ubuntu24.04_${arch}.iso"
+$identity = "https://github.com/sbezpalov/easy-waf/.github/workflows/release.yml@refs/tags/v${version}"
+cosign verify-blob --bundle "$iso.sigstore.json" --certificate-identity $identity `
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' $iso
+if ($LASTEXITCODE -ne 0) { throw 'ISO signature verification failed' }
+
+$line = (Get-Content -LiteralPath "$iso.sha256" -Raw -ErrorAction Stop).TrimEnd("`r", "`n")
+if ($line -cnotmatch ('^([0-9a-f]{64})  ' + [regex]::Escape($iso) + '$')) {
+  throw 'Unexpected ISO checksum manifest entry'
+}
+$expected = $Matches[1]
+$actual = (Get-FileHash -LiteralPath $iso -Algorithm SHA256 -ErrorAction Stop).Hash
+if ($actual -ne $expected) { throw 'ISO checksum verification failed' }
+Write-Output "Verified $iso"
+```
+
 Transfer the ISO across the air gap after both checks pass. The checksum file
 detects transfer damage. Verify authenticity on a trusted connected workstation
 or use a checksum delivered through another trusted channel.
