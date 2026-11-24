@@ -35,6 +35,10 @@ while (( $# )); do
   [[ "$1" == -extract && "$2" == /* && "${2##*/}" == "${3##*/}" ]]
   tar -xf "$archive" -C "$scratch" "${2#/}"
   cp -a -- "$scratch/${2#/}" "$3"
+  if [[ "$2" == /payload ]]; then
+    printf '%s\n' "$3" >>"$GH_LOG.extracts"
+    find "$3" -type d -exec chmod a-w {} +
+  fi
   shift 3
 done
 EOF
@@ -82,6 +86,7 @@ create_assets() {
   printf 'release notes\n' >release_notes.md
   printf 'private fixture\n' >"${prefix}_offline_ubuntu24.04_amd64_private.iso"
   : >"$GH_LOG"
+  : >"$GH_LOG.extracts"
 }
 
 expect_publication() {
@@ -91,6 +96,10 @@ expect_publication() {
     --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file release_notes.md "$@" \
     >"$WORK/expected"
   diff -u "$WORK/expected" "$GH_LOG"
+  local payload
+  while IFS= read -r payload; do
+    [[ ! -e "$payload" ]] || { echo 'FAIL: read-only ISO extraction was left behind' >&2; exit 1; }
+  done <"$GH_LOG.extracts"
   echo "PASS: complete release $GITHUB_REF_NAME is submitted once"
 }
 

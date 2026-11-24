@@ -180,7 +180,8 @@ jobs:
           DEB="dist/easy-waf_${VERSION}_${{ matrix.arch }}.deb"
           EASY_WAF_DEB="$DEB" bash scripts/build-offline-bundle.sh
           CHECK_DIR="$(mktemp -d)"
-          trap 'rm -rf -- "$CHECK_DIR"' EXIT
+          # Extracted ISO directories can be read-only.
+          trap 'chmod -R u+w -- "$CHECK_DIR" && rm -rf -- "$CHECK_DIR"' EXIT
           xorriso -osirrox on -indev "dist/easy-waf_${VERSION}_offline_ubuntu24.04_${{ matrix.arch }}.iso" \
             -extract / "$CHECK_DIR"
           bash "$CHECK_DIR/install.sh" --verify-only

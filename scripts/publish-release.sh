@@ -41,7 +41,8 @@ fi
 verify_public_iso() (
   local iso="$1" deb="$2" arch="$3" work
   work="$(mktemp -d)"
-  trap 'rm -rf -- "$work"' EXIT
+  # Extracted ISO directories can be read-only.
+  trap 'chmod -R u+w -- "$work" && rm -rf -- "$work"' EXIT
   mkdir "$work/repository"
   xorriso -osirrox on -indev "$iso" \
     -extract "/repository/$deb" "$work/repository/$deb" \
