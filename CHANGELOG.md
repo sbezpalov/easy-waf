@@ -218,6 +218,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Offline installation with an unsynchronized clock.** The installer can
+  load the verified local APT repository when the appliance clock predates the
+  ISO. System APT sources retain their usual date checks.
+
 - **Firewall changes replace managed nftables tables atomically.** Deleted
   rules take effect in the kernel, and unrelated tables are preserved. The
   firewall editor loads the managed file. Reapplying from the Zabbix panel

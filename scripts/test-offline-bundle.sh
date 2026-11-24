@@ -244,6 +244,10 @@ FIXTURE
     dpkg-deb -f "$deb" >Packages
     read -r digest _ < <(sha256sum "$deb")
     printf 'Filename: ./%s\nSize: %s\nSHA256: %s\n' "$deb" "$(stat -c %s "$deb")" "$digest" >>Packages
+    # An offline VM clock may predate the checksum-verified ISO.
+    read -r index_digest _ < <(sha256sum Packages)
+    printf 'Date: %s\nSHA256:\n %s %s Packages\n' \
+      "$(LC_ALL=C date -Ru -d '+1 day')" "$index_digest" "$(stat -c %s Packages)" >Release
   )
   printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=24.04\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \
     "$VERSION" "$(dpkg --print-architecture)" >"$STAGE/BUNDLE.env"

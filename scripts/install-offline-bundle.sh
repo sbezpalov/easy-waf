@@ -184,7 +184,8 @@ TEMP_DIR="$(mktemp -d /tmp/easy-waf-offline.XXXXXXXXXX)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 chmod 0711 "$TEMP_DIR"
 mkdir -m 0755 -- "${TEMP_DIR}/lists" "${TEMP_DIR}/empty"
-printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "${SCRIPT_DIR}/repository")" >"${TEMP_DIR}/sources.list"
+# The air-gapped host clock can predate the checksum-verified ISO.
+printf 'deb [trusted=yes check-date=no] %s ./\n' "$(apt_repository_uri "${SCRIPT_DIR}/repository")" >"${TEMP_DIR}/sources.list"
 cat >"${TEMP_DIR}/apt.conf" <<EOF
 Dir::Etc::main "/dev/null";
 Dir::Etc::parts "${TEMP_DIR}/empty";
