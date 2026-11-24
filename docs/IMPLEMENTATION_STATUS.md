@@ -8,8 +8,12 @@
 Native Linux build checks and independent Windows hash and payload checks
 passed for both architectures. The broker, API and panel regression tests
 passed. The PostgreSQL-backed race suite passed 923 tests with four skips,
-and the live HAProxy and root checks passed. Appliance acceptance on the
-corrected ISOs remains open.
+and the live HAProxy and root checks passed. ARM64 appliance acceptance on the
+corrected ISO remains open.
+
+**Current same-version amd64 reinstall:** [707f279 to 6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#same-version-amd64-package-reinstall).
+An isolated VMware clone retained schema 029, settings, management TLS and
+HAProxy configuration. The three restarted daemons ran the exact new binaries.
 
 **Windows developer verification:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#windows-developer-checks)
 passed the full Go test command and golangci-lint on Windows amd64 with
@@ -28,11 +32,13 @@ Both images passed the isolated APT solve and full bundle verification. They
 include the clock-skew and firewall directory fixes, the CrowdSec startup
 retry and the verified DEBs from the same revision.
 
-**Current amd64 offline installation:** [707f279](release-evidence/1.6.1-local-gates-707f279.md#amd64-offline-appliance-installation).
+**Current amd64 offline installation:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#amd64-offline-appliance-installation).
 A disconnected Ubuntu VMware guest passed clean installation under `umask
 077`, reboot, API time zone and journal checks, nftables confirmation and
 rollback, both Zabbix service and package inventory cases, repeat installation
-without the snapshot and backup and restore.
+without the snapshot and backup and restore. The installed pending status API
+also passed both contention cases. The [707f279 run](release-evidence/1.6.1-local-gates-707f279.md#amd64-offline-appliance-installation)
+records the previous candidate.
 
 **Current Apply and WebSocket checks:** [rejected Apply and revision rollback](release-evidence/1.6.1-local-gates-707f279.md#installed-apply-rejection-and-rollback)
 and [WSS across Apply](release-evidence/1.6.1-local-gates-707f279.md#installed-websocket-continuity-across-apply)
