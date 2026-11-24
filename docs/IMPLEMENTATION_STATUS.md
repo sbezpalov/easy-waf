@@ -76,6 +76,10 @@ response with an active backend and matching saved and applied generations.
 The current downloader accepted the genuine 1.6.0 signature and rejected
 tampered assets using Cosign. Verification of published 1.6.1 assets remains open.
 
+**Current local publication preflight:** [6fe3be2](release-evidence/1.6.1-local-gates-6fe3be2.md#local-publication-preflight-with-the-built-assets).
+The publication script verified both real ISOs and the complete local asset
+set and rejected a mismatched arm64 ISO before the recorded publication call.
+
 **Earlier offline ISO installation acceptance:** [72cbd62](release-evidence/1.6.1-release-provenance-72cbd62.md).
 Both architectures passed package build, embedded source-revision verification,
 offline APT dependency resolution and exact ISO payload comparison.
