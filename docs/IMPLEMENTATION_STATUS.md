@@ -10,14 +10,15 @@ Go 1.27.4 and Node.js 26.13.1. The test run passed 801 top-level tests
 across 49 packages and skipped 85, including the PostgreSQL-dependent
 cases. An earlier publication test also passed under Git Bash.
 
-**Current local packages:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md).
+**Current local packages:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md).
 A disconnected Ubuntu VMware guest passed `make verify` and the native Go
-suite, then built and verified both DEBs and tarballs. Windows independently
-verified the package hashes and the embedded source revision in both tarballs.
+suite, then built and verified both DEBs and tarballs. The packaged backup
+and restore scripts match the source. Windows independently verified the
+package hashes and the embedded source revision in both tarballs.
 
-**Current local offline ISOs:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md#offline-isos).
-Both images passed the isolated APT solve and bundle verification. Their
-embedded Easy WAF DEBs match the verified packages from the same revision.
+**Current local offline ISOs:** [9f2f493](release-evidence/1.6.1-packages-9f2f493.md#offline-isos).
+Both images passed the isolated APT solve and full bundle verification. They
+include the updated installer and the verified DEBs from the same revision.
 
 **Current amd64 offline installation:** [1dcf591](release-evidence/1.6.1-packages-1dcf591.md#amd64-appliance-installation).
 The image passed clean installation, reboot, authenticated About, the shipped
