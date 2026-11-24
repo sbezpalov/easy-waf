@@ -9,20 +9,33 @@ import (
 	"bufio"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 )
 
-func TestHAProxyCollectorUnixMock(t *testing.T) {
-	dir := t.TempDir()
+func listenHAProxyStatsSocket(t *testing.T) (string, net.Listener) {
+	t.Helper()
+	// The Unix socket address must fit even when TMPDIR or the subtest name is long.
+	dir, err := os.MkdirTemp("/tmp", "easy-waf-stats-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
 	sock := filepath.Join(dir, "stats.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	t.Cleanup(func() { _ = ln.Close() })
+	return sock, ln
+}
+
+func TestHAProxyCollectorUnixMock(t *testing.T) {
+	sock, ln := listenHAProxyStatsSocket(t)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -70,12 +83,7 @@ func TestHAProxyCollectorRejectsOversizedStats(t *testing.T) {
 		{"over limit", maxHAProxyStatsBytes + 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sock := filepath.Join(t.TempDir(), "stats.sock")
-			ln, err := net.Listen("unix", sock)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer ln.Close()
+			sock, ln := listenHAProxyStatsSocket(t)
 			finished := make(chan error, 1)
 			go func() {
 				c, err := ln.Accept()
