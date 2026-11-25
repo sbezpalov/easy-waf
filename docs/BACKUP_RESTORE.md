@@ -149,6 +149,7 @@ Steps:
    contents with `pg_restore --list`. Runs `SELECT 1` with the archived
    connection settings before stopping
    **`easy-waf-api`**, **`easy-waf-acmed`**, and **`easy-waf-hostd`**.
+   Stops `easy-waf-mcpd` as well when its unit is installed.
    Checks their initial state and confirms they have stopped before starting
    `pg_restore` or replacing files. If stopping or verification fails, restore
    aborts and attempts to resume only the services that were running or starting.
@@ -166,6 +167,15 @@ Steps:
 6. **`restorecon`** is skipped on Ubuntu (AppArmor, not SELinux).
 7. Runs **`easy-waf-admin apply-edge`** locally to regenerate HAProxy config and reload HAProxy (unless skipped). Restore does not depend on management HTTPS or a bearer token; the legacy automation token cannot satisfy API step-up.
 8. Starts **`easy-waf-hostd`**, **`easy-waf-api`**, and **`easy-waf-acmed`**.
+   Starts `easy-waf-mcpd` only if it was running before restore and the
+   core recovery succeeded. The opt-in state remains host-local.
+
+The archive includes the management API environment and state. MCP's
+separate `/etc/easy-waf-mcp.env` and `/etc/easy-waf-mcp-ca.pem` stay on
+the host. For a new image, provision them separately. After restoring an
+older archive in place, verify that MCP uses the same API token as the
+restored management API and trusts its current certificate. Then verify
+the MCP `status` tool using the setup instructions in [MCP.md](MCP.md).
 
 After restore on a new image, confirm polkit + HAProxy drop-in (package `postinst` installs both):
 

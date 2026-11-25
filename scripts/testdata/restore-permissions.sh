@@ -49,8 +49,14 @@ set -eu
 if [[ "${1:-}" == start ]]; then
   printf '%s\n' "$2" >>"$RESTORE_TEST_STARTS"
 fi
-if [[ "${1:-}" == show ]]; then
+if [[ "${1:-}" == show && "${2:-}" == --property=LoadState ]]; then
+  printf '%s\n' "${RESTORE_TEST_MCP_LOAD:-not-found}"
+elif [[ "${1:-}" == show && "${!#}" == easy-waf-mcpd.service && ! -e "$RESTORE_TEST_STOPS" ]]; then
+  printf '%s\n' "${RESTORE_TEST_MCP_STATE:-inactive}"
+elif [[ "${1:-}" == show ]]; then
   printf 'inactive\n'
+elif [[ "${1:-}" == stop ]]; then
+  printf '%s\n' "$@" >"$RESTORE_TEST_STOPS"
 fi
 [[ "$*" != "$RESTORE_TEST_FAILURE" ]]
 MOCK
@@ -60,7 +66,7 @@ set -eu
 [[ "$1" == apply-edge && "$2" == -env-file && "$3" == /etc/easy-waf/easy-waf.env &&
    "$RESTORE_TEST_FAILURE" != apply ]]
 MOCK
-export RESTORE_TEST_STARTS="$ROOT/starts" RESTORE_TEST_FAILURE=''
+export RESTORE_TEST_STARTS="$ROOT/starts" RESTORE_TEST_STOPS="$ROOT/stops" RESTORE_TEST_FAILURE=''
 chmod 0700 "$ROOT/bin/"*
 mkdir -p "$ROOT/packaged scripts/lib" "$ROOT/operator commands"
 restore_source="$(readlink -f "$RESTORE_SCRIPT")"
@@ -124,6 +130,37 @@ for selection in success skip missing apply reload hostd api acmed; do
   [[ "$(<"$ROOT/state/haproxy/haproxy.cfg")" == fixture-config ]] || fail "$selection lost restored data"
 done
 echo 'OK: restore reports incomplete recovery and attempts every start'
+
+export RESTORE_TEST_MCP_LOAD=loaded
+for scenario in active inactive failed-core skipped-mcp; do
+  RESTORE_TEST_FAILURE=''
+  export RESTORE_TEST_MCP_STATE=active
+  case "$scenario" in
+    inactive) RESTORE_TEST_MCP_STATE=inactive ;;
+    failed-core) RESTORE_TEST_FAILURE='start easy-waf-api.service' ;;
+    skipped-mcp) RESTORE_TEST_FAILURE='is-active --quiet easy-waf-mcpd.service' ;;
+  esac
+  : >"$RESTORE_TEST_STARTS"
+  rm -f "$RESTORE_TEST_STOPS"
+  rc=0
+  PATH="$ROOT/bin:$PATH" EASY_WAF_STATE_DIR="$ROOT/state" EASY_WAF_SKIP_APPLY=1 \
+    bash "$RESTORE_SCRIPT" "$ROOT/archive.tar.gz" >"$ROOT/log" 2>&1 || rc=$?
+  grep -qxF 'easy-waf-mcpd.service' "$RESTORE_TEST_STOPS" || fail 'restore did not stop installed MCP'
+  expected=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)
+  case "$scenario" in
+    active|skipped-mcp) expected+=(easy-waf-mcpd.service) ;;
+  esac
+  diff -u <(printf '%s\n' "${expected[@]}") "$RESTORE_TEST_STARTS" || fail "$scenario restarted wrong services"
+  case "$scenario" in
+    active|inactive) [[ "$rc" == 0 ]] || fail "$scenario failed recovery" ;;
+    failed-core|skipped-mcp) [[ "$rc" == 1 ]] || fail "$scenario reported success" ;;
+  esac
+  if [[ "$scenario" == skipped-mcp ]]; then
+    grep -qF 'easy-waf-mcpd.service did not come back up' "$ROOT/log" || fail 'restore missed skipped MCP startup'
+  fi
+done
+unset RESTORE_TEST_MCP_LOAD RESTORE_TEST_MCP_STATE
+echo 'OK: restore stops installed MCP and resumes only previously active MCP after core recovery'
 
 export RESTORE_TEST_REAL_TAR
 RESTORE_TEST_REAL_TAR="$(type -P tar)"

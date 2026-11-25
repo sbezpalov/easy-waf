@@ -131,14 +131,33 @@ fi
 
 echo "[easy-waf-restore] stopping control plane and host broker (if running)…"
 restore_units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service)
+stop_units=("${restore_units[@]}")
+mcp_unit=easy-waf-mcpd.service
+mcp_was_running=0
+if ! mcp_load="$(systemctl show --property=LoadState --value "$mcp_unit" 2>/dev/null)" &&
+  [[ "$mcp_load" != not-found ]]; then
+  echo "ERROR: cannot determine whether $mcp_unit is installed — restore aborted before database changes" >&2
+  exit 1
+fi
+case "$mcp_load" in
+  not-found) ;;
+  loaded|masked) stop_units+=("$mcp_unit") ;;
+  *)
+    echo "ERROR: unexpected load state for $mcp_unit — restore aborted before database changes" >&2
+    exit 1
+    ;;
+esac
 resume_units=()
-for unit in "${restore_units[@]}"; do
+for unit in "${stop_units[@]}"; do
   if ! state="$(systemctl show --property=ActiveState --value "$unit")"; then
     echo "ERROR: cannot determine initial state of $unit — restore aborted before database changes" >&2
     exit 1
   fi
   case "$state" in
-    active|activating|reloading|refreshing) resume_units+=("$unit") ;;
+    active|activating|reloading|refreshing)
+      resume_units+=("$unit")
+      if [[ "$unit" == "$mcp_unit" ]]; then mcp_was_running=1; fi
+      ;;
     inactive|failed|deactivating) ;;
     *)
       echo "ERROR: unexpected state for $unit — restore aborted before database changes" >&2
@@ -158,12 +177,12 @@ resume_original_services() {
   done
 }
 
-if ! systemctl stop easy-waf-api.service easy-waf-acmed.service easy-waf-hostd.service; then
+if ! systemctl stop "${stop_units[@]}"; then
   echo "ERROR: failed to stop appliance services — restore aborted before database changes" >&2
   resume_original_services
   exit 1
 fi
-for unit in "${restore_units[@]}"; do
+for unit in "${stop_units[@]}"; do
   if ! state="$(systemctl show --property=ActiveState --value "$unit")" ||
     [[ "$state" != inactive && "$state" != failed ]]; then
     echo "ERROR: cannot confirm $unit is stopped — restore aborted before database changes" >&2
@@ -255,6 +274,12 @@ for unit in "${restore_units[@]}"; do
     post_restore_failed=1
   fi
 done
+if (( mcp_was_running && ! post_restore_failed )); then
+  if ! systemctl start "$mcp_unit" || ! systemctl is-active --quiet "$mcp_unit"; then
+    echo "ERROR: $mcp_unit did not come back up — check its setup and journalctl -u $mcp_unit" >&2
+    post_restore_failed=1
+  fi
+fi
 
 if ((post_restore_failed)); then
   echo "ERROR: database and files restored, but appliance recovery is incomplete. Keep the backup and inspect the errors above." >&2

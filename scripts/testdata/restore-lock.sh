@@ -32,7 +32,14 @@ case "$1" in
   show)
     fault="${RESTORE_STOP_FAULT:-}"
     if [[ "$fault" == initial-query ]]; then exit 42; fi
-    if [[ -e "$RESTORE_LOCK_TEST_ROOT/stop-attempt" ]]; then
+    if [[ "${2:-}" == --property=LoadState ]]; then
+      if [[ "$fault" == mcp-still-active ]]; then echo loaded; exit 0; fi
+      printf 'not-found\n'
+      exit 1
+    fi
+    if [[ "$fault" == mcp-still-active && "${@: -1}" == easy-waf-mcpd.service ]]; then
+      echo active
+    elif [[ -e "$RESTORE_LOCK_TEST_ROOT/stop-attempt" ]]; then
       if [[ "$fault" == still-active && "${@: -1}" == easy-waf-api.service ]]; then
         echo active
       else
@@ -140,7 +147,7 @@ if [[ "$mode" != locks ]]; then
   grep -Fq 'cannot connect to the database configured in the backup' "$ROOT/unreachable.log" ||
     fail 'unreachable database was not diagnosed'
   echo 'OK: unreachable restore database rejected before service changes'
-  for fault in initial-query stop-error still-active; do
+  for fault in initial-query stop-error still-active mcp-still-active; do
     : >"$ROOT/services"; : >"$ROOT/database"
     rm -f "$ROOT/stop-attempt"
     printf 'original state\n' >"$ROOT/state/original"
@@ -155,7 +162,9 @@ if [[ "$mode" != locks ]]; then
     if [[ "$fault" == initial-query ]]; then
       if grep -Eq '^preflight (stop|start) ' "$ROOT/services"; then fail 'initial query failure changed services'; fi
     else
-      diff -u <(printf 'preflight start easy-waf-api.service\n') <(grep '^preflight start ' "$ROOT/services") \
+      expected=(easy-waf-api.service)
+      if [[ "$fault" == mcp-still-active ]]; then expected+=(easy-waf-mcpd.service); fi
+      diff -u <(printf 'preflight start %s\n' "${expected[@]}") <(grep '^preflight start ' "$ROOT/services") \
         || fail "$fault did not resume only the originally active service"
     fi
   done
