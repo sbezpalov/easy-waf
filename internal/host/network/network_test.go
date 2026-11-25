@@ -10,6 +10,42 @@ import (
 	"testing"
 )
 
+func TestCollectRoutes(t *testing.T) {
+	v4 := `{"dst":"default","gateway":"192.0.2.1"}`
+	v6 := `{"dst":"default","gateway":"fe80::1"}`
+	for _, tc := range []struct {
+		name, ipv4, ipv6 string
+		want             []string
+	}{
+		{"dual stack", "[" + v4 + "]", "[" + v6 + "]", []string{v4, v6}},
+		{"IPv6 disabled", "[" + v4 + "]", "", []string{v4}},
+		{"invalid IPv4 snapshot", "invalid", "[" + v6 + "]", []string{v6}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := collectRoutes(func(family string) ([]byte, error) {
+				switch family {
+				case "-4":
+					return []byte(tc.ipv4), nil
+				case "-6":
+					if tc.ipv6 == "" {
+						return nil, os.ErrNotExist
+					}
+					return []byte(tc.ipv6), nil
+				}
+				t.Fatalf("unexpected family %s", family)
+				return nil, nil
+			})
+			var got []string
+			for _, row := range rows {
+				got = append(got, string(row))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseResolverDNS(t *testing.T) {
 	output := "Global: 192.0.2.1 192.0.2.2\n" +
 		"        2001:db8::53\nLink 1 (lo):\n" +

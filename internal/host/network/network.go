@@ -47,9 +47,9 @@ func GetOverview(ctx context.Context) (Overview, error) {
 	if b, err := runner.Run(ctx, 15*time.Second, "/usr/bin/ip", "-j", "addr", "show"); err == nil {
 		_ = json.Unmarshal(b, &out.Addresses)
 	}
-	if b, err := runner.Run(ctx, 15*time.Second, "/usr/bin/ip", "-j", "route", "show"); err == nil {
-		_ = json.Unmarshal(b, &out.Routes)
-	}
+	out.Routes = collectRoutes(func(family string) ([]byte, error) {
+		return runner.Run(ctx, 15*time.Second, "/usr/bin/ip", "-j", family, "route", "show")
+	})
 	if b, err := runner.Run(ctx, 10*time.Second, "/usr/bin/resolvectl", "dns"); err == nil {
 		out.DNS = parseResolverDNS(string(b))
 	}
@@ -58,6 +58,21 @@ func GetOverview(ctx context.Context) (Overview, error) {
 	}
 	out.Netplan, out.ManagedNetplanState = readNetplanFiles("/etc/netplan")
 	return out, nil
+}
+
+func collectRoutes(readFamily func(string) ([]byte, error)) []json.RawMessage {
+	var routes []json.RawMessage
+	for _, family := range []string{"-4", "-6"} {
+		data, err := readFamily(family)
+		if err != nil {
+			continue
+		}
+		var batch []json.RawMessage
+		if json.Unmarshal(data, &batch) == nil {
+			routes = append(routes, batch...)
+		}
+	}
+	return routes
 }
 
 // resolvectl dns wraps long global and per-link lists onto indented lines.

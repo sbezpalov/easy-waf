@@ -5467,7 +5467,7 @@
       } catch (_) { /* skip */ }
     });
     const routes = Array.isArray(ov.routes) ? ov.routes : [];
-    routes.slice(0, 12).forEach((raw) => {
+    routes.forEach((raw) => {
       try {
         const rt = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (rt && rt.dst !== undefined) {

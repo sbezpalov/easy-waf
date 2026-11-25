@@ -177,7 +177,7 @@ context.saveHostRollbackCapability(capability);
   assert.equal(rule.textContent, 'Managed Zabbix rule: present.', 'rule status did not reload after confirmation');
   assert.equal(firewallReads, 4);
 
-  const networkStart = page.indexOf('  function findEasyWafNetplan(');
+  const networkStart = page.indexOf('  function formatNetOverview(');
   const networkEnd = page.indexOf("  document.getElementById('btn-net-netplan-apply').onclick", networkStart);
   assert.ok(networkStart >= 0 && networkEnd > networkStart, 'network loader not found');
   const editor = {value: '', defaultValue: ''};
@@ -191,11 +191,12 @@ context.saveHostRollbackCapability(capability);
   ]};
   const networkContext = {
     document: {getElementById: id => networkElements[id]},
-    formatNetOverview: () => 'overview',
     hdr: () => ({}), updateHostRollbackApplyButtons: () => {},
     fetch: async path => ({ok: true, json: async () => path === '/api/v1/host/firewall' ? snapshot : network})
   };
   vm.runInNewContext(page.slice(networkStart, networkEnd), networkContext);
+  network.routes = [...Array(12).fill({dst: '192.0.2.0/24', dev: 'eth0'}),
+    {dst: 'default', gateway: 'fe80::1', dev: 'eth0'}];
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, snapshot.managed_ruleset);
   assert.equal(netplanEditor.value, '');
@@ -232,7 +233,7 @@ context.saveHostRollbackCapability(capability);
     return normalFetch(path);
   };
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
-  assert.equal(networkElements['net-overview'].textContent, 'overview');
+  assert.match(networkElements['net-overview'].textContent, /default via fe80::1 dev eth0/);
   assert.match(networkElements['net-firewall-load-status'].textContent, /Firewall configuration could not be loaded/);
   assert.equal(editor.value, 'unsaved firewall rules');
   networkContext.fetch = async path => path.endsWith('/network')
