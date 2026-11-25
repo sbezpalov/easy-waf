@@ -55,3 +55,50 @@ func TestStageD2MobilePrimaryTargetsAndErrorsRemainActionable(t *testing.T) {
 		}
 	}
 }
+
+func TestMobileNavigationFocus(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0,'utf8');
+const nodes = new Map();
+const bodyClasses = new Set();
+const document = {body:{classList:{add:k=>bodyClasses.add(k),remove:k=>bodyClasses.delete(k),contains:k=>bodyClasses.has(k)}},
+  addEventListener(name,fn){this[name]=fn;},getElementById:id=>node(id),
+  querySelector:sel=>node(sel.includes('aria-current')?'current':'first')};
+function node(id) {
+  if (!nodes.has(id)) nodes.set(id,{setAttribute(k,v){this[k]=v;},focus(){document.activeElement=this;},
+    getClientRects(){return this.hidden?[]:[{}];},contains(el){return el===node('current');}});
+  return nodes.get(id);
+}
+let resize;
+const window={matchMedia:()=>({addEventListener:(event,fn)=>{resize=fn;}})};
+const ctx=vm.createContext({document,window});
+function include(a,b){
+  const start=page.indexOf(a),end=page.indexOf(b,start);
+  assert.ok(start>=0 && end>start);
+  vm.runInContext(page.slice(start,end),ctx);
+}
+include('  function openMobileNav()', '  function showTabFromHash()');
+include("  document.getElementById('nav-toggle').onclick", "  window.addEventListener('hashchange'");
+const toggle=node('nav-toggle'),main=node('main-content');
+toggle.onclick();
+assert.equal(document.activeElement,node('current'));
+assert.equal(main.inert,true);
+document.keydown({key:'Escape',preventDefault(){}});
+assert.equal(document.activeElement,toggle);
+assert.equal(main.inert,false);
+assert.equal(toggle['aria-expanded'],'false');
+node('current').hidden=true;
+toggle.onclick();
+assert.equal(document.activeElement,node('first'));
+node('sidebar-nav').onclick({target:{closest:()=>true}});
+assert.equal(document.activeElement,main);
+toggle.onclick();
+resize({matches:false});
+assert.equal(main.inert,false);
+assert.equal(bodyClasses.has('nav-open'),false);
+node('current').focus();
+resize({matches:true});
+assert.equal(document.activeElement,toggle);
+`)
+}

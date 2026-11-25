@@ -297,24 +297,32 @@
     setActiveNav(panel);
   }
 
-  let mobileNavReturnFocus = null;
-
   function openMobileNav() {
-    mobileNavReturnFocus = document.activeElement;
     document.body.classList.add('nav-open');
-    document.getElementById('nav-toggle').setAttribute('aria-expanded', 'true');
+    const toggle = document.getElementById('nav-toggle');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Close navigation');
+    document.getElementById('main-content').inert = true;
     document.getElementById('nav-overlay').setAttribute('aria-hidden', 'false');
-    const current = document.querySelector('.nav-link[aria-current="page"]') || document.querySelector('.nav-link');
-    if (current) current.focus();
+    const current = document.querySelector('.nav-link[aria-current="page"]');
+    (current && current.getClientRects().length ? current : document.querySelector('.nav-link')).focus();
   }
 
   function closeMobileNav(restoreFocus) {
     document.body.classList.remove('nav-open');
-    document.getElementById('nav-toggle').setAttribute('aria-expanded', 'false');
+    const toggle = document.getElementById('nav-toggle');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Open navigation');
+    document.getElementById('main-content').inert = false;
     document.getElementById('nav-overlay').setAttribute('aria-hidden', 'true');
-    if (restoreFocus !== false && mobileNavReturnFocus && mobileNavReturnFocus.isConnected) mobileNavReturnFocus.focus();
-    mobileNavReturnFocus = null;
+    if (restoreFocus) toggle.focus();
   }
+
+  window.matchMedia('(max-width: 768px)').addEventListener('change', event => {
+    const sidebar = document.getElementById('app-sidebar');
+    if (event.matches) closeMobileNav(sidebar.contains(document.activeElement));
+    else closeMobileNav(false);
+  });
 
   function showTabFromHash() {
     if (document.getElementById('view-app').classList.contains('hidden')) return;
