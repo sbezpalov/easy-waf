@@ -78,3 +78,18 @@ func TestLoadStaticToken_isReusable(t *testing.T) {
 		t.Fatal("token below the minimum was enabled")
 	}
 }
+
+func TestLoadMCPAPIToken(t *testing.T) {
+	admin := strings.Repeat("a", 40)
+	jwt := strings.Repeat("j", 40)
+	mcp := strings.Repeat("m", 40)
+	metrics := strings.Repeat("p", 40)
+	t.Setenv("EASY_WAF_ADMIN_TOKEN", " "+admin+" ")
+	t.Setenv("EASY_WAF_METRICS_TOKEN", metrics)
+	for _, value := range []string{"", "short", admin, jwt, metrics, mcp} {
+		t.Setenv("EASY_WAF_MCP_API_TOKEN", value)
+		if got := LoadMCPAPIToken([]byte(jwt)).Enabled(); got != (value == mcp) {
+			t.Fatal("MCP credential was not enabled exclusively for the distinct valid token")
+		}
+	}
+}

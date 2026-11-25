@@ -194,6 +194,7 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 	srv := &api.Server{
 		Eng:            eng,
 		JWTSecret:      jwtSecret,
+		MCPAPIToken:    auth.LoadMCPAPIToken(jwtSecret),
 		HAProxyMetrics: metrics.NewHAProxyCollector(),
 		Prom:           prom,
 		LoginRL:        api.NewLoginRateLimiter(5*time.Minute, 10, 15*time.Minute),

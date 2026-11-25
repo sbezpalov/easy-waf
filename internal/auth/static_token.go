@@ -34,12 +34,22 @@ func LoadStaticToken(envName string, minLen int) StaticToken {
 		return StaticToken{}
 	}
 	if len(tok) < minLen {
-		log.Printf("[easy-waf] %s ignored: %d characters, minimum is %d — "+
-			"rotate it with `easy-waf-admin reset-appliance -bootstrap-credentials` or use a session JWT",
-			envName, len(tok), minLen)
+		log.Printf("[easy-waf] %s ignored: %d characters, minimum is %d", envName, len(tok), minLen)
 		return StaticToken{}
 	}
 	return StaticToken{digest: sha256.Sum256([]byte(tok)), enabled: true}
+}
+
+// LoadMCPAPIToken loads the credential reserved for the local diagnostics API.
+// Reusing a more privileged credential would defeat that API's route boundary.
+func LoadMCPAPIToken(jwtSecret []byte) StaticToken {
+	token := LoadStaticToken("EASY_WAF_MCP_API_TOKEN", 32)
+	if token.Matches(string(jwtSecret)) || token.Matches(strings.TrimSpace(os.Getenv("EASY_WAF_ADMIN_TOKEN"))) ||
+		token.Matches(strings.TrimSpace(os.Getenv("EASY_WAF_METRICS_TOKEN"))) {
+		log.Print("[easy-waf] EASY_WAF_MCP_API_TOKEN ignored: credential must be distinct from management credentials")
+		return StaticToken{}
+	}
+	return token
 }
 
 // Enabled reports whether a usable token was configured.

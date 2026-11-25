@@ -39,8 +39,9 @@ import (
 
 // Server exposes REST API for the UI and automation.
 type Server struct {
-	Eng       *engine.Engine
-	JWTSecret []byte
+	Eng         *engine.Engine
+	JWTSecret   []byte
+	MCPAPIToken auth.StaticToken
 	// LoginRL optional per-IP login rate limiter (nil skips limiting).
 	LoginRL *LoginRateLimiter
 	// MgmtTLS optional: when set, PUT /settings/management-tls replaces cert on disk and in-memory (HTTPS listener).
@@ -73,6 +74,9 @@ func (s *Server) Router() chi.Router {
 	r.Handle("/metrics", s.metricsHandler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		if s.MCPAPIToken.Enabled() {
+			s.mountMCPDiagnostics(r)
+		}
 		r.Get("/auth/status", s.handleAuthStatus)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/enroll", s.handleEnroll)

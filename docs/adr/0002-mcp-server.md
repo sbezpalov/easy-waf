@@ -4,8 +4,8 @@
 - **Date:** 2026-08-16
 - **Deciders:** repository maintainer
 - **Context version:** 1.4.0
-- **Implementation:** none yet — this record exists so the design is settled
-  before any code opens a second way into the control plane.
+- **Implementation:** the opt-in REST diagnostics boundary is implemented.
+  The MCP transport and service are pending.
 
 ## Context
 
@@ -252,6 +252,16 @@ Negative / accepted cost:
   the surface will need re-reviewing when it moves.
 
 ## Implementation sketch
+
+The REST boundary is available under `/api/v1/mcp/diagnostics` when the API
+has a distinct `EASY_WAF_MCP_API_TOKEN` of at least 32 characters. It uses
+direct loopback HTTPS with the existing management ACL. Its only routes are
+`GET /ready`, `GET /edge`, and `GET /applications`. Application summaries
+exclude backend addresses, forward-auth URLs and raw security configuration.
+Access records use the `mcp.diagnostics` action and the `mcp` audit identity
+in the existing schema. The API credential is reserved for the local daemon;
+the client-facing MCP credential will be separate. Remove the API token and
+restart `easy-waf-api` to remove these routes.
 
 1. `cmd/easy-waf-mcpd` + `internal/mcp`: transport, tool registry, and a thin
    REST client that carries the token and nothing else.
