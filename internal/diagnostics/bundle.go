@@ -175,7 +175,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		}
 	}
 
-	raw, err := os.ReadFile(envPath)
+	raw, err := hostspec.ReadManagedConfigBytes(envPath)
 	if err != nil {
 		raw = processEnvSnapshot(envPath, err)
 	}
@@ -188,19 +188,20 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", []byte("(refused unsafe configured path: "+cfgPathErr.Error()+")\n"), 0o644); err != nil {
 			return err
 		}
-	} else if raw, err := os.ReadFile(cfgPath); err == nil {
+	} else if raw, err := hostspec.ReadManagedConfigBytes(cfgPath); err == nil {
 		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", MaskHAProxyConfigContent(raw), 0o640); err != nil {
 			return err
 		}
 	} else {
-		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", []byte("(missing "+cfgPath+")\n"), 0o644); err != nil {
+		cfgPathErr = err
+		if err := addTarBytes(tw, prefix+"config/haproxy.cfg", []byte("(configuration unavailable: "+err.Error()+")\n"), 0o644); err != nil {
 			return err
 		}
 	}
 
 	_, _, crtPath := haproxy.Paths(p.StateDir)
 	var crtNames []byte
-	if raw, err := os.ReadFile(crtPath); err == nil {
+	if raw, err := hostspec.ReadManagedConfigBytes(crtPath); err == nil {
 		var b strings.Builder
 		for _, line := range strings.Split(string(raw), "\n") {
 			line = strings.TrimSpace(line)
@@ -212,7 +213,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		}
 		crtNames = []byte(b.String())
 	} else {
-		crtNames = []byte("(missing " + crtPath + ")\n")
+		crtNames = []byte("(certificate list unavailable: " + err.Error() + ")\n")
 	}
 	if err := addTarBytes(tw, prefix+"config/crt-list-filenames.txt", crtNames, 0o644); err != nil {
 		return err
@@ -253,8 +254,12 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	if err := run("firewall/nft-ruleset.txt", 20*time.Second, "nft", "list", "ruleset"); err != nil {
 		return err
 	}
-	if raw, err := os.ReadFile("/etc/nftables/easy-waf.nft"); err == nil {
-		if err := addTarBytes(tw, prefix+"firewall/easy-waf.nft", raw, 0o644); err != nil {
+	firewall, readErr := hostspec.ReadManagedConfigBytes("/etc/nftables/easy-waf.nft")
+	if !errors.Is(readErr, os.ErrNotExist) {
+		if readErr != nil {
+			firewall = []byte("(firewall configuration unavailable: " + readErr.Error() + ")\n")
+		}
+		if err := addTarBytes(tw, prefix+"firewall/easy-waf.nft", firewall, 0o644); err != nil {
 			return err
 		}
 	}
@@ -364,7 +369,7 @@ var envSnapshotPrefixes = []string{"EASY_WAF_", "DATABASE_URL", "CROWDSEC_", "AC
 // cannot read it, but systemd handed it the same variables. Mask each complete
 // entry before flattening; public LF/CR are escaped so they cannot fake entries.
 func processEnvSnapshot(envPath string, readErr error) []byte {
-	header := "# " + envPath + " could not be read (" + readErr.Error() + "; root-only by design).\n" +
+	header := "# " + envPath + " could not be read (" + readErr.Error() + ").\n" +
 		"# Variables of the running API process instead. For the file: sudo easy-waf-diagnostics\n"
 	vars := make([]string, 0, len(envSnapshotPrefixes))
 	for _, kv := range os.Environ() {

@@ -19,6 +19,8 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/haproxy"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -85,13 +87,27 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"file", "process_fallback"} {
+	for _, kind := range []string{"file", "process_fallback", "oversized"} {
 		t.Run(kind, func(t *testing.T) {
 			state := t.TempDir()
 			env := filepath.Join(state, "appliance.env")
 			if kind == "file" {
 				if err := os.WriteFile(env, fixture, 0o600); err != nil {
 					t.Fatal(err)
+				}
+			}
+			if kind == "oversized" {
+				dir, cfg, list := haproxy.Paths(state)
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				for _, path := range []string{env, cfg, list} {
+					if err := os.WriteFile(path, []byte("fixture-sensitive-file-prefix\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Truncate(path, hostspec.MaxManagedConfigBytes+1); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			body, err := BuildSupportBundleGzip(t.Context(), Params{
@@ -107,6 +123,7 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 			defer func() { _ = gz.Close() }()
 			reader := tar.NewReader(gz)
 			found, foundMCP := false, false
+			oversizedEntries := 0
 			for {
 				hdr, err := reader.Next()
 				if errors.Is(err, io.EOF) {
@@ -131,6 +148,17 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 				if strings.HasSuffix(hdr.Name, "/systemctl/state-easy-waf-mcpd.txt") {
 					foundMCP = true
 				}
+				if kind == "oversized" && (strings.HasSuffix(hdr.Name, "/config/easy-waf.env.masked") ||
+					strings.HasSuffix(hdr.Name, "/config/haproxy.cfg") || strings.HasSuffix(hdr.Name, "/config/crt-list-filenames.txt") ||
+					strings.HasSuffix(hdr.Name, "/validation/haproxy-check.txt")) {
+					if !bytes.Contains(data, []byte("exceeds")) {
+						t.Fatalf("missing size notice in %s", hdr.Name)
+					}
+					oversizedEntries++
+				}
+			}
+			if kind == "oversized" && oversizedEntries != 4 {
+				t.Fatalf("found %d size notices", oversizedEntries)
 			}
 			if !found || !foundMCP {
 				t.Fatal("bundle missing masked environment or MCP service state")

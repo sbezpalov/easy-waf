@@ -75,6 +75,8 @@ The API compresses each tar entry as it is written. The **40 MiB** limit applies
 
 Each command can contribute up to **4 MiB** of output. If it produces more, the archive entry contains an omission notice and collection continues. For a large journal, use the unit and time range in the panel to inspect the relevant lines.
 
+The API reads up to **16 MiB per configuration file** before masking or extracting filenames. The archive records the reason when a file exceeds this limit. For an unavailable environment file it includes the masked process environment. HAProxy validation is skipped when the collector cannot read the complete configuration.
+
 For vendor/support hand-off when in doubt, prefer:
 
 ```bash
