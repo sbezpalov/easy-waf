@@ -131,6 +131,9 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 			return err
 		}
 	}
+	if err := addTarBytes(tw, prefix+"systemctl/state-easy-waf-mcpd.txt", mcpServiceState(ctx), 0o644); err != nil {
+		return err
+	}
 
 	for _, pair := range []struct{ unit, dst string }{
 		{"easy-waf-api", "logs/journal-easy-waf-api.txt"},
@@ -225,6 +228,18 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	}
 
 	return nil
+}
+
+func mcpServiceState(ctx context.Context) []byte {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "--no-pager",
+		"-p", "LoadState", "-p", "UnitFileState", "-p", "ActiveState", "-p", "SubState",
+		"-p", "Result", "-p", "ConditionResult", "-p", "ExecMainStatus", "easy-waf-mcpd.service").Output()
+	if err != nil {
+		return []byte("MCP service state unavailable\n")
+	}
+	return out
 }
 
 func managedHAProxyConfigPath(stateDir, configured string) (string, error) {

@@ -79,6 +79,12 @@ for u in "${units[@]}"; do
     systemctl is-enabled "$u" 2>&1 || true
   } >"$ROOT/systemctl/is-enabled-${safe}.txt" 2>&1 || true
 done
+# Collect the service state without including logs, arguments or environment.
+mcp_status="$ROOT/systemctl/state-easy-waf-mcpd.txt"
+if ! systemctl show --no-pager -p LoadState -p UnitFileState -p ActiveState -p SubState \
+    -p Result -p ConditionResult -p ExecMainStatus easy-waf-mcpd.service >"$mcp_status" 2>/dev/null; then
+  printf '%s\n' 'MCP service state unavailable' >"$mcp_status"
+fi
 
 # --- (c) journals (last 500 lines, last 24h) ---
 jlog() {

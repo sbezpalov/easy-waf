@@ -32,6 +32,18 @@ cp "$SCRIPT_DIR/testdata/pg-archive-mock.sh" "$ROOT/bin/python3"
 for probe in hostnamectl free df uptime ss aa-status systemctl journalctl haproxy nft; do
   printf '#!/bin/sh\nexit 0\n' >"$ROOT/bin/$probe"
 done
+cat >"$ROOT/bin/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "${!#}" == easy-waf-mcpd.service ]]; then
+  [[ "$*" == 'show --no-pager -p LoadState -p UnitFileState -p ActiveState -p SubState -p Result -p ConditionResult -p ExecMainStatus easy-waf-mcpd.service' ]] || exit 92
+  printf 'fixture-sensitive-mcp-stderr\n' >&2
+  if [[ "$DIAG_TEST_PSQL_MODE" == fail ]]; then
+    printf 'fixture-sensitive-mcp-partial-output\n'
+    exit 1
+  fi
+  printf 'LoadState=loaded\nUnitFileState=disabled\nActiveState=inactive\nConditionResult=no\n'
+fi
+MOCK
 chmod 0700 "$ROOT/bin/"*
 export PATH="$ROOT/bin:$PATH"
 export EASY_WAF_ENV_FILE="$ROOT/config.env"
@@ -46,6 +58,8 @@ TOKEN=fixture-exact-token
 PASSWORD_HINT=fixture-prefix-password
   CROWDSEC_LAPI_KEY = fixture-spaced-crowdsec
 EASY_WAF_JWT_SECRET   =fixture-spaced-jwt
+EASY_WAF_MCP_API_TOKEN=fixture-sensitive-mcp-api
+EASY_WAF_MCP_TOKEN=fixture-sensitive-mcp-client
 token =fixture-lowercase-token
   DATABASE_URL =host=fixture password=fixture-spaced-dsn
 FOO=public-value
@@ -68,16 +82,19 @@ if grep -Eq 'rotation\.ABC123|pg-service-fixture' "$ROOT/members"; then
   echo 'FAIL: support bundle included a private connection or recovery file' >&2; exit 1
 fi
 tar -xOzf "$ROOT/bundle.tar.gz" >"$ROOT/bundle-content"
-if grep -Fq 'synthetic-recovery-secret' "$ROOT/bundle-content"; then
-  echo 'FAIL: support bundle included the recovery credential' >&2; exit 1
+if grep -Eq 'synthetic-recovery-secret|fixture-sensitive-mcp' "$ROOT/bundle-content"; then
+  echo 'FAIL: support bundle included private diagnostics data' >&2; exit 1
 fi
+mcp_member="$(grep '/systemctl/state-easy-waf-mcpd.txt$' "$ROOT/members")"
+tar -xOzf "$ROOT/bundle.tar.gz" "$mcp_member" >"$ROOT/mcp-state"
+grep -qxF 'ConditionResult=no' "$ROOT/mcp-state"
 grep -q '/sql/config_revisions.txt$' "$ROOT/members"
 masked_member="$(grep '/config/easy-waf.env.masked$' "$ROOT/members")"
 tar -xOzf "$ROOT/bundle.tar.gz" "$masked_member" >"$ROOT/masked"
 if grep -Eq 'fixture-(exact-token|prefix-password|spaced-crowdsec|spaced-jwt|lowercase-token|spaced-dsn)' "$ROOT/masked"; then
   echo 'FAIL: support archive contains an unmasked secret' >&2; exit 1
 fi
-for key in TOKEN PASSWORD_HINT CROWDSEC_LAPI_KEY EASY_WAF_JWT_SECRET token DATABASE_URL; do
+for key in TOKEN PASSWORD_HINT CROWDSEC_LAPI_KEY EASY_WAF_JWT_SECRET EASY_WAF_MCP_API_TOKEN EASY_WAF_MCP_TOKEN token DATABASE_URL; do
   grep -qxF "$key=***MASKED***" "$ROOT/masked" || { echo 'FAIL: masked key missing' >&2; exit 1; }
 done
 grep -qxF 'FOO=public-value' "$ROOT/masked"
@@ -91,6 +108,9 @@ grep -qxF 'fixture-revision-output' "$ROOT/sql-output"
 export DIAG_TEST_PSQL_MODE=fail
 bash "$COLLECTOR" "$ROOT/bundle.tar.gz" >"$ROOT/output" 2>&1
 tar -tzf "$ROOT/bundle.tar.gz" >"$ROOT/members"
+mcp_member="$(grep '/systemctl/state-easy-waf-mcpd.txt$' "$ROOT/members")"
+tar -xOzf "$ROOT/bundle.tar.gz" "$mcp_member" >"$ROOT/mcp-state"
+[[ "$(<"$ROOT/mcp-state")" == 'MCP service state unavailable' ]]
 sql_member="$(grep '/sql/config_revisions.txt$' "$ROOT/members")"
 sql_err_member="$(grep '/sql/config_revisions.err$' "$ROOT/members")"
 tar -xOzf "$ROOT/bundle.tar.gz" "$sql_member" >"$ROOT/sql-output"

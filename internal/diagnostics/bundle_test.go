@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -30,6 +31,8 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	t.Setenv("EASY_WAF_JWT_SECRET", "fixture-sensitive-head\nfixture-sensitive-tail")
+	t.Setenv("EASY_WAF_MCP_API_TOKEN", "fixture-sensitive-mcp-api")
+	t.Setenv("EASY_WAF_MCP_TOKEN", "fixture-sensitive-mcp-client")
 	fixture, err := os.ReadFile(filepath.Join("testdata", "environment-multiline.env.example"))
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +62,7 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 			}
 			defer func() { _ = gz.Close() }()
 			reader := tar.NewReader(gz)
-			found := false
+			found, foundMCP := false, false
 			for {
 				hdr, err := reader.Next()
 				if errors.Is(err, io.EOF) {
@@ -81,11 +84,44 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 						t.Fatal("bundle environment differs from shared redaction fixture")
 					}
 				}
+				if strings.HasSuffix(hdr.Name, "/systemctl/state-easy-waf-mcpd.txt") {
+					foundMCP = true
+				}
 			}
-			if !found {
-				t.Fatal("bundle contains no masked environment")
+			if !found || !foundMCP {
+				t.Fatal("bundle missing masked environment or MCP service state")
 			}
 		})
+	}
+}
+
+func TestMCPServiceStateUsesOnlySelectedProperties(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("systemd probe fixture requires a POSIX script")
+	}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	script := `#!/bin/sh
+if [ "$*" != 'show --no-pager -p LoadState -p UnitFileState -p ActiveState -p SubState -p Result -p ConditionResult -p ExecMainStatus easy-waf-mcpd.service' ]; then
+  exit 91
+fi
+printf 'fixture-sensitive-mcp-stderr\n' >&2
+if [ "$MCP_STATE_TEST_FAIL" = yes ]; then
+  printf 'fixture-sensitive-mcp-partial-output\n'
+  exit 1
+fi
+printf 'LoadState=loaded\nUnitFileState=disabled\nActiveState=inactive\nConditionResult=no\n'
+`
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(script), 0o700); err != nil { // #nosec G306 -- Owner-only executable in a private test directory.
+		t.Fatal(err)
+	}
+	t.Setenv("MCP_STATE_TEST_FAIL", "no")
+	if got := string(mcpServiceState(t.Context())); got != "LoadState=loaded\nUnitFileState=disabled\nActiveState=inactive\nConditionResult=no\n" {
+		t.Fatal("MCP service state did not contain exactly the selected properties")
+	}
+	t.Setenv("MCP_STATE_TEST_FAIL", "yes")
+	if got := string(mcpServiceState(t.Context())); got != "MCP service state unavailable\n" {
+		t.Fatal("failed MCP state command did not return only the unavailable marker")
 	}
 }
 

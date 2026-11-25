@@ -30,6 +30,9 @@ Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/
 - **MANIFEST.txt** — UTC time, hostname, version (the running binary's embedded `VERSION` for API bundles), bundle source (`api` vs script).
 - **system/** — `uname`, `/etc/os-release`, `hostnamectl`, `free`, `df`, `uptime`, `ss -tlnp`, `aa-status` (best-effort from API).
 - **systemctl/** — `systemctl status` and `is-enabled` for: `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`, `crowdsec`, `fail2ban`, `nftables`.
+- **systemctl/state-easy-waf-mcpd.txt** — MCP unit load and enablement, runtime
+  state, startup condition, result and main process exit status. The probe
+  excludes the unit environment, command-line arguments and journal.
 - **logs/** — last 500 lines / 24h from `journalctl` for `easy-waf-api`, `easy-waf-acmed`, `easy-waf-hostd`, `haproxy`. (The broker was added in 1.4.2; a bundle from an older appliance has no `journal-easy-waf-hostd.txt`, which is exactly the file a failed host update needed.)
 - **config/easy-waf.env.masked** — copy of `/etc/easy-waf/easy-waf.env` with:
   - `DATABASE_URL` — the full value is replaced with `***MASKED***`, including URI query parameters and keyword DSNs.
@@ -58,6 +61,8 @@ Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/
 
 - **Private keys**, PEM bodies, full paths to secrets on disk (only crt-list **basenames**).
 - **Unmasked** `DATABASE_URL`, CrowdSec keys, JWT secret, admin token (see masking above).
+- **MCP environment or trust files.** If an MCP token appears in the main
+  appliance environment, the same token masking applies.
 - **Full CrowdSec / fail2ban** journals unless `journalctl` is allowed for the API user (often only partial from UI bundle).
 - **PostgreSQL dumps**, `acmed` internal state beyond logs, browser session tokens, other tenants’ data.
 - **Arbitrary files** under `/var/lib/easy-waf` except `haproxy/haproxy.cfg` and crt-list name list (not the whole state tree).
