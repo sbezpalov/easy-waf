@@ -2157,18 +2157,17 @@
       return;
     }
     rows.forEach((c) => {
-      const id = c.id || '';
       const actions = [];
       if (c.status === 'pending') {
-        actions.push('<button type="button" data-cert-issue="' + esc(id) + '">Request issue</button>');
+        actions.push('<button type="button" data-cert-action="issue">Request issue</button>');
       }
       if (c.status === 'failed') {
-        actions.push('<button type="button" data-cert-issue="' + esc(id) + '">Retry now</button>');
+        actions.push('<button type="button" data-cert-action="issue">Retry now</button>');
       }
       if (c.status === 'expiring' || c.status === 'expired') {
-        actions.push('<button type="button" data-cert-renew="' + esc(id) + '">Renew now</button>');
+        actions.push('<button type="button" data-cert-action="renew">Renew now</button>');
       }
-      actions.push('<button type="button" class="secondary" data-cert-del="' + esc(id) + '">Delete</button>');
+      actions.push('<button type="button" class="secondary" data-cert-action="delete">Delete</button>');
       const tr = document.createElement('tr');
       tr.innerHTML =
         '<td><code>' + esc(c.primary_domain || '') + '</code></td>' +
@@ -2178,49 +2177,39 @@
         '<td>' + (c.days_remaining == null ? '—' : esc(String(c.days_remaining))) + '</td>' +
         '<td class="row" style="gap:0.35rem;flex-wrap:wrap">' + actions.join(' ') + '</td>';
       tbody.appendChild(tr);
+      tr.querySelectorAll('[data-cert-action]').forEach(button => {
+        button.onclick = () => runCertificateAction(button, c);
+      });
     });
-    tbody.querySelectorAll('[data-cert-issue]').forEach((btn) => {
-      btn.onclick = async () => {
-        await withBusy(btn, async () => {
-          msg.textContent = '';
-          const cid = btn.getAttribute('data-cert-issue');
-          const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-          if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; return; } 
-          toast('Issue queued (pending).', 'ok');
-          msg.textContent = 'Issue queued (pending). Ensure acmed is running and ACME email is set.';
-          msg.className = 'ok';
-          loadCertDashboard();
-        });
-      };
-    });
-    tbody.querySelectorAll('[data-cert-renew]').forEach((btn) => {
-      btn.onclick = async () => {
-        await withBusy(btn, async () => {
-          msg.textContent = '';
-          const cid = btn.getAttribute('data-cert-renew');
-          const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid) + '/request-issue', { method: 'POST', headers: hdr(), body: '{}' });
-          if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; return; } 
-          toast('Renew queued (pending).', 'ok');
-          msg.textContent = 'Renew queued (pending).';
-          msg.className = 'ok';
-          loadCertDashboard();
-        });
-      };
-    });
-    tbody.querySelectorAll('[data-cert-del]').forEach((btn) => {
-      btn.onclick = async () => {
-        const cid = btn.getAttribute('data-cert-del');
-        if (!cid) return;
-        const okDel = await confirmDialog('Delete certificate for ' + cid + '?', { danger: true, okLabel: 'Delete' });
-        if (!okDel) return;
-        msg.textContent = '';
-        const rr = await fetch('/api/v1/certificates/' + encodeURIComponent(cid), { method: 'DELETE', headers: hdr() });
-        if (!rr.ok) { const __m = await apiMessage(rr); toast(__m, 'err'); msg.textContent = __m; msg.className = 'warn'; return; } 
-        toast('Certificate deleted.', 'ok');
-        msg.textContent = 'Deleted.';
-        msg.className = 'ok';
-        loadCertDashboard();
-      };
+  }
+
+  async function runCertificateAction(button, certificate) {
+    if (button.disabled) return;
+    const action = button.dataset.certAction;
+    const removing = action === 'delete';
+    const name = certificate.primary_domain || certificate.id;
+    await withBusy(button, async () => {
+      if (removing && !await confirmDialog('Delete the certificate for ' + name + '?', {danger: true, okLabel: 'Delete certificate'})) return;
+      const path = '/api/v1/certificates/' + encodeURIComponent(certificate.id);
+      let response;
+      try {
+        response = await fetch(removing ? path : path + '/request-issue', removing ?
+          {method: 'DELETE', headers: hdr()} : {method: 'POST', headers: hdr(), body: '{}'});
+      } catch (_) { /* The server may already have processed the request. */ }
+      if (!response || response.status >= 500) {
+        toast('Could not confirm the result for ' + name + '. Checking the certificate inventory again.', 'warn');
+      } else if (!response.ok) {
+        const message = await apiMessage(response);
+        const status = document.getElementById('cert-dash-msg');
+        status.className = 'warn';
+        status.textContent = message;
+        toast(message, 'err');
+        return;
+      } else {
+        const outcome = removing ? 'Certificate deleted' : action === 'renew' ? 'Renewal queued' : 'Issuance queued';
+        toast(outcome + ' for ' + name + '.', 'ok');
+      }
+      await loadCertDashboard();
     });
   }
 
