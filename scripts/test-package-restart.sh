@@ -226,7 +226,8 @@ eval "$function_source"
   mkdir -p "$MCP_PACKAGE_UNIT_DIR" "$MCP_SOURCE_UNIT_DIR"
   mcp_unit=easy-waf-mcpd.service
   printf 'packaged unit\n' >"$MCP_PACKAGE_UNIT_DIR/$mcp_unit"
-  # shellcheck disable=SC2329 # Called by the extracted installer function.
+  # Called indirectly by the installer function loaded with eval above.
+  # shellcheck disable=SC2317,SC2329
   systemctl() {
     calls+=("$*")
     case "$1" in
