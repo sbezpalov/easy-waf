@@ -5,17 +5,17 @@
           <div class="row">
             <button type="button" class="secondary" id="btn-f2b-refresh">Refresh jails</button>
           </div>
-          <p id="f2b-status-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <p id="f2b-status-msg" role="status" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
           <div id="f2b-jails-wrap"></div>
           <h3 style="margin-top:1.25rem">Unban IP</h3>
           <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end">
             <label>Jail
-              <select id="f2b-unban-jail" style="min-width:10rem"><option value="">(refresh jails first)</option></select>
+              <select id="f2b-unban-jail" disabled style="min-width:10rem"><option value="">Select a jail</option></select>
             </label>
             <label>IP <input id="f2b-unban-ip" type="text" placeholder="203.0.113.10" autocomplete="off" style="min-width:10rem" /></label>
-            <button type="button" id="btn-f2b-unban">Unban</button>
+            <button type="button" id="btn-f2b-unban" disabled>Unban</button>
           </div>
-          <p id="f2b-unban-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <p id="f2b-unban-msg" role="status" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
       </div>
 

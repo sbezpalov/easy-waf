@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var jailListRE = regexp.MustCompile("(?m)^\\s*` - Jail list:\\s*(.+)$")
+var jailListRE = regexp.MustCompile("(?m)^[ \\t]*[`|] ?- Jail list:[ \\t]*(.*)$")
 
 // parseStatusJails extracts jail names from `fail2ban-client status` output.
 func parseStatusJails(out string) []string {
@@ -18,7 +18,7 @@ func parseStatusJails(out string) []string {
 	}
 	raw := strings.TrimSpace(m[1])
 	if raw == "" {
-		return nil
+		return []string{}
 	}
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t'
@@ -33,13 +33,13 @@ func parseStatusJails(out string) []string {
 	return jails
 }
 
-var bannedListRE = regexp.MustCompile("(?m)^\\s*` - Banned IP list:\\s*(.*)$")
+var bannedListRE = regexp.MustCompile("(?m)^[ |\\t]*[`|] ?- Banned IP list:[ \\t]*(.*)$")
 
 // parseJailBannedIPs extracts banned IPs from `fail2ban-client status <jail>` output.
 func parseJailBannedIPs(out string) []string {
 	m := bannedListRE.FindStringSubmatch(out)
 	if len(m) < 2 {
-		return []string{}
+		return nil
 	}
 	raw := strings.TrimSpace(m[1])
 	if raw == "" {

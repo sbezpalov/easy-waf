@@ -33,8 +33,9 @@ type Status struct {
 
 // JailSummary lists banned IPs for one jail.
 type JailSummary struct {
-	Name      string   `json:"name"`
-	BannedIPs []string `json:"banned_ips"`
+	Name        string   `json:"name"`
+	BannedIPs   []string `json:"banned_ips"`
+	Unavailable bool     `json:"unavailable,omitempty"`
 }
 
 // Overview is returned by GET /integrations/fail2ban.
@@ -107,11 +108,14 @@ func (c *Client) Overview(ctx context.Context) (Overview, error) {
 		return Overview{Status: st, Jails: []JailSummary{}}, err
 	}
 	names := parseStatusJails(string(out))
+	if names == nil {
+		return Overview{Status: st}, fmt.Errorf("fail2ban status: missing jail list")
+	}
 	jails := make([]JailSummary, 0, len(names))
 	for _, name := range names {
 		js, err := c.JailStatus(ctx, name)
 		if err != nil {
-			js = JailSummary{Name: name, BannedIPs: []string{}}
+			js = JailSummary{Name: name, Unavailable: true}
 		}
 		jails = append(jails, js)
 	}
@@ -128,7 +132,11 @@ func (c *Client) JailStatus(ctx context.Context, jail string) (JailSummary, erro
 	if err != nil {
 		return JailSummary{Name: jail, BannedIPs: []string{}}, fmt.Errorf("fail2ban status %s: %w: %s", jail, err, strings.TrimSpace(string(out)))
 	}
-	return JailSummary{Name: jail, BannedIPs: parseJailBannedIPs(string(out))}, nil
+	ips := parseJailBannedIPs(string(out))
+	if ips == nil {
+		return JailSummary{Name: jail}, fmt.Errorf("fail2ban status %s: missing banned IP list", jail)
+	}
+	return JailSummary{Name: jail, BannedIPs: ips}, nil
 }
 
 // UnbanIP removes one IP from a jail ban list.

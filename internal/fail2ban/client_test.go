@@ -20,7 +20,9 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 			case "ping":
 				return []byte("Server replied: pong\n"), nil
 			case "status":
-				return []byte("` - Jail list:\tsshd\n"), nil
+				return []byte("` - Jail list:\tsshd, other\n"), nil
+			case "status other":
+				return nil, errors.New("jail unavailable")
 			case "status sshd":
 				return []byte("` - Banned IP list:\t1.2.3.4\n"), nil
 			default:
@@ -35,7 +37,8 @@ func TestClient_Overview_pingAndJails(t *testing.T) {
 	if !ov.Status.Running {
 		t.Fatalf("status: %+v", ov.Status)
 	}
-	if len(ov.Jails) != 1 || ov.Jails[0].Name != "sshd" || len(ov.Jails[0].BannedIPs) != 1 {
+	if len(ov.Jails) != 2 || ov.Jails[0].Name != "sshd" || len(ov.Jails[0].BannedIPs) != 1 ||
+		ov.Jails[1].Name != "other" || !ov.Jails[1].Unavailable {
 		t.Fatalf("jails: %+v", ov.Jails)
 	}
 	if calls < 3 {

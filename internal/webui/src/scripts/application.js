@@ -3470,34 +3470,37 @@
       '</tbody></table>';
   }
 
+  let fail2banGeneration = 0;
   async function loadFail2banOverview() {
+    const generation = ++fail2banGeneration;
+    const session = sessionGeneration;
+    const current = () => generation === fail2banGeneration && session === sessionGeneration;
     const msg = document.getElementById('f2b-status-msg');
     const wrap = document.getElementById('f2b-jails-wrap');
     const jailSel = document.getElementById('f2b-unban-jail');
-    if (msg) {
-      msg.textContent = '';
-      msg.className = 'warn';
-    }
-    if (wrap) tableState(wrap, 'loading');
-    const r = await fetch('/api/v1/integrations/fail2ban', { headers: hdr() });
-    const txt = await r.text();
-    if (r.status === 401 || r.status === 403) {
-      if (r.status === 401) setTok('');
-      refreshSession();
+    const unban = document.getElementById('btn-f2b-unban');
+    const placeholder = '<option value="">Select a jail</option>';
+    jailSel.disabled = unban.disabled = true;
+    jailSel.innerHTML = placeholder;
+    msg.textContent = 'Loading Fail2Ban jails…';
+    msg.className = 'warn';
+    tableState(wrap, 'loading');
+    let j;
+    try {
+      const r = await fetch('/api/v1/integrations/fail2ban', {headers: hdr()});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      j = await r.json();
+      if (typeof j?.status?.running !== 'boolean' || !Array.isArray(j.jails) ||
+          !j.jails.every(row => typeof row?.name === 'string' && row.name &&
+            (row.unavailable === true || Array.isArray(row.banned_ips)))) throw new Error('Invalid jail list');
+    } catch (error) {
+      if (!current()) return;
+      msg.textContent = 'Jail list unavailable. Select Refresh jails to retry.';
+      tableState(wrap, 'error', {message: error.message});
       return;
     }
-    let j = {};
-    try { j = JSON.parse(txt); } catch (_) {
-      if (wrap) tableState(wrap, 'error', { message: 'Invalid JSON from fail2ban API' });
-      if (msg) msg.textContent = 'Invalid JSON';
-      return;
-    }
-    const st = j.status || {};
-    if (!r.ok) {
-      if (msg) msg.textContent = j.error || txt || ('HTTP ' + r.status);
-      if (wrap) tableState(wrap, 'error', { message: j.error || txt || ('HTTP ' + r.status) });
-      return;
-    }
+    if (!current()) return;
+    const st = j.status;
     if (msg) {
       if (st.running) {
         msg.textContent = 'Daemon: running (' + (st.message || 'pong') + ')';
@@ -3507,18 +3510,20 @@
         msg.className = 'warn';
       }
     }
-    const jails = Array.isArray(j.jails) ? j.jails : [];
-    if (jailSel) {
-      jailSel.innerHTML = jails.length
-        ? jails.map((x) => '<option value="' + esc(x.name) + '">' + esc(x.name) + '</option>').join('')
-        : '<option value="">(no jails)</option>';
+    const jails = st.running ? j.jails : [];
+    const available = jails.filter(row => !row.unavailable);
+    if (available.length < jails.length) {
+      msg.textContent += ' Some jail details are unavailable. Refresh jails to retry.';
+      msg.className = 'warn';
     }
-    if (!wrap) return;
+    jailSel.innerHTML = placeholder + available.map(x => '<option value="' + esc(x.name) + '">' + esc(x.name) + '</option>').join('');
+    jailSel.disabled = unban.disabled = !available.length;
     if (!jails.length) {
-      tableState(wrap, 'empty', { message: 'No jails or fail2ban not running.' });
+      tableState(wrap, st.running ? 'empty' : 'error', { message: st.running ? 'No jails configured.' : 'Jail details unavailable.' });
       return;
     }
     const rows = jails.map((jail) => {
+      if (jail.unavailable) return '<tr><td><code>' + esc(jail.name) + '</code></td><td colspan="2">Unavailable</td></tr>';
       const ips = Array.isArray(jail.banned_ips) ? jail.banned_ips : [];
       const ipCells = ips.length
         ? ips.map((ip) =>
@@ -3543,12 +3548,24 @@
         const jail = btn.getAttribute('data-jail');
         const ip = btn.getAttribute('data-ip');
         if (!jail || !ip) return;
-        const okUnban = await confirmDialog('Unban ' + ip + ' from jail ' + jail + '?', { okLabel: 'Unban' });
-        if (!okUnban) return;
-        await withBusy(btn, () => postFail2banUnban(jail, ip));
+        await confirmFail2banUnban(btn, jail, ip);
       });
     }
   })();
+
+  async function confirmFail2banUnban(button, jail, ip) {
+    const generation = fail2banGeneration;
+    const session = sessionGeneration;
+    return withFocusableBusy(button, async () => {
+      const ok = await confirmDialog('Unban ' + ip + ' from jail ' + jail + '?', {okLabel: 'Unban'});
+      if (!ok || session !== sessionGeneration) return false;
+      if (generation !== fail2banGeneration) {
+        document.getElementById('f2b-unban-msg').textContent = 'The jail list changed. Review it before unbanning.';
+        return false;
+      }
+      return postFail2banUnban(jail, ip);
+    });
+  }
 
   async function postFail2banUnban(jail, ip) {
     const msg = document.getElementById('f2b-unban-msg');
@@ -3556,11 +3573,18 @@
       msg.textContent = '';
       msg.className = 'warn';
     }
+    const session = sessionGeneration;
     const r = await fetch('/api/v1/integrations/fail2ban/unban', {
       method: 'POST',
       headers: hdr(),
       body: JSON.stringify({ jail: jail, ip: ip })
-    });
+    }).catch(() => null);
+    if (session !== sessionGeneration) return false;
+    if (!r) {
+      msg.textContent = 'Unban outcome unknown. Check the refreshed jail list before retrying.';
+      await loadFail2banOverview();
+      return false;
+    }
     if (!r.ok) {
       if (msg) msg.textContent = await r.text().catch(() => r.statusText);
       return;
@@ -3570,6 +3594,7 @@
       msg.className = 'ok';
     }
     await loadFail2banOverview();
+    return true;
   }
 
   document.getElementById('btn-f2b-unban').onclick = async () => {
@@ -3582,10 +3607,7 @@
       if (msg) msg.textContent = 'Select jail and enter IP.';
       return;
     }
-    const okUnban = await confirmDialog('Unban ' + ip + ' from jail ' + jail + '?', { okLabel: 'Unban' });
-    if (!okUnban) return;
-    await withBusy(document.getElementById('btn-f2b-unban'), () => postFail2banUnban(jail, ip));
-    if (ipEl) ipEl.value = '';
+    if (await confirmFail2banUnban(document.getElementById('btn-f2b-unban'), jail, ip) && ipEl.value.trim() === ip) ipEl.value = '';
   };
 
   document.getElementById('btn-cs-ping').onclick = async () => {

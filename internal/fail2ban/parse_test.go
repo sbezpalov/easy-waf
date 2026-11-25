@@ -5,6 +5,20 @@ package fail2ban
 
 import "testing"
 
+func TestClientStatusTree(t *testing.T) {
+	jails := parseStatusJails("Status\n|- Number of jail:\t1\n`- Jail list:\tsshd\n")
+	ips := parseJailBannedIPs("   |- Total banned:\t1\n   `- Banned IP list:\t203.0.113.1\n")
+	if len(jails) != 1 || jails[0] != "sshd" || len(ips) != 1 || ips[0] != "203.0.113.1" {
+		t.Fatalf("status tree: jails=%v ips=%v", jails, ips)
+	}
+	if empty := parseStatusJails("`- Jail list:\t\n"); empty == nil || len(empty) != 0 {
+		t.Fatalf("empty jail list: %#v", empty)
+	}
+	if parseStatusJails("Status") != nil || parseJailBannedIPs("Status") != nil {
+		t.Fatal("missing list reported as empty")
+	}
+}
+
 func TestParseStatusJails(t *testing.T) {
 	out := "Status\n|- Number of jail:\t2\n` - Jail list:\tsshd, nginx-http-auth\n"
 	jails := parseStatusJails(out)
