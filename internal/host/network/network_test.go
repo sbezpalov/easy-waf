@@ -35,7 +35,7 @@ func TestCollectRoutes(t *testing.T) {
 				t.Fatalf("unexpected family %s", family)
 				return nil, nil
 			})
-			var got []string
+			got := make([]string, 0, len(rows))
 			for _, row := range rows {
 				got = append(got, string(row))
 			}
