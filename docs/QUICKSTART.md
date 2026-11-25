@@ -114,11 +114,11 @@ The default mode is **`https_loopback`** (HTTPS-only on `127.0.0.1:8443`). Selec
 
 ## First application
 
-1. Log in to the UI.
-2. **Applications → Add** → profile (e.g. `home-assistant`). For a Home Assistant MCP endpoint, use `ha-mcp` and read [HA-MCP.md](HA-MCP.md).
-3. Hostname, backend IP:port, WebSocket if needed.
-4. **Certificates** → issue (staging first).
-5. **Apply** → validates `haproxy -c` and reloads HAProxy.
+1. Sign in and open **Publish → Applications → New application**.
+2. Enter the application name, public hostname, backend host and port. Check whether the backend uses HTTPS and whether the application needs WebSocket support.
+3. For HTTPS, select a ready certificate. If you need one, select **Create certificate** in the form. After issuance, use **Refresh certificates** and select the certificate for this hostname. Use a production certificate for a browser-trusted public endpoint.
+4. Choose the **Application profile**. Use `home-assistant` for a Home Assistant dashboard and Companion. For a dedicated Home Assistant MCP endpoint, see the [HA-MCP guide](HA-MCP.md). To give OpenClaw access to WAF diagnostics, use [Operate → MCP](MCP.md#connect-openclaw-with-oauth).
+5. Select **Review publication**, check the hostname and destination, then save. Application changes apply automatically by default. If changes are pending, open **Edge changes → Apply HAProxy**. Check the apply result and open the published hostname.
 
 ## Paths
 
