@@ -126,6 +126,51 @@ fi
   done
 )
 
+# A failed writer must leave an older image and archive in place, even
+# when the other requested format was already written successfully.
+(
+  output_step="$(sed -n '/^write_bundle_outputs() ($/,/^)/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
+  [[ -n "$output_step" ]]
+  eval "$output_step"
+  OUTPUT_DIR="$TEMP_DIR/output #1%"
+  STAGE="$TEMP_DIR/input"
+  VERSION=9.9.9
+  ARCH=amd64
+  BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
+  export FORMAT=both
+  mkdir -p "$OUTPUT_DIR" "$STAGE"
+  printf 'checkout fixture\n' >"$STAGE/input.txt"
+  printf 'old ISO\n' >"$OUTPUT_DIR/$BASE.iso"
+  printf 'old archive\n' >"$OUTPUT_DIR/$BASE.tar.gz"
+
+  # Invoked by the builder function loaded through eval.
+  # shellcheck disable=SC2317,SC2329
+  xorriso() {
+    while [[ "$1" != -o ]]; do shift; done
+    printf 'candidate ISO\n' >"$2"
+    [[ "$failure" != iso ]]
+  }
+  # shellcheck disable=SC2317,SC2329
+  tar() {
+    printf 'candidate archive\n' >"$2"
+    [[ "$failure" != archive ]]
+  }
+  for failure in iso archive; do
+    if write_bundle_outputs; then
+      echo "test-offline-bundle: build accepted a failed $failure writer" >&2
+      exit 1
+    fi
+    [[ "$(<"$OUTPUT_DIR/$BASE.iso")" == 'old ISO' ]]
+    [[ "$(<"$OUTPUT_DIR/$BASE.tar.gz")" == 'old archive' ]]
+    [[ -z "$(find "$OUTPUT_DIR" -mindepth 1 -type d -print -quit)" ]]
+  done
+  failure=none
+  write_bundle_outputs
+  [[ "$(<"$OUTPUT_DIR/$BASE.iso")" == 'candidate ISO' ]]
+  [[ "$(<"$OUTPUT_DIR/$BASE.tar.gz")" == 'candidate archive' ]]
+  [[ -z "$(find "$OUTPUT_DIR" -mindepth 1 -type d -print -quit)" ]]
+)
+
 # Use the actual builder's checksum step. The nested manifest must be verified
 # by the outer one, and the outer manifest cannot list a temporary self-entry.
 STAGE="${TEMP_DIR}/stage #1%"

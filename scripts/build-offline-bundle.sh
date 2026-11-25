@@ -290,15 +290,29 @@ write_bundle_checksums() {
 }
 write_bundle_checksums
 
+write_bundle_outputs() (
+  local staging file
+  local -a outputs=()
+  staging="$(mktemp -d "${OUTPUT_DIR}/.easy-waf-bundle.XXXXXXXX")" || return 1
+  trap 'rm -rf -- "$staging"' EXIT
+  if [[ "$FORMAT" == "iso" || "$FORMAT" == "both" ]]; then
+    file="${BASE}.iso"
+    xorriso -as mkisofs -quiet -r -J -V "EASYWAF_${VERSION}_${ARCH}" -o "$staging/$file" "$STAGE" || return 1
+    outputs+=("$file")
+  fi
+  if [[ "$FORMAT" == "tar.gz" || "$FORMAT" == "both" ]]; then
+    file="${BASE}.tar.gz"
+    tar -czf "$staging/$file" -C "$STAGE" . || return 1
+    outputs+=("$file")
+  fi
+  # Build all requested formats before publishing any of them. Staging next
+  # to the final files keeps each replacement on the same filesystem.
+  for file in "${outputs[@]}"; do
+    mv -fT -- "$staging/$file" "$OUTPUT_DIR/$file" || return 1
+    echo "[offline-build] built $OUTPUT_DIR/$file"
+  done
+)
+
 BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
 [[ -z "$CROWDSEC_SNAPSHOT" ]] || BASE+="_private"
-if [[ "$FORMAT" == "iso" || "$FORMAT" == "both" ]]; then
-  ISO="${OUTPUT_DIR}/${BASE}.iso"
-  xorriso -as mkisofs -quiet -r -J -V "EASYWAF_${VERSION}_${ARCH}" -o "$ISO" "$STAGE"
-  echo "[offline-build] built $ISO"
-fi
-if [[ "$FORMAT" == "tar.gz" || "$FORMAT" == "both" ]]; then
-  TGZ="${OUTPUT_DIR}/${BASE}.tar.gz"
-  tar -czf "$TGZ" -C "$STAGE" .
-  echo "[offline-build] built $TGZ"
-fi
+write_bundle_outputs
