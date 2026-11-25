@@ -73,6 +73,8 @@ The **`easy-waf-api`** unit uses **`NoNewPrivileges=true`**, so the API **cannot
 
 The API compresses each tar entry as it is written. The **40 MiB** limit applies to the entire uncompressed archive, including tar headers and padding. If the next write would exceed the limit, collection stops and the API returns an error. Use the root script when a larger bundle is needed.
 
+Each command can contribute up to **4 MiB** of output. If it produces more, the archive entry contains an omission notice and collection continues. For a large journal, use the unit and time range in the panel to inspect the relevant lines.
+
 For vendor/support hand-off when in doubt, prefer:
 
 ```bash

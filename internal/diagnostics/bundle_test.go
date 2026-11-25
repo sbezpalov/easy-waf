@@ -11,11 +11,13 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -31,6 +33,33 @@ func TestBundleSizeIncludesTarFooter(t *testing.T) {
 		err := tw.Close()
 		if (err == nil) != (limit == 2048) || output.Len() > limit {
 			t.Fatalf("limit %d: wrote %d bytes, close error %v", limit, output.Len(), err)
+		}
+	}
+}
+
+func TestBundleProbeCapture(t *testing.T) {
+	if os.Getenv("EASY_WAF_TEST_BUNDLE_PROBE_CHILD") == "1" {
+		_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), commandoutput.Limit))
+		_, _ = os.Stderr.WriteString("extra")
+		os.Exit(0)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, combined := range []bool{false, true} {
+		cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestBundleProbeCapture$") // #nosec G204 -- Re-execute only this test binary with a fixed test selector.
+		cmd.Env = append(os.Environ(), "EASY_WAF_TEST_BUNDLE_PROBE_CHILD=1")
+		out, err := probeOutput(cmd, combined)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if combined {
+			if string(out) != "(output omitted: probe exceeded 4194304 bytes)\n" {
+				t.Fatalf("missing overflow marker, got %d bytes", len(out))
+			}
+		} else if len(out) != commandoutput.Limit || bytes.Count(out, []byte("x")) != len(out) {
+			t.Fatal("stdout at the limit must be preserved without stderr")
 		}
 	}
 }

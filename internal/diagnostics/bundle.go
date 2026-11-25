@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
+	"github.com/easy-waf/easy-waf/internal/commandprocess"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 	"github.com/easy-waf/easy-waf/internal/host/hostspec"
@@ -105,7 +108,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		defer cancel()
 		cmd := exec.CommandContext(ctx2, name, args...)
 		cmd.Env = os.Environ()
-		out, _ := cmd.CombinedOutput()
+		out, _ := probeOutput(cmd, true)
 		return addTarBytes(tw, prefix+rel, out, 0o644)
 	}
 
@@ -128,7 +131,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		}
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
-	if out, err := exec.CommandContext(ctx2, "aa-status", "--enabled").CombinedOutput(); err == nil {
+	if out, err := probeOutput(exec.CommandContext(ctx2, "aa-status", "--enabled"), true); err == nil {
 		if err := addTarBytes(tw, prefix+"system/aa-status-enabled.txt", out, 0o644); err != nil {
 			cancel()
 			return err
@@ -147,7 +150,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 			return err
 		}
 		ctx2, cancel := context.WithTimeout(ctx, 8*time.Second)
-		out, _ := exec.CommandContext(ctx2, "systemctl", "is-enabled", u).CombinedOutput()
+		out, _ := probeOutput(exec.CommandContext(ctx2, "systemctl", "is-enabled", u), true)
 		cancel()
 		line := append([]byte("is-enabled: "), out...)
 		if err := addTarBytes(tw, prefix+fmt.Sprintf("systemctl/is-enabled-%s.txt", safe), line, 0o644); err != nil {
@@ -165,7 +168,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		{"haproxy", "logs/journal-haproxy.txt"},
 	} {
 		ctx2, cancel := context.WithTimeout(ctx, 45*time.Second)
-		out, _ := exec.CommandContext(ctx2, "journalctl", "-u", pair.unit, "--since", "24 hours ago", "-n", "500", "--no-pager").CombinedOutput() //nolint:gosec
+		out, _ := probeOutput(exec.CommandContext(ctx2, "journalctl", "-u", pair.unit, "--since", "24 hours ago", "-n", "500", "--no-pager"), true) //nolint:gosec
 		cancel()
 		if err := addTarBytes(tw, prefix+pair.dst, out, 0o644); err != nil {
 			return err
@@ -224,7 +227,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		haproxyCheckOut = []byte("validation skipped: " + cfgPathErr.Error() + "\n")
 	} else {
 		ctx2, cancel = context.WithTimeout(ctx, 30*time.Second)
-		haproxyCheckOut, _ = exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath).CombinedOutput()
+		haproxyCheckOut, _ = probeOutput(exec.CommandContext(ctx2, hb, "-c", "-f", cfgPath), true)
 		cancel()
 	}
 	if err := addTarBytes(tw, prefix+"validation/haproxy-check.txt", MaskHAProxyConfigContent(haproxyCheckOut), 0o644); err != nil {
@@ -259,12 +262,30 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	return tw.Close()
 }
 
+// Keep the entry when a probe overflows, but never treat a prefix as a
+// complete diagnostic or pass a partial configuration to a redactor.
+func probeOutput(cmd *exec.Cmd, includeStderr bool) ([]byte, error) {
+	var capture commandoutput.Capture
+	cmd.Stdout = capture.Stdout()
+	if includeStderr {
+		cmd.Stderr = cmd.Stdout
+	}
+	commandprocess.Prepare(cmd)
+	runErr := cmd.Run()
+	err := errors.Join(runErr, commandprocess.Finish(cmd, true))
+	out, _, overflow := capture.Result()
+	if overflow != nil {
+		return fmt.Appendf(nil, "(output omitted: probe exceeded %d bytes)\n", commandoutput.Limit), err
+	}
+	return out, err
+}
+
 func mcpServiceState(ctx context.Context) []byte {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "systemctl", "show", "--no-pager",
+	out, err := probeOutput(exec.CommandContext(ctx, "systemctl", "show", "--no-pager",
 		"-p", "LoadState", "-p", "UnitFileState", "-p", "ActiveState", "-p", "SubState",
-		"-p", "Result", "-p", "ConditionResult", "-p", "ExecMainStatus", "easy-waf-mcpd.service").Output()
+		"-p", "Result", "-p", "ConditionResult", "-p", "ExecMainStatus", "easy-waf-mcpd.service"), false)
 	if err != nil {
 		return []byte("MCP service state unavailable\n")
 	}
