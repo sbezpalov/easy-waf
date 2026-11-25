@@ -1,0 +1,40 @@
+[Unit]
+Description=Easy Home WAF read-only MCP diagnostics
+After=easy-waf-api.service
+ConditionPathExists=/etc/easy-waf-mcp.env
+ConditionPathExists=/etc/easy-waf-mcp-ca.pem
+
+[Service]
+Type=simple
+DynamicUser=true
+EnvironmentFile=/etc/easy-waf-mcp.env
+Environment=EASY_WAF_MCP_API_CA_FILE=/etc/easy-waf-mcp-ca.pem
+ExecStart=/usr/sbin/easy-waf-mcpd
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10s
+AmbientCapabilities=
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallArchitectures=native
+IPAddressDeny=any
+IPAddressAllow=localhost
+InaccessiblePaths=-/etc/easy-waf -/var/lib/easy-waf -/run/easy-waf -/etc/easy-waf-mcp.env
+
+[Install]
+WantedBy=multi-user.target

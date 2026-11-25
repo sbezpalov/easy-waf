@@ -62,6 +62,9 @@ contents:
   - src: dist/easy-waf-admin
     dst: /usr/sbin/easy-waf-admin
     file_info: { mode: 0755 }
+  - src: dist/easy-waf-mcpd
+    dst: /usr/sbin/easy-waf-mcpd
+    file_info: { mode: 0755 }
   - src: scripts/diagnostics.sh
     dst: /usr/share/easy-waf/scripts/diagnostics.sh
     file_info: { mode: 0755 }
@@ -110,6 +113,9 @@ contents:
     file_info: { mode: 0644 }
   - src: packaging/systemd/easy-waf-hostd.service
     dst: /lib/systemd/system/easy-waf-hostd.service
+    file_info: { mode: 0644 }
+  - src: packaging/systemd/easy-waf-mcpd.service
+    dst: /lib/systemd/system/easy-waf-mcpd.service
     file_info: { mode: 0644 }
   - src: packaging/systemd/easy-waf-apt.service
     dst: /lib/systemd/system/easy-waf-apt.service

@@ -48,6 +48,7 @@ printf '%s\n' "$3" >>"$TEST_RESTART_LOG"
 case "$3" in
   easy-waf-api.service) exit "$TEST_API_EXIT" ;;
   easy-waf-acmed.service) exit "$TEST_ACME_EXIT" ;;
+  easy-waf-mcpd.service) exit 0 ;;
   *) exit 2 ;;
 esac
 STUB
@@ -62,6 +63,9 @@ printf '%s\n' "$EASY_WAF_DIST_DIR" >"$TEST_STAGE_PATH"
 for binary in easy-waf-api easy-waf-acmed easy-waf-hostd easy-waf-admin; do
   [[ "$(cat "$EASY_WAF_DIST_DIR/$binary")" == "fixture-$binary" ]]
 done
+if [[ "${TEST_EXPECT_MCP:-0}" == 1 ]]; then
+  [[ "$(cat "$EASY_WAF_DIST_DIR/easy-waf-mcpd")" == fixture-easy-waf-mcpd ]]
+fi
 [[ "${EASY_WAF_INSTALL_POSTGRES:-}" == 0 ]]
 exit "$TEST_INSTALL_EXIT"
 STUB
@@ -96,7 +100,11 @@ run_case() {
     [[ "$status" != 0 && ! -e "$TEST_INSTALL_MARKER" ]] || fail "$name reached installer with invalid input"
   fi
   if [[ "$accepted" == yes && "$install_exit" == 0 ]]; then
-    [[ -f "$TEST_RESTART_LOG" && "$(cat "$TEST_RESTART_LOG")" == $'broker\neasy-waf-api.service\neasy-waf-acmed.service' ]] ||
+    local restarts=$'broker\neasy-waf-api.service\neasy-waf-acmed.service'
+    if [[ "${TEST_EXPECT_MCP:-0}" == 1 ]]; then
+      restarts+=$'\neasy-waf-mcpd.service'
+    fi
+    [[ -f "$TEST_RESTART_LOG" && "$(cat "$TEST_RESTART_LOG")" == "$restarts" ]] ||
       fail "$name did not attempt all restart requests in order"
     if [[ "$expected_status" != 0 ]] && grep -q '^Requested package-safe' "$ROOT/$name.log"; then
       fail "$name printed restart success after a failure"
@@ -132,6 +140,10 @@ grep -Fq 'ERROR: could not queue restart for easy-waf-acmed.service' "$ROOT/acme
 populate "$ROOT/input/nested/dist"
 tar -czf "$ROOT/nested.tar.gz" -C "$ROOT/input/nested" .
 run_case nested "$ROOT/nested.tar.gz" yes
+printf 'fixture-easy-waf-mcpd\n' >"$ROOT/input/nested/dist/easy-waf-mcpd"
+tar -czf "$ROOT/mcp.tar.gz" -C "$ROOT/input/nested" .
+TEST_EXPECT_MCP=1 run_case mcp_tarball "$ROOT/mcp.tar.gz" yes
+TEST_EXPECT_MCP=1 run_case mcp_directory "$ROOT/input/nested" yes
 populate "$ROOT/input/wrapped/wrapped release/dist"
 tar -czf "$ROOT/wrapped.tar.gz" -C "$ROOT/input/wrapped" .
 run_case wrapped "$ROOT/wrapped.tar.gz" yes

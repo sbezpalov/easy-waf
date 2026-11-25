@@ -39,6 +39,7 @@ build:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-wafd ./cmd/easy-wafd
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-admin ./cmd/easy-waf-admin
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-hostd ./cmd/easy-waf-hostd
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(EASY_WAF_ARCH) go build -o $(DIST)/easy-waf-mcpd ./cmd/easy-waf-mcpd
 
 # Debian package — the primary way the appliance is installed and upgraded.
 # Why: docs/adr/0001-packaging-and-installer.md

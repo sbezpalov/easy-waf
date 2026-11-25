@@ -603,7 +603,11 @@ retire_script_installed_units() {
     return 0
   fi
   local u moved=0
-  for u in easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
+  local -a units=(easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer)
+  if [[ -f /lib/systemd/system/easy-waf-mcpd.service ]]; then
+    units+=(easy-waf-mcpd.service)
+  fi
+  for u in "${units[@]}"; do
     if [[ -f "/etc/systemd/system/${u}" ]]; then
       mv -f "/etc/systemd/system/${u}" "/etc/systemd/system/${u}.replaced-by-package"
       log "Retired /etc/systemd/system/${u} (the package unit in /lib now applies)"
@@ -773,6 +777,10 @@ install_binaries() {
   fi
   install -m 0755 "${DIST_DIR}/easy-waf-admin" "$ADMIN_BIN"
   log "Installed $ADMIN_BIN (emergency: management-config, reset-control-panel-access, reset-appliance, factory-reset)"
+  if [[ -f "${DIST_DIR}/easy-waf-mcpd" && -s "${DIST_DIR}/easy-waf-mcpd" ]]; then
+    install -m 0755 "${DIST_DIR}/easy-waf-mcpd" /usr/sbin/easy-waf-mcpd
+    log "Installed /usr/sbin/easy-waf-mcpd (opt-in, see docs/MCP.md)"
+  fi
   if [[ -f "${REPO_ROOT}/scripts/diagnostics.sh" ]]; then
     install -d -m 0755 /usr/share/easy-waf/scripts/lib
     install -m 0755 "${REPO_ROOT}/scripts/diagnostics.sh" /usr/share/easy-waf/scripts/diagnostics.sh
@@ -800,7 +808,12 @@ install_systemd_units() {
     return 0
   fi
   [[ -d "$SYSTEMD_SRC" ]] || die "missing systemd units: $SYSTEMD_SRC"
-  for u in easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer; do
+  local u
+  local -a units=(easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer)
+  if [[ -s "${DIST_DIR}/easy-waf-mcpd" ]]; then
+    units+=(easy-waf-mcpd.service)
+  fi
+  for u in "${units[@]}"; do
     if [[ -f "${SYSTEMD_SRC}/${u}" ]]; then
       install -m 0644 "${SYSTEMD_SRC}/${u}" "/etc/systemd/system/${u}"
       log "Installed /etc/systemd/system/${u}"

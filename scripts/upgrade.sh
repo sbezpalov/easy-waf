@@ -48,9 +48,11 @@ elif [[ -d "$SRC" ]]; then
     [[ ! -e "$SRC/easy-waf-api" ]] || { echo 'ERROR: ambiguous root and dist binaries' >&2; exit 1; }
     source_dir="$SRC/dist"
   fi
-  for binary in easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd; do
+  for binary in easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd easy-waf-mcpd; do
     file="$source_dir/$binary"
-    if [[ "$binary" == easy-wafd && ! -e "$file" && ! -L "$file" ]]; then continue; fi
+    if [[ "$binary" == easy-wafd || "$binary" == easy-waf-mcpd ]]; then
+      [[ -e "$file" || -L "$file" ]] || continue
+    fi
     [[ -f "$file" && -s "$file" ]] || { echo "ERROR: missing or empty upgrade binary: $binary" >&2; exit 1; }
     cp -- "$file" "$STAGED_DIST/$binary"
     chmod 0755 "$STAGED_DIST/$binary"
@@ -72,7 +74,11 @@ if ! /usr/sbin/easy-waf-hostd restart-after-packages; then
   echo 'ERROR: package-safe APT/broker restart failed' >&2
   restart_failed=1
 fi
-for unit in easy-waf-api.service easy-waf-acmed.service; do
+units=(easy-waf-api.service easy-waf-acmed.service)
+if [[ -s "$STAGED_DIST/easy-waf-mcpd" && "${EASY_WAF_SKIP_SYSTEMD:-0}" != 1 ]]; then
+  units+=(easy-waf-mcpd.service)
+fi
+for unit in "${units[@]}"; do
   if ! systemctl try-restart --no-block "$unit"; then
     echo "ERROR: could not queue restart for $unit" >&2
     restart_failed=1
@@ -82,5 +88,5 @@ if (( restart_failed )); then
   echo 'ERROR: installer completed, but post-upgrade restart requests did not all succeed' >&2
   exit 1
 fi
-echo 'Requested package-safe APT/broker restart; systemd accepted active-only API/ACME restart requests'
+echo 'Requested package-safe APT/broker restart; systemd accepted active-only restart requests'
 echo 'Check service readiness and run appliance smoke checks to verify the upgrade.'

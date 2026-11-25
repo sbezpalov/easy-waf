@@ -61,3 +61,33 @@ func TestLegacyDaemonUnitIsNotPackaged(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPDaemonHasSeparateIdentityAndTLSConfig(t *testing.T) {
+	body, err := os.ReadFile("easy-waf-mcpd.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := make(map[string]bool)
+	for _, line := range strings.Split(string(body), "\n") {
+		lines[strings.TrimSpace(line)] = true
+	}
+	for _, line := range []string{
+		"ConditionPathExists=/etc/easy-waf-mcp.env",
+		"ConditionPathExists=/etc/easy-waf-mcp-ca.pem",
+		"EnvironmentFile=/etc/easy-waf-mcp.env",
+		"Environment=EASY_WAF_MCP_API_CA_FILE=/etc/easy-waf-mcp-ca.pem",
+		"DynamicUser=true", "NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=true",
+		"RestrictAddressFamilies=AF_INET AF_INET6", "IPAddressDeny=any", "IPAddressAllow=localhost",
+		"InaccessiblePaths=-/etc/easy-waf -/var/lib/easy-waf -/run/easy-waf -/etc/easy-waf-mcp.env",
+	} {
+		if !lines[line] {
+			t.Errorf("MCP unit is missing %q", line)
+		}
+	}
+	for line := range lines {
+		if strings.HasPrefix(line, "User=") || strings.HasPrefix(line, "Group=") ||
+			strings.HasPrefix(line, "SupplementaryGroups=") || strings.Contains(line, "/etc/easy-waf/easy-waf.env") {
+			t.Errorf("MCP unit shares appliance credentials: %q", line)
+		}
+	}
+}

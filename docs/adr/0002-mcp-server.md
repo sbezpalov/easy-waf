@@ -4,9 +4,9 @@
 - **Date:** 2026-08-16
 - **Deciders:** repository maintainer
 - **Context version:** 1.4.0
-- **Implementation:** the opt-in REST diagnostics boundary and source-built
-  Streamable HTTP daemon are implemented. Systemd packaging and the remaining
-  diagnostic tools are pending. See [MCP setup](../MCP.md).
+- **Implementation:** the opt-in REST diagnostics boundary and packaged
+  Streamable HTTP daemon are implemented. The remaining diagnostic tools are
+  pending. See [MCP setup](../MCP.md).
 
 ## Context
 
@@ -100,9 +100,10 @@ following constraints as part of the decision rather than as implementation
 detail:
 
 **Process and transport.** A separate binary `easy-waf-mcpd`, its own unit,
-running as the unprivileged `easy-waf` user with the same hardening as
-`easy-waf-api` (`NoNewPrivileges`, `ProtectSystem=strict`, no `ProtectHome`
-exception — it never touches `/home`). MCP over streamable HTTP. Bind
+running under an independent systemd dynamic user with no access to the
+management environment or the appliance state directory. The unit uses
+`NoNewPrivileges`, `ProtectSystem=strict` and `ProtectHome`. MCP over
+streamable HTTP. Bind
 **`127.0.0.1:8446`** by default; the port is otherwise unused
 (80/443 edge, 8000 legacy management HTTP, 8089 ACME loopback, 8080 CrowdSec
 LAPI, 8443 management HTTPS). Pin the MCP specification revision in the code and

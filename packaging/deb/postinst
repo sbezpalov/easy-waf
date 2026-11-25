@@ -162,7 +162,7 @@ restart_active_units() {
 	if [ "${HAPROXY_DROPIN_MANAGED:-0}" = 1 ] && systemctl is-active --quiet haproxy.service; then
 		systemctl try-restart --no-block haproxy.service || info "WARNING: HAProxy restart was not queued — after package work finishes, check: systemctl status haproxy.service"
 	fi
-	for u in $UNITS; do
+	for u in $UNITS easy-waf-mcpd.service; do
 		[ "$u" != easy-waf-hostd.service ] || continue
 		if systemctl is-active --quiet "$u"; then
 			# ACME can drain for 50 minutes; do not hold dpkg/its 30-minute APT.
@@ -176,7 +176,7 @@ restart_active_units() {
 # is exactly the failure that makes an upgrade look applied when it is not.
 warn_shadowing_units() {
 	shadowed=""
-	for u in $UNITS easy-waf-apt.service easy-waf-hostd-restart.service; do
+	for u in $UNITS easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-mcpd.service; do
 		if [ -f "/etc/systemd/system/${u}" ]; then
 			shadowed="${shadowed} ${u}"
 		fi

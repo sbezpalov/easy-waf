@@ -23,12 +23,18 @@ work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 mkdir "$work/deb" "$work/archive"
 dpkg-deb -x "$deb" "$work/deb"
-bins=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd)
-entries=()
+bins=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd easy-waf-mcpd)
+mcp_unit=easy-waf-mcpd.service
+entries=("./packaging/systemd/$mcp_unit")
 for bin in "${bins[@]}"; do
   entries+=("./dist/$bin")
 done
 tar -xzf "$archive" -C "$work/archive" -- "${entries[@]}"
+
+tar_unit="$work/archive/packaging/systemd/$mcp_unit"
+deb_unit="$work/deb/lib/systemd/system/$mcp_unit"
+[[ -f "$tar_unit" && ! -L "$tar_unit" && -f "$deb_unit" && ! -L "$deb_unit" ]] || fail "missing regular $mcp_unit"
+cmp -s "$tar_unit" "$deb_unit" || fail "$mcp_unit differs between DEB and tarball"
 
 for bin in "${bins[@]}"; do
   packaged="$work/archive/dist/$bin"

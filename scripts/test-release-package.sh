@@ -8,6 +8,7 @@ work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 export FIXTURE_DEB_TREE="$work/deb"
 mkdir -p "$FIXTURE_DEB_TREE/usr/sbin" "$work/input/dist" "$work/bin"
+mkdir -p "$FIXTURE_DEB_TREE/lib/systemd/system" "$work/input/packaging/systemd"
 export PATH="$work/bin:$PATH"
 export FIXTURE_DEB_ARCH=arm64 FIXTURE_DEB_VERSION=1.6.1
 export FIXTURE_GO_ARCH=arm64 FIXTURE_REVISION=0123456789012345678901234567890123456789 FIXTURE_MODIFIED=false
@@ -30,12 +31,14 @@ printf '\tbuild\tGOOS=linux\n\tbuild\tGOARCH=%s\n\tbuild\tvcs.revision=%s\n\tbui
   "$FIXTURE_GO_ARCH" "$FIXTURE_REVISION" "$FIXTURE_MODIFIED"
 MOCK
 chmod +x "$work/bin/"*
-for bin in easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd; do
+for bin in easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd easy-waf-mcpd; do
   printf '%s\n' "$bin" >"$work/input/dist/$bin"
   if [[ "$bin" != easy-wafd ]]; then
     cp "$work/input/dist/$bin" "$FIXTURE_DEB_TREE/usr/sbin/$bin"
   fi
 done
+cp "$script_dir/../packaging/systemd/easy-waf-mcpd.service" "$work/input/packaging/systemd/"
+cp "$work/input/packaging/systemd/easy-waf-mcpd.service" "$FIXTURE_DEB_TREE/lib/systemd/system/"
 tar -czf "$work/fixture.tar.gz" -C "$work/input" .
 
 check() {
@@ -62,6 +65,9 @@ FIXTURE_DEB_VERSION=1.6.0 reject 'wrong DEB version'
 FIXTURE_GO_ARCH=amd64 reject 'missing build setting GOARCH=arm64'
 FIXTURE_MODIFIED=true reject 'missing build setting vcs.modified=false'
 FIXTURE_REVISION=unrelated reject 'missing build setting vcs.revision='
+printf 'different unit\n' >>"$FIXTURE_DEB_TREE/lib/systemd/system/easy-waf-mcpd.service"
+reject 'easy-waf-mcpd.service differs between DEB and tarball'
+cp "$work/input/packaging/systemd/easy-waf-mcpd.service" "$FIXTURE_DEB_TREE/lib/systemd/system/"
 printf 'different binary\n' >>"$FIXTURE_DEB_TREE/usr/sbin/easy-waf-api"
 reject 'DEB executable differs from tarball: easy-waf-api'
 echo 'test-release-package: PASS'

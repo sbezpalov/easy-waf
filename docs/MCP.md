@@ -11,6 +11,30 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | `edge_status` | Saved and applied generations and managed HAProxy artifact identity |
 | `list_applications` | Publication names, hostnames, profiles and enabled or maintenance state |
 
+## Enable the packaged service
+
+The package installs `easy-waf-mcpd.service` without enabling it. Before
+enabling it, configure the same randomly generated `EASY_WAF_MCP_API_TOKEN`
+in the management API's environment and in a root-owned `/etc/easy-waf-mcp.env`
+with mode `0600`. Restart `easy-waf-api` after changing its environment.
+In `easy-waf-mcp.env`, also set `EASY_WAF_MCP_LISTEN` and a distinct client token
+`EASY_WAF_MCP_TOKEN`.
+
+Install the management TLS trust certificate as `/etc/easy-waf-mcp-ca.pem`,
+owned by root with mode `0644`. For the self-signed management listener, copy
+the public `management.crt`.
+Set `EASY_WAF_MCP_API_URL` if the management HTTPS origin differs from the
+default. The unit's dynamic user can read the public certificate and has no
+direct access to the appliance configuration and state directories.
+Repeat the certificate copy and restart the MCP service when the trusted
+certificate changes. Keep these two service files with your private appliance
+backups. Restore the environment file with its root ownership and mode `0600`.
+
+Enable with `sudo systemctl enable --now easy-waf-mcpd.service` and check
+`systemctl status easy-waf-mcpd.service`. To disable the packaged service,
+use `sudo systemctl disable --now easy-waf-mcpd.service`. Before downgrading
+to a release without MCP, disable the service first.
+
 ## Run from source
 
 1. Build the daemon with `go build ./cmd/easy-waf-mcpd`.

@@ -8,6 +8,10 @@ function_source="$(sed -n '/^restart_active_units() {$/,/^}$/p' "${ROOT}/packagi
 eval "$function_source"
 UNITS="$(sed -n 's/^UNITS="\(.*\)"$/\1/p' "${ROOT}/packaging/deb/postinst")"
 export UNITS # Consumed by the actual function loaded above.
+if [[ " $UNITS " == *' easy-waf-mcpd.service '* ]]; then
+  echo 'MCP must stay out of the Debian first-install enable list' >&2
+  exit 1
+fi
 
 calls=()
 warnings=0
@@ -65,6 +69,7 @@ for mode in all stopped api_only worker_only failed_queue; do
       has_call 'restart --no-block easy-waf-hostd-restart.service'
       has_call 'try-restart --no-block easy-waf-api.service'
       has_call 'try-restart --no-block easy-waf-acmed.service'
+      has_call 'try-restart --no-block easy-waf-mcpd.service'
       if [[ "$mode" == failed_queue ]]; then
         [[ "$warnings" == 1 ]] # Warn, continue configuration, no unsafe fallback.
       else
@@ -72,17 +77,20 @@ for mode in all stopped api_only worker_only failed_queue; do
       fi
       ;;
     stopped)
-      [[ "${#calls[@]}" == 4 ]]
+      [[ "${#calls[@]}" == 5 ]]
+      reject_call 'try-restart --no-block easy-waf-mcpd.service'
       ;;
     api_only)
       has_call 'try-restart --no-block easy-waf-api.service'
       reject_call 'restart --no-block easy-waf-hostd-restart.service'
       reject_call 'try-restart --no-block easy-waf-acmed.service'
+      reject_call 'try-restart --no-block easy-waf-mcpd.service'
       ;;
     worker_only)
       has_call 'restart --no-block easy-waf-hostd-restart.service'
       reject_call 'try-restart --no-block easy-waf-api.service'
       reject_call 'try-restart --no-block easy-waf-acmed.service'
+      reject_call 'try-restart --no-block easy-waf-mcpd.service'
       ;;
   esac
 done
@@ -179,6 +187,8 @@ export EASY_WAF_SKIP_SYSTEMD=0
 export EASY_WAF_PKG_INSTALLED=0
 export SYSTEMD_SRC="${ROOT}/packaging/systemd"
 export REPO_ROOT="$ROOT"
+export DIST_DIR="$test_root/dist"
+mkdir -p "$DIST_DIR"
 calls=()
 install_systemd_units
 install_needrestart_policy
@@ -186,6 +196,18 @@ has_call "install -m 0644 ${SYSTEMD_SRC}/easy-waf-hostd-restart.service /etc/sys
 has_call "install -m 0644 ${SYSTEMD_SRC}/easy-waf-apt.service /etc/systemd/system/easy-waf-apt.service"
 has_call "install -m 0644 ${ROOT}/packaging/needrestart/easy-waf-hostd.conf /etc/needrestart/conf.d/easy-waf-hostd.conf"
 reject_call 'enable --now easy-waf-hostd-restart.service'
+mcp_install="install -m 0644 ${SYSTEMD_SRC}/easy-waf-mcpd.service /etc/systemd/system/easy-waf-mcpd.service"
+reject_call "$mcp_install"
+printf 'MCP binary fixture\n' >"$DIST_DIR/easy-waf-mcpd"
+calls=()
+install_systemd_units
+has_call "$mcp_install"
+for call in "${calls[@]}"; do
+  if [[ "$call" == enable*easy-waf-mcpd* || "$call" == start*easy-waf-mcpd* ]]; then
+    echo 'source installation activated the opt-in MCP service' >&2
+    exit 1
+  fi
+done
 calls=()
 EASY_WAF_PKG_INSTALLED=1
 install_systemd_units
@@ -202,7 +224,7 @@ open my $file, '<', $path or die "open policy: $!";
 my $code = do { local $/; <$file> };
 eval $code;
 die "invalid policy: $@" if $@;
-for my $service ('easy-waf-hostd', 'easy-waf-hostd.service', 'easy-waf-apt', 'easy-waf-apt.service', 'easy-waf-api', 'easy-waf-api.service', 'easy-waf-acmed', 'easy-waf-acmed.service') {
+for my $service ('easy-waf-hostd', 'easy-waf-hostd.service', 'easy-waf-apt', 'easy-waf-apt.service', 'easy-waf-api', 'easy-waf-api.service', 'easy-waf-acmed', 'easy-waf-acmed.service', 'easy-waf-mcpd', 'easy-waf-mcpd.service') {
     my @rules = grep { $service =~ $_ } keys %{$nrconf{override_rc}};
     die "missing managed-service override" unless @rules == 1 && $nrconf{override_rc}{$rules[0]} == 0;
 }

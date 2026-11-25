@@ -74,7 +74,7 @@ jobs:
             GOFLAGS=-buildvcs=true EASY_WAF_ARCH="$arch" make deb
             STAGE="$(mktemp -d)"
             mkdir -p "${STAGE}/dist" "${STAGE}/packaging/systemd" "${STAGE}/configs/defaults" "${STAGE}/scripts/lib"
-            cp -a dist/easy-waf-hostd dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin "${STAGE}/dist/"
+            cp -a dist/easy-waf-hostd dist/easy-waf-api dist/easy-waf-acmed dist/easy-wafd dist/easy-waf-admin dist/easy-waf-mcpd "${STAGE}/dist/"
             cp -a LICENSE NOTICE "${STAGE}/"
             cp -a packaging/systemd/*.service packaging/systemd/haproxy-easy-waf-dropin.conf "${STAGE}/packaging/systemd/"
             cp -a configs/defaults/easy-waf.env.example configs/defaults/haproxy-bootstrap.cfg "${STAGE}/configs/defaults/"

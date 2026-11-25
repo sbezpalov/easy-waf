@@ -5,7 +5,7 @@
 easy_waf_unpack_release() (
   local archive="${1:?}" destination="${2:?}" prefix="${3:-}" stage members member binary target restored
   local required=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin)
-  local optional=(easy-wafd)
+  local optional=(easy-wafd easy-waf-mcpd)
   local promoted=() retain_stage=0
   gzip -t "$archive" || return 1
   members="$(tar -tzf "$archive")" || return 1
@@ -27,7 +27,7 @@ easy_waf_unpack_release() (
       return 1
     fi
     if [[ -z "$member" ]]; then
-      [[ "$binary" == easy-wafd ]] && continue
+      [[ "$binary" == easy-wafd || "$binary" == easy-waf-mcpd ]] && continue
       echo "[easy-waf-release] missing archive binary: $binary" >&2
       return 1
     fi
