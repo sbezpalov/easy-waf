@@ -10,6 +10,47 @@ import (
 	"time"
 )
 
+func TestMigrateMCPKeepsExistingPairing(t *testing.T) {
+	dsn := freshSchemaDSN(t)
+	ctx := t.Context()
+	legacy, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = legacy.Close() })
+	if _, err := legacy.ExecContext(ctx, migrationSQL("030_mcp_oauth.sql")); err != nil {
+		t.Fatal(err)
+	}
+	const id = "a42388b2-283d-4ef4-bbba-a56ea9aae461"
+	var expires time.Time
+	err = legacy.QueryRowContext(ctx, `INSERT INTO mcp_oauth_grants
+		(id,issuer,client_id,name,approved_by,redirect_uri,challenge,access_hash,access_until,refresh_hash)
+		VALUES ($1,'issuer','client','OpenClaw','operator','redirect','challenge','access',now()+interval '10 minutes','refresh')
+		RETURNING valid_until`, id).Scan(&expires)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded := openFresh(t, dsn)
+	grants, err := upgraded.MCPGrants(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 1 || grants[0].ID != id || grants[0].Status != "connected" ||
+		grants[0].ValidUntil == nil || !grants[0].ValidUntil.Equal(expires) {
+		t.Fatalf("expected the existing pairing with expiry %s, got %+v", expires, grants)
+	}
+	if err := upgraded.UseMCP(ctx, "issuer", "access"); err != nil {
+		t.Fatalf("use pre-upgrade access token: %v", err)
+	}
+	if err := upgraded.RefreshMCP(ctx, "issuer", "client", "refresh", "renewed-access", "renewed-refresh"); err != nil {
+		t.Fatalf("rotate pre-upgrade refresh token: %v", err)
+	}
+	if err := upgraded.UseMCP(ctx, "issuer", "renewed-access"); err != nil {
+		t.Fatalf("use renewed access token: %v", err)
+	}
+}
+
 func TestMCPGrantLifetime(t *testing.T) {
 	dsn := freshSchemaDSN(t)
 	s := openFresh(t, dsn)
