@@ -221,6 +221,9 @@ func runAPIService(dsn, stateDir string, listenHTTP, listenHTTPS, legacyListen *
 		if err := tlsMgr.LoadFromFiles(certPath, keyPath); err != nil {
 			return err
 		}
+		if err := tlsMgr.LoadIdentity(certPath); err != nil {
+			log.Printf("management DNS identity unavailable, serving default management certificate: %v", err)
+		}
 		srv.MgmtTLS = tlsMgr
 		srv.MgmtTLSCertPath = certPath
 		srv.MgmtTLSKeyPath = keyPath

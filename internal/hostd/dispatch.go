@@ -47,6 +47,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, argv []string) Response {
 	}
 
 	switch op {
+	case "hostname-set":
+		if len(argv) != 2 || !hostspec.ValidHostName(argv[1]) {
+			return failResp("invalid system hostname", 1)
+		}
+		out, stderr, code, err := runCmd(ctx, r, "/usr/bin/hostnamectl", "--static", "--transient", "hostname", argv[1])
+		if err != nil || code != 0 {
+			return failExec(out, stderr, code, err)
+		}
+		return okResp(nil, nil, 0)
 	case "timezone-set":
 		if len(argv) != 2 || !hostspec.ValidTimezoneName(argv[1]) {
 			return failResp("invalid time zone", 1)

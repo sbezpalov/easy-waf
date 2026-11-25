@@ -61,6 +61,8 @@ func TestEveryMutatingHostRouteRequiresStepUp(t *testing.T) {
 
 func TestManagementTLSRequiresStepUp(t *testing.T) {
 	assertStepUpRequired(t, http.MethodPut, "/api/v1/settings/management-tls", `{}`)
+	assertStepUpRequired(t, http.MethodPut, "/api/v1/settings/management-identity", `{}`)
+	assertStepUpRequired(t, http.MethodDelete, "/api/v1/settings/management-identity", `{}`)
 }
 
 func TestTrustBoundaryWritesRequireStepUp(t *testing.T) {

@@ -1385,6 +1385,10 @@ Unlike `/health`, this route **is** subject to the management ACL. It does not a
 
 ## Host management
 
+### Private HTTPS management identity
+
+Use `GET /api/v1/settings/management-identity` over management HTTPS as an administrator. It returns `null` or an object with `hostname`, public `certificate_pem`, DER `sha256` and `expires_at`. To generate an identity, send `PUT` to the same path with `{"hostname":"waf.home.arpa"}`. Repeating the request preserves the current valid certificate for that name. To renew it, add `"renew":true`. For renewal, replacement or removal (`DELETE`), send the current fingerprint in `X-Identity-SHA256`. A stale fingerprint returns 409. Writes require password confirmation. See the [MCP connection guide](MCP.md#connect-openclaw-with-oauth).
+
 The `/api/v1/host/*` routes manage the appliance host itself (network, firewall, services, packages, power, local users, network diagnostics). They do not run commands directly: each call goes through the privileged host broker (`easy-waf-hostd`). Network and firewall changes have a rollback flow: an `apply` returns a `token` and `expires_at`, and the change is reverted automatically unless it is confirmed with `commit` before it expires. See [HOST-API.md](HOST-API.md) for request and response details.
 
 Routes that change the host (including netplan/firewall **commit**) need a password confirmation from the last 5 minutes; diagnostics do not; see **Password confirmation** above. Legacy immediate `PUT` netplan/firewall and `POST /firewall/apply` return **410 Gone**.

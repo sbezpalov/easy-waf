@@ -123,6 +123,24 @@ browser and Gateway must trust the certificate and its hostname. Enable MCP
 diagnostics in the management API using the dedicated API token described above.
 The HTTPS endpoint uses the management listener and its source network ACL.
 
+For a private name, create an internal DNS record pointing to the management
+interface. In **System → Host and management identity**, enter that name (for
+example `waf.home.arpa`) and select **Generate certificate**. Download the
+public certificate over an already trusted management connection and verify
+its SHA-256 fingerprint. Configure the browser and the Gateway to trust it
+for that connection, then open the displayed management URL. Use the same
+hostname and port throughout OAuth registration, approval and tool calls.
+Clients using an organizational CA can use the existing certificate upload
+under **Certificates** instead. The generated identity takes precedence for
+its exact DNS name until removed.
+
+The generated certificate lasts one year. Renewal or replacing the name
+creates a new certificate and requires updating client trust. The appliance
+continues serving its default management certificate for loopback MCP calls
+and IP-based recovery. **Rename host** separately sets Ubuntu's hostname
+through `hostnamectl`. Update local DNS, monitoring and any cloud-init
+hostname policy to match your deployment.
+
 1. In **Operate → MCP**, select **Copy HTTPS address**.
 2. In OpenClaw **Settings → MCP**, add the URL as a Streamable HTTP server,
    select OAuth, then **Sign in**. OpenClaw registers its browser callback.

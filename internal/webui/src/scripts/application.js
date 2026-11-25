@@ -3812,6 +3812,7 @@
   let managementTLSGeneration = 0;
   function clearManagementTLSForm() {
     managementTLSGeneration++;
+    clearSystemIdentity();
     document.getElementById('tls-cert').value = '';
     document.getElementById('tls-key').value = '';
     document.getElementById('tls-msg').textContent = '';
@@ -4673,8 +4674,14 @@
       if (!response.ok) throw new Error();
       const rows = await response.json();
       if (!Array.isArray(rows)) throw new Error();
+      const address = new URL('/mcp', location.origin);
+      try {
+        const identity = await fetch('/api/v1/settings/management-identity', {headers: hdr(), cache:'no-store'});
+        const data = identity.ok ? await identity.json() : null;
+        if (data?.hostname) address.hostname = data.hostname;
+      } catch (_) { /* The current HTTPS origin also serves MCP. */ }
       if (!isCurrent()) return;
-      endpoint.textContent = location.origin + '/mcp';
+      endpoint.textContent = address.href;
       copy.dataset.copy = endpoint.textContent;
       copy.hidden = false;
       help.textContent = 'In OpenClaw Settings → MCP, add this address, select OAuth and sign in. The Gateway must trust the management HTTPS certificate.';
@@ -4774,6 +4781,7 @@
   document.getElementById('mcp-refresh').onclick = loadMCPStatus;
 
   async function loadSystemTab() {
+    void loadSystemIdentity();
     void loadHostTimezone();
     void loadBackupStatus();
     await loadSystemServicesTable();
@@ -5573,6 +5581,137 @@
       body: { ruleset, rollback_seconds: 90 },
       msgEl
     });
+  };
+
+  const identityField = id => document.getElementById(id);
+  const identityPath = '/api/v1/settings/management-identity';
+  let activeIdentity = null;
+  let identityBusy = false;
+  let identityRead = 0;
+
+  function clearSystemIdentity() {
+    ++identityRead;
+    identityBusy = false;
+    showIdentity(null);
+    identityField('mgmt-identity-renew').disabled = false;
+    identityField('mgmt-identity-remove').disabled = false;
+    for (const id of ['host-name','mgmt-name']) {
+      const field = identityField(id);
+      field.value = field.defaultValue = '';
+      identityField(id + '-status').textContent = '';
+      identityField(id + '-save').disabled = true;
+    }
+  }
+
+  function showIdentity(data) {
+    activeIdentity = data;
+    identityField('mgmt-identity-details').hidden = !data;
+    if (!data) return;
+    const url = new URL(location.origin);
+    url.hostname = data.hostname;
+    identityField('mgmt-identity-link').href = url.href;
+    identityField('mgmt-identity-link').textContent = url.origin;
+    identityField('mgmt-identity-mcp').textContent = url.origin + '/mcp';
+    identityField('mgmt-identity-summary').textContent = 'Expires ' + formatHostTime(data.expires_at) + ' · SHA-256 ' + data.sha256;
+  }
+
+  async function loadSystemIdentity() {
+    if (identityBusy) return;
+    const read = ++identityRead;
+    const session = managementTLSGeneration;
+    const current = () => read === identityRead && session === managementTLSGeneration;
+    async function load(path, input, status, button, named) {
+      const field = identityField(input);
+      const original = field.value;
+      identityField(button).disabled = true;
+      if (named) showIdentity(null);
+      try {
+        const response = await fetch(path, {headers:hdr(), cache:'no-store'});
+        if (!response.ok) throw Error(await apiMessage(response));
+        const data = await response.json();
+        if (!current()) return;
+        if (field.value === original && original === field.defaultValue) field.value = data?.hostname || '';
+        field.defaultValue = data?.hostname || '';
+        if (named) showIdentity(data);
+        identityField(status).textContent = '';
+        identityField(button).disabled = false;
+      } catch (err) {
+        if (current()) identityField(status).textContent = 'Could not load the current configuration. ' + err.message;
+      }
+    }
+    await Promise.all([
+      load('/api/v1/host/hostname', 'host-name', 'host-name-status', 'host-name-save', false),
+      load(identityPath, 'mgmt-name', 'mgmt-name-status', 'mgmt-name-save', true)
+    ]);
+  }
+
+  identityField('host-name-form').onsubmit = async event => {
+    event.preventDefault();
+    if (identityField('host-name-save').disabled) return;
+    const field = identityField('host-name');
+    const hostname = field.value.trim().toLowerCase();
+    const session = managementTLSGeneration;
+    if (!await confirmDialog('Rename the Ubuntu host to ' + hostname + '? Monitoring may identify it under the new name.', {okLabel:'Rename host'}) || session !== managementTLSGeneration) return;
+    await withBusy(identityField('host-name-save'), async () => {
+      const status = identityField('host-name-status');
+      try {
+        const response = await fetch('/api/v1/host/hostname', {method:'PUT', headers:hdr(), body:JSON.stringify({hostname})});
+        if (!response.ok) throw Error(await apiMessage(response));
+        const data = await response.json();
+        if (session !== managementTLSGeneration) return;
+        if (field.value.trim().toLowerCase() === hostname) field.value = data.hostname;
+        field.defaultValue = data.hostname;
+        status.textContent = 'Current Ubuntu hostname: ' + data.hostname;
+      } catch (err) {
+        if (session === managementTLSGeneration) status.textContent = 'Could not confirm the hostname change. ' + err.message;
+      }
+    });
+  };
+
+  async function changeIdentity(action) {
+    if (identityBusy || identityField('mgmt-name-save').disabled) return;
+    const field = identityField('mgmt-name');
+    const hostname = action === 'save' ? field.value.trim().toLowerCase() : activeIdentity?.hostname;
+    if (!hostname) return;
+    const session = managementTLSGeneration;
+    const remove = action === 'remove';
+    const expected = activeIdentity?.sha256 || '';
+    const prompt = remove ? 'Remove HTTPS identity for ' + hostname + '? Clients trusting this certificate will lose access through that name.' :
+      'Generate a certificate for ' + hostname + '?' + (activeIdentity && (hostname !== activeIdentity.hostname || action === 'renew') ? ' Existing clients must trust the replacement certificate.' : '');
+    if (!await confirmDialog(prompt,{danger:remove, okLabel:remove ? 'Remove identity' : 'Generate certificate'}) || session !== managementTLSGeneration || identityBusy) return;
+    identityBusy = true;
+    const buttons = ['mgmt-name-save','mgmt-identity-renew','mgmt-identity-remove'].map(identityField);
+    buttons.forEach(b => {b.disabled = true;});
+    try {
+      const response = await fetch(identityPath, {method:remove ? 'DELETE' : 'PUT', headers:hdr({'X-Identity-SHA256':expected}),
+        body:remove ? undefined : JSON.stringify({hostname,renew:action === 'renew'})});
+      if (!response.ok) throw Error(await apiMessage(response));
+      const data = remove ? null : await response.json();
+      if (session !== managementTLSGeneration) return;
+      showIdentity(data);
+      if (field.value.trim().toLowerCase() === hostname) field.value = data?.hostname || '';
+      field.defaultValue = data?.hostname || '';
+      identityField('mgmt-name-status').textContent = remove ? 'DNS identity removed.' : 'Certificate ready. Download it and configure trust on each connecting client.';
+    } catch (err) {
+      if (session === managementTLSGeneration) identityField('mgmt-name-status').textContent = 'Could not confirm the change. Reload System before retrying. ' + err.message;
+    } finally {
+      if (session === managementTLSGeneration) {
+        identityBusy = false;
+        buttons.forEach(b => {b.disabled = false;});
+      }
+    }
+  }
+  identityField('mgmt-name-form').onsubmit = event => { event.preventDefault(); void changeIdentity('save'); };
+  identityField('mgmt-identity-renew').onclick = () => changeIdentity('renew');
+  identityField('mgmt-identity-remove').onclick = () => changeIdentity('remove');
+  identityField('mgmt-identity-download').onclick = () => {
+    if (!activeIdentity) return;
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(new Blob([activeIdentity.certificate_pem], {type:'application/x-pem-file'}));
+    link.href = url;
+    link.download = activeIdentity.hostname + '.crt';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   refreshSession();

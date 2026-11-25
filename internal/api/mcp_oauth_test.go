@@ -4,8 +4,12 @@
 package api
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +19,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -37,10 +42,44 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewTLSServer(s.Router())
+	certPath, _ := mgmttls.Paths(t.TempDir())
+	s.MgmtTLS = new(mgmttls.Manager)
+	s.MgmtTLSCertPath = certPath
+	identity, err := s.MgmtTLS.SetIdentity(certPath, "waf.home.arpa", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep this test listener private while modeling the LAN-facing socket of
+	// the appliance. The MCP SDK rejects DNS names on its loopback transport.
+	router := s.Router()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 8443})
+		router.ServeHTTP(w, r.WithContext(ctx))
+	}))
+	srv.TLS = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: s.MgmtTLS.GetCertificate}
+	srv.StartTLS()
 	defer srv.Close()
-	origin := srv.URL
-	client := srv.Client()
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	namedOrigin := "https://" + net.JoinHostPort(identity.Hostname, port)
+	origin := namedOrigin
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(identity.Certificate)) {
+		t.Fatal("invalid management identity")
+	}
+	// Resolve only the synthetic management hostname to the local test listener.
+	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if addr != net.JoinHostPort(identity.Hostname, port) {
+				return nil, net.InvalidAddrError(addr)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+		}}
+	defer transport.CloseIdleConnections()
+	namedClient := &http.Client{Transport: transport}
+	client := namedClient
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	call := func(method, path, typ, body, token string, want int) (http.Header, []byte) {
 		t.Helper()
@@ -87,7 +126,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	_, b := call("POST", "/oauth/register", "application/json", `{"client_name":"OpenClaw MCP","redirect_uris":["http://127.0.0.1:8989/oauth/callback"],"token_endpoint_auth_method":"none"}`, "", 201)
 	id := field(b, "client_id")
 	verifier := newSecret()
-	q := url.Values{"client_id": {id}, "resource": {srv.URL + "/mcp"}, "response_type": {"code"}, "redirect_uri": {"http://127.0.0.1:8989/oauth/callback"}, "code_challenge": {digest(verifier)}, "code_challenge_method": {"S256"}, "state": {"opaque"}}
+	q := url.Values{"client_id": {id}, "resource": {namedOrigin + "/mcp"}, "response_type": {"code"}, "redirect_uri": {"http://127.0.0.1:8989/oauth/callback"}, "code_challenge": {digest(verifier)}, "code_challenge_method": {"S256"}, "state": {"opaque"}}
 	h, _ := call("GET", "/oauth/authorize?"+q.Encode(), "", "", "", 303)
 	_, query, ok := strings.Cut(h.Get("Location"), "#mcp?")
 	if !ok {
@@ -123,7 +162,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if err != nil || callback.Query().Get("state") != "opaque" {
 		t.Fatal("invalid callback")
 	}
-	form := url.Values{"client_id": {id}, "resource": {srv.URL + "/mcp"}, "grant_type": {"authorization_code"}, "redirect_uri": {q.Get("redirect_uri")}, "code": {callback.Query().Get("code")}, "code_verifier": {newSecret()}}
+	form := url.Values{"client_id": {id}, "resource": {namedOrigin + "/mcp"}, "grant_type": {"authorization_code"}, "redirect_uri": {q.Get("redirect_uri")}, "code": {callback.Query().Get("code")}, "code_verifier": {newSecret()}}
 	const formType = "application/x-www-form-urlencoded"
 	call("POST", "/oauth/token", formType, form.Encode(), "", 400)
 	form.Set("code_verifier", verifier)
@@ -146,6 +185,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	alias := httptest.NewTLSServer(srv.Config.Handler)
 	defer alias.Close()
 	origin = alias.URL
+	client = alias.Client()
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	const grants = "/api/v1/integrations/mcp/grants"
 	_, b = call("GET", grants, "", "", admin, 200)
@@ -155,7 +195,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	}
 	var grantID string
 	for _, grant := range list {
-		if grant.ApprovedBy == user && grant.Issuer == srv.URL && grant.RedirectURI == q.Get("redirect_uri") && grant.LastUsed != nil {
+		if grant.ApprovedBy == user && grant.Issuer == namedOrigin && grant.RedirectURI == q.Get("redirect_uri") && grant.LastUsed != nil {
 			grantID = grant.ID
 		}
 	}
@@ -163,7 +203,8 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 		t.Fatal("grant from original issuer missing on alternate management address")
 	}
 	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
-	origin = srv.URL
+	origin = namedOrigin
+	client = namedClient
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
 }

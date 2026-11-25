@@ -123,6 +123,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/integrations/fail2ban", s.fail2banOverview)
 				r.Get("/integrations/fail2ban/jails/{jail}", s.fail2banJailStatus)
 				r.Get("/settings", s.getSettings)
+				r.With(auth.RequireAdmin).Get("/settings/management-identity", s.managementIdentity)
 				r.Post("/notify/test", s.notifyTest)
 
 				r.Get("/ipbl/local", s.listIPBLLocal)
@@ -168,6 +169,8 @@ func (s *Server) Router() chi.Router {
 					// settings writes so a stolen token cannot replace the TLS
 					// cert that intercepts the confirm password itself.
 					r.Put("/settings/management-tls", s.putManagementTLS)
+					r.With(auth.RequireAdmin).Put("/settings/management-identity", s.managementIdentity)
+					r.With(auth.RequireAdmin).Delete("/settings/management-identity", s.managementIdentity)
 
 					r.Post("/ipbl/local", s.upsertIPBLLocal)
 					r.Delete("/ipbl/local/{id}", s.deleteIPBLLocal)

@@ -65,7 +65,8 @@ let dropApproval = false, dropRevocation = false, offline = false, deletions = 0
 const notices = [];
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
-const ctx = vm.createContext({document, location, currentRole:'admin', URLSearchParams,
+let identity = null;
+const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLSearchParams,
   hdr:()=>({}), withBusy:(_,fn)=>fn(), toast:(message,kind)=>notices.push([kind,message]), fetch: async (path,opts) => {
     if (opts.method === 'POST') {
       if (path === '/api/v1/integrations/mcp/deny') {
@@ -86,6 +87,7 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URLSearch
       return {ok:true};
     }
     if (offline) throw new Error('offline');
+    if (path === '/api/v1/settings/management-identity') return {ok:true,json:async()=>identity};
     return {ok:true,json:async()=>grants};
   }});
 const start = page.indexOf('  let mcpConnectionsGeneration'), end = page.indexOf('  async function loadMCPStatus()',start);
@@ -93,6 +95,9 @@ vm.runInContext(page.slice(start,end),ctx);
 async function run(){
   await ctx.loadMCPConnections();
   assert.equal(elements.get('mcp-copy').dataset.copy,origin+'/mcp');
+  identity = {hostname:'waf.home.arpa'};
+  await ctx.loadMCPConnections();
+  assert.equal(elements.get('mcp-copy').dataset.copy,'https://waf.home.arpa/mcp');
   assert.equal(elements.get('mcp-consent').hidden,false);
   assert.match(elements.get('mcp-consent-detail').textContent,/gateway\.example/);
   assert.equal(approved,false);

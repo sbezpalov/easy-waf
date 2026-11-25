@@ -1,6 +1,28 @@
       <div id="tab-system" class="tab-panel">
         <h2>▦ System</h2>
         <p class="dash-note" style="margin-top:0">Host services, package updates, and power control (requires privileged helper on the appliance).</p>
+        <section class="panel" aria-labelledby="system-identity-title">
+          <h3 id="system-identity-title">Host and management identity</h3>
+          <form id="host-name-form" class="row">
+            <label>Ubuntu hostname <input id="host-name" maxlength="64" required autocapitalize="none" spellcheck="false"></label>
+            <button id="host-name-save" type="submit" disabled>Rename host</button>
+          </form>
+          <p id="host-name-status" role="status"></p>
+          <form id="mgmt-name-form" class="row">
+            <label>Management DNS name <input id="mgmt-name" maxlength="253" required autocapitalize="none" spellcheck="false" placeholder="waf.home.arpa"></label>
+            <button id="mgmt-name-save" type="submit" disabled>Generate certificate</button>
+          </form>
+          <p>Point this name to the appliance in your LAN or VPN DNS. The appliance generates a self-signed certificate valid for one year. Download it over a trusted connection and add it to the clients that use the panel or MCP.</p>
+          <div id="mgmt-identity-details" hidden>
+            <p id="mgmt-identity-summary"></p>
+            <p>Management panel: <a id="mgmt-identity-link"></a></p>
+            <p>MCP address: <code id="mgmt-identity-mcp"></code></p>
+            <div class="row"><button type="button" id="mgmt-identity-download">Download public certificate</button>
+              <button type="button" class="secondary" id="mgmt-identity-renew">Renew certificate</button>
+              <button type="button" class="danger" id="mgmt-identity-remove">Remove DNS identity</button></div>
+          </div>
+          <p id="mgmt-name-status" role="status"></p>
+        </section>
         <section class="panel" aria-labelledby="system-timezone-title" style="max-width:100%">
           <h3 id="system-timezone-title">Date and time</h3>
           <form id="system-timezone-form">

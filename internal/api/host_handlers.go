@@ -49,6 +49,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Use(auth.RequireAdmin)
 
 		r.Get("/network", s.hostGetNetwork)
+		r.Get("/hostname", s.hostGetHostname)
 		r.Get("/timezone", s.hostGetTimezone)
 		r.Get("/firewall", s.hostGetFirewall)
 		r.Get("/changes/pending", s.hostGetPendingChanges)
@@ -71,6 +72,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireStepUp(stepUpWindow))
 			r.Put("/timezone", s.hostPutTimezone)
+			r.Put("/hostname", s.hostPutHostname)
 
 			// Soft-deprecated immediate apply — use apply + commit instead.
 			r.Put("/network/netplan", s.hostPutNetplan)

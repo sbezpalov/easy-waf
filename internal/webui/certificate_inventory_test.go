@@ -5,6 +5,58 @@ package webui
 
 import "testing"
 
+func TestSystemDNSIdentityControls(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const a = page.indexOf('  const identityField ='), b = page.indexOf('  refreshSession();', a);
+assert.ok(a >= 0 && b > a);
+const elements = new Map();
+function field(id) {
+  if (!elements.has(id)) elements.set(id, {value:'',defaultValue:''});
+  return elements.get(id);
+}
+let saved = null, allow = true;
+const calls = [];
+const context = {document:{getElementById:field},URL,location:{origin:'https://192.0.2.1:8443'},
+  managementTLSGeneration:0, formatHostTime:t=>t, hdr:extra=>extra||{},
+  withBusy:(_,fn)=>fn(),confirmDialog:async()=>allow,
+  fetch:async(path,options)=>{
+    const body = options.body && JSON.parse(options.body);
+    calls.push({path,body,method:options.method,headers:options.headers});
+    if (path.endsWith('/hostname')) return {ok:true,json:async()=>({hostname:body?.hostname || 'waf'})};
+    if (options.method==='PUT') saved={hostname:body.hostname,sha256:'fingerprint',certificate_pem:'public',expires_at:'2027'};
+    if (options.method==='DELETE') saved=null;
+    return {ok:true,json:async()=>saved};
+  }};
+vm.runInNewContext(page.slice(a,b),context);
+async function run() {
+  await context.loadSystemIdentity();
+  assert.equal(field('host-name').value,'waf');
+  assert.equal(field('mgmt-identity-details').hidden,true);
+  field('mgmt-name').value='waf.home.arpa';
+  await context.changeIdentity('save');
+  assert.equal(field('mgmt-identity-mcp').textContent,'https://waf.home.arpa:8443/mcp');
+  assert.equal(field('mgmt-identity-details').hidden,false);
+  allow=false;
+  const count=calls.length;
+  await context.changeIdentity('remove');
+  assert.equal(calls.length,count);
+  allow=true;
+  await context.changeIdentity('renew');
+  assert.equal(calls.at(-1).headers['X-Identity-SHA256'],'fingerprint');
+  assert.equal(calls.at(-1).body.renew,true);
+  await context.changeIdentity('remove');
+  assert.equal(field('mgmt-identity-details').hidden,true);
+  field('host-name').value='new-host';
+  await field('host-name-form').onsubmit({preventDefault(){}});
+  assert.equal(calls.at(-1).path,'/api/v1/host/hostname');
+  assert.equal(calls.at(-1).body.hostname,'new-host');
+}
+run().catch(err=>{console.error(err);process.exitCode=1;});
+`)
+}
+
 func TestManagementTLSFormSessionBoundary(t *testing.T) {
 	runVersionUI(t, `
 const assert = require('node:assert/strict'), vm = require('node:vm');
@@ -12,7 +64,7 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 const cert = {value:'test certificate'}, key = {value:'test key'}, msg = {}, button = {};
 const elements = {'tls-cert':cert, 'tls-key':key, 'tls-msg':msg, 'btn-tls-save':button};
 const ctx = vm.createContext({document:{getElementById:id=>elements[id]}, hdr:()=>({}),
-  clearNetworkEditors(){},clearSettingsDrafts(){}, clearTOTPSecrets(){}, mcpConnectionsGeneration:0, sessionStorage:{removeItem(){}},
+  clearNetworkEditors(){},clearSettingsDrafts(){}, clearSystemIdentity(){}, clearTOTPSecrets(){}, mcpConnectionsGeneration:0, sessionStorage:{removeItem(){}},
   apiMessage: async r=>r.message, fetch:async()=>({ok:false,message:'Invalid key pair'})});
 function include(start,end) {
   const a=page.indexOf(start), b=page.indexOf(end,a);

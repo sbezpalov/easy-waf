@@ -20,6 +20,17 @@ type mockRunner struct {
 	err      error
 }
 
+func TestHostnameSet(t *testing.T) {
+	for _, name := range []string{"waf", "waf.home.arpa", "--help", "a..b", "127.0.0.1", "abc.0x1", "localhost", strings.Repeat("a", 65)} {
+		r := &mockRunner{}
+		resp := (&Dispatcher{Runner: r}).Dispatch(t.Context(), []string{"hostname-set", name})
+		want := name == "waf" || name == "waf.home.arpa"
+		if resp.OK != want || (want && (r.lastName != "/usr/bin/hostnamectl" || !slices.Equal(r.lastArgs, []string{"--static", "--transient", "hostname", name}))) || (!want && r.lastName != "") {
+			t.Fatalf("name %q: response %+v, command %q %q", name, resp, r.lastName, r.lastArgs)
+		}
+	}
+}
+
 func TestDispatchTimezoneSet(t *testing.T) {
 	for _, tc := range []struct {
 		argv []string

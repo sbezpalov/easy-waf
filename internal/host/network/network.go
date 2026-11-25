@@ -38,9 +38,7 @@ type NetplanFile struct {
 // GetOverview collects link/addr/route JSON from ip(8) and netplan files.
 func GetOverview(ctx context.Context) (Overview, error) {
 	var out Overview
-	if b, err := runner.Run(ctx, 15*time.Second, "/usr/bin/hostname"); err == nil {
-		out.Hostname = strings.TrimSpace(string(b))
-	}
+	out.Hostname, _ = Hostname(ctx)
 	if b, err := runner.Run(ctx, 15*time.Second, "/usr/bin/ip", "-j", "link", "show"); err == nil {
 		_ = json.Unmarshal(b, &out.Links)
 	}
@@ -58,6 +56,17 @@ func GetOverview(ctx context.Context) (Overview, error) {
 	}
 	out.Netplan, out.ManagedNetplanState = readNetplanFiles("/etc/netplan")
 	return out, nil
+}
+
+// Hostname reads the host's configured name via hostnamed. The API runs with
+// ProtectHostname and its private UTS namespace may predate a rename.
+func Hostname(ctx context.Context) (string, error) {
+	b, err := runner.Run(ctx, 5*time.Second, "/usr/bin/hostnamectl", "--static")
+	if err == nil && strings.TrimSpace(string(b)) != "" {
+		return strings.TrimSpace(string(b)), nil
+	}
+	b, err = runner.Run(ctx, 5*time.Second, "/usr/bin/hostnamectl", "--transient")
+	return strings.TrimSpace(string(b)), err
 }
 
 func collectRoutes(readFamily func(string) ([]byte, error)) []json.RawMessage {
