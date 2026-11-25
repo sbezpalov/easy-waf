@@ -577,7 +577,21 @@
     box.innerHTML = '';
   }
 
-  document.getElementById('btn-login').onclick = async () => {
+  function bindAuthForm(name, submit) {
+    const form = document.getElementById(name + '-form');
+    const button = document.getElementById('btn-' + name);
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      if (button.disabled) return;
+      try {
+        await withBusy(button, submit);
+      } catch (_) {
+        document.getElementById(name + '-err').textContent = 'Could not confirm the result. Check the connection before trying again.';
+      }
+    };
+  }
+
+  bindAuthForm('login', async () => {
     document.getElementById('login-err').textContent = '';
     const body = {
       username: document.getElementById('login-user').value.trim(),
@@ -603,6 +617,8 @@
       return;
     }
     document.getElementById('login-totp').value = '';
+    document.getElementById('login-totp-row').classList.add('hidden');
+    document.getElementById('login-pass').value = '';
     setTok(j.token);
     if (j.must_change_password) {
       show('view-login', false); show('view-pass', true); show('view-app', false);
@@ -610,14 +626,15 @@
       if (!location.hash.startsWith('#mcp?')) location.hash = '#dashboard';
       await refreshSession();
     }
-  };
+  });
 
-  document.getElementById('btn-enroll').onclick = async () => {
+  bindAuthForm('enroll', async () => {
     const err = document.getElementById('enroll-err');
     err.textContent = '';
     const password = document.getElementById('enroll-pass').value;
     if (password !== document.getElementById('enroll-pass2').value) {
       err.textContent = 'Passwords do not match.';
+      document.getElementById('enroll-pass2').focus();
       return;
     }
     const body = {
@@ -636,10 +653,11 @@
     }
     const j = await r.json();
     setTok(j.token);
+    document.getElementById('enroll-form').reset();
     await refreshSession();
-  };
+  });
 
-  document.getElementById('btn-pass').onclick = async () => {
+  bindAuthForm('pass', async () => {
     document.getElementById('pass-err').textContent = '';
     const cur = document.getElementById('old-pass').value;
     const nw = document.getElementById('new-pass').value;
@@ -650,6 +668,7 @@
     }
     if (nw !== nw2) {
       document.getElementById('pass-err').textContent = 'New password and confirmation do not match.';
+      document.getElementById('new-pass2').focus();
       return;
     }
     const body = { current_password: cur, new_password: nw };
@@ -660,9 +679,9 @@
     document.getElementById('old-pass').value = '';
     document.getElementById('new-pass').value = '';
     document.getElementById('new-pass2').value = '';
-    location.hash = '#dashboard';
+    if (!location.hash.startsWith('#mcp?')) location.hash = '#dashboard';
     await refreshSession();
-  };
+  });
 
   document.getElementById('btn-logout').onclick = async () => {
     // Ask the server to revoke the session (bumps users.session_version) before
