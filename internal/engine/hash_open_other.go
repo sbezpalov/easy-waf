@@ -5,8 +5,4 @@
 
 package engine
 
-import "os"
-
-func openArtifactForHash(path string) (*os.File, error) {
-	return os.Open(path)
-}
+const artifactReadFlags = 0

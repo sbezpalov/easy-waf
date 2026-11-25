@@ -140,7 +140,7 @@ func copyRegularArtifact(dst io.Writer, src string) (int64, error) {
 	if !before.Mode().IsRegular() {
 		return 0, fmt.Errorf("read artifact %q: expected a regular file", src)
 	}
-	in, err := openArtifactForHash(src)
+	in, err := os.OpenFile(src, os.O_RDONLY|artifactReadFlags, 0)
 	if err != nil {
 		return 0, err
 	}

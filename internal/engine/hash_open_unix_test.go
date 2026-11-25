@@ -13,11 +13,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/config"
 	"golang.org/x/sys/unix"
 )
 
 func TestHashArtifactRejectsFIFOWithoutWaiting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "artifact")
+	state := t.TempDir()
+	revisions := filepath.Join(state, "revisions")
+	if err := os.Mkdir(revisions, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("a", 64)
+	path := filepath.Join(revisions, "haproxy-"+sha[:12]+".cfg")
 	if err := unix.Mkfifo(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +53,28 @@ func TestHashArtifactRejectsFIFOWithoutWaiting(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("artifact copy waited for a FIFO writer")
 	}
+	go func() {
+		e := New(state, nil, config.GlobalSettings{})
+		data, truncated := e.RevisionPreview(sha)
+		if data != nil || truncated {
+			finished <- errors.New("revision preview accepted a FIFO")
+			return
+		}
+		finished <- nil
+	}()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("revision preview waited for a FIFO writer")
+	}
 
 	// Simulate replacement between path inspection and Open by passing the
 	// FIFO directly to the opener. File type is checked again on the handle.
 	go func() {
-		f, err := openArtifactForHash(path)
+		f, err := os.OpenFile(path, os.O_RDONLY|artifactReadFlags, 0)
 		if err == nil {
 			info, statErr := f.Stat()
 			_ = f.Close()

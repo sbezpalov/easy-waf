@@ -7,26 +7,22 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/easy-waf/easy-waf/internal/diagnostics"
 )
 
 const revisionPreviewMaxRunes = 240
 
-func revisionConfigPreview(stateDir, sha256Full string) string {
-	if len(sha256Full) < 12 {
+func revisionConfigPreview(b []byte, truncated bool) string {
+	if len(b) == 0 {
 		return ""
 	}
-	p := filepath.Join(stateDir, "revisions", "haproxy-"+sha256Full[:12]+".cfg")
-	b, err := os.ReadFile(p)
-	if err != nil || len(b) == 0 {
-		return ""
-	}
+	b = diagnostics.MaskHAProxyConfigContent(b)
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.TrimSpace(s)
@@ -34,10 +30,13 @@ func revisionConfigPreview(stateDir, sha256Full string) string {
 		return ""
 	}
 	runes := []rune(s)
-	if len(runes) <= revisionPreviewMaxRunes {
-		return s
+	if len(runes) > revisionPreviewMaxRunes {
+		return string(runes[:revisionPreviewMaxRunes]) + "…"
 	}
-	return string(runes[:revisionPreviewMaxRunes]) + "…"
+	if truncated {
+		return s + "…"
+	}
+	return s
 }
 
 func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) {
@@ -55,13 +54,14 @@ func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) {
 	curSHA, _ := s.Eng.LiveHAProxySHA256()
 	out := make([]map[string]any, 0, len(revs))
 	for _, rev := range revs {
+		prefix, truncated := s.Eng.RevisionPreview(rev.HAProxySHA256)
 		out = append(out, map[string]any{
 			"id":                     rev.ID,
 			"sha":                    rev.HAProxySHA256,
 			"label":                  rev.Label,
 			"created_at":             rev.At.UTC().Format(time.RFC3339Nano),
 			"is_current":             curSHA != "" && rev.HAProxySHA256 == curSHA,
-			"config_snippet_preview": revisionConfigPreview(s.Eng.StateDir, rev.HAProxySHA256),
+			"config_snippet_preview": revisionConfigPreview(prefix, truncated),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
