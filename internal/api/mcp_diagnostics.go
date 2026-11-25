@@ -16,6 +16,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/audit"
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/geoip"
+	"github.com/easy-waf/easy-waf/internal/store"
 )
 
 func (s *Server) mountMCPDiagnostics(r chi.Router) {
@@ -29,7 +30,33 @@ func (s *Server) mountMCPDiagnostics(r chi.Router) {
 		r.Get("/revisions", s.listMCPRevisions)
 		r.Get("/geoip", s.getMCPGeoIPStatus)
 		r.Get("/why-blocked", s.getMCPIPBlockingEvidence)
+		r.Get("/recent-events", s.listMCPRecentEvents)
 	})
+}
+
+func (s *Server) listMCPRecentEvents(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawQuery != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "recent events does not accept query parameters"})
+		return
+	}
+	if s.Eng.Store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "event history unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	now := time.Now().UTC()
+	since := now.Add(-24 * time.Hour)
+	events, more, err := s.Eng.Store.ListRecentEdgeChanges(ctx, since, now)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Since   time.Time               `json:"since"`
+		Events  []store.EdgeChangeEvent `json:"events"`
+		HasMore bool                    `json:"has_more"`
+	}{Since: since, Events: events, HasMore: more})
 }
 
 func (s *Server) requireMCPAPI(next http.Handler) http.Handler {

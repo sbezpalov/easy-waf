@@ -66,6 +66,7 @@ func newHandler(api apiClient, token auth.StaticToken) http.Handler {
 		{"certificate_expiry", "/certificates", "List certificate validity and issuance status from Easy WAF metadata."},
 		{"config_revisions", "/revisions", "List the 30 most recent configuration revisions and identify the live revision when observable."},
 		{"geoip_status", "/geoip", "Report the configured GeoIP provider, enablement and cache counters."},
+		{"recent_events", "/recent-events", "List the latest audited edge management attempts from the last 24 hours, with category and HTTP status."},
 	} {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: tool.name, Description: tool.description,

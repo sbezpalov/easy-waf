@@ -5,7 +5,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,6 +31,58 @@ func seedAudit(t *testing.T, st *Store, n int) string {
 		_, _ = st.db.ExecContext(context.Background(), `DELETE FROM audit_log WHERE action LIKE '%' || $1 || '%'`, marker)
 	})
 	return marker
+}
+
+func TestListRecentEdgeChanges(t *testing.T) {
+	st := testStore(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-48 * time.Hour)
+	marker := fmt.Sprintf("fixture-%d", now.UnixMicro())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := st.db.ExecContext(ctx, `DELETE FROM audit_log WHERE user_name = $1`, marker); err != nil {
+			t.Error(err)
+		}
+	})
+	add := func(at time.Time, action, category string, status any) {
+		t.Helper()
+		details := map[string]any{"category": category, "http_status": status, "private": marker}
+		if _, err := st.db.ExecContext(ctx, `
+			INSERT INTO audit_log(at, action, detail_json, user_name, source_ip)
+			VALUES ($1,$2,$3,$4,'192.0.2.17')`, at, action, details, marker); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 31; i++ {
+		add(now, "PATCH /api/v1/applications/"+marker+"/security", "applications", 200)
+	}
+	add(now, "POST /api/v1/apply", "apply", 409)
+	add(now, "POST /api/v1/host/network/netplan/apply", "apply", 200)
+	add(now, "PATCH /api/v1/settings", "unexpected-category", 200)
+	add(now, "PATCH /api/v1/settings", "settings", "200")
+	add(now.Add(-time.Second), "POST /api/v1/apply", "apply", 200)
+	add(now.Add(time.Microsecond), "POST /api/v1/apply", "apply", 503)
+
+	events, more, err := st.ListRecentEdgeChanges(ctx, now, now.Add(time.Microsecond))
+	if err != nil || len(events) != 30 || !more {
+		t.Fatalf("events = %d, more = %v, err = %v", len(events), more, err)
+	}
+	if got := events[0]; !got.Timestamp.Equal(now) || got.Category != "apply" || got.HTTPStatus != 409 {
+		t.Fatalf("latest event = %+v", got)
+	}
+	if got := events[1]; got.Category != "applications" || got.HTTPStatus != 200 {
+		t.Fatalf("unexpected event = %+v", got)
+	}
+	payload, err := json.Marshal(events)
+	if err != nil || strings.Contains(string(payload), marker) ||
+		strings.Contains(string(payload), "192.0.2.17") || strings.Contains(string(payload), "/api/v1") {
+		t.Fatal("projection retained private audit fields")
+	}
+	events, more, err = st.ListRecentEdgeChanges(ctx, now.Add(2*time.Microsecond), now.Add(3*time.Microsecond))
+	if err != nil || events == nil || len(events) != 0 || more {
+		t.Fatalf("expected a non-nil empty window: events = %v, more = %v, err = %v", events, more, err)
+	}
 }
 
 // Keyset pages cover every matching row exactly once, newest first, and

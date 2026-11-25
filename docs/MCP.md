@@ -15,12 +15,19 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | `config_revisions` | The latest 30 revisions, with the live revision marked when it can be observed |
 | `geoip_status` | Configured provider, enablement and cache counters |
 | `why_blocked` | Given one `ip`, report saved local IP-list matches, cached country and current CrowdSec IP or range bans |
+| `recent_events` | Up to 30 management attempts in the last 24 hours, with UTC timestamps, fixed categories and HTTP status codes |
 
 `why_blocked` reports evidence from each source independently. A `null` list
 count means the database lookup was unavailable. CrowdSec states distinguish
 `present`, `absent`, `not_configured` and `unavailable`. GeoIP uses the
 existing cache. Request-level outcomes, Fail2Ban and external IP lists are
 outside this check. [CrowdSec LAPI query mode](https://docs.crowdsec.net/docs/local_api/bouncers/)
+
+`recent_events` covers publication, certificate, edge configuration and
+protection changes recorded in the management audit. It includes failed
+attempts and indicates whether more matching rows exist in the window.
+Request paths, source IPs, usernames, raw audit details and HAProxy traffic
+are excluded.
 
 ## Enable the packaged service
 

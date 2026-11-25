@@ -47,6 +47,8 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			_, _ = fmt.Fprint(w, `[]`)
 		case diagnosticsPath + "/geoip":
 			_, _ = fmt.Fprint(w, `{"configured_provider":"maxmind"}`)
+		case diagnosticsPath + "/recent-events":
+			_, _ = fmt.Fprint(w, `{"events":[],"has_more":false}`)
 		case diagnosticsPath + "/why-blocked":
 			if r.URL.Query().Get("ip") != "192.0.2.17" {
 				http.NotFound(w, r)
@@ -86,8 +88,9 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 	checks := map[string]string{
 		"edge_status": `{"pending":false}`, "list_applications": `[{"name":"Fixture"}]`, "status": `{"database":"unreachable"}`,
 		"describe_application": `{"status":"ok"}`, "certificate_expiry": `[]`, "config_revisions": `[]`,
-		"geoip_status": `{"configured_provider":"maxmind"}`,
-		"why_blocked":  `{"crowdsec_ban":"present","request_observation":"not_checked"}`,
+		"geoip_status":  `{"configured_provider":"maxmind"}`,
+		"why_blocked":   `{"crowdsec_ban":"present","request_observation":"not_checked"}`,
+		"recent_events": `{"events":[],"has_more":false}`,
 	}
 	listed, err := session.ListTools(ctx, nil)
 	if err != nil || len(listed.Tools) != len(checks) {

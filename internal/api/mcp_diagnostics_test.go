@@ -24,6 +24,7 @@ func TestMCPDiagnosticsBoundary(t *testing.T) {
 	const path = "/api/v1/mcp/diagnostics/ready"
 	const applicationPath = "https://localhost/api/v1/mcp/diagnostics/application"
 	const ipPath = "https://localhost/api/v1/mcp/diagnostics/why-blocked"
+	const eventsPath = "https://localhost/api/v1/mcp/diagnostics/recent-events"
 	secret := strings.Repeat("m", 40)
 	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8", "::1/128", "192.0.2.0/24"}})
@@ -50,6 +51,9 @@ func TestMCPDiagnosticsBoundary(t *testing.T) {
 		{"duplicate IP", "GET", ipPath + "?ip=192.0.2.17&ip=192.0.2.18", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
 		{"CIDR", "GET", ipPath + "?ip=192.0.2.0/24", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
 		{"scoped IP", "GET", ipPath + "?ip=fe80::42%25eth0", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"events filter", "GET", eventsPath + "?limit=100", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"events no database", "GET", eventsPath, "127.0.0.1:31000", bearer, "", http.StatusServiceUnavailable},
+		{"events no bearer", "GET", eventsPath, "127.0.0.1:31000", "", "", http.StatusUnauthorized},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.url, nil)
@@ -111,6 +115,7 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 		{"/ready", `"database":"ok"`}, {"/edge", `"saved_generation"`}, {"/applications", "["},
 		{"/certificates", "["}, {"/revisions", "["}, {"/geoip", `"configured_provider"`},
 		{"/application?id=" + url.QueryEscape(app.ID), `"code":"hostname_resolved"`},
+		{"/recent-events", `"events":[`},
 	}
 	for _, route := range routes {
 		r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics"+route.suffix, nil)

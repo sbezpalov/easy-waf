@@ -124,6 +124,57 @@ func (s *Store) CountAuditLogs(ctx context.Context, p AuditListParams) (int64, e
 	return n, nil
 }
 
+// EdgeChangeEvent records the HTTP result of a management change attempt.
+// Keep paths, actor data and audit details out of this projection.
+type EdgeChangeEvent struct {
+	Timestamp  time.Time `json:"at"`
+	Category   string    `json:"category"`
+	HTTPStatus int       `json:"http_status"`
+}
+
+// ListRecentEdgeChanges reports up to 30 recent management attempts for
+// publications, edge configuration and protection. Attempts can have failed.
+func (s *Store) ListRecentEdgeChanges(ctx context.Context, since, until time.Time) ([]EdgeChangeEvent, bool, error) {
+	const limit = 30
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT at, detail_json->>'category', detail_json->>'http_status'
+		FROM audit_log
+		WHERE at >= $1 AND at < $2
+		  AND action ~ (
+		      '^(POST|PUT|PATCH|DELETE) /api/v1/(apply$|' ||
+		      '(applications|revisions|certificates|settings|ipbl|ipwl|' ||
+		      'integrations/(crowdsec|fail2ban)|security/blocked-ua)(/|$))'
+		  )
+		  AND detail_json->>'category' IN (
+		      'apply', 'rollback', 'applications', 'certificates',
+		      'settings', 'ipbl', 'ipwl', 'blocked-ua', 'crowdsec', 'fail2ban'
+		  )
+		  AND jsonb_typeof(detail_json->'http_status') = 'number'
+		  AND detail_json->>'http_status' ~ '^[2-5][0-9]{2}$'
+		ORDER BY at DESC, id DESC
+		LIMIT $3`, since, until, limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list recent edge changes: %w", err)
+	}
+	defer rows.Close()
+	result := make([]EdgeChangeEvent, 0, limit)
+	for rows.Next() {
+		var event EdgeChangeEvent
+		if err := rows.Scan(&event.Timestamp, &event.Category, &event.HTTPStatus); err != nil {
+			return nil, false, err
+		}
+		event.Timestamp = event.Timestamp.UTC()
+		result = append(result, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(result) > limit {
+		return result[:limit], true, nil
+	}
+	return result, false, nil
+}
+
 // likeEscaper makes a filter match literally: % and _ in a user or action
 // filter were LIKE wildcards, so "a_b" also matched "aXb".
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
