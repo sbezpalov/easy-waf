@@ -2,6 +2,7 @@
 # Copyright 2026 Sergey Bezpalov
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
+umask 022
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 work="$(mktemp -d)"
@@ -33,13 +34,18 @@ MOCK
 chmod +x "$work/bin/"*
 for bin in easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd easy-waf-mcpd; do
   printf '%s\n' "$bin" >"$work/input/dist/$bin"
+  chmod 0755 "$work/input/dist/$bin"
   if [[ "$bin" != easy-wafd ]]; then
     cp "$work/input/dist/$bin" "$FIXTURE_DEB_TREE/usr/sbin/$bin"
   fi
 done
-cp "$script_dir/../packaging/systemd/easy-waf-mcpd.service" "$work/input/packaging/systemd/"
-cp "$work/input/packaging/systemd/easy-waf-mcpd.service" "$FIXTURE_DEB_TREE/lib/systemd/system/"
-tar -czf "$work/fixture.tar.gz" -C "$work/input" .
+for unit in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-waf-mcpd.service \
+  easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-backup.service easy-waf-backup.timer; do
+  install -m 0644 "$script_dir/../packaging/systemd/$unit" "$work/input/packaging/systemd/"
+  install -m 0644 "$work/input/packaging/systemd/$unit" "$FIXTURE_DEB_TREE/lib/systemd/system/"
+done
+pack_fixture() { tar -czf "$work/fixture.tar.gz" -C "$work/input" .; }
+pack_fixture
 
 check() {
   bash "$script_dir/verify-release-package.sh" fixture.deb "$work/fixture.tar.gz" arm64 "${1:-1.6.1}" \
@@ -65,6 +71,29 @@ FIXTURE_DEB_VERSION=1.6.0 reject 'wrong DEB version'
 FIXTURE_GO_ARCH=amd64 reject 'missing build setting GOARCH=arm64'
 FIXTURE_MODIFIED=true reject 'missing build setting vcs.modified=false'
 FIXTURE_REVISION=unrelated reject 'missing build setting vcs.revision='
+chmod 0644 "$FIXTURE_DEB_TREE/usr/sbin/easy-waf-mcpd"
+reject 'unexpected DEB executable mode for easy-waf-mcpd'
+chmod 0755 "$FIXTURE_DEB_TREE/usr/sbin/easy-waf-mcpd"
+chmod 0644 "$work/input/dist/easy-waf-mcpd"
+pack_fixture
+reject 'unexpected tarball executable mode for easy-waf-mcpd'
+chmod 0755 "$work/input/dist/easy-waf-mcpd"
+chmod 0755 "$work/input/packaging/systemd/easy-waf-mcpd.service"
+pack_fixture
+reject 'unexpected tarball unit mode for easy-waf-mcpd.service'
+chmod 0644 "$work/input/packaging/systemd/easy-waf-mcpd.service"
+chmod 0600 "$FIXTURE_DEB_TREE/lib/systemd/system/easy-waf-backup.timer"
+pack_fixture
+reject 'unexpected DEB unit mode for easy-waf-backup.timer'
+chmod 0644 "$FIXTURE_DEB_TREE/lib/systemd/system/easy-waf-backup.timer"
+mv "$work/input/packaging/systemd/easy-waf-backup.timer" "$work/timer"
+pack_fixture
+reject 'easy-waf-backup.timer'
+mv "$work/timer" "$work/input/packaging/systemd/easy-waf-backup.timer"
+pack_fixture
+printf 'legacy alias\n' >"$FIXTURE_DEB_TREE/lib/systemd/system/easy-wafd.service"
+reject 'legacy lib/systemd/system/easy-wafd.service included in DEB'
+rm "$FIXTURE_DEB_TREE/lib/systemd/system/easy-wafd.service"
 printf 'different unit\n' >>"$FIXTURE_DEB_TREE/lib/systemd/system/easy-waf-mcpd.service"
 reject 'easy-waf-mcpd.service differs between DEB and tarball'
 cp "$work/input/packaging/systemd/easy-waf-mcpd.service" "$FIXTURE_DEB_TREE/lib/systemd/system/"
