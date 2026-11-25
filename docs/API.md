@@ -1393,6 +1393,7 @@ Routes that change the host (including netplan/firewall **commit**) need a passw
 |---|---|
 | `GET /api/v1/host/network` | Current interfaces and addresses (`ip -j` snapshot). The Netplan editor receives only the managed regular file `/etc/netplan/99-easy-waf.yaml`. |
 | `PUT /api/v1/host/network/netplan` | **410 Gone** — use apply + commit |
+| `GET /api/v1/host/changes/pending` | List pending network and firewall changes. Match an entry to its apply response by `operation_id`. To confirm the change, retain the `token` from the original apply response. |
 | `POST /api/v1/host/network/netplan/apply` | Apply netplan YAML with automatic rollback; returns a token |
 | `POST /api/v1/host/network/netplan/commit` | Confirm a pending netplan apply by token |
 | `GET /api/v1/host/firewall` | nftables status and ruleset |
