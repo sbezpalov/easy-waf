@@ -5288,7 +5288,7 @@
       const editor = document.getElementById(id);
       editor.value = editor.defaultValue = '';
     }
-    for (const id of ['net-overview', 'net-netplan-msg', 'net-firewall-msg']) {
+    for (const id of ['net-overview', 'net-netplan-msg', 'net-firewall-msg', 'net-firewall-load-status']) {
       document.getElementById(id).textContent = '';
     }
   }
@@ -5309,32 +5309,31 @@
     const ovBox = document.getElementById('net-overview');
     if (ovBox) ovBox.textContent = 'Loading…';
     const pendingTask = options.skipRollbackStatus ? Promise.resolve() : refreshHostRollbackStatus(false);
-    const [netR, fwR] = await Promise.all([
-      fetch('/api/v1/host/network', { headers: hdr() }),
-      fetch('/api/v1/host/firewall', { headers: hdr() }),
+    const firewallStatus = document.getElementById('net-firewall-load-status');
+    async function loadSection(path, label, status, render) {
+      try {
+        const response = await fetch(path, { headers: hdr(), cache: 'no-store' });
+        if (!response.ok) throw new Error(await apiMessage(response));
+        const data = await response.json();
+        if (generation === networkLoadGeneration) render(data);
+      } catch (err) {
+        if (generation === networkLoadGeneration) {
+          status.textContent = label + ' could not be loaded.' + (err.message ? ' ' + err.message : '');
+        }
+      }
+    }
+    await Promise.all([
+      loadSection('/api/v1/host/network', 'Network configuration', ovBox, ov => {
+        ovBox.textContent = formatNetOverview(ov);
+        refreshNetworkEditor('net-netplan-yaml', findEasyWafNetplan(ov.netplan_files), 'net-netplan-msg');
+      }),
+      loadSection('/api/v1/host/firewall', 'Firewall configuration', firewallStatus, fw => {
+        refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset ?? '', 'net-firewall-msg');
+        firewallStatus.textContent = '';
+      }),
       pendingTask
     ]);
-    const [ov, fw] = await Promise.all([
-      netR.ok ? netR.json() : apiMessage(netR),
-      fwR.ok ? fwR.json() : apiMessage(fwR)
-    ]);
-    if (generation !== networkLoadGeneration) return;
-    if (netR.ok) {
-      if (ovBox) {
-        ovBox.style.whiteSpace = 'pre-wrap';
-        ovBox.textContent = formatNetOverview(ov);
-      }
-      refreshNetworkEditor('net-netplan-yaml', findEasyWafNetplan(ov.netplan_files), 'net-netplan-msg');
-    } else if (ovBox) {
-      ovBox.textContent = ov;
-      ovBox.className = 'warn';
-    }
-    if (fwR.ok) {
-      refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset ?? '', 'net-firewall-msg');
-    } else {
-      document.getElementById('net-firewall-msg').textContent = fw;
-    }
-    updateHostRollbackApplyButtons();
+    if (generation === networkLoadGeneration) updateHostRollbackApplyButtons();
   }
 
   document.getElementById('btn-net-netplan-apply').onclick = async () => {

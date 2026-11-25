@@ -183,7 +183,7 @@ context.saveHostRollbackCapability(capability);
   const editor = {value: '', defaultValue: ''};
   const netplanEditor = {value: '', defaultValue: ''};
   const networkElements = {'net-firewall-rules': editor, 'net-netplan-yaml': netplanEditor,
-    'net-firewall-msg': {}, 'net-netplan-msg': {}, 'net-overview': {style: {}}};
+    'net-firewall-msg': {}, 'net-firewall-load-status': {}, 'net-netplan-msg': {}, 'net-overview': {style: {}}};
   const snapshot = {managed_ruleset: 'managed file', ruleset: 'all kernel tables'};
   const networkContext = {
     document: {getElementById: id => networkElements[id]},
@@ -206,6 +206,25 @@ context.saveHostRollbackCapability(capability);
   delete snapshot.managed_ruleset;
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, '', 'editor exposed unrelated kernel tables');
+  const normalFetch = networkContext.fetch;
+  editor.value = 'unsaved firewall rules';
+  networkContext.fetch = async path => {
+    if (path.endsWith('/firewall')) throw new Error('Connection interrupted');
+    return normalFetch(path);
+  };
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(networkElements['net-overview'].textContent, 'overview');
+  assert.match(networkElements['net-firewall-load-status'].textContent, /Firewall configuration could not be loaded/);
+  assert.equal(editor.value, 'unsaved firewall rules');
+  networkContext.fetch = async path => path.endsWith('/network')
+    ? {ok: true, json: async () => { throw new SyntaxError('Invalid JSON'); }} : normalFetch(path);
+  snapshot.managed_ruleset = 'recovered firewall';
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.match(networkElements['net-overview'].textContent, /Network configuration could not be loaded/);
+  assert.equal(editor.defaultValue, 'recovered firewall');
+  assert.equal(editor.value, 'unsaved firewall rules');
+  assert.equal(networkElements['net-firewall-load-status'].textContent, '');
+  networkContext.fetch = normalFetch;
   const delayed = networkContext.loadNetworkTab({skipRollbackStatus: true});
   networkContext.clearNetworkEditors();
   await delayed;
