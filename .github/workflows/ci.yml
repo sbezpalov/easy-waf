@@ -129,7 +129,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install OS packages + HAProxy (before checkout)
+      - name: Install OS packages, HAProxy and Fail2Ban (before checkout)
         run: |
           set -euo pipefail
           apt-get update -qq
@@ -140,7 +140,7 @@ jobs:
             git grep gzip openssl procps sed tar tzdata unzip \
             zlib1g-dev \
             nodejs npm \
-            haproxy \
+            haproxy fail2ban python3-pyasyncore \
             debianutils
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -152,6 +152,9 @@ jobs:
 
       - name: go test internal/haproxy (includes haproxy -c validation)
         run: go test ./internal/haproxy/... -v -count=1
+
+      - name: Check Fail2Ban jail status and unban with a private daemon
+        run: go test -tags=integration -count=1 ./internal/fail2ban
 
       - name: go test internal/haproxy integration (goldens, WebSocket, SSE)
         run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveApplicationProfiles|TestLiveGeoIPPolicy|TestLivePublicationRules' -count=1
