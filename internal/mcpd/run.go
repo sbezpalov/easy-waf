@@ -99,7 +99,7 @@ func newAPIClient(address, caFile, token string) (apiClient, error) {
 			TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 			IdleConnTimeout: 30 * time.Second, MaxIdleConns: 4,
 		},
-		Timeout:       5 * time.Second,
+		Timeout:       8 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return apiClient{baseURL: u.String(), token: token, http: client}, nil

@@ -100,17 +100,23 @@ func (s *Server) getApplicationDiagnostics(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	now := time.Now().UTC()
-	facts := applicationDiagnosticFacts{App: app, Now: now}
+	facts := s.collectApplicationDiagnosticFacts(r.Context(), app)
+	if r.Context().Err() == nil {
+		writeJSON(w, http.StatusOK, buildApplicationDiagnostics(facts))
+	}
+}
 
-	facts.EdgeStatus, facts.EdgeError = s.Eng.Store.GetEdgeStatus(r.Context())
+func (s *Server) collectApplicationDiagnosticFacts(ctx context.Context, app config.Application) applicationDiagnosticFacts {
+	facts := applicationDiagnosticFacts{App: app, Now: time.Now().UTC()}
+
+	facts.EdgeStatus, facts.EdgeError = s.Eng.Store.GetEdgeStatus(ctx)
 	if facts.EdgeError != nil {
 		log.Printf("api: application diagnostics %q edge state: %v", app.ID, facts.EdgeError)
 	}
 	facts.LiveSHA, facts.LiveError = s.Eng.LiveHAProxySHA256()
 
 	if config.ListenModeRequiresCertificate(app.ListenMode) {
-		facts.Certificate, facts.CertificateError = s.findCertificate(r.Context(), app.CertificateID)
+		facts.Certificate, facts.CertificateError = s.findCertificate(ctx, app.CertificateID)
 		if facts.CertificateError != nil && !errors.Is(facts.CertificateError, sql.ErrNoRows) {
 			log.Printf("api: application diagnostics %q certificate: %v", app.ID, facts.CertificateError)
 		}
@@ -119,7 +125,7 @@ func (s *Server) getApplicationDiagnostics(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), applicationDiagnosticsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, applicationDiagnosticsTimeout)
 	defer cancel()
 	dnsResult := make(chan diagnosticDNSResult, 1)
 	statsResult := make(chan diagnosticHAProxyResult, 1)
@@ -135,12 +141,9 @@ func (s *Server) getApplicationDiagnostics(w http.ResponseWriter, r *http.Reques
 
 	dns := <-dnsResult
 	stats := <-statsResult
-	if r.Context().Err() != nil {
-		return
-	}
 	facts.DNSAddresses, facts.DNSError = dns.addresses, dns.err
 	facts.HAProxyReport, facts.HAProxyError = stats.report, stats.err
-	writeJSON(w, http.StatusOK, buildApplicationDiagnostics(facts))
+	return facts
 }
 
 func buildApplicationDiagnostics(facts applicationDiagnosticFacts) ApplicationDiagnosticsResponse {

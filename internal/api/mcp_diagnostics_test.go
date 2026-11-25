@@ -4,9 +4,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -20,6 +22,7 @@ import (
 
 func TestMCPDiagnosticsBoundary(t *testing.T) {
 	const path = "/api/v1/mcp/diagnostics/ready"
+	const applicationPath = "https://localhost/api/v1/mcp/diagnostics/application"
 	secret := strings.Repeat("m", 40)
 	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8", "::1/128", "192.0.2.0/24"}})
@@ -40,6 +43,8 @@ func TestMCPDiagnosticsBoundary(t *testing.T) {
 		{"post", "POST", "https://localhost" + path, "127.0.0.1:31000", bearer, "", http.StatusMethodNotAllowed},
 		{"panel API", "GET", "https://localhost/api/v1/settings", "127.0.0.1:31000", bearer, "", http.StatusUnauthorized},
 		{"apply", "POST", "https://localhost/api/v1/apply", "127.0.0.1:31000", bearer, "", http.StatusUnauthorized},
+		{"missing application ID", "GET", applicationPath, "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"duplicate application ID", "GET", applicationPath + "?id=one&id=two", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.url, nil)
@@ -80,12 +85,29 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	secret := strings.Repeat("m", 40)
 	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
+	app := config.Application{
+		Name: "MCP diagnostic fixture", PublicHost: "127.0.0.42", Profile: "balanced", Enabled: true,
+		BackendHost: "backend.example.test", BackendPort: 8080, ListenMode: "http_only",
+	}
+	if err := st.UpsertApplication(t.Context(), &app); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := st.DeleteApplication(ctx, app.ID); err != nil {
+			t.Error(err)
+		}
+	})
 	s := &Server{Eng: engine.New(t.TempDir(), st, config.GlobalSettings{}), MCPAPIToken: auth.LoadMCPAPIToken(nil)}
 	router := s.Router()
 	start := time.Now().Add(-time.Second)
-	for _, route := range []struct{ suffix, want string }{
+	routes := []struct{ suffix, want string }{
 		{"/ready", `"database":"ok"`}, {"/edge", `"saved_generation"`}, {"/applications", "["},
-	} {
+		{"/certificates", "["}, {"/revisions", "["}, {"/geoip", `"configured_provider"`},
+		{"/application?id=" + url.QueryEscape(app.ID), `"code":"hostname_resolved"`},
+	}
+	for _, route := range routes {
 		r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics"+route.suffix, nil)
 		r.RemoteAddr = "127.0.0.1:31000"
 		r.Header.Set("Authorization", "Bearer "+secret)
@@ -94,16 +116,37 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), route.want) {
 			t.Fatalf("%s: unexpected response %d: %s", route.suffix, w.Code, w.Body)
 		}
+		if strings.Contains(w.Body.String(), `"evidence"`) || strings.Contains(w.Body.String(), app.BackendHost) {
+			t.Fatalf("%s exposed internal diagnostics fields: %s", route.suffix, w.Body)
+		}
 	}
-	rows, _, err := st.ListAuditLogs(t.Context(), store.AuditListParams{Limit: 3, From: &start, Action: "mcp.diagnostics"})
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("expected three MCP audit records, got %d: %v", len(rows), err)
+	rows, _, err := st.ListAuditLogs(t.Context(), store.AuditListParams{Limit: len(routes), From: &start, Action: "mcp.diagnostics"})
+	if err != nil || len(rows) != len(routes) {
+		t.Fatalf("expected %d MCP audit records, got %d: %v", len(routes), len(rows), err)
 	}
-	for i, suffix := range []string{"/applications", "/edge", "/ready"} {
+	for i := range routes {
+		suffix, _, _ := strings.Cut(routes[len(routes)-1-i].suffix, "?")
 		entry := rows[i]
-		if entry.UserName != "mcp" || !strings.Contains(string(entry.Details), "/api/v1/mcp/diagnostics"+suffix) {
+		if entry.UserName != "mcp" || !strings.Contains(string(entry.Details), `"/api/v1/mcp/diagnostics`+suffix+`"`) || strings.Contains(string(entry.Details), app.ID) {
 			t.Fatalf("unexpected MCP audit record: %+v", entry)
 		}
+	}
+}
+
+func TestMCPCertificateExpiryOmitsProviderErrorAndPaths(t *testing.T) {
+	now := time.Now().UTC()
+	expiry := now.Add(24 * time.Hour)
+	cert := config.Certificate{
+		ID: "test", PrimaryDomain: "public.example.test", ACMEStatus: "failed", NotAfter: &expiry,
+		LastError: "fixture secret", DNSCredentialsEnvFile: "/fixture/private.env",
+	}
+	have := summarizeMCPCertificateExpiry([]config.Certificate{cert}, now)
+	if len(have) != 1 || have[0].Status != "failed" || have[0].DaysRemaining == nil || *have[0].DaysRemaining != 1 {
+		t.Fatalf("unexpected expiry result: %+v", have)
+	}
+	data, err := json.Marshal(have)
+	if err != nil || strings.Contains(string(data), "fixture") || strings.Contains(string(data), "last_error") {
+		t.Fatalf("unexpected certificate output %s: %v", data, err)
 	}
 }
 

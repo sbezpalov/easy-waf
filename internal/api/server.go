@@ -974,11 +974,14 @@ func (s *Server) geoipLookup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) geoipStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.geoIPCacheStats())
+}
+
+func (s *Server) geoIPCacheStats() geoip.Stats {
 	if s.Eng.GeoIP() == nil || s.Eng.GeoIP().Cache == nil {
-		writeJSON(w, http.StatusOK, geoip.Stats{})
-		return
+		return geoip.Stats{}
 	}
-	writeJSON(w, http.StatusOK, s.Eng.GeoIP().Cache.Stats())
+	return s.Eng.GeoIP().Cache.Stats()
 }
 
 func (s *Server) listIPWLLocal(w http.ResponseWriter, r *http.Request) {

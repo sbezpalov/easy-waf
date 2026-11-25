@@ -21,6 +21,7 @@ import (
 )
 
 func TestStreamableHTTPDiagnostics(t *testing.T) {
+	const applicationID = "legacy id+fixture"
 	clientSecret, apiSecret := strings.Repeat("c", 40), strings.Repeat("a", 40)
 	t.Setenv("EASY_WAF_MCP_TOKEN", clientSecret)
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +37,16 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"pending":false}`)
 		case diagnosticsPath + "/applications":
 			_, _ = fmt.Fprint(w, `[{"name":"Fixture"}]`)
+		case diagnosticsPath + "/application":
+			if r.URL.Query().Get("id") != applicationID {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = fmt.Fprint(w, `{"status":"ok"}`)
+		case diagnosticsPath + "/certificates", diagnosticsPath + "/revisions":
+			_, _ = fmt.Fprint(w, `[]`)
+		case diagnosticsPath + "/geoip":
+			_, _ = fmt.Fprint(w, `{"configured_provider":"maxmind"}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -66,17 +77,25 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 	if got := session.InitializeResult().ProtocolVersion; got != protocolVersion {
 		t.Fatalf("protocol = %q, want %q", got, protocolVersion)
 	}
-	listed, err := session.ListTools(ctx, nil)
-	if err != nil || len(listed.Tools) != 3 {
-		t.Fatalf("expected three diagnostics tools: %v, %v", listed, err)
+	checks := map[string]string{
+		"edge_status": `{"pending":false}`, "list_applications": `[{"name":"Fixture"}]`, "status": `{"database":"unreachable"}`,
+		"describe_application": `{"status":"ok"}`, "certificate_expiry": `[]`, "config_revisions": `[]`,
+		"geoip_status": `{"configured_provider":"maxmind"}`,
 	}
-	checks := map[string]string{"edge_status": `{"pending":false}`, "list_applications": `[{"name":"Fixture"}]`, "status": `{"database":"unreachable"}`}
+	listed, err := session.ListTools(ctx, nil)
+	if err != nil || len(listed.Tools) != len(checks) {
+		t.Fatalf("expected %d diagnostics tools: %v, %v", len(checks), listed, err)
+	}
 	for _, tool := range listed.Tools {
 		want, ok := checks[tool.Name]
 		if !ok || tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
 			t.Fatalf("unexpected tool: %+v", tool)
 		}
-		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name})
+		params := &mcp.CallToolParams{Name: tool.Name}
+		if tool.Name == "describe_application" {
+			params.Arguments = map[string]string{"id": applicationID}
+		}
+		result, err := session.CallTool(ctx, params)
 		if err != nil || len(result.Content) != 1 || result.IsError != (tool.Name == "status") {
 			t.Fatalf("unexpected %s result: %v, %v", tool.Name, result, err)
 		}

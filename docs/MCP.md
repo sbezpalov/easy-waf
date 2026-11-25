@@ -10,6 +10,10 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | `status` | Management API and PostgreSQL readiness |
 | `edge_status` | Saved and applied generations and managed HAProxy artifact identity |
 | `list_applications` | Publication names, hostnames, profiles and enabled or maintenance state |
+| `describe_application` | Given an `id` from `list_applications`, check publication, DNS, TLS, applied routing and backend availability |
+| `certificate_expiry` | Recorded expiry dates, days remaining and issuance status |
+| `config_revisions` | The latest 30 revisions, with the live revision marked when it can be observed |
+| `geoip_status` | Configured provider, enablement and cache counters |
 
 ## Enable the packaged service
 
