@@ -71,7 +71,7 @@ Layout is similar (tar tree with `MANIFEST.txt`, `system/`, `systemctl/`, `logs/
 
 The **`easy-waf-api`** unit uses **`NoNewPrivileges=true`**, so the API **cannot** elevate via `sudo` to run the root script. The **Download diagnostics** button builds a bundle **in-process** as user `easy-waf`. If something is missing (e.g. `journalctl` denied, `nft` needs root), the corresponding file may be short or contain an error message.
 
-The API bundle is also capped: if the uncompressed tar exceeds **40 MiB** the request fails with `bundle size … exceeds limit` and you get nothing. Long journals on a busy appliance are the usual cause — use the root script instead.
+The API compresses each tar entry as it is written. The **40 MiB** limit applies to the entire uncompressed archive, including tar headers and padding. If the next write would exceed the limit, collection stops and the API returns an error. Use the root script when a larger bundle is needed.
 
 For vendor/support hand-off when in doubt, prefer:
 

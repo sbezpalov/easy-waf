@@ -20,6 +20,21 @@ import (
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
+func TestBundleSizeIncludesTarFooter(t *testing.T) {
+	for _, limit := range []int{2047, 2048} {
+		var output bytes.Buffer
+		dst := &bundleWriter{dst: &output, remaining: limit}
+		tw := tar.NewWriter(dst)
+		if err := addTarBytes(tw, "manifest", []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := tw.Close()
+		if (err == nil) != (limit == 2048) || output.Len() > limit {
+			t.Fatalf("limit %d: wrote %d bytes, close error %v", limit, output.Len(), err)
+		}
+	}
+}
+
 func TestBundleMasksMultilineEnvironment(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -90,6 +105,11 @@ func TestBundleMasksMultilineEnvironment(t *testing.T) {
 			}
 			if !found || !foundMCP {
 				t.Fatal("bundle missing masked environment or MCP service state")
+			}
+			// tar EOF precedes the gzip checksum. Require a clean end of stream.
+			var trailing [1]byte
+			if n, err := gz.Read(trailing[:]); n != 0 || !errors.Is(err, io.EOF) {
+				t.Fatalf("unexpected gzip trailer: n=%d err=%v", n, err)
 			}
 		})
 	}

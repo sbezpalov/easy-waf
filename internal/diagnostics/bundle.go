@@ -48,18 +48,11 @@ func BuildSupportBundleGzip(ctx context.Context, p Params) ([]byte, error) {
 	stamp := time.Now().UTC().Format("20060102-150405")
 	prefix := fmt.Sprintf("easy-waf-diag-api-%s/", stamp)
 
-	var tarBuf bytes.Buffer
-	if err := writeSupportBundleTar(ctx, &tarBuf, p, prefix, envPath); err != nil {
-		return nil, err
-	}
-	if tarBuf.Len() > MaxBundleBytes {
-		return nil, fmt.Errorf("diagnostics: bundle size %d exceeds limit %d", tarBuf.Len(), MaxBundleBytes)
-	}
 	var gzipBuf bytes.Buffer
 	gw := gzip.NewWriter(&gzipBuf)
 	gw.ModTime = time.Now().UTC()
-	if _, err := io.Copy(gw, bytes.NewReader(tarBuf.Bytes())); err != nil {
-		_ = gw.Close()
+	dst := &bundleWriter{dst: gw, remaining: MaxBundleBytes}
+	if err := writeSupportBundleTar(ctx, dst, p, prefix, envPath); err != nil {
 		return nil, err
 	}
 	if err := gw.Close(); err != nil {
@@ -68,9 +61,23 @@ func BuildSupportBundleGzip(ctx context.Context, p Params) ([]byte, error) {
 	return gzipBuf.Bytes(), nil
 }
 
+// Count tar headers, padding and end markers before compression.
+type bundleWriter struct {
+	dst       io.Writer
+	remaining int
+}
+
+func (w *bundleWriter) Write(p []byte) (int, error) {
+	if len(p) > w.remaining {
+		return 0, fmt.Errorf("diagnostics: bundle exceeds limit of %d bytes", MaxBundleBytes)
+	}
+	n, err := w.dst.Write(p)
+	w.remaining -= n
+	return n, err
+}
+
 func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, envPath string) error {
 	tw := tar.NewWriter(w)
-	defer tw.Close()
 
 	ver := strings.TrimSpace(p.Version)
 	if ver == "" {
@@ -102,17 +109,30 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		return addTarBytes(tw, prefix+rel, out, 0o644)
 	}
 
-	_ = run("system/uname.txt", 5*time.Second, "uname", "-a")
-	_ = run("system/os-release.txt", 2*time.Second, "cat", "/etc/os-release")
-	_ = run("system/hostnamectl.txt", 5*time.Second, "hostnamectl")
-	_ = run("system/free-m.txt", 5*time.Second, "free", "-m")
-	_ = run("system/df-h.txt", 8*time.Second, "df", "-h")
-	_ = run("system/uptime.txt", 3*time.Second, "uptime")
-	_ = run("system/ss-tlnp.txt", 8*time.Second, "ss", "-tlnp")
-	_ = run("system/aa-status.txt", 5*time.Second, "aa-status")
+	for _, probe := range []struct {
+		file, command string
+		timeout       time.Duration
+		args          []string
+	}{
+		{"uname", "uname", 5 * time.Second, []string{"-a"}},
+		{"os-release", "cat", 2 * time.Second, []string{"/etc/os-release"}},
+		{"hostnamectl", "hostnamectl", 5 * time.Second, nil},
+		{"free-m", "free", 5 * time.Second, []string{"-m"}},
+		{"df-h", "df", 8 * time.Second, []string{"-h"}},
+		{"uptime", "uptime", 3 * time.Second, nil},
+		{"ss-tlnp", "ss", 8 * time.Second, []string{"-tlnp"}},
+		{"aa-status", "aa-status", 5 * time.Second, nil},
+	} {
+		if err := run("system/"+probe.file+".txt", probe.timeout, probe.command, probe.args...); err != nil {
+			return err
+		}
+	}
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	if out, err := exec.CommandContext(ctx2, "aa-status", "--enabled").CombinedOutput(); err == nil {
-		_ = addTarBytes(tw, prefix+"system/aa-status-enabled.txt", out, 0o644)
+		if err := addTarBytes(tw, prefix+"system/aa-status-enabled.txt", out, 0o644); err != nil {
+			cancel()
+			return err
+		}
 	}
 	cancel()
 
@@ -123,7 +143,9 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	units := []string{"easy-waf-api", "easy-waf-acmed", "easy-waf-hostd", "haproxy", "crowdsec", "fail2ban", "nftables"}
 	for _, u := range units {
 		safe := strings.ReplaceAll(u, "/", "-")
-		_ = run(fmt.Sprintf("systemctl/status-%s.txt", safe), 20*time.Second, "systemctl", "status", u, "--no-pager", "-l")
+		if err := run(fmt.Sprintf("systemctl/status-%s.txt", safe), 20*time.Second, "systemctl", "status", u, "--no-pager", "-l"); err != nil {
+			return err
+		}
 		ctx2, cancel := context.WithTimeout(ctx, 8*time.Second)
 		out, _ := exec.CommandContext(ctx2, "systemctl", "is-enabled", u).CombinedOutput()
 		cancel()
@@ -194,7 +216,9 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	}
 
 	const hb = "/usr/sbin/haproxy"
-	_ = run("validation/haproxy-vv.txt", 15*time.Second, hb, "-vv")
+	if err := run("validation/haproxy-vv.txt", 15*time.Second, hb, "-vv"); err != nil {
+		return err
+	}
 	var haproxyCheckOut []byte
 	if cfgPathErr != nil {
 		haproxyCheckOut = []byte("validation skipped: " + cfgPathErr.Error() + "\n")
@@ -223,12 +247,16 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 		return err
 	}
 
-	_ = run("firewall/nft-ruleset.txt", 20*time.Second, "nft", "list", "ruleset")
+	if err := run("firewall/nft-ruleset.txt", 20*time.Second, "nft", "list", "ruleset"); err != nil {
+		return err
+	}
 	if raw, err := os.ReadFile("/etc/nftables/easy-waf.nft"); err == nil {
-		_ = addTarBytes(tw, prefix+"firewall/easy-waf.nft", raw, 0o644)
+		if err := addTarBytes(tw, prefix+"firewall/easy-waf.nft", raw, 0o644); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	return tw.Close()
 }
 
 func mcpServiceState(ctx context.Context) []byte {
