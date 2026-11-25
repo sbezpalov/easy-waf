@@ -2110,29 +2110,45 @@
     return t;
   }
 
+  let certInventoryGeneration = 0;
   async function loadCertDashboard() {
+    const generation = ++certInventoryGeneration;
     const msg = document.getElementById('cert-dash-msg');
     const tbody = document.getElementById('cert-table-body');
     if (!msg || !tbody) return;
     msg.textContent = '';
+    const counters = {total: 'total', valid: 'valid', expiring: 'expiring_soon', expired: 'expired'};
+    for (const id of Object.keys(counters)) document.getElementById('cert-sum-' + id).textContent = '—';
     tbody.innerHTML = '<tr><td colspan="6" class="dash-note">Loading…</td></tr>';
-    const r = await fetch('/api/v1/certificates/summary', { headers: hdr() });
-    if (r.status === 401) {
-      setTok('');
-      refreshSession();
+    let j;
+    try {
+      const r = await fetch('/api/v1/certificates/summary', { headers: hdr(), cache: 'no-store' });
+      if (generation !== certInventoryGeneration) return;
+      if (r.status === 401) {
+        setTok('');
+        refreshSession();
+        return;
+      }
+      if (!r.ok) throw new Error(await apiMessage(r));
+      j = await r.json();
+      if (!Array.isArray(j?.certificates) || j.total !== j.certificates.length ||
+          !Object.values(counters).every(key => Number.isSafeInteger(j[key]) && j[key] >= 0) ||
+          !j.certificates.every(row => typeof row?.id === 'string' && row.id.length > 0)) {
+        throw new Error('Invalid certificate summary.');
+      }
+    } catch (err) {
+      if (generation !== certInventoryGeneration) return;
+      tbody.innerHTML = '';
+      msg.className = 'warn';
+      msg.textContent = 'Certificate inventory unavailable. Use Refresh list to retry.' +
+        (err instanceof SyntaxError ? '' : ' ' + err.message);
       return;
     }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      tbody.innerHTML = '<tr><td colspan="6" class="warn">' + esc(j.error || (typeof j === 'string' ? j : JSON.stringify(j))) + '</td></tr>';
-      return;
+    if (generation !== certInventoryGeneration) return;
+    for (const [id, key] of Object.entries(counters)) {
+      document.getElementById('cert-sum-' + id).textContent = String(j[key]);
     }
-    document.getElementById('cert-sum-total').textContent = String(j.total ?? '—');
-    document.getElementById('cert-sum-valid').textContent = String(j.valid ?? '—');
-    document.getElementById('cert-sum-expiring').textContent = String(j.expiring_soon ?? '—');
-    document.getElementById('cert-sum-expired').textContent = String(j.expired ?? '—');
-
-    const rows = Array.isArray(j.certificates) ? j.certificates : [];
+    const rows = j.certificates;
     tbody.innerHTML = '';
     if (rows.length === 0) {
       const tr = document.createElement('tr');
