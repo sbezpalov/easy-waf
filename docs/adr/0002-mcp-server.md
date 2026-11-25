@@ -4,8 +4,9 @@
 - **Date:** 2026-08-16
 - **Deciders:** repository maintainer
 - **Context version:** 1.4.0
-- **Implementation:** the opt-in REST diagnostics boundary is implemented.
-  The MCP transport and service are pending.
+- **Implementation:** the opt-in REST diagnostics boundary and source-built
+  Streamable HTTP daemon are implemented. Systemd packaging and the remaining
+  diagnostic tools are pending. See [MCP setup](../MCP.md).
 
 ## Context
 
