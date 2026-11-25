@@ -83,7 +83,7 @@ async function run() {
       assert.equal(edgeRefreshes, 1, 'successful delete must refresh persistent edge truth');
       assert.equal(cleared, scenario === 'other_editor' ? 0 : 1); assert.equal(collapsed, cleared);
       assert.ok(notices.some(([text, kind]) => kind === 'ok' && /deleted/i.test(text) &&
-        (applied ? /applied/i.test(text) : /Apply on Config/i.test(text))));
+        (applied ? /applied/i.test(text) : /Apply HAProxy in Edge changes/i.test(text))));
     }
   }
   const rows = [], context = {document: {getElementById: () => ({innerHTML: 'old'})},

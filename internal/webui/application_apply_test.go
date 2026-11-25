@@ -170,10 +170,21 @@ async function run() {
       assert.equal(element(id).classList.contains('hidden'), applied, 'indicator must match actual Apply outcome');
     }
     assert.equal(refreshed, 1);
-    assert.ok(notices.some(([text, kind]) => kind === 'ok' && (applied ? /applied/i.test(text) : /Apply on Config/i.test(text))), 'report actual Apply outcome');
+    const summary = applied ? 'The applied configuration matches saved generation 9.' :
+      'Saved generation 9 is pending. The applied configuration is generation 8.';
+    for (const id of ['apps-edge-state', 'config-edge-state']) {
+      assert.equal(element(id).textContent, summary);
+    }
+    assert.ok(notices.some(([text, kind]) => kind === 'ok' && (applied ? /applied/i.test(text) : /Apply HAProxy in Edge changes/i.test(text))), 'report actual Apply outcome');
     assert.equal(cleared, scenario.startsWith('save_') ? 1 : 0);
     assert.equal(collapsed, scenario.startsWith('save_') ? 1 : 0);
   }
+}
+if (scenario === 'save_manual') {
+  context.renderPersistentEdgeStatus({pending: null, applied_generation: null, saved_generation: 7});
+  assert.match(element('config-edge-state').textContent, /unknown.*generation 7/);
+  context.renderPersistentEdgeStatus(null);
+  assert.match(element('config-edge-state').textContent, /unavailable/);
 }
 run().catch(error => {console.error(error); process.exitCode = 1});
 `

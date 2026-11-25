@@ -3,16 +3,21 @@
     const dot = document.getElementById('nav-config-pending');
     if (dot) dot.classList.toggle('hidden', on === false);
     const banner = document.getElementById('apps-pending-banner');
-    if (!banner) return;
-    banner.classList.toggle('hidden', on === false);
-    banner.dataset.state = on === true ? 'pending' : 'unknown';
+    if (banner) {
+      banner.classList.toggle('hidden', on === false);
+      banner.dataset.state = on === true ? 'pending' : 'unknown';
+    }
+    let message;
     if (on === true) {
-      const saved = status && Number.isSafeInteger(status.saved_generation) ? status.saved_generation : null;
-      const applied = status && Number.isSafeInteger(status.applied_generation) ? status.applied_generation : null;
-      const detail = saved == null ? '' : ' Saved generation ' + saved + (applied == null ? '; applied generation unknown.' : '; applied generation ' + applied + '.');
-      banner.innerHTML = 'Saved changes are not exactly applied.' + esc(detail) + ' <a href="#config">Go to Edge changes → Apply HAProxy</a>';
+      message = status ? 'Saved generation ' + status.saved_generation + ' is pending. The applied configuration is generation ' + status.applied_generation + '.' : 'Saved changes are waiting to be applied.';
+    } else if (on === false) {
+      message = status ? 'The applied configuration matches saved generation ' + status.saved_generation + '.' : 'Saved configuration applied.';
     } else {
-      banner.innerHTML = 'The saved/applied relationship is unknown. Apply HAProxy or wait for startup reconciliation to establish it. <a href="#config">Open Edge changes</a>';
+      message = 'The applied generation is unknown. ' + (status ? 'The saved configuration is generation ' + status.saved_generation + '.' : 'Edge status is unavailable.');
+    }
+    for (const id of ['apps-edge-state', 'config-edge-state']) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = message;
     }
   }
 
@@ -52,7 +57,7 @@
   async function reportApplicationSaved(response, subject) {
     const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
     markPendingApply(!applied);
-    toast(subject + (applied ? ' applied.' : ' saved. Apply on Config tab to activate.'), 'ok');
+    toast(subject + (applied ? ' applied.' : ' saved. Select Apply HAProxy in Edge changes to activate.'), 'ok');
     await refreshEdgeStatus();
   }
 
@@ -1460,7 +1465,7 @@
       if (!response.ok) { toast(await apiMessage(response), 'err'); return; }
       const applied = response.headers.get('X-Easy-Waf-Applied') === 'true';
       markPendingApply(!applied);
-      toast(applied ? 'Application deleted and removal applied.' : 'Application deleted. Apply on Config tab to activate removal.', 'ok');
+      toast(applied ? 'Application deleted and removal applied.' : 'Application deleted. Select Apply HAProxy in Edge changes to activate removal.', 'ok');
       await refreshEdgeStatus();
       if (document.getElementById('app-edit-id').value === id) {
         clearAppFormFields();
