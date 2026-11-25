@@ -59,6 +59,12 @@ Enable with `sudo systemctl enable --now easy-waf-mcpd.service` and check
 use `sudo systemctl disable --now easy-waf-mcpd.service`. Before downgrading
 to a release without MCP, disable the service first.
 
+The post-install and upgrade smoke test checks for the absence of a TCP
+listener when the unit is disabled and inactive. For an active unit it checks
+that the running binary matches the installed binary and that exactly one TCP
+listener belongs to its main process, bound to loopback. This check needs root
+to inspect socket ownership.
+
 ## Run from source
 
 1. Build the daemon with `go build ./cmd/easy-waf-mcpd`.

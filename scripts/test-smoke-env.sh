@@ -63,7 +63,17 @@ if [[ "$1" == show && "${!#}" == easy-waf-backup.timer && -n "${SMOKE_TEST_TIMER
   printf '%s\n' "$SMOKE_TEST_TIMER"
   exit 0
 fi
+if [[ "$1" == show && "${!#}" == easy-waf-mcpd.service && -n "${SMOKE_TEST_MCP_UNIT:-}" ]]; then
+  printf '%s\n' "$SMOKE_TEST_MCP_UNIT"
+  exit "${SMOKE_TEST_MCP_UNIT_EXIT:-0}"
+fi
 exit 1
+MOCK
+cat >"$ROOT/bin/ss" <<'MOCK'
+#!/usr/bin/env bash
+[[ "$*" == '-H -ltnp' ]] || exit 2
+printf '%s\n' "${SMOKE_TEST_MCP_SOCKETS:-}"
+exit "${SMOKE_TEST_MCP_SS_EXIT:-0}"
 MOCK
 chmod 0700 "$ROOT/bin/"*
 export PATH="$ROOT/bin:$PATH"
@@ -101,6 +111,35 @@ assert_timer $'LoadState=masked\nActiveState=inactive\nUnitFileState=masked' \
   'SKIP  easy-waf-backup.timer is masked'
 assert_timer $'LoadState=not-found\nActiveState=inactive' \
   'SKIP  easy-waf-backup.timer not installed'
+
+assert_mcp() {
+  local properties="$1" sockets="$2" message="$3"
+  SMOKE_TEST_MCP_UNIT="$properties" SMOKE_TEST_MCP_SOCKETS="$sockets" \
+    bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
+  if ! grep -qF "$message" "$ROOT/output"; then
+    echo "FAIL: missing MCP listener report: $message" >&2
+    exit 1
+  fi
+}
+mcp_disabled=$'LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\nMainPID=0'
+mcp_active=$'LoadState=loaded\nActiveState=active\nUnitFileState=enabled\nMainPID=42'
+mcp_ipv4='LISTEN 0 4096 127.0.0.1:8446 0.0.0.0:* users:(("easy-waf-mcpd",pid=42,fd=3))'
+mcp_ipv6='LISTEN 0 4096 [::1]:8446 [::]:* users:(("easy-waf-mcpd",pid=42,fd=3))'
+unrelated='LISTEN 0 4096 0.0.0.0:8446 0.0.0.0:* users:(("other-service",pid=424,fd=3))'
+SMOKE_TEST_MCP_UNIT_EXIT=1 assert_mcp $'LoadState=not-found\nActiveState=inactive\nMainPID=0' "$unrelated" \
+  'SKIP  easy-waf-mcpd.service not installed'
+assert_mcp "$mcp_disabled" "$unrelated" 'PASS  easy-waf-mcpd.service is disabled with no TCP listener'
+assert_mcp "$mcp_disabled" "$mcp_ipv4" 'FAIL  easy-waf-mcpd.service is not active but an MCP process is listening'
+assert_mcp "${mcp_disabled/disabled/enabled}" "" 'FAIL  easy-waf-mcpd.service unexpected state'
+assert_mcp "$mcp_active" "$mcp_ipv4" 'PASS  easy-waf-mcpd.service has one loopback TCP listener'
+assert_mcp "$mcp_active" "$mcp_ipv6" 'PASS  easy-waf-mcpd.service has one loopback TCP listener'
+assert_mcp "$mcp_active" "${mcp_ipv6/::1/::ffff:127.0.0.1}" 'PASS  easy-waf-mcpd.service has one loopback TCP listener'
+assert_mcp "$mcp_active" "${mcp_ipv4/127.0.0.1/0.0.0.0}" 'FAIL  easy-waf-mcpd.service has a non-loopback TCP listener'
+assert_mcp "$mcp_active" "${mcp_ipv4/pid=42/pid=424}" 'FAIL  easy-waf-mcpd.service has a listener outside the managed process'
+assert_mcp "$mcp_active" "$unrelated" 'FAIL  easy-waf-mcpd.service did not expose exactly one loopback TCP listener'
+assert_mcp "$mcp_active" "$mcp_ipv4"$'\n'"$mcp_ipv6" 'FAIL  easy-waf-mcpd.service did not expose exactly one loopback TCP listener'
+SMOKE_TEST_MCP_SS_EXIT=1 assert_mcp "$mcp_active" "" 'FAIL  easy-waf-mcpd.service TCP listeners could not be verified'
+
 # Appliance checks intentionally fail in this non-appliance fixture.
 bash "$SCRIPT_DIR/smoke-appliance.sh" >"$ROOT/output" 2>&1 || true
 [[ ! -e "$marker" ]] || { echo 'FAIL: env file executed shell code' >&2; exit 1; }

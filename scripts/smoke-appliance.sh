@@ -231,6 +231,64 @@ check_expected_version() {
   fi
 }
 
+check_mcp_listener() {
+  local unit=easy-waf-mcpd.service properties key value load='' enabled='' active='' pid=''
+  local sockets endpoint owners seen=0
+  if ! properties="$(systemctl show -p LoadState -p UnitFileState -p ActiveState -p MainPID "$unit" 2>/dev/null)" &&
+    [[ "$properties" != *LoadState=not-found* ]]; then
+    skip "$unit status unavailable"
+    return
+  fi
+  while IFS='=' read -r key value; do
+    case "$key" in
+      LoadState) load="$value" ;;
+      UnitFileState) enabled="$value" ;;
+      ActiveState) active="$value" ;;
+      MainPID) pid="$value" ;;
+    esac
+  done <<<"$properties"
+  if ! sockets="$(ss -H -ltnp 2>/dev/null)"; then
+    fail "$unit TCP listeners could not be verified"
+    return
+  fi
+  if [[ "$active" != active ]]; then
+    if [[ "$sockets" == *'("easy-waf-mcpd",pid='* ]]; then
+      fail "$unit is not active but an MCP process is listening"
+    elif [[ "$load" == not-found ]]; then
+      skip "$unit not installed"
+    elif [[ "$active" == inactive && ( "$enabled" == disabled || "$enabled" == masked || "$enabled" == masked-runtime ) ]]; then
+      pass "$unit is $enabled with no TCP listener"
+    else
+      fail "$unit unexpected state (active: ${active:-unknown}, unit file: ${enabled:-unknown})"
+    fi
+    return
+  fi
+  if [[ "$load" != loaded || ! "$pid" =~ ^[1-9][0-9]*$ ]]; then
+    fail "$unit is active but its main PID could not be verified"
+    return
+  fi
+  while read -r _ _ _ endpoint _ owners; do
+    if [[ "$owners" != *"pid=$pid,"* && "$owners" != *'("easy-waf-mcpd",pid='* ]]; then
+      continue
+    fi
+    if [[ "$owners" != *"pid=$pid,"* ]]; then
+      fail "$unit has a listener outside the managed process"
+      return
+    fi
+    case "$endpoint" in
+      127.*:* | "[::1]":* | "[::ffff:127."*"]":*) seen=$((seen + 1)) ;;
+      *) fail "$unit has a non-loopback TCP listener"; return ;;
+    esac
+  done <<<"$sockets"
+  if ((seen == 1)); then
+    pass "$unit has one loopback TCP listener"
+    check_expected_version easy-waf-mcpd /usr/sbin/easy-waf-mcpd
+    check_running_binary easy-waf-mcpd /usr/sbin/easy-waf-mcpd
+  else
+    fail "$unit did not expose exactly one loopback TCP listener"
+  fi
+}
+
 check_backup_timer() {
   local timer=easy-waf-backup.timer properties key value load='' enabled='' active='' sub='' next=''
   if ! properties="$(systemctl show -p LoadState -p UnitFileState -p ActiveState -p SubState \
@@ -302,6 +360,7 @@ for unit in easy-waf-hostd easy-waf-api easy-waf-acmed; do
   esac
 done
 check_expected_version easy-waf-admin "$ADMIN_BIN"
+check_mcp_listener
 if [[ -n "$EXPECTED_VERSION" ]] && ((fail_n)); then
   echo "ERROR: appliance did not pass verification for expected release $EXPECTED_VERSION" >&2
   exit 1
