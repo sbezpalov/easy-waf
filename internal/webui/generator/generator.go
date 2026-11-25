@@ -26,6 +26,7 @@ var defaultManifest = []string{
 	"screens/crowdsec.html",
 	"screens/fail2ban.html",
 	"screens/system.html",
+	"screens/mcp.html",
 	"screens/network.html",
 	"screens/users.html",
 	"screens/edge-changes.html",

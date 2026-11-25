@@ -94,6 +94,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/status", s.handleStatus)
 				r.Get("/about", s.handleAbout)
 				r.Get("/edge/status", s.handleEdgeStatus)
+				r.Get("/integrations/mcp/status", s.handleMCPServiceStatus)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
 				r.Get("/security/modes", s.listSecurityModes)

@@ -421,6 +421,7 @@
         <div class="nav-group">
           <p class="nav-group-label">Operate</p>
           <a href="#system" class="nav-link" data-tab="system"><span aria-hidden="true">▦</span> System</a>
+          <a href="#mcp" class="nav-link" data-tab="mcp"><span aria-hidden="true">◇</span> MCP</a>
           <a href="#network" class="nav-link" data-tab="network"><span aria-hidden="true">⇄</span> Network</a>
           <a href="#users" class="nav-link" data-tab="users"><span aria-hidden="true">☺</span> Users</a>
         </div>
@@ -1069,6 +1070,32 @@
         </div>
       </div>
 
+      <section id="tab-mcp" class="tab-panel" aria-labelledby="mcp-title">
+        <h2 id="mcp-title">MCP</h2>
+        <p>Give clients such as OpenClaw read-only access to Easy WAF diagnostics through the Model Context Protocol.</p>
+        <section class="panel" aria-labelledby="mcp-service-title">
+          <h3 id="mcp-service-title">Appliance service</h3>
+          <div class="row">
+            <span id="mcp-service-status" role="status">Checking service…</span>
+            <button id="mcp-refresh" type="button" class="secondary">Refresh status</button>
+          </div>
+          <p><a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#enable-the-packaged-service">Configure and enable the service</a></p>
+        </section>
+        <section class="panel" aria-labelledby="mcp-connect-title">
+          <h3 id="mcp-connect-title">Connect a client</h3>
+          <p>The service listens on the appliance loopback interface. For a remote client, forward the configured MCP port over SSH from the host where the client runs.</p>
+          <dl>
+            <dt>Transport</dt><dd>Streamable HTTP</dd>
+            <dt>Example client endpoint (local port 8446)</dt><dd><code>http://127.0.0.1:8446/mcp</code></dd>
+            <dt>Authentication</dt><dd>Use the client bearer token from <code>EASY_WAF_MCP_TOKEN</code> in the client's secret configuration.</dd>
+          </dl>
+          <details>
+            <summary>Connect OpenClaw</summary>
+            <p>On the Gateway host, open the SSH tunnel and register the server under <code>mcp.servers</code>. Run <code>openclaw mcp probe easy-waf</code> from the same environment to verify the connection.</p>
+            <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#connect-openclaw">SSH tunnel and OpenClaw configuration example</a>
+          </details>
+        </section>
+      </section>
       <div id="tab-network" class="tab-panel">
         <h2>⇄ Network</h2>
         <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
@@ -1697,6 +1724,7 @@
     '#config': 'config',
     '#settings': 'settings',
     '#logs': 'logs',
+    '#mcp': 'mcp',
     '#about': 'about'
   };
 
@@ -2217,6 +2245,9 @@
         break;
       case 'system':
         loadSystemTab();
+        break;
+      case 'mcp':
+        void loadMCPStatus();
         break;
       case 'network':
         loadNetworkTab();
@@ -6316,6 +6347,29 @@
       opts.msgEl.className = 'ok';
     }
   }
+
+  async function loadMCPStatus() {
+    const status = document.getElementById('mcp-service-status');
+    const refresh = document.getElementById('mcp-refresh');
+    if (refresh.disabled) return;
+    refresh.disabled = true;
+    status.textContent = 'Checking service…';
+    try {
+      const response = await fetch('/api/v1/integrations/mcp/status', { headers: hdr(), cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      const { active_state } = await response.json();
+      const labels = new Map([
+        ['active', 'Running'], ['inactive', 'Stopped'], ['failed', 'Failed'],
+        ['activating', 'Starting…'], ['deactivating', 'Stopping…'], ['reloading', 'Reloading…']
+      ]);
+      status.textContent = labels.get(active_state) || 'Service state unavailable';
+    } catch (_) {
+      status.textContent = 'Could not check the service. Try refreshing.';
+    } finally {
+      refresh.disabled = false;
+    }
+  }
+  document.getElementById('mcp-refresh').onclick = loadMCPStatus;
 
   async function loadSystemTab() {
     void loadHostTimezone();

@@ -347,6 +347,9 @@
       case 'system':
         loadSystemTab();
         break;
+      case 'mcp':
+        void loadMCPStatus();
+        break;
       case 'network':
         loadNetworkTab();
         break;
@@ -4445,6 +4448,29 @@
       opts.msgEl.className = 'ok';
     }
   }
+
+  async function loadMCPStatus() {
+    const status = document.getElementById('mcp-service-status');
+    const refresh = document.getElementById('mcp-refresh');
+    if (refresh.disabled) return;
+    refresh.disabled = true;
+    status.textContent = 'Checking service…';
+    try {
+      const response = await fetch('/api/v1/integrations/mcp/status', { headers: hdr(), cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      const { active_state } = await response.json();
+      const labels = new Map([
+        ['active', 'Running'], ['inactive', 'Stopped'], ['failed', 'Failed'],
+        ['activating', 'Starting…'], ['deactivating', 'Stopping…'], ['reloading', 'Reloading…']
+      ]);
+      status.textContent = labels.get(active_state) || 'Service state unavailable';
+    } catch (_) {
+      status.textContent = 'Could not check the service. Try refreshing.';
+    } finally {
+      refresh.disabled = false;
+    }
+  }
+  document.getElementById('mcp-refresh').onclick = loadMCPStatus;
 
   async function loadSystemTab() {
     void loadHostTimezone();

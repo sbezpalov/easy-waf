@@ -1,0 +1,26 @@
+      <section id="tab-mcp" class="tab-panel" aria-labelledby="mcp-title">
+        <h2 id="mcp-title">MCP</h2>
+        <p>Give clients such as OpenClaw read-only access to Easy WAF diagnostics through the Model Context Protocol.</p>
+        <section class="panel" aria-labelledby="mcp-service-title">
+          <h3 id="mcp-service-title">Appliance service</h3>
+          <div class="row">
+            <span id="mcp-service-status" role="status">Checking service…</span>
+            <button id="mcp-refresh" type="button" class="secondary">Refresh status</button>
+          </div>
+          <p><a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#enable-the-packaged-service">Configure and enable the service</a></p>
+        </section>
+        <section class="panel" aria-labelledby="mcp-connect-title">
+          <h3 id="mcp-connect-title">Connect a client</h3>
+          <p>The service listens on the appliance loopback interface. For a remote client, forward the configured MCP port over SSH from the host where the client runs.</p>
+          <dl>
+            <dt>Transport</dt><dd>Streamable HTTP</dd>
+            <dt>Example client endpoint (local port 8446)</dt><dd><code>http://127.0.0.1:8446/mcp</code></dd>
+            <dt>Authentication</dt><dd>Use the client bearer token from <code>EASY_WAF_MCP_TOKEN</code> in the client's secret configuration.</dd>
+          </dl>
+          <details>
+            <summary>Connect OpenClaw</summary>
+            <p>On the Gateway host, open the SSH tunnel and register the server under <code>mcp.servers</code>. Run <code>openclaw mcp probe easy-waf</code> from the same environment to verify the connection.</p>
+            <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#connect-openclaw">SSH tunnel and OpenClaw configuration example</a>
+          </details>
+        </section>
+      </section>

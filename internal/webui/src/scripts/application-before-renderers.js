@@ -310,6 +310,7 @@
     '#config': 'config',
     '#settings': 'settings',
     '#logs': 'logs',
+    '#mcp': 'mcp',
     '#about': 'about'
   };
 

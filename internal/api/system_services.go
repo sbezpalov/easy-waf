@@ -54,6 +54,11 @@ func systemdUnitActiveState(ctx context.Context, unit string) string {
 	return "unknown"
 }
 
+func (s *Server) handleMCPServiceStatus(w http.ResponseWriter, r *http.Request) {
+	state := systemdUnitActiveState(r.Context(), "easy-waf-mcpd.service")
+	writeJSON(w, http.StatusOK, map[string]string{"active_state": state})
+}
+
 func (s *Server) listSystemServices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	type row struct {
