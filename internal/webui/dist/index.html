@@ -1428,6 +1428,7 @@
     if (t) sessionStorage.setItem(TOK, t);
     else {
       sessionStorage.removeItem(TOK);
+      mcpConnectionsGeneration++;
       clearNetworkEditors();
     }
   };
@@ -6410,6 +6411,8 @@
   let mcpConnectionsGeneration = 0;
   async function loadMCPConnections() {
     const generation = ++mcpConnectionsGeneration;
+    const viewHash = location.hash;
+    const isCurrent = () => generation === mcpConnectionsGeneration && location.hash === viewHash && currentRole === 'admin';
     const help = document.getElementById('mcp-connect-help');
     const endpoint = document.getElementById('mcp-endpoint');
     const copy = document.getElementById('mcp-copy');
@@ -6438,13 +6441,13 @@
       if (!response.ok) throw new Error();
       const rows = await response.json();
       if (!Array.isArray(rows)) throw new Error();
-      if (generation !== mcpConnectionsGeneration) return;
+      if (!isCurrent()) return;
       endpoint.textContent = location.origin + '/mcp';
       copy.dataset.copy = endpoint.textContent;
       copy.hidden = false;
       help.textContent = 'In OpenClaw Settings → MCP, add this address, select OAuth and sign in. The Gateway must trust the management HTTPS certificate.';
       grants.textContent = '';
-      const query = location.hash.split('?')[1] || '';
+      const query = viewHash.split('?')[1] || '';
       if (query) {
         const params = new URLSearchParams(query);
         document.getElementById('mcp-consent-detail').textContent =
@@ -6452,23 +6455,29 @@
         consent.hidden = false;
         const approve = document.getElementById('mcp-approve');
         const deny = document.getElementById('mcp-deny');
-        const decide = (button, other, action) => withBusy(button, async () => {
-          other.disabled = true;
+        approve.disabled = deny.disabled = false;
+        const decide = async action => {
+          if (!isCurrent() || approve.disabled || deny.disabled) return;
+          approve.disabled = deny.disabled = refresh.disabled = true;
           try {
             const result = await fetch('/api/v1/integrations/mcp/' + action, {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
-            if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
+            if (!result.ok) {
+              const message = await apiMessage(result);
+              if (isCurrent()) toast(message, 'err');
+              return;
+            }
             const {redirect} = await result.json();
             if (!redirect) throw new Error();
-            location.replace(redirect);
+            if (isCurrent()) location.replace(redirect);
           } catch (_) {
-            toast(action === 'deny' ? 'Could not return the denial to the client. Try again.' :
+            if (isCurrent()) toast(action === 'deny' ? 'Could not return the denial to the client. Try again.' :
               'Could not confirm approval. Refresh connections before starting sign-in again.', 'warn');
           } finally {
-            other.disabled = false;
+            if (isCurrent()) approve.disabled = deny.disabled = refresh.disabled = false;
           }
-        });
-        approve.onclick = () => decide(approve, deny, 'approve');
-        deny.onclick = () => decide(deny, approve, 'deny');
+        };
+        approve.onclick = () => decide('approve');
+        deny.onclick = () => decide('deny');
       }
       if (!rows.length) grants.textContent = 'No approved connections.';
       for (const row of rows) {
@@ -6479,11 +6488,18 @@
         revoke.className = 'secondary';
         revoke.textContent = 'Revoke access';
         revoke.onclick = () => withBusy(revoke, async () => {
+          if (!isCurrent()) return;
           try {
             const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
-            if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
+            if (!isCurrent()) return;
+            if (!result.ok) {
+              const message = await apiMessage(result);
+              if (isCurrent()) toast(message, 'err');
+              return;
+            }
             toast('Access revoked for ' + row.name + '.', 'ok');
           } catch (_) {
+            if (!isCurrent()) return;
             toast('Could not confirm revocation. Checking approved connections again.', 'warn');
           }
           await loadMCPConnections();
@@ -6492,12 +6508,12 @@
         grants.append(line);
       }
     } catch (_) {
-      if (generation === mcpConnectionsGeneration) {
+      if (isCurrent()) {
         help.textContent = 'Verify that management HTTPS and MCP diagnostics are configured.';
         grants.textContent = 'Could not load approved connections. Try refreshing.';
       }
     } finally {
-      if (generation === mcpConnectionsGeneration) refresh.disabled = false;
+      if (isCurrent()) refresh.disabled = false;
     }
   }
   document.getElementById('mcp-refresh-grants').onclick = loadMCPConnections;

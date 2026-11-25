@@ -4,6 +4,7 @@
     if (t) sessionStorage.setItem(TOK, t);
     else {
       sessionStorage.removeItem(TOK);
+      mcpConnectionsGeneration++;
       clearNetworkEditors();
     }
   };

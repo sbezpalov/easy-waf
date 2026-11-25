@@ -108,7 +108,28 @@ async function run(){
   await elements.get('mcp-approve').onclick({currentTarget:{}});
   assert.equal(approved,true);
   assert.match(location.destination,/callback/);
+  const realFetch = ctx.fetch;
+  const consentHash = location.hash;
+  for (const destination of ['#dashboard', consentHash + '&state=another']) {
+    delete location.destination;
+    let finish;
+    ctx.fetch = (path, opts) => opts.method === 'POST' ?
+      new Promise(resolve => {finish = resolve;}) : realFetch(path, opts);
+    const pending = elements.get('mcp-approve').onclick();
+    assert.equal(elements.get('mcp-deny').disabled,true);
+    assert.equal(elements.get('mcp-refresh-grants').disabled,true);
+    location.hash = destination;
+    if (destination.startsWith('#mcp?')) await ctx.loadMCPConnections();
+    finish({ok:true,json:async()=>({redirect:'https://gateway.example/old-callback'})});
+    await pending;
+    assert.equal(location.destination,undefined,'late consent response redirected another view');
+    location.hash = consentHash;
+    await ctx.loadMCPConnections();
+    assert.equal(elements.get('mcp-approve').disabled,false);
+  }
+  ctx.fetch = realFetch;
   location.hash='#mcp';
+  await ctx.loadMCPConnections();
   const grantText = elements.get('mcp-grants').children[0].children[0];
   assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
   const original = grants;
