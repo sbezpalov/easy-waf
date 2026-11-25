@@ -380,8 +380,17 @@
     return modalDialog({
       title: o.title || 'Confirm action',
       message: String(message),
+      wide: typeof o.preview === 'string',
       cancelValue: false,
-      render: ({ actions, addFocusable, close }) => {
+      render: ({ content, actions, addFocusable, close }) => {
+        if (typeof o.preview === 'string') {
+          const preview = document.createElement('pre');
+          preview.className = 'configuration-preview';
+          preview.tabIndex = 0;
+          preview.textContent = o.preview;
+          content.appendChild(preview);
+          addFocusable(preview);
+        }
         const cancel = document.createElement('button');
         cancel.type = 'button';
         cancel.className = 'secondary';

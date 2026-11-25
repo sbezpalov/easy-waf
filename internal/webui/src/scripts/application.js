@@ -4413,11 +4413,18 @@
   };
 
   async function applyHostWithRollback(opts) {
+    const netplan = opts.kind === 'netplan';
+    const name = netplan ? 'Netplan configuration' : 'firewall rules';
+    const preview = netplan ? opts.body.yaml : opts.body.ruleset;
+    if (!preview.trim()) {
+      opts.msgEl.textContent = 'Enter the ' + name + ' before applying.';
+      return;
+    }
     const ok = await confirmDialog(
-      'Applying may break network or firewall access. A safety window starts: if you do not click “Keep changes” within 90 seconds, the system automatically reverts. Continue?',
-      { danger: true, okLabel: 'Apply' }
+      'Review the replacement configuration below. Applying it can interrupt access. Reconnect and select Keep changes within 90 seconds or the appliance will roll back.',
+      { title: 'Review ' + name, preview, danger: true, okLabel: 'Apply ' + name }
     );
-    if (!ok) return;
+    if (!ok || hostRollback.kind || hostRollback.statusUnknown) return;
     const r = await fetch(opts.applyUrl, {
       method: 'POST',
       headers: hdr(),

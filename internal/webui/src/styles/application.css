@@ -280,6 +280,7 @@
       border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem;
     }
     .modal-box.modal-box-wide { max-width: 42rem; }
+    .configuration-preview { max-height: 35vh; overflow: auto; padding: .75rem; border: 1px solid var(--border); }
     .modal-message { margin: 0 0 1rem; white-space: pre-wrap; line-height: 1.4; }
     .modal-actions { justify-content: flex-end; gap: 0.5rem; }
     button.modal-ok-danger { background: #da3633; }

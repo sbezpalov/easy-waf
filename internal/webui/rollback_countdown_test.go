@@ -147,7 +147,13 @@ context.saveHostRollbackCapability(capability);
 
   applyPayload = {token: 'new-token', operation_id: operationID, expires_at: new Date(now - 1000).toISOString()};
   notices.length = 0;
-  await context.applyHostWithRollback({kind: 'netplan', applyUrl: '/apply', commitUrl: '/commit', body: {}, msgEl: {}});
+  const yaml = 'network:\n  version: 2\n';
+  context.confirmDialog = async (_, options) => {
+    assert.equal(options.preview, yaml);
+    assert.equal(options.okLabel, 'Apply Netplan configuration');
+    return true;
+  };
+  await context.applyHostWithRollback({kind: 'netplan', applyUrl: '/apply', commitUrl: '/commit', body: {yaml}, msgEl: {}});
   assert.equal(state.token, null, 'expired apply response exposed confirmation');
   assert.ok(notices.some(args => String(args[0]).includes('expired')), 'expired response advertised success');
 

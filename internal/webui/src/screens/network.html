@@ -6,13 +6,13 @@
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Netplan <small>(Advanced)</small></h3>
-          <p class="dash-note" style="margin-top:0">Wrong configuration can temporarily cut network access. Changes auto-revert after the safety window unless you click <strong>Keep changes</strong>. Form-based editor — next iteration.</p>
+          <p class="dash-note" style="margin-top:0">Edit the managed Netplan file, then review it before applying. If connectivity changes, reconnect and select <strong>Keep changes</strong> within 90 seconds.</p>
           <label class="field-label" for="net-netplan-yaml">Netplan YAML</label>
           <textarea id="net-netplan-yaml" rows="10" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px" placeholder="# 99-easy-waf.yaml"></textarea>
           <div class="row" style="margin-top:0.5rem">
-            <button type="button" id="btn-net-netplan-apply">Apply (safety 90s)</button>
+            <button type="button" id="btn-net-netplan-apply">Review Netplan configuration</button>
           </div>
-          <p id="net-netplan-msg" class="warn" style="margin-top:0.35rem"></p>
+          <p id="net-netplan-msg" role="status" class="warn" style="margin-top:0.35rem"></p>
         </div>
         <div class="panel" style="max-width:100%">
           <h3>Firewall / nftables <small>(Advanced)</small></h3>
@@ -20,9 +20,9 @@
           <label class="field-label" for="net-firewall-rules">nftables ruleset</label>
           <textarea id="net-firewall-rules" rows="12" style="width:100%;max-width:48rem;font-family:monospace;font-size:12px"></textarea>
           <div class="row" style="margin-top:0.5rem">
-            <button type="button" id="btn-net-firewall-apply">Apply (safety 90s)</button>
+            <button type="button" id="btn-net-firewall-apply">Review firewall rules</button>
           </div>
-          <p id="net-firewall-msg" class="warn" style="margin-top:0.35rem"></p>
+          <p id="net-firewall-msg" role="status" class="warn" style="margin-top:0.35rem"></p>
         </div>
       </div>
 
