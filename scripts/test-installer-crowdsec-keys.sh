@@ -108,7 +108,7 @@ echo 'OK: CrowdSec installer key preservation and recovery'
 
 (
   # The sourced installer calls this lookup to select its APT branch.
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   command() {
     case "$*" in
       '-v dnf') return 1 ;;
