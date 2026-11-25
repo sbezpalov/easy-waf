@@ -4,14 +4,14 @@
 
         <div class="panel" style="max-width:100%">
           <h3>ACME (Let's Encrypt)</h3>
-          <p><small>Registration email and staging flag. Use <a href="#settings">Settings</a> → <strong>Load from server</strong> if fields are empty.</small></p>
+          <button type="button" class="secondary" id="btn-certs-settings-load">Load saved settings</button>
           <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
             <label>ACME email <input id="acme-email" type="email" placeholder="you@example.com" style="min-width:16rem" /></label>
             <label><input id="acme-staging" type="checkbox" checked /> Staging LE</label>
             <button type="button" id="btn-acme-settings-save">Save ACME</button>
           </div>
           <p id="acme-configuration-status" class="warn" aria-live="polite">Saved ACME configuration has not loaded. Automatic renewal readiness is unknown.</p>
-          <p id="certs-settings-msg" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
+          <p id="certs-settings-msg" role="status" class="warn" style="min-height:1rem;margin-top:0.35rem"></p>
         </div>
 
         <div class="panel" style="max-width:100%">

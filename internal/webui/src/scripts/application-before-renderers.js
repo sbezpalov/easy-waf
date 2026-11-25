@@ -15,6 +15,7 @@
       clearNetworkEditors();
       clearManagementTLSForm();
       clearTOTPSecrets();
+      clearSettingsDrafts();
     }
   };
 

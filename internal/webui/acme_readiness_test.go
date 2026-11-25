@@ -40,7 +40,7 @@ function include(context, from, until) {
 function fixture() {
  const elements = {};
  const get = id => elements[id] ||= {textContent:'',className:'',value:'',checked:false,checkValidity:()=>true};
- const context = {document:{getElementById:get},cachedSettings:null,hdr:()=>({}),
+ const context = {document:{getElementById:get,addEventListener(name,fn){this[name]=fn;}},sessionGeneration:1,cachedSettings:null,hdr:()=>({}),
   loadIpwlToggleFromSettings(){},loadBotProtectionFromSettings(){},loadEdgeNetworkFromSettings(){},
   loadGeoIPFromSettings(){},loadIpblFetchCIDRsFromSettings(){}};
  vm.createContext(context);
@@ -51,7 +51,38 @@ function fixture() {
 }
 async function run() {
  assert.match(page, /id="acme-configuration-status"[^>]*aria-live="polite"/);
- for (const scenario of ['missing','staging','missing_staging','production','offline','rejected','malformed']) {
+ {
+  const {context:c,get}=fixture();
+  c.fetch=async()=>{throw Error('offline');};
+  await c.loadSettingsPanel();
+  const field=get('acme-email');
+  field.value='draft@example.test';
+  field.matches=()=>true;
+  c.document.input({target:field});
+  c.fetch=()=>assert.fail('Save submitted before saved settings were available');
+  await get('btn-acme-settings-save').onclick();
+  c.fetch=async()=>({ok:true,json:async()=>({acme_email:'saved@example.test',acme_staging:true})});
+  await c.loadSettingsPanel();
+  assert.equal(field.value,'draft@example.test');
+  assert.equal(get('acme-staging').checked,true);
+  assert.equal(c.cachedSettings.acme_email,'saved@example.test');
+  let finish;
+  c.fetch=()=>new Promise(resolve=>{finish=resolve;});
+  const old=c.loadSettingsPanel();
+  c.fetch=async()=>({ok:true,json:async()=>({acme_email:'latest@example.test',acme_staging:false})});
+  await c.loadSettingsPanel();
+  finish({ok:false});
+  await old;
+  assert.equal(c.cachedSettings.acme_email,'latest@example.test');
+  assert.equal(field.value,'draft@example.test');
+  get('cs-lapi-key').value='fixture';
+  get('notify-telegram-token').value='fixture';
+  c.clearSettingsDrafts();
+  assert.equal(get('cs-lapi-key').value,'');
+  assert.equal(get('notify-telegram-token').value,'');
+  assert.equal(c.cachedSettings,null);
+ }
+ for (const scenario of ['missing','staging','missing_staging','production','offline','rejected','malformed','incomplete']) {
   const {context:c,get}=fixture();
   const settings={acme_email:scenario.startsWith('missing')?'':'ops@example.test',acme_staging:scenario==='staging'||scenario==='missing_staging'};
   let resolve;
@@ -60,13 +91,13 @@ async function run() {
    assert.equal(path,'/api/v1/settings');assert.equal(init.method,undefined);
    await new Promise(r=>{resolve=r});
    if(scenario==='offline')throw Error('offline');
-   return {ok:scenario!=='rejected',json:async()=>{if(scenario==='malformed')throw Error('bad JSON');return settings}};
+   return {ok:scenario!=='rejected',json:async()=>{if(scenario==='malformed')throw Error('bad JSON');return scenario==='incomplete'?{}:settings}};
   };
   const loading=c.loadSettingsPanel();
   assert.match(get('acme-configuration-status').textContent,/unknown|not loaded/i);
   resolve();await loading;
   const status=get('acme-configuration-status');
-  if(['offline','rejected','malformed'].includes(scenario)) {
+  if(['offline','rejected','malformed','incomplete'].includes(scenario)) {
    assert.match(status.textContent,/unknown|not loaded/i);
    assert.equal(status.className,'warn');
    assert.match(get('certs-settings-msg').textContent,/could not load settings/i);
@@ -102,7 +133,6 @@ async function run() {
   if(scenario==='missing')assert.match(status.textContent,/paused/i);
   else assert.match(status.textContent,scenario==='staging'?/staging/i:/production/i);
  }
- console.log('PASS: 7 settings-load and 5 ACME-save scenarios');
 }
 run().catch(error=>{console.error(error);process.exitCode=1});
 `

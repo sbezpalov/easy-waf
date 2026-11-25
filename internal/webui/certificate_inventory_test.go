@@ -12,7 +12,7 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 const cert = {value:'test certificate'}, key = {value:'test key'}, msg = {}, button = {};
 const elements = {'tls-cert':cert, 'tls-key':key, 'tls-msg':msg, 'btn-tls-save':button};
 const ctx = vm.createContext({document:{getElementById:id=>elements[id]}, hdr:()=>({}),
-  clearNetworkEditors(){}, clearTOTPSecrets(){}, mcpConnectionsGeneration:0, sessionStorage:{removeItem(){}},
+  clearNetworkEditors(){},clearSettingsDrafts(){}, clearTOTPSecrets(){}, mcpConnectionsGeneration:0, sessionStorage:{removeItem(){}},
   apiMessage: async r=>r.message, fetch:async()=>({ok:false,message:'Invalid key pair'})});
 function include(start,end) {
   const a=page.indexOf(start), b=page.indexOf(end,a);

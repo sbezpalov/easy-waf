@@ -15,6 +15,8 @@ Reviewed the embedded panel at `73fdff9`, the two quick starts, the management C
 
 ## Coverage and remaining walkthroughs
 
+Certificates, CrowdSec and Security now offer an in-place settings retry. A successful read fills untouched fields and keeps operator edits. After a failed read, Save asks the operator to load the settings before submitting changes.
+
 Applications → Rule matches opens the journal filtered to the publication hostname. All hosts clears that filter.
 
 System → Backup and restore now links to the recovery guide embedded in the running build and identifies its installed console copy.

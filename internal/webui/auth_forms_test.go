@@ -38,7 +38,7 @@ async function scenario(mode) {
   }};
   const ctx = vm.createContext({window, URL, Request, Response, Headers, AbortController,
     sessionStorage:{getItem:()=>token,setItem:(_,value)=>{token=value;},removeItem:()=>{token='';}},
-    clearNetworkEditors(){},clearTOTPSecrets(){},clearManagementTLSForm(){},mcpConnectionsGeneration:0,
+    clearNetworkEditors(){},clearSettingsDrafts(){},clearTOTPSecrets(){},clearManagementTLSForm(){},mcpConnectionsGeneration:0,
     passwordDialog:async (message,signal) => {
       prompts++;
       assert.ok(prompts <= 2);
@@ -147,7 +147,7 @@ function element(id) {
   return elements.get(id);
 }
 const ctx = vm.createContext({document:{getElementById:element},hdr:()=>({}),
-  sessionStorage:{removeItem(){}},mcpConnectionsGeneration:0,clearNetworkEditors(){},clearManagementTLSForm(){}});
+  sessionStorage:{removeItem(){}},mcpConnectionsGeneration:0,clearNetworkEditors(){},clearSettingsDrafts(){},clearManagementTLSForm(){}});
 function include(start,end) {
   const a=page.indexOf(start), b=page.indexOf(end,a);
   assert.ok(a>=0 && b>a);

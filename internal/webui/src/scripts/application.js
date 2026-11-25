@@ -513,7 +513,7 @@
   const VIEWER_SAFE_ACTIONS = new Set([
     'btn-dashboard-refresh', 'btn-apps-refresh', 'btn-certs', 'btn-cs-dec', 'btn-cs-ping',
     'btn-f2b-refresh', 'btn-geoip-lookup', 'btn-ipbl-load', 'btn-ipwl-load',
-    'btn-revisions-refresh', 'btn-settings-load', 'btn-ua-load', 'btn-blocked-refresh',
+    'btn-revisions-refresh', 'btn-settings-load', 'btn-certs-settings-load', 'btn-security-settings-load', 'btn-cs-settings-load', 'btn-ua-load', 'btn-blocked-refresh',
     'btn-audit-refresh', 'btn-audit-more', 'btn-policy-matches-refresh'
   ]);
 
@@ -1978,10 +1978,40 @@
     return Promise.all([loadSettingsPanel(), loadZabbixFirewallStatus()]);
   }
 
+  let settingsRead = 0;
+  let settingsDraftSession = -1;
+  const editedSettingsFields = new Set();
+
+  function clearSettingsDrafts() {
+    editedSettingsFields.clear();
+    cachedSettings = null;
+    document.getElementById('cs-lapi-key').value = '';
+    document.getElementById('notify-telegram-token').value = '';
+  }
+
+  function syncSettingsDraftSession() {
+    if (settingsDraftSession !== sessionGeneration) {
+      editedSettingsFields.clear();
+      settingsDraftSession = sessionGeneration;
+    }
+  }
+
+  document.addEventListener('input', ({target}) => {
+    if (!target.matches(':is(#tab-certs, #tab-settings, #tab-security, #tab-crowdsec) :is(input:not([type=file]), select, textarea)')) return;
+    syncSettingsDraftSession();
+    editedSettingsFields.add(target);
+  });
+
   async function loadSettingsPanel() {
+    syncSettingsDraftSession();
+    const read = ++settingsRead;
+    const session = sessionGeneration;
+    const current = () => read === settingsRead && session === sessionGeneration;
     const sm = document.getElementById('settings-msg');
     const cm = document.getElementById('certs-settings-msg');
     const csm = document.getElementById('cs-settings-msg');
+    const security = document.getElementById('security-settings-status');
+    security.textContent = 'Loading saved settings…';
     if (sm) {
       sm.textContent = '';
       sm.className = 'warn';
@@ -1995,16 +2025,26 @@
       csm.className = 'warn';
     }
     renderACMEConfigurationStatus(null);
+    cachedSettings = null;
     try {
       const r = await fetch('/api/v1/settings', { headers: hdr() });
       if (!r.ok) throw new Error('Settings request failed');
-      cachedSettings = await r.json();
+      const saved = await r.json();
+      if (!current()) return;
+      if (typeof saved?.acme_staging !== 'boolean' ||
+          (saved.acme_email !== undefined && typeof saved.acme_email !== 'string')) throw new Error('Invalid settings');
+      cachedSettings = saved;
     } catch (_) {
-      [sm, cm, csm].forEach((message) => {
-        if (message) message.textContent = 'Could not load settings. Reload this page to try again.';
+      if (!current()) return;
+      [sm, cm, csm, security].forEach((message) => {
+        if (message) message.textContent = 'Could not load settings. Use the load button on this page to retry.';
       });
       return;
     }
+    const drafts = Array.from(editedSettingsFields, field => {
+      const property = field.type === 'checkbox' ? 'checked' : 'value';
+      return {field, property, value: field[property]};
+    });
     renderACMEConfigurationStatus(cachedSettings);
     document.getElementById('acme-email').value = cachedSettings.acme_email || '';
     document.getElementById('acme-staging').checked = !!cachedSettings.acme_staging;
@@ -2038,6 +2078,14 @@
     }
     const spikeEl = document.getElementById('notify-spike-threshold');
     if (spikeEl) spikeEl.value = String(cachedSettings.notify_blocked_spike_threshold || 0);
+    editedSettingsFields.clear();
+    for (const {field, property, value} of drafts) {
+      if (field[property] === value) continue;
+      field[property] = value;
+      editedSettingsFields.add(field);
+      if (field.id === 'geoip-provider') syncGeoIPMaxMindRow();
+    }
+    security.textContent = '';
     if (sm) {
       sm.textContent = 'Loaded from server.';
       sm.className = 'ok';
@@ -3048,6 +3096,9 @@
     void withBusy(document.getElementById('btn-dashboard-refresh'), loadDashboard);
   };
   document.getElementById('btn-settings-load').onclick = loadSettingsTab;
+  for (const id of ['btn-certs-settings-load', 'btn-security-settings-load', 'btn-cs-settings-load']) {
+    document.getElementById(id).onclick = loadSettingsPanel;
+  }
 
   const btnPromSave = document.getElementById('btn-prometheus-save');
   if (btnPromSave) {
@@ -3057,7 +3108,6 @@
         sm.textContent = '';
         sm.className = 'warn';
       }
-      if (!cachedSettings) await loadSettingsPanel();
       if (!cachedSettings) {
         if (sm) sm.textContent = 'Use Load from server first.';
         return;
@@ -3083,7 +3133,6 @@
         sm.textContent = '';
         sm.className = 'warn';
       }
-      if (!cachedSettings) await loadSettingsPanel();
       if (!cachedSettings) {
         if (sm) sm.textContent = 'Use Load from server first.';
         return;
@@ -3170,7 +3219,6 @@
         sm.textContent = '';
         sm.className = 'warn';
       }
-      if (!cachedSettings) await loadSettingsPanel();
       if (!cachedSettings) {
         if (sm) sm.textContent = 'Use Load from server first.';
         return;
@@ -3188,6 +3236,8 @@
         return;
       }
       cachedSettings = await r.json();
+      const tokenField = document.getElementById('notify-telegram-token');
+      if (tokenField.value.trim() === patch.notify_telegram_bot_token) tokenField.value = '';
       if (sm) {
         sm.textContent = 'Notifications saved.';
         sm.className = 'ok';
@@ -3210,9 +3260,8 @@
       msg.textContent = '';
       msg.className = 'warn';
     }
-    if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) {
-      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      if (msg) msg.textContent = 'Load saved settings on this page before saving.';
       return;
     }
     if (!document.getElementById('acme-email').checkValidity()) {
@@ -3242,9 +3291,8 @@
       msg.textContent = '';
       msg.className = 'warn';
     }
-    if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) {
-      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      if (msg) msg.textContent = 'Load saved settings on this page before saving.';
       return;
     }
     const patch = {
@@ -3273,8 +3321,7 @@
   document.getElementById('btn-waf-security-save').onclick = async () => {
     const msg = document.getElementById('waf-security-msg');
     msg.textContent = '';
-    if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { msg.textContent = 'Use Settings → Load from server first.'; return; }
+    if (!cachedSettings) { msg.textContent = 'Load saved settings on this page before saving.'; return; }
     const patch = { waf_basic_rules_enabled: document.getElementById('waf-basic-enabled').checked };
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
@@ -3298,8 +3345,7 @@
     const msg = document.getElementById('edge-network-msg');
     msg.textContent = '';
     msg.className = 'warn';
-    if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { msg.textContent = 'Use Settings → Load from server first.'; return; }
+    if (!cachedSettings) { msg.textContent = 'Load saved settings on this page before saving.'; return; }
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(edgeNetworkPatch()) });
     if (r.ok) {
       cachedSettings = await r.json();
@@ -3315,9 +3361,8 @@
   document.getElementById('btn-geoip-settings-save').onclick = async () => {
     const geoMsg = document.getElementById('security-geo-msg');
     if (geoMsg) geoMsg.textContent = '';
-    if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) {
-      const t = 'Use Settings → Load from server first.';
+      const t = 'Load saved settings on this page before saving.';
       if (geoMsg) geoMsg.textContent = t;
       return;
     }
@@ -3780,9 +3825,8 @@
   document.getElementById('btn-ipbl-fetch-cidrs-save').onclick = async () => {
     const msg = document.getElementById('ipbl-fetch-cidrs-msg');
     if (msg) msg.textContent = '';
-    if (!cachedSettings) await loadSettingsPanel();
     if (!cachedSettings) {
-      if (msg) msg.textContent = 'Use Settings → Load from server first.';
+      if (msg) msg.textContent = 'Load saved settings on this page before saving.';
       return;
     }
     const patch = { ipbl_fetch_allowed_cidrs: parseIpblFetchCIDRsTextarea() };
@@ -3905,8 +3949,7 @@
   };
   document.getElementById('btn-ipwl-settings-save').onclick = async () => {
     document.getElementById('ipwl-msg').textContent = '';
-    if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('ipwl-msg').textContent = 'Use Settings → Load from server first.'; return; }
+    if (!cachedSettings) { document.getElementById('ipwl-msg').textContent = 'Load saved settings on this page before saving.'; return; }
     const patch = { ipwl_enabled: document.getElementById('ipwl-enabled').checked };
     const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
     if (r.ok) {
@@ -3920,8 +3963,7 @@
 
   document.getElementById('btn-ua-settings-save').onclick = async () => {
     document.getElementById('ua-msg').textContent = '';
-    if (!cachedSettings) await loadSettingsPanel();
-    if (!cachedSettings) { document.getElementById('ua-msg').textContent = 'Use Settings → Load from server first.'; return; }
+    if (!cachedSettings) { document.getElementById('ua-msg').textContent = 'Load saved settings on this page before saving.'; return; }
     const patch = {
       block_empty_ua: document.getElementById('ua-block-empty').checked,
       blocked_user_agents_enabled: document.getElementById('ua-blocklist-enabled').checked

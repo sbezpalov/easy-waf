@@ -1,9 +1,10 @@
       <div id="tab-crowdsec" class="tab-panel">
         <h2>⚑ CrowdSec</h2>
-        <p class="dash-note" style="margin-top:0">LAPI + HAProxy SPOE (<code>filter spoe</code>). The bouncer API key is stored server-side and <strong>never</strong> returned in JSON. After <code>install.sh</code> keys are configured automatically; use <a href="#settings">Settings</a> → <strong>Load from server</strong> only to review or rotate.</p>
+        <p class="dash-note" style="margin-top:0">The installer configures the LAPI bouncer key. Enter a new key to rotate it.</p>
 
         <div class="panel" style="max-width:100%">
           <h3>Connection &amp; SPOE</h3>
+          <button type="button" class="secondary" id="btn-cs-settings-load">Load saved settings</button>
           <div class="row" style="flex-wrap:wrap;gap:0.75rem">
             <label>LAPI base URL <input id="cs-lapi-url" type="url" placeholder="http://127.0.0.1:8080/" style="min-width:20rem" autocomplete="off" /></label>
             <label>LAPI key <input id="cs-lapi-key" type="password" autocomplete="new-password" placeholder="(empty = keep current)" style="min-width:16rem" /></label>
