@@ -19,6 +19,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
 
@@ -78,7 +79,7 @@ func writeSupportBundleTar(ctx context.Context, w io.Writer, p Params, prefix, e
 	if ver == "" {
 		ver = "unknown"
 	}
-	host, _ := os.Hostname()
+	host := hostspec.ReportHostname()
 	manifest := fmt.Sprintf(
 		"easy-waf-diagnostics-format v1 (api)\n"+
 			"created_utc=%s\n"+

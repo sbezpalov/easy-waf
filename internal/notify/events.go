@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // Severity values of Event.
@@ -58,7 +58,10 @@ func Enabled(gs config.GlobalSettings) bool {
 // Send delivers ev to every configured channel: the webhook gets JSON, Telegram
 // a text message. One failing channel does not stop the other.
 func Send(ctx context.Context, gs config.GlobalSettings, ev Event) error {
-	host, _ := os.Hostname()
+	if !Enabled(gs) {
+		return nil
+	}
+	host := hostspec.ReportHostname()
 	var errs []error
 	if raw := strings.TrimSpace(gs.NotifyWebhookURL); raw != "" {
 		body, err := json.Marshal(eventPayload{Source: "easy-waf", Host: host, Time: time.Now().UTC(), Event: ev})
@@ -82,7 +85,7 @@ func SendTelegram(ctx context.Context, gs config.GlobalSettings, ev Event) error
 	if !TelegramEnabled(gs) {
 		return nil
 	}
-	host, _ := os.Hostname()
+	host := hostspec.ReportHostname()
 	return sendTelegram(ctx, gs, telegramText(host, ev))
 }
 
