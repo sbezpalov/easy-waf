@@ -27,7 +27,8 @@ func TestStageD2BackupRestoreDisclosureHasNoFakeAction(t *testing.T) {
 		"not available in the web panel",
 		"sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7",
 		"sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz",
-		"docs/BACKUP_RESTORE.md",
+		`href="/help/backup-restore.txt"`,
+		"/usr/share/doc/easy-waf/BACKUP_RESTORE.md",
 		"Restore replaces the database and appliance state",
 	} {
 		if !strings.Contains(section, want) {

@@ -18,6 +18,12 @@ var licenseFile string
 //go:embed NOTICE
 var noticeFile string
 
+//go:embed docs/BACKUP_RESTORE.md
+var recoveryGuide string
+
+// RecoveryGuide returns the appliance recovery instructions for this build.
+func RecoveryGuide() string { return recoveryGuide }
+
 // Version returns the repository VERSION captured at build time.
 func Version() string { return strings.TrimSpace(versionFile) }
 

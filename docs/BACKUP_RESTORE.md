@@ -15,8 +15,7 @@ Everything is packed into a **single gzip tarball**: `easy-waf-backup-YYYYMMDD-H
 Run as **root** (reads `/etc/easy-waf`, runs `pg_dump`):
 
 ```bash
-cd /path/to/easy-waf
-sudo bash scripts/backup.sh
+sudo easy-waf-backup
 ```
 
 Writes **`./easy-waf-backup-<timestamp>.tar.gz`** in the current directory and prints **absolute path** and **size** (`du -h`).
@@ -117,7 +116,7 @@ sudo easy-waf-restore /var/backups/easy-waf-20260415-180000.tar.gz
 The Debian package includes this command and its shared parser; no source checkout
 or script download is needed. Install the matching appliance
 package and PostgreSQL prerequisites before restoring on a new OS. For a source
-installation or an older package without the command, use
+checkout or an older installation without the command, use
 `sudo bash scripts/restore.sh /path/to/backup.tar.gz` from the matching checkout.
 
 ### Restoring an older schema after an upgrade

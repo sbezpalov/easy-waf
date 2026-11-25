@@ -821,7 +821,10 @@ install_binaries() {
     install -m 0644 "${REPO_ROOT}/scripts/lib/env-file.sh" "${REPO_ROOT}/scripts/lib/backup-rotate.sh" /usr/share/easy-waf/scripts/lib/
     install -m 0644 "${REPO_ROOT}/scripts/lib/pg-archive.py" /usr/share/easy-waf/scripts/lib/
     ln -sfn /usr/share/easy-waf/scripts/backup.sh /usr/sbin/easy-waf-backup
-    log "Installed /usr/sbin/easy-waf-backup (see docs/BACKUP_RESTORE.md)"
+    install -m 0755 "${REPO_ROOT}/scripts/restore.sh" /usr/share/easy-waf/scripts/restore.sh
+    ln -sfn /usr/share/easy-waf/scripts/restore.sh /usr/sbin/easy-waf-restore
+    install -D -m 0644 "${REPO_ROOT}/docs/BACKUP_RESTORE.md" /usr/share/doc/easy-waf/BACKUP_RESTORE.md
+    log "Installed backup and restore commands (see /usr/share/doc/easy-waf/BACKUP_RESTORE.md)"
   fi
 }
 

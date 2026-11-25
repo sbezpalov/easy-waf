@@ -33,6 +33,22 @@ func readAboutForTest(t *testing.T, s *Server) aboutResponse {
 	return about
 }
 
+func TestRecoveryGuideMatchesRunningBuild(t *testing.T) {
+	want, err := os.ReadFile(filepath.Join("..", "..", "docs", "BACKUP_RESTORE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Eng: &engine.Engine{}}
+	router := s.Router()
+	req := httptest.NewRequest(http.MethodGet, "/help/backup-restore.txt", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Body.String() != string(want) {
+		t.Fatalf("recovery guide response: HTTP %d, type %q, %d bytes", w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+	}
+}
+
 func TestAboutReportsShippedVersionAndTerms(t *testing.T) {
 	read := func(name string) string {
 		t.Helper()

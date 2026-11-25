@@ -23,6 +23,10 @@ work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 mkdir "$work/deb" "$work/archive"
 dpkg-deb -x "$deb" "$work/deb"
+guide="$work/deb/usr/share/doc/easy-waf/BACKUP_RESTORE.md"
+source_guide="$(dirname -- "${BASH_SOURCE[0]}")/../docs/BACKUP_RESTORE.md"
+[[ -f "$guide" && ! -L "$guide" && "$(stat -c %a "$guide")" == 644 ]] || fail 'missing or unreadable recovery guide'
+cmp -s "$source_guide" "$guide" || fail 'packaged recovery guide differs from the source'
 bins=(easy-waf-hostd easy-waf-api easy-waf-acmed easy-waf-admin easy-wafd easy-waf-mcpd)
 units=(easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service easy-waf-mcpd.service
   easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-backup.service easy-waf-backup.timer)

@@ -46,6 +46,8 @@ for unit in easy-waf-hostd.service easy-waf-api.service easy-waf-acmed.service e
 done
 pack_fixture() { tar -czf "$work/fixture.tar.gz" -C "$work/input" .; }
 pack_fixture
+guide="$FIXTURE_DEB_TREE/usr/share/doc/easy-waf/BACKUP_RESTORE.md"
+install -D -m 0644 "$script_dir/../docs/BACKUP_RESTORE.md" "$guide"
 
 check() {
   bash "$script_dir/verify-release-package.sh" fixture.deb "$work/fixture.tar.gz" arm64 "${1:-1.6.1}" \
@@ -62,6 +64,9 @@ reject() {
 }
 
 check
+printf 'stale guide\n' >"$guide"
+reject 'packaged recovery guide differs from the source'
+install -m 0644 "$script_dir/../docs/BACKUP_RESTORE.md" "$guide"
 FIXTURE_DEB_VERSION=1.7.0~rc.1 check 1.7.0-rc.1
 FIXTURE_DEB_VERSION=1.7.0~rc.1+build.2 check 1.7.0-rc.1+build.2
 FIXTURE_DEB_VERSION=1.7.0-rc.1 reject 'wrong DEB version' 1.7.0-rc.1

@@ -1066,7 +1066,8 @@
           <p>Backup and restore are not available in the web panel. Run the packaged commands from the appliance console or an SSH session with <code>sudo</code>.</p>
           <p><code>sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7</code></p>
           <p><code>sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz</code></p>
-          <p class="dash-note">Restore replaces the database and appliance state. Use a protected, same-version archive and follow <code>docs/BACKUP_RESTORE.md</code>. The daily <code>easy-waf-backup.timer</code> keeps seven archives by default.</p>
+          <p class="dash-note">Restore replaces the database and appliance state. Use a protected archive from the same appliance version. <a href="/help/backup-restore.txt" target="_blank" rel="noopener">Open the backup and restore guide (new tab)</a>.</p>
+          <p class="dash-note">From the appliance console, read <code>/usr/share/doc/easy-waf/BACKUP_RESTORE.md</code>. The daily <code>easy-waf-backup.timer</code> keeps seven archives by default.</p>
         </section>
         <div class="panel" style="max-width:100%">
           <h3>Power</h3>

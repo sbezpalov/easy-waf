@@ -71,6 +71,10 @@ func (s *Server) Router() chi.Router {
 	// /health says the process is up; /health/ready also says it can reach
 	// PostgreSQL, so a probe can tell a live API from a useful one.
 	r.Get("/health/ready", s.handleReady)
+	r.Get("/help/backup-restore.txt", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, easywaf.RecoveryGuide())
+	})
 	r.Handle("/metrics", s.metricsHandler())
 
 	if s.MCPAPIToken.Enabled() {

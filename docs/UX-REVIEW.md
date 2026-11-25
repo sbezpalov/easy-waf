@@ -15,6 +15,8 @@ Reviewed the embedded panel at `73fdff9`, the two quick starts, the management C
 
 ## Coverage and remaining walkthroughs
 
+System → Backup and restore now links to the recovery guide embedded in the running build and identifies its installed console copy.
+
 The privileged confirmation finding has been addressed. A session change cancels the password prompt and invalidates pending confirmations and retries. The panel distinguishes an incorrect password from throttling and service errors. The regression scenarios are in `TestPrivilegedConfirmationLifecycle`.
 
 The Fail2Ban finding has also been addressed. Refresh clears stale unban targets and reports unavailable jails individually. The parser recognizes the status tree printed by the packaged client. Regression coverage includes the client output format and a delayed refresh arriving after a connection failure.
