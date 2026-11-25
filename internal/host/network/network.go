@@ -6,6 +6,7 @@ package network
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,26 +83,27 @@ func parseResolverDNS(output string) []string {
 
 func readNetplanFiles(dir string) ([]NetplanFile, string) {
 	managed := filepath.Join(dir, "99-easy-waf.yaml")
-	state := "unavailable"
-	if _, err := os.Lstat(managed); os.IsNotExist(err) {
-		state = "absent"
+	info, err := os.Lstat(managed)
+	if os.IsNotExist(err) {
+		return nil, "absent"
 	}
-	var files []NetplanFile
-	matches, _ := filepath.Glob(filepath.Join(dir, "*.yaml"))
-	for _, p := range matches {
-		b, err := os.ReadFile(p)
-		if err != nil {
-			if p == managed {
-				state = "unavailable"
-			}
-			continue
-		}
-		files = append(files, NetplanFile{Path: p, Content: string(b)})
-		if p == managed {
-			state = "readable"
-		}
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, "unavailable"
 	}
-	return files, state
+	f, err := os.Open(managed)
+	if err != nil {
+		return nil, "unavailable"
+	}
+	defer f.Close()
+	current, err := f.Stat()
+	if err != nil || !os.SameFile(info, current) {
+		return nil, "unavailable"
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, "unavailable"
+	}
+	return []NetplanFile{{Path: managed, Content: string(data)}}, "readable"
 }
 
 // ApplyNetplan stages YAML and applies via the privileged helper.

@@ -30,7 +30,7 @@ func TestManagedNetplanState(t *testing.T) {
 		t.Fatal(err)
 	}
 	files, state := readNetplanFiles(dir)
-	if state != "absent" || len(files) != 1 {
+	if state != "absent" || len(files) != 0 {
 		t.Fatalf("installer only: %s, %d files", state, len(files))
 	}
 	managed := filepath.Join(dir, "99-easy-waf.yaml")
@@ -47,7 +47,21 @@ func TestManagedNetplanState(t *testing.T) {
 		t.Fatal(err)
 	}
 	files, state = readNetplanFiles(dir)
-	if state != "readable" || len(files) != 2 || files[1].Content != "managed" {
+	if state != "readable" || len(files) != 1 || files[0].Path != managed || files[0].Content != "managed" {
 		t.Fatalf("managed and installer files: %s, %d files", state, len(files))
+	}
+}
+
+func TestManagedNetplanSymlink(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "50-cloud-init.yaml")
+	if err := os.WriteFile(other, []byte("installer"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, filepath.Join(dir, "99-easy-waf.yaml")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if files, state := readNetplanFiles(dir); state != "unavailable" || len(files) != 0 {
+		t.Fatalf("managed symlink: %s, %d files", state, len(files))
 	}
 }

@@ -1218,7 +1218,7 @@ Readiness-проба. Пингует PostgreSQL с таймаутом 2 секу
 
 | Метод и путь | Назначение |
 |---|---|
-| `GET /api/v1/host/network` | Текущие интерфейсы и адреса (снимок `ip -j`) |
+| `GET /api/v1/host/network` | Текущие интерфейсы и адреса (снимок `ip -j`). Редактор Netplan получает только обычный управляемый файл `/etc/netplan/99-easy-waf.yaml`. |
 | `PUT /api/v1/host/network/netplan` | Записать и сразу применить YAML netplan, без отката |
 | `POST /api/v1/host/network/netplan/apply` | Применить YAML netplan с автоматическим откатом; возвращает токен |
 | `POST /api/v1/host/network/netplan/commit` | Подтвердить ожидающий apply netplan по токену |
