@@ -1429,3 +1429,7 @@ Routes that change the host (including netplan/firewall **commit**) need a passw
 | `PUT /api/v1/host/users/{name}/ssh-keys` | Replace a user's SSH authorized keys |
 | `POST /api/v1/host/diagnostics/ping` | Ping a target from the host |
 | `POST /api/v1/host/diagnostics/trace` | Traceroute to a target from the host |
+
+### MCP approval duration
+
+The administrator may include `lifetime` in the JSON body of `POST /api/v1/integrations/mcp/approve`. Accepted values are `1d`, `7d`, `30d` (default), `90d` and `until_revoked`. To change an active approval, send `{"lifetime":"until_revoked"}` or another supported duration to `PATCH /api/v1/integrations/mcp/grants/{id}` with recent password confirmation. Success returns 204. An inactive or missing approval returns 409. The grant list includes `status` and `valid_until` (null for indefinite approvals).

@@ -52,7 +52,7 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 const elements = new Map();
 function element() {
   return {dataset: {}, children: [], append(...values) {this.children.push(...values);},
-    replaceChildren() {this.children = [];}};
+    cloneNode:element, removeAttribute(){}, setAttribute(){}, replaceChildren() {this.children = [];}};
 }
 const document = {createElement: element, getElementById(id) {
   if (!elements.has(id)) elements.set(id, element());
@@ -63,7 +63,7 @@ const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&red
   replace(url) {this.destination = url;}};
 let dropApproval = false, dropRevocation = false, offline = false, deletions = 0;
 const notices = [];
-let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',
+let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',status:'connected',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 let identity = null;
 const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLSearchParams,
@@ -76,8 +76,14 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLS
       if (dropApproval) throw new Error('connection lost');
       assert.equal(path,'/api/v1/integrations/mcp/approve');
       assert.equal(JSON.parse(opts.body).query, location.hash.split('?')[1]);
+      assert.equal(JSON.parse(opts.body).lifetime,'until_revoked');
       approved = true;
       return {ok:true,json:async()=>({redirect:'https://gateway.example/callback?code=fixture'})};
+    }
+    if (opts.method === 'PATCH') {
+      assert.equal(JSON.parse(opts.body).lifetime,'7d');
+      grants[0].valid_until='2030-01-01';
+      return {ok:true};
     }
     if (opts.method === 'DELETE') {
       deletions++;
@@ -110,6 +116,7 @@ async function run(){
   assert.equal(notices.at(-1)[0],'warn');
   assert.equal(location.destination, undefined);
   dropApproval = false;
+  elements.get('mcp-approval-lifetime').value = 'until_revoked';
   await elements.get('mcp-approve').onclick({currentTarget:{}});
   assert.equal(approved,true);
   assert.match(location.destination,/callback/);
@@ -137,6 +144,12 @@ async function run(){
   await ctx.loadMCPConnections();
   const grantText = elements.get('mcp-grants').children[0].children[0];
   assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
+  const line = elements.get('mcp-grants').children[0];
+  assert.match(grantText,/Until revoked/);
+  line.children[3].value='7d';
+  ctx.formatHostTime = x=>x;
+  await line.children[5].onclick();
+  assert.match(elements.get('mcp-grants').children[0].children[0],/Expires 2030-01-01/);
   const original = grants;
   await elements.get('mcp-grants').children[0].children[1].onclick();
   assert.equal(notices.at(-1)[0], 'ok');

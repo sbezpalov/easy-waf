@@ -1254,3 +1254,7 @@ Readiness-проба. Пингует PostgreSQL с таймаутом 2 секу
 | `PUT /api/v1/host/users/{name}/ssh-keys` | Заменить авторизованные SSH-ключи пользователя |
 | `POST /api/v1/host/diagnostics/ping` | Пинг цели с хоста |
 | `POST /api/v1/host/diagnostics/trace` | Traceroute до цели с хоста |
+
+### Срок сопряжения MCP
+
+Администратор может передать поле `lifetime` в теле запроса `POST /api/v1/integrations/mcp/approve`. Допустимые значения — `1d`, `7d`, `30d` (по умолчанию), `90d` и `until_revoked`. Чтобы изменить срок действующего сопряжения, отправьте `{"lifetime":"until_revoked"}` или другой поддерживаемый срок на `PATCH /api/v1/integrations/mcp/grants/{id}`. Требуется недавнее подтверждение паролем. Код 204 означает успех, 409 — запись отсутствует или сопряжение больше не действует. В списке сопряжений есть поля `status` и `valid_until` (null для бессрочного доступа).

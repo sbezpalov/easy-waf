@@ -150,7 +150,13 @@ hostname policy to match your deployment.
    the registered callback with the OAuth error `access_denied`.
 4. **Approved connections** lists grants across all management addresses of this appliance. Each entry shows the issuing address, callback, approving operator and last use.
    **Revoke access** invalidates both access and refresh tokens immediately.
-   Each grant expires after 30 days. Sign in again to authorize a new grant.
+   Choose 1, 7, 30 (default), or 90 days, or **Until revoked**. Under
+   **Operate → MCP** you can change an active approval's duration without
+   reconnecting the agent. A new duration starts when you save it. Upgrading
+   preserves each existing expiry. Approvals survive panel sign-out and service
+   restarts. The client must store the latest rotating refresh token. Expired
+   approvals, unfinished setups and approvals invalidated by refresh-token reuse
+   stay visible until removed. Reconnect the client to authorize a new grant.
 
 ## Connect OpenClaw through SSH
 

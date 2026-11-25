@@ -4694,12 +4694,15 @@
         consent.hidden = false;
         const approve = document.getElementById('mcp-approve');
         const deny = document.getElementById('mcp-deny');
+        const lifetime = document.getElementById('mcp-approval-lifetime');
+        lifetime.value = '30d';
         approve.disabled = deny.disabled = false;
         const decide = async action => {
           if (!isCurrent() || approve.disabled || deny.disabled) return;
           approve.disabled = deny.disabled = refresh.disabled = true;
           try {
-            const result = await fetch('/api/v1/integrations/mcp/' + action, {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
+            const body = action === 'approve' ? {query, lifetime:lifetime.value} : {query};
+            const result = await fetch('/api/v1/integrations/mcp/' + action, {method: 'POST', headers: hdr(), body: JSON.stringify(body)});
             if (!result.ok) {
               const message = await apiMessage(result);
               if (isCurrent()) toast(message, 'err');
@@ -4721,11 +4724,13 @@
       if (!rows.length) grants.textContent = 'No approved connections.';
       for (const row of rows) {
         const line = document.createElement('p');
-        line.append(row.name + ' · Issuer: ' + row.issuer + ' · Callback: ' + row.redirect_uri + ' · Approved by ' + row.approved_by + ' · ' + (row.last_used ? 'Last used ' + formatHostTime(row.last_used) : 'Awaiting first use') + ' ');
+        const validity = row.valid_until ? 'Expires ' + formatHostTime(row.valid_until) : 'Until revoked';
+        const state = {expired:'Approval expired', reauth_required:'Refresh token reused — reconnect the client', setup_expired:'Setup code expired — reconnect the client', pending:'Awaiting client setup', connected:'Connected'};
+        line.append(row.name + ' · Issuer: ' + row.issuer + ' · Callback: ' + row.redirect_uri + ' · Approved by ' + row.approved_by + ' · ' + validity + ' · ' + (state[row.status] || 'Status unavailable') + (row.last_used ? ' · Last used ' + formatHostTime(row.last_used) : '') + ' ');
         const revoke = document.createElement('button');
         revoke.type = 'button';
         revoke.className = 'secondary';
-        revoke.textContent = 'Revoke access';
+        revoke.textContent = ['expired','setup_expired','reauth_required'].includes(row.status) ? 'Remove approval' : 'Revoke access';
         revoke.onclick = () => withBusy(revoke, async () => {
           if (!isCurrent()) return;
           try {
@@ -4744,6 +4749,28 @@
           await loadMCPConnections();
         });
         line.append(revoke);
+        if (row.status === 'connected' || row.status === 'pending') {
+          const select = document.getElementById('mcp-approval-lifetime').cloneNode(true);
+          select.removeAttribute('id');
+          select.setAttribute('aria-label','New approval duration for ' + row.name);
+          select.value = row.valid_until ? '30d' : 'until_revoked';
+          const save = document.createElement('button');
+          save.type = 'button';
+          save.className = 'secondary';
+          save.textContent = 'Change duration';
+          save.onclick = () => withBusy(save, async () => {
+            if (!isCurrent()) return;
+            try {
+              const result = await fetch(path + '/' + encodeURIComponent(row.id), {method:'PATCH',headers:hdr(),body:JSON.stringify({lifetime:select.value})});
+              if (!result.ok) throw new Error(await apiMessage(result));
+              if (isCurrent()) toast('Approval duration updated.', 'ok');
+            } catch (err) {
+              if (isCurrent()) toast('Could not confirm duration change. ' + err.message,'warn');
+            }
+            if (isCurrent()) await loadMCPConnections();
+          });
+          line.append(' ', select, ' ', save);
+        }
         grants.append(line);
       }
     } catch (_) {

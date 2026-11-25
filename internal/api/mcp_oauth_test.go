@@ -202,14 +202,33 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	for _, grant := range list {
 		if grant.ApprovedBy == user && grant.Issuer == namedOrigin && grant.RedirectURI == q.Get("redirect_uri") && grant.LastUsed != nil {
 			grantID = grant.ID
+			if grant.ValidUntil == nil || grant.Status != "connected" {
+				t.Fatal("expected a connected, time-limited approval")
+			}
 		}
 	}
 	if grantID == "" {
 		t.Fatal("grant from original issuer missing on alternate management address")
 	}
-	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
+	call("PATCH", grants+"/"+grantID, "application/json", `{"lifetime":"invalid"}`, admin, 400)
+	call("PATCH", grants+"/"+grantID, "application/json", `{"lifetime":"until_revoked"}`, admin, 204)
+	_, b = call("GET", grants, "", "", admin, 200)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, g := range list {
+		if g.ID == grantID {
+			found = g.ValidUntil == nil && g.Status == "connected"
+		}
+	}
+	if !found {
+		t.Fatal("persistent approval missing")
+	}
 	origin = namedOrigin
 	client = namedClient
+	call("POST", "/mcp", "application/json", rpc, token, 200)
+	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
 }

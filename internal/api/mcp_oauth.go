@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/store"
@@ -162,41 +163,50 @@ func (s *Server) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusSeeOther)
 }
 
-func (s *Server) readConsentRequest(w http.ResponseWriter, r *http.Request) (url.Values, registration, bool) {
+func (s *Server) readConsentRequest(w http.ResponseWriter, r *http.Request) (url.Values, registration, string, bool) {
 	if !s.oauthAvailable(w, r) {
-		return nil, registration{}, false
+		return nil, registration{}, "", false
 	}
 	var body struct {
-		Query string `json:"query"`
+		Query    string `json:"query"`
+		Lifetime string `json:"lifetime"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body) != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return nil, registration{}, false
+		return nil, registration{}, "", false
 	}
 	q, err := url.ParseQuery(body.Query)
 	c, ok := s.validateAuthorization(q, issuer(r))
 	if err != nil || !ok || q.Get("client_name") != c.Name {
 		http.Error(w, "Invalid authorization request", http.StatusBadRequest)
-		return nil, registration{}, false
+		return nil, registration{}, "", false
 	}
-	return q, c, true
+	return q, c, body.Lifetime, true
 }
 
 func (s *Server) oauthDeny(w http.ResponseWriter, r *http.Request) {
-	q, c, ok := s.readConsentRequest(w, r)
+	q, c, _, ok := s.readConsentRequest(w, r)
 	if ok {
 		writeConsentRedirect(w, r, c, q, url.Values{"error": {"access_denied"}})
 	}
 }
 
 func (s *Server) oauthApprove(w http.ResponseWriter, r *http.Request) {
-	q, c, ok := s.readConsentRequest(w, r)
+	q, c, lifetime, ok := s.readConsentRequest(w, r)
 	if !ok {
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
+	if lifetime == "" {
+		lifetime = "30d"
+	} // Existing panel versions.
+	expiry, ok := grantExpiry(lifetime)
+	if !ok {
+		http.Error(w, "Invalid approval lifetime", http.StatusBadRequest)
+		return
+	}
 	code := newSecret()
-	err := s.Eng.Store.ApproveMCP(r.Context(), store.MCPGrant{ID: uuid.NewString(), Name: c.Name, ApprovedBy: p.Username}, issuer(r), q.Get("client_id"), c.Redirects[0], q.Get("code_challenge"), digest(code))
+	err := s.Eng.Store.ApproveMCP(r.Context(), store.MCPGrant{ID: uuid.NewString(), Name: c.Name, ApprovedBy: p.Username, ValidUntil: expiry}, issuer(r), q.Get("client_id"), c.Redirects[0], q.Get("code_challenge"), digest(code))
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -287,4 +297,46 @@ func (s *Server) oauthRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func grantExpiry(lifetime string) (*time.Time, bool) {
+	if lifetime == "until_revoked" {
+		return nil, true
+	}
+	days := map[string]int{"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+	n, ok := days[lifetime]
+	if !ok {
+		return nil, false
+	}
+	expires := time.Now().UTC().AddDate(0, 0, n)
+	return &expires, true
+}
+
+func (s *Server) oauthGrantLifetime(w http.ResponseWriter, r *http.Request) {
+	if !s.oauthAvailable(w, r) {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	var body struct {
+		Lifetime string `json:"lifetime"`
+	}
+	if err != nil || decodeJSONRequest(r, &body) != nil {
+		http.Error(w, "Invalid approval update", http.StatusBadRequest)
+		return
+	}
+	expiry, ok := grantExpiry(body.Lifetime)
+	if !ok {
+		http.Error(w, "Invalid approval lifetime", http.StatusBadRequest)
+		return
+	}
+	err = s.Eng.Store.SetMCPGrantExpiry(r.Context(), id.String(), expiry)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "Approval is no longer active", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

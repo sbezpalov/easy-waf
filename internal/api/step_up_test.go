@@ -83,6 +83,7 @@ func TestTrustBoundaryWritesRequireStepUp(t *testing.T) {
 		{http.MethodPost, "/api/v1/certificates/cert1/request-issue", `{}`},
 		{http.MethodPost, "/api/v1/ipbl/sync", ``},
 		{http.MethodPost, "/api/v1/integrations/crowdsec/decisions", `{}`},
+		{http.MethodPatch, "/api/v1/integrations/mcp/grants/fixture", `{"lifetime":"until_revoked"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
