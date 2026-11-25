@@ -5275,9 +5275,7 @@
   }
 
   function findEasyWafNetplan(files) {
-    if (!Array.isArray(files)) return '';
-    const f = files.find((x) => x.path && x.path.indexOf('99-easy-waf') >= 0);
-    return f ? (f.content || '') : (files[0] ? files[0].content : '');
+    return Array.isArray(files) ? files.find(file => file?.path === '/etc/netplan/99-easy-waf.yaml') : undefined;
   }
 
   let networkLoadGeneration = 0;
@@ -5288,7 +5286,7 @@
       const editor = document.getElementById(id);
       editor.value = editor.defaultValue = '';
     }
-    for (const id of ['net-overview', 'net-netplan-msg', 'net-firewall-msg', 'net-firewall-load-status']) {
+    for (const id of ['net-overview', 'net-netplan-msg', 'net-netplan-source', 'net-firewall-msg', 'net-firewall-load-status']) {
       document.getElementById(id).textContent = '';
     }
   }
@@ -5325,7 +5323,14 @@
     await Promise.all([
       loadSection('/api/v1/host/network', 'Network configuration', ovBox, ov => {
         ovBox.textContent = formatNetOverview(ov);
-        refreshNetworkEditor('net-netplan-yaml', findEasyWafNetplan(ov.netplan_files), 'net-netplan-msg');
+        const file = findEasyWafNetplan(ov.netplan_files);
+        const source = document.getElementById('net-netplan-source');
+        if (typeof file?.content === 'string' || ov.managed_netplan_state === 'absent') {
+          refreshNetworkEditor('net-netplan-yaml', file?.content ?? '', 'net-netplan-msg');
+          source.textContent = file ? '' : 'The managed file does not exist yet. Applying creates it.';
+        } else {
+          source.textContent = 'The current managed file could not be read. Applying will write the editor contents to the managed file.';
+        }
       }),
       loadSection('/api/v1/host/firewall', 'Firewall configuration', firewallStatus, fw => {
         refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset ?? '', 'net-firewall-msg');

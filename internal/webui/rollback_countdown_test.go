@@ -177,23 +177,36 @@ context.saveHostRollbackCapability(capability);
   assert.equal(rule.textContent, 'Managed Zabbix rule: present.', 'rule status did not reload after confirmation');
   assert.equal(firewallReads, 4);
 
-  const networkStart = page.indexOf('  let networkLoadGeneration =');
+  const networkStart = page.indexOf('  function findEasyWafNetplan(');
   const networkEnd = page.indexOf("  document.getElementById('btn-net-netplan-apply').onclick", networkStart);
   assert.ok(networkStart >= 0 && networkEnd > networkStart, 'network loader not found');
   const editor = {value: '', defaultValue: ''};
   const netplanEditor = {value: '', defaultValue: ''};
   const networkElements = {'net-firewall-rules': editor, 'net-netplan-yaml': netplanEditor,
-    'net-firewall-msg': {}, 'net-firewall-load-status': {}, 'net-netplan-msg': {}, 'net-overview': {style: {}}};
+    'net-firewall-msg': {}, 'net-firewall-load-status': {}, 'net-netplan-msg': {}, 'net-netplan-source': {}, 'net-overview': {style: {}}};
   const snapshot = {managed_ruleset: 'managed file', ruleset: 'all kernel tables'};
+  const network = {managed_netplan_state: 'absent', netplan_files: [
+    {path: '/etc/netplan/50-cloud-init.yaml', content: 'installer configuration'},
+    {path: '/etc/netplan/99-easy-waf-old.yaml', content: 'unmanaged configuration'}
+  ]};
   const networkContext = {
     document: {getElementById: id => networkElements[id]},
-    findEasyWafNetplan: () => 'managed netplan', formatNetOverview: () => 'overview',
+    formatNetOverview: () => 'overview',
     hdr: () => ({}), updateHostRollbackApplyButtons: () => {},
-    fetch: async path => ({ok: true, json: async () => path === '/api/v1/host/firewall' ? snapshot : {}})
+    fetch: async path => ({ok: true, json: async () => path === '/api/v1/host/firewall' ? snapshot : network})
   };
   vm.runInNewContext(page.slice(networkStart, networkEnd), networkContext);
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, snapshot.managed_ruleset);
+  assert.equal(netplanEditor.value, '');
+  assert.match(networkElements['net-netplan-source'].textContent, /does not exist/);
+  network.managed_netplan_state = 'unavailable';
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.match(networkElements['net-netplan-source'].textContent, /could not be read/);
+  network.netplan_files.push({path: '/etc/netplan/99-easy-waf.yaml', content: 'managed netplan'});
+  network.managed_netplan_state = 'readable';
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(netplanEditor.value, 'managed netplan');
   netplanEditor.value = 'netplan draft';
   editor.value = 'firewall draft';
   snapshot.managed_ruleset = 'changed on host';

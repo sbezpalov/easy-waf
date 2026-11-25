@@ -19,13 +19,14 @@ import (
 
 // Overview is host network state for the API.
 type Overview struct {
-	Links     []json.RawMessage `json:"links"`
-	Addresses []json.RawMessage `json:"addresses"`
-	Routes    []json.RawMessage `json:"routes,omitempty"`
-	Hostname  string            `json:"hostname"`
-	DNS       []string          `json:"dns,omitempty"`
-	NTP       string            `json:"ntp_synced,omitempty"`
-	Netplan   []NetplanFile     `json:"netplan_files,omitempty"`
+	Links               []json.RawMessage `json:"links"`
+	Addresses           []json.RawMessage `json:"addresses"`
+	Routes              []json.RawMessage `json:"routes,omitempty"`
+	Hostname            string            `json:"hostname"`
+	DNS                 []string          `json:"dns,omitempty"`
+	NTP                 string            `json:"ntp_synced,omitempty"`
+	Netplan             []NetplanFile     `json:"netplan_files,omitempty"`
+	ManagedNetplanState string            `json:"managed_netplan_state"`
 }
 
 type NetplanFile struct {
@@ -60,15 +61,32 @@ func GetOverview(ctx context.Context) (Overview, error) {
 	if b, err := runner.Run(ctx, 10*time.Second, "/usr/bin/timedatectl", "show", "-p", "NTPSynchronized", "--value"); err == nil {
 		out.NTP = strings.TrimSpace(string(b))
 	}
-	matches, _ := filepath.Glob("/etc/netplan/*.yaml")
+	out.Netplan, out.ManagedNetplanState = readNetplanFiles("/etc/netplan")
+	return out, nil
+}
+
+func readNetplanFiles(dir string) ([]NetplanFile, string) {
+	managed := filepath.Join(dir, "99-easy-waf.yaml")
+	state := "unavailable"
+	if _, err := os.Lstat(managed); os.IsNotExist(err) {
+		state = "absent"
+	}
+	var files []NetplanFile
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	for _, p := range matches {
 		b, err := os.ReadFile(p)
 		if err != nil {
+			if p == managed {
+				state = "unavailable"
+			}
 			continue
 		}
-		out.Netplan = append(out.Netplan, NetplanFile{Path: p, Content: string(b)})
+		files = append(files, NetplanFile{Path: p, Content: string(b)})
+		if p == managed {
+			state = "readable"
+		}
 	}
-	return out, nil
+	return files, state
 }
 
 // ApplyNetplan stages YAML and applies via the privileged helper.
