@@ -10,6 +10,7 @@
             <div class="row"><label>Code <input id="totp-code" inputmode="numeric" autocomplete="one-time-code" /></label> <button type="button" id="btn-totp-enable">Turn on</button></div>
           </div>
           <pre id="totp-recovery" class="hidden"></pre>
+          <button type="button" class="secondary hidden" id="btn-totp-dismiss">I saved my recovery codes</button>
         </div>
         <p class="dash-note" style="margin-top:0">Service-specific options live under <strong>Certificates</strong> (ACME, management TLS), <strong>CrowdSec</strong> (LAPI / SPOE), and <strong>Security</strong> (WAF, IP lists, GeoIP). Use <strong>Load from server</strong> here to fill all tabs from <code>GET /api/v1/settings</code>.</p>
         <div class="row">

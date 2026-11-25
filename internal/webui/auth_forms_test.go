@@ -56,3 +56,55 @@ async function run(){
 run().catch(e=>{console.error(e);process.exitCode=1});
 `)
 }
+
+// Verify that one-time recovery codes stay available to save within the session
+// and that delayed responses cannot restore secrets after logout.
+func TestTOTPSecretLifecycle(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const elements = new Map();
+function element(id) {
+  if (!elements.has(id)) elements.set(id, {value:'',textContent:'',focus(){},removeAttribute(name){delete this[name];},
+    classList:{add(){},remove(){},toggle(){}}});
+  return elements.get(id);
+}
+const ctx = vm.createContext({document:{getElementById:element},hdr:()=>({}),
+  sessionStorage:{removeItem(){}},mcpConnectionsGeneration:0,clearNetworkEditors(){},clearManagementTLSForm(){}});
+function include(start,end) {
+  const a=page.indexOf(start), b=page.indexOf(end,a);
+  assert.ok(a>=0 && b>a);
+  vm.runInContext(page.slice(a,b),ctx);
+}
+include('  const TOK =','  const hdr =');
+include('  let totpGeneration','  function fillAppMaintenance');
+include("  document.getElementById('btn-totp-setup').onclick","  document.getElementById('btn-pu-create').onclick");
+const response={ok:true,json:async()=>({secret:'fixture',otpauth_uri:'otpauth://fixture',recovery_codes:['test-recovery']})};
+async function run() {
+  ctx.fetch=async()=>response;
+  await element('btn-totp-setup').onclick();
+  assert.equal(element('totp-secret').textContent,'fixture');
+  element('totp-code').value='123456';
+  await element('btn-totp-enable').onclick();
+  assert.equal(element('totp-uri').href,undefined);
+  assert.equal(element('totp-code').value,'');
+  assert.equal(element('totp-secret').textContent,'');
+  assert.match(element('totp-recovery').textContent,/test-recovery/);
+  element('btn-totp-dismiss').onclick();
+  assert.equal(element('totp-recovery').textContent,'');
+  for(const action of ['setup','enable']) {
+    let finish;
+    ctx.fetch=()=>new Promise(resolve=>{finish=resolve;});
+    const pending=element('btn-totp-'+action).onclick();
+    element('totp-recovery').textContent='test-recovery';
+    vm.runInContext("setTok('')",ctx);
+    finish(response);
+    await pending;
+    assert.equal(element('totp-recovery').textContent,'');
+    assert.equal(element('totp-secret').textContent,'');
+    assert.equal(element('totp-uri').href,undefined);
+  }
+}
+run().catch(err=>{console.error(err);process.exitCode=1;});
+`)
+}

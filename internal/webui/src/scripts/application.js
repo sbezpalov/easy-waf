@@ -195,6 +195,19 @@
     });
   }
 
+  let totpGeneration = 0;
+  function clearTOTPSecrets() {
+    totpGeneration++;
+    document.getElementById('totp-secret').textContent = '';
+    document.getElementById('totp-uri').removeAttribute('href');
+    document.getElementById('totp-code').value = '';
+    document.getElementById('totp-setup-box').classList.add('hidden');
+    const recovery = document.getElementById('totp-recovery');
+    recovery.textContent = '';
+    recovery.classList.add('hidden');
+    document.getElementById('btn-totp-dismiss').classList.add('hidden');
+  }
+
   function renderTOTPStatus(on) {
     const st = document.getElementById('totp-status');
     if (!st) return;
@@ -1727,31 +1740,42 @@
   }
 
   document.getElementById('btn-totp-setup').onclick = async () => {
+    const generation = ++totpGeneration;
     const r = await fetch('/api/v1/auth/totp/setup', { method: 'POST', headers: hdr() });
     if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
     const j = await r.json();
+    if (generation !== totpGeneration) return;
+    clearTOTPSecrets();
     document.getElementById('totp-secret').textContent = j.secret;
     document.getElementById('totp-uri').href = j.otpauth_uri;
-    document.getElementById('totp-recovery').classList.add('hidden');
     document.getElementById('totp-setup-box').classList.remove('hidden');
   };
   document.getElementById('btn-totp-enable').onclick = async () => {
+    const generation = totpGeneration;
     const code = document.getElementById('totp-code').value.trim();
     const r = await fetch('/api/v1/auth/totp/enable', { method: 'POST', headers: hdr(), body: JSON.stringify({ code }) });
     if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
     const j = await r.json();
-    document.getElementById('totp-code').value = '';
+    if (generation !== totpGeneration) return;
+    clearTOTPSecrets();
     renderTOTPStatus(true);
     const pre = document.getElementById('totp-recovery');
     pre.textContent = 'Recovery codes: each works once instead of a code. Store them now; they are not shown again.\n\n' + j.recovery_codes.join('\n');
     pre.classList.remove('hidden');
+    document.getElementById('btn-totp-dismiss').classList.remove('hidden');
+  };
+  document.getElementById('btn-totp-dismiss').onclick = () => {
+    clearTOTPSecrets();
+    document.getElementById('btn-totp-disable').focus();
   };
   document.getElementById('btn-totp-disable').onclick = async () => {
-    if (!(await confirmDialog('Turn off two-factor sign-in?', { danger: true, okLabel: 'Turn off' }))) return;
+    const generation = totpGeneration;
+    if (!(await confirmDialog('Turn off two-factor sign-in?', { danger: true, okLabel: 'Turn off' })) || generation !== totpGeneration) return;
     const r = await fetch('/api/v1/auth/totp/disable', { method: 'POST', headers: hdr() });
     if (!r.ok) { toast(await apiMessage(r), 'err'); return; }
+    if (generation !== totpGeneration) return;
+    clearTOTPSecrets();
     renderTOTPStatus(false);
-    document.getElementById('totp-recovery').classList.add('hidden');
   };
 
   document.getElementById('btn-pu-create').onclick = () => {

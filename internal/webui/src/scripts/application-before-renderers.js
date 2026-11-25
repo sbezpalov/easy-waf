@@ -7,6 +7,7 @@
       mcpConnectionsGeneration++;
       clearNetworkEditors();
       clearManagementTLSForm();
+      clearTOTPSecrets();
     }
   };
 
