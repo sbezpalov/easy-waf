@@ -7511,7 +7511,11 @@
         }
       }),
       loadSection('/api/v1/host/firewall', 'Firewall configuration', firewallStatus, fw => {
-        refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset ?? '', 'net-firewall-msg');
+        if (typeof fw.managed_ruleset !== 'string') {
+          firewallStatus.textContent = 'The current managed firewall file could not be read. The editor may show an earlier configuration.';
+          return;
+        }
+        refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset, 'net-firewall-msg');
         firewallStatus.textContent = '';
       }),
       pendingTask

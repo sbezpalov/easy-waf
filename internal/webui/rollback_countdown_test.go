@@ -218,7 +218,13 @@ context.saveHostRollbackCapability(capability);
   editor.value = editor.defaultValue;
   delete snapshot.managed_ruleset;
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
-  assert.equal(editor.value, '', 'editor exposed unrelated kernel tables');
+  assert.equal(editor.value, 'changed on host', 'unavailable file erased the previous configuration');
+  assert.equal(editor.defaultValue, 'changed on host');
+  assert.match(networkElements['net-firewall-load-status'].textContent, /could not be read/);
+  snapshot.managed_ruleset = '';
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(editor.value, '', 'a readable empty file should clear a clean editor');
+  assert.equal(networkElements['net-firewall-load-status'].textContent, '');
   const normalFetch = networkContext.fetch;
   editor.value = 'unsaved firewall rules';
   networkContext.fetch = async path => {
