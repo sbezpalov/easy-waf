@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,6 +16,45 @@ import (
 	"github.com/easy-waf/easy-waf/internal/geoip"
 	"github.com/easy-waf/easy-waf/internal/haproxy"
 )
+
+func TestCopyArtifactVerifiesChecksumBeforeReplacement(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "revision")
+	dst := filepath.Join(dir, "live.cfg")
+	neighbor := dst + ".tmp"
+	writeArtifactTestFile(t, src, "corrupted")
+	writeArtifactTestFile(t, dst, "current")
+	writeArtifactTestFile(t, neighbor, "unrelated")
+	want := sha256HexBytes([]byte("validated"))
+	if err := copyFileAtomic(src, dst, 0o600, want); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected checksum error, got %v", err)
+	}
+	assertContents := func(path, want string) {
+		t.Helper()
+		body, err := os.ReadFile(path)
+		if err != nil || string(body) != want {
+			t.Fatalf("unexpected content at %s: %q (%v)", path, body, err)
+		}
+	}
+	assertContents(dst, "current")
+	assertContents(neighbor, "unrelated")
+	writeArtifactTestFile(t, src, "validated")
+	if err := copyFileAtomic(src, dst, 0o600, want); err != nil {
+		t.Fatal(err)
+	}
+	assertContents(dst, "validated")
+	assertContents(neighbor, "unrelated")
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("unexpected files after replacement: %v (%v)", entries, err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(dst)
+		if err != nil || info.Mode().Perm() != 0o640 {
+			t.Fatalf("restored artifact must be readable by HAProxy: %v (%v)", info, err)
+		}
+	}
+}
 
 func TestCountryMapProviderFailurePreservesExistingMap(t *testing.T) {
 	e := newArtifactTestEngine(t)

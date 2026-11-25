@@ -34,6 +34,18 @@ func TestHashArtifactRejectsFIFOWithoutWaiting(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("hash waited for a FIFO writer")
 	}
+	go func() {
+		dst := filepath.Join(filepath.Dir(path), "live.cfg")
+		finished <- copyFileAtomic(path, dst, 0o640, sha256HexBytes(nil))
+	}()
+	select {
+	case err := <-finished:
+		if err == nil || !strings.Contains(err.Error(), "expected a regular file") {
+			t.Fatalf("unexpected copy error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("artifact copy waited for a FIFO writer")
+	}
 
 	// Simulate replacement between path inspection and Open by passing the
 	// FIFO directly to the opener. File type is checked again on the handle.

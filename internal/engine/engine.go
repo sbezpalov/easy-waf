@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -516,38 +515,8 @@ func sha256HexBytes(b []byte) string {
 }
 
 func sha256HexFile(path string) (string, error) {
-	before, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if !before.Mode().IsRegular() {
-		return "", fmt.Errorf("hash artifact %q: expected a regular file", path)
-	}
-	f, err := openArtifactForHash(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	initial, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if !initial.Mode().IsRegular() {
-		return "", fmt.Errorf("hash artifact %q: expected a regular file", path)
-	}
-	hash := sha256.New()
-	n, err := io.Copy(hash, io.LimitReader(f, initial.Size()))
-	if err != nil {
-		return "", err
-	}
-	final, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if n != initial.Size() || final.Size() != initial.Size() || !final.ModTime().Equal(initial.ModTime()) {
-		return "", fmt.Errorf("hash artifact %q: file changed while reading", path)
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	sum, _, err := hashFile(path)
+	return sum, err
 }
 
 // LiveHAProxySHA256 returns the sha256 hex digest of the current live haproxy.cfg.

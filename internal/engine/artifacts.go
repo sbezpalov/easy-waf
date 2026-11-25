@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -131,46 +132,59 @@ func (e *Engine) managedArtifactPaths(cfg config.GlobalSettings, extra []string)
 	return paths, nil
 }
 
-func copyFileAndHash(src, dst string, mode os.FileMode) (string, int64, error) {
-	in, err := os.Open(src)
+func copyRegularArtifact(dst io.Writer, src string) (int64, error) {
+	before, err := os.Stat(src)
 	if err != nil {
-		return "", 0, err
+		return 0, err
+	}
+	if !before.Mode().IsRegular() {
+		return 0, fmt.Errorf("read artifact %q: expected a regular file", src)
+	}
+	in, err := openArtifactForHash(src)
+	if err != nil {
+		return 0, err
 	}
 	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-		return "", 0, err
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	initial, err := in.Stat()
 	if err != nil {
-		return "", 0, err
+		return 0, err
 	}
-	h := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(out, h), in)
-	closeErr := out.Close()
-	if copyErr != nil {
-		return "", 0, copyErr
+	if !initial.Mode().IsRegular() {
+		return 0, fmt.Errorf("read artifact %q: expected a regular file", src)
 	}
-	if closeErr != nil {
-		return "", 0, closeErr
+	n, err := io.Copy(dst, io.LimitReader(in, initial.Size()))
+	if err != nil {
+		return 0, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), n, nil
+	final, err := in.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if n != initial.Size() || final.Size() != initial.Size() || !final.ModTime().Equal(initial.ModTime()) {
+		return 0, fmt.Errorf("read artifact %q: file changed while reading", src)
+	}
+	return n, nil
 }
 
 func hashFile(path string) (string, int64, error) {
-	in, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer in.Close()
 	h := sha256.New()
-	n, err := io.Copy(h, in)
+	n, err := copyRegularArtifact(h, path)
 	if err != nil {
 		return "", 0, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-func copyFileAtomic(src, dst string, mode os.FileMode) error {
+func copyArtifactAndHash(dst io.Writer, path string) (string, int64, error) {
+	h := sha256.New()
+	n, err := copyRegularArtifact(io.MultiWriter(dst, h), path)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
+
+func copyFileAtomic(src, dst string, mode os.FileMode, expectedSHA string) error {
 	if mode.Perm() == 0 {
 		mode = 0o640
 	}
@@ -181,16 +195,30 @@ func copyFileAtomic(src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	tmp := dst + ".tmp"
-	if _, _, err := copyFileAndHash(src, tmp, mode.Perm()); err != nil {
-		_ = os.Remove(tmp)
+	out, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
+	tmp := out.Name()
+	defer os.Remove(tmp)
+	defer out.Close()
+	sum, _, err := copyArtifactAndHash(out, src)
+	if err != nil {
 		return err
 	}
-	return nil
+	if !strings.EqualFold(sum, expectedSHA) {
+		return fmt.Errorf("artifact checksum mismatch for %s", dst)
+	}
+	if err := out.Chmod(mode.Perm()); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
 }
 
 func writeArtifactSnapshot(
@@ -226,9 +254,17 @@ func writeArtifactSnapshot(
 		}
 		backupRel := filepath.ToSlash(filepath.Join("files", fmt.Sprintf("%06d", len(manifest.ManagedFiles))))
 		backupAbs := filepath.Join(snapshotDir, filepath.FromSlash(backupRel))
-		sum, size, err := copyFileAndHash(path, backupAbs, info.Mode().Perm())
+		out, err := os.OpenFile(backupAbs, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+		if err != nil {
+			return artifactManifest{}, fmt.Errorf("create artifact backup for %s: %w", path, err)
+		}
+		sum, size, err := copyArtifactAndHash(out, path)
+		closeErr := out.Close()
 		if err != nil {
 			return artifactManifest{}, fmt.Errorf("snapshot managed artifact %s: %w", path, err)
+		}
+		if closeErr != nil {
+			return artifactManifest{}, fmt.Errorf("close artifact backup for %s: %w", path, closeErr)
 		}
 		manifest.ManagedFiles = append(manifest.ManagedFiles, artifactManifestFile{
 			Path:       path,
@@ -269,12 +305,12 @@ func cleanBackupPath(snapshotDir, backupRel string) (string, error) {
 }
 
 func readAndVerifyArtifactManifest(manifestPath string) (artifactManifest, error) {
-	body, err := os.ReadFile(manifestPath)
-	if err != nil {
+	var body bytes.Buffer
+	if _, err := copyRegularArtifact(&body, manifestPath); err != nil {
 		return artifactManifest{}, err
 	}
 	var manifest artifactManifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
+	if err := json.Unmarshal(body.Bytes(), &manifest); err != nil {
 		return artifactManifest{}, fmt.Errorf("decode artifact manifest: %w", err)
 	}
 	if manifest.Version != artifactManifestVersion {
@@ -303,9 +339,12 @@ func readAndVerifyArtifactManifest(manifestPath string) (artifactManifest, error
 		if !info.Mode().IsRegular() || info.Size() != file.Size {
 			return artifactManifest{}, fmt.Errorf("artifact backup size/type mismatch: %s", backupAbs)
 		}
-		sum, _, err := hashFile(backupAbs)
+		sum, size, err := hashFile(backupAbs)
 		if err != nil {
 			return artifactManifest{}, fmt.Errorf("verify artifact backup %s: %w", backupAbs, err)
+		}
+		if size != file.Size {
+			return artifactManifest{}, fmt.Errorf("artifact backup size mismatch: %s", backupAbs)
 		}
 		if !strings.EqualFold(sum, file.SHA256) {
 			return artifactManifest{}, fmt.Errorf("artifact backup checksum mismatch: %s", backupAbs)
@@ -364,15 +403,8 @@ func restoreArtifactManifest(
 		if err != nil {
 			return artifactManifest{}, err
 		}
-		if err := copyFileAtomic(backupAbs, file.Path, os.FileMode(file.Mode)); err != nil {
+		if err := copyFileAtomic(backupAbs, file.Path, os.FileMode(file.Mode), file.SHA256); err != nil {
 			return artifactManifest{}, fmt.Errorf("restore managed artifact %s: %w", file.Path, err)
-		}
-		got, err := sha256HexFile(file.Path)
-		if err != nil {
-			return artifactManifest{}, fmt.Errorf("verify restored artifact %s: %w", file.Path, err)
-		}
-		if !strings.EqualFold(got, file.SHA256) {
-			return artifactManifest{}, fmt.Errorf("restored artifact checksum mismatch: %s", file.Path)
 		}
 	}
 
@@ -386,7 +418,7 @@ func restoreArtifactManifest(
 		if err != nil {
 			return artifactManifest{}, err
 		}
-		if err := copyFileAtomic(backupAbs, currentConfigPath, os.FileMode(configFile.Mode)); err != nil {
+		if err := copyFileAtomic(backupAbs, currentConfigPath, os.FileMode(configFile.Mode), configFile.SHA256); err != nil {
 			return artifactManifest{}, fmt.Errorf("restore config at current path %s: %w", currentConfigPath, err)
 		}
 		// This destination may have been configured after the revision was
@@ -512,7 +544,7 @@ func (e *Engine) createRevisionSnapshot(cfg config.GlobalSettings, sha256Hex str
 	}
 	cfgPath := haproxy.LiveCfgPath(e.StateDir, cfg.HAProxyConfigPath)
 	previewPath := filepath.Join(e.StateDir, "revisions", fmt.Sprintf("haproxy-%s.cfg", sha256Hex[:12]))
-	if err := copyFileAtomic(cfgPath, previewPath, 0o640); err != nil {
+	if err := copyFileAtomic(cfgPath, previewPath, 0o640, sha256Hex); err != nil {
 		_ = snapshot.remove()
 		return nil, err
 	}
