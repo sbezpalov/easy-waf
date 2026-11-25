@@ -75,6 +75,7 @@ The `/health` endpoint and `GET` requests are exempt from this check.
 ## Audit
 
 - Management HTTP access logs record the method, host, path, request ID, client address, response status, byte count and duration. Query strings are omitted so OAuth state and client callback parameters stay out of the API access journal.
+- Management API and MCP diagnostics responses send `Cache-Control: no-store` to browsers and HTTP caches. The panel sends `Referrer-Policy: no-referrer` on navigation.
 - Administrative actions are logged in PostgreSQL `audit_log`, and each record is also written to the service log (`journalctl -u easy-waf-api | grep ' audit action='`). The application's database role owns the table, so anyone holding `DATABASE_URL` can rewrite it: `audit_log` is a convenience, not evidence. The journal is out of reach of the `easy-waf` account. Forward it off the appliance if the trail has to survive a compromise.
 
 ## Host management (`/api/v1/host/*`)

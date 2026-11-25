@@ -5,6 +5,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/easy-waf/easy-waf/internal/webui"
 )
@@ -17,6 +18,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		// API responses can carry session credentials, recovery codes and
+		// private configuration. Set this before any early error response.
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {

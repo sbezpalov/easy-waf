@@ -139,8 +139,41 @@ func streamHandler(api apiClient) http.Handler {
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 32 << 10,
 	})
-	return transport
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		transport.ServeHTTP(&diagnosticsResponseWriter{ResponseWriter: w}, r)
+	})
 }
+
+// The SDK sets its own streaming cache directives after authentication. Apply
+// the diagnostics policy when headers are sent and preserve streaming flushes.
+type diagnosticsResponseWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (w *diagnosticsResponseWriter) start() {
+	if !w.started {
+		w.Header().Set("Cache-Control", "no-store, no-transform")
+		w.started = true
+	}
+}
+
+func (w *diagnosticsResponseWriter) WriteHeader(status int) {
+	w.start()
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *diagnosticsResponseWriter) Write(p []byte) (int, error) {
+	w.start()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *diagnosticsResponseWriter) FlushError() error {
+	w.start()
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *diagnosticsResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func registerIPDiagnostics(server *mcp.Server, api apiClient) {
 	type arguments struct {

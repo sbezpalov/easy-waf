@@ -269,3 +269,17 @@ func TestMCPStartupConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnosticsFlushPreservesCachePolicy(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := &diagnosticsResponseWriter{ResponseWriter: rec}
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		t.Fatal(err)
+	}
+	resp := rec.Result()
+	defer resp.Body.Close()
+	if !rec.Flushed || resp.Header.Get("Cache-Control") != "no-store, no-transform" {
+		t.Fatalf("flushed=%v cache=%q", rec.Flushed, resp.Header.Get("Cache-Control"))
+	}
+}

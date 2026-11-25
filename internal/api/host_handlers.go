@@ -584,7 +584,7 @@ func (s *Server) streamAptAction(w http.ResponseWriter, r *http.Request, brokerO
 	}
 	flushController := http.NewResponseController(flushTarget)
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Content-Encoding", "identity")
 

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,10 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
+		cache := strings.Split(resp.Header.Get("Cache-Control"), ", ")
+		if !slices.Contains(cache, "no-store") || resp.Header.Get("Referrer-Policy") != "no-referrer" {
+			t.Fatalf("%s: missing management privacy headers", r.URL.Path)
+		}
 		b, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatal(err)

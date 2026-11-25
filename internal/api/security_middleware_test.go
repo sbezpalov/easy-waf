@@ -43,6 +43,26 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestManagementResponsePrivacy(t *testing.T) {
+	for _, tc := range []struct{ path, cache string }{
+		{"/api/v1/settings", "no-store"},
+		{"/api/v1/auth/totp/setup", "no-store"},
+		{"/api/v1/integrations/mcp/approve", "no-store"},
+		{"/", ""},
+	} {
+		rec := httptest.NewRecorder()
+		securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "denied", http.StatusForbidden)
+		})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if got := rec.Header().Get("Cache-Control"); got != tc.cache {
+			t.Errorf("%s cache policy = %q, want %q", tc.path, got, tc.cache)
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+			t.Errorf("%s referrer policy = %q", tc.path, got)
+		}
+	}
+}
+
 func TestLimitRequestBody(t *testing.T) {
 	h := limitRequestBody(4)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)
