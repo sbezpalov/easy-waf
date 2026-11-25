@@ -1077,6 +1077,8 @@ Deletes an allowlist entry.
 
 ### `GET /api/v1/security/policy-matches`
 
+The optional `host` query parameter selects one publication hostname before the event limit is applied. Matching ignores letter case and the port in the captured Host header. The journal read budget still applies across hosts.
+
 Returns HTTP requests with publication rule matches from the HAProxy
 journal, newest first. Each event has `time`, `host`, final HTTP `status`
 and `matches`, an ordered array of `{id, action}` objects. The event payload

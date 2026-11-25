@@ -25,7 +25,7 @@ func TestListPolicyMatches(t *testing.T) {
 	now := time.Now()
 	readPolicyJournal = func(context.Context, time.Time, int) (journal.Sample, error) {
 		return journal.Sample{JSON: strings.Join([]string{
-			journalLine(`192.0.2.1:1 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 {app.example||policy-count:watch} "GET /?token=sensitive HTTP/1.1"`, now),
+			journalLine(`192.0.2.1:1 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 {Other.example:443||policy-count:watch} "GET /?token=sensitive HTTP/1.1"`, now),
 			journalLine(`192.0.2.1:2 [x] fe_http fe_http/<NOSRV> 0/-1/-1/-1/0 403 1 - - PR-- 1/1/0/0/0 0/0 {app.example|policy_block|policy-count:watch|policy-block:deny} "GET /?token=sensitive`, now.Add(time.Minute)),
 			journalLine(`192.0.2.1:3 [x] fe_http be_app/local 0/0/0/0/0 200 1 - - ---- 1/1/0/0/0 0/0 {app.example||} "GET /{app.example|policy-count:forged} HTTP/1.1"`, now.Add(2*time.Minute)),
 		}, "\n")}, nil
@@ -48,6 +48,19 @@ func TestListPolicyMatches(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "sensitive") || strings.Contains(rec.Body.String(), "192.0.2.1") {
 		t.Fatalf("unexpected request contents in journal: %s", rec.Body)
+	}
+	for _, tc := range []struct {
+		host string
+		want int
+	}{{"other.example", 1}, {"example", 0}} {
+		rec = httptest.NewRecorder()
+		(&Server{}).listPolicyMatches(rec, httptest.NewRequest(http.MethodGet, "/api/v1/security/policy-matches?limit=1&host="+tc.host, nil))
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != 200 || resp.Truncated || len(resp.Events) != tc.want || (tc.want == 1 && resp.Events[0].Status != 200) {
+			t.Fatalf("filter %q: %s", tc.host, rec.Body)
+		}
 	}
 }
 

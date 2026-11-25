@@ -28,8 +28,9 @@
           </table>
         </div>
         <section class="panel" aria-labelledby="policy-matches-title" style="max-width:100%;overflow-x:auto">
-          <h3 id="policy-matches-title">Publication rule matches</h3>
-          <div class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+          <h3 id="policy-matches-title" tabindex="-1">Publication rule matches</h3>
+          <form id="policy-matches-filter" class="row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+            <label>Public hostname <input id="policy-matches-host" placeholder="All hosts" spellcheck="false" autocapitalize="none" maxlength="253" /></label>
             <label>Period
               <select id="policy-matches-period">
                 <option value="1h">Last hour</option>
@@ -37,9 +38,10 @@
                 <option value="7d">Last 7 days</option>
               </select>
             </label>
-            <button type="button" class="secondary" id="btn-policy-matches-refresh">Refresh</button>
+            <button type="submit" class="secondary" id="btn-policy-matches-refresh">Show matches</button>
+            <a id="policy-matches-all" href="#logs">All hosts</a>
             <span id="policy-matches-status" class="dash-note" role="status"></span>
-          </div>
+          </form>
           <table>
             <thead><tr><th>Time</th><th>Host</th><th>Matched rules, in order</th><th>HTTP status</th></tr></thead>
             <tbody id="policy-matches-tbody"></tbody>

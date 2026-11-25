@@ -103,6 +103,7 @@ const elements = Object.fromEntries([
 const context = vm.createContext({
   document: {getElementById: id => elements[id]},
   panelFromHash: () => 'logs', hdr: () => ({}), esc: String,
+  location: {hash:'#logs'}, URLSearchParams,
   blockedRuleLabel: String, formatHostTime: String, blockedGen: 0, policyMatchesGen: 0,
   apiMessage: response => response.text()
 });
@@ -154,10 +155,18 @@ async function run() {
   await context.loadBlocked();
   assert.match(elements['blocked-tbody'].innerHTML, /available journal sample/);
 
-  context.fetch = async () => success({truncated: true, events: []});
+  context.location.hash='#logs?host=app.example';
+  context.fetch = async url => {
+    assert.equal(url,'/api/v1/security/policy-matches?period=24h&host=app.example');
+    return success({truncated: true, events: []});
+  };
   await context.loadPolicyMatches();
   assert.match(elements['policy-matches-status'].textContent, /available journal sample/);
-  context.fetch = async () => success({truncated: false, events: []});
+  context.location.hash='#logs';
+  context.fetch = async url => {
+    assert.equal(url,'/api/v1/security/policy-matches?period=24h');
+    return success({truncated: false, events: []});
+  };
   await context.loadPolicyMatches();
   assert.equal(elements['policy-matches-status'].textContent, 'No matches in this period.');
 }

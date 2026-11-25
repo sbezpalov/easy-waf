@@ -384,6 +384,8 @@
         void loadSettingsTab();
         break;
       case 'logs':
+        document.getElementById('policy-matches-host').value = policyMatchesHost();
+        if (policyMatchesHost()) document.getElementById('policy-matches-title').focus();
         loadBlocked();
         loadPolicyMatches();
         loadAuditPage(true);
@@ -512,7 +514,7 @@
     'btn-dashboard-refresh', 'btn-apps-refresh', 'btn-certs', 'btn-cs-dec', 'btn-cs-ping',
     'btn-f2b-refresh', 'btn-geoip-lookup', 'btn-ipbl-load', 'btn-ipwl-load',
     'btn-revisions-refresh', 'btn-settings-load', 'btn-ua-load', 'btn-blocked-refresh',
-    'btn-audit-refresh', 'btn-audit-more'
+    'btn-audit-refresh', 'btn-audit-more', 'btn-policy-matches-refresh'
   ]);
 
   function applyRoleCapabilities(role) {
@@ -722,8 +724,15 @@
   document.getElementById('btn-audit-refresh').onclick = () => { loadAuditPage(true); };
   document.getElementById('btn-blocked-refresh').onclick = () => { loadBlocked(); };
   document.getElementById('blocked-period').onchange = () => { loadBlocked(); };
-  document.getElementById('btn-policy-matches-refresh').onclick = loadPolicyMatches;
-  document.getElementById('policy-matches-period').onchange = loadPolicyMatches;
+  document.getElementById('policy-matches-filter').onsubmit = (event) => {
+    event.preventDefault();
+    const host = document.getElementById('policy-matches-host').value.trim();
+    const hash = host ? '#logs?host=' + encodeURIComponent(host) : '#logs';
+    if (location.hash === hash) loadPolicyMatches();
+    else location.hash = hash;
+  };
+  document.getElementById('policy-matches-period').onchange = () => document.getElementById('policy-matches-filter').requestSubmit();
+  document.getElementById('policy-matches-all').onclick = () => { document.getElementById('policy-matches-host').value = ''; };
   document.getElementById('blocked-ips').onclick = (e) => {
     const b = e.target.closest('button[data-block-ip]');
     if (b) blockIPFromLog(b.getAttribute('data-block-ip'), b);
@@ -1625,6 +1634,7 @@
     </div>
     <div class="row" style="margin:0;gap:0.35rem">
       <button type="button" class="secondary btn-app-diagnostics" data-viewer-action="true" data-id="${esc(a.id)}" aria-expanded="false" aria-controls="${esc(diagnosticsID)}">Diagnose</button>
+      <a href="#logs?host=${encodeURIComponent(a.public_host)}">Rule matches</a>
       <button type="button" class="secondary btn-app-maint" data-id="${esc(a.id)}" data-on="${a.maintenance ? '1' : ''}">${a.maintenance ? 'End maintenance' : 'Maintenance'}</button>
       <button type="button" class="secondary btn-app-edit" data-id="${esc(a.id)}">Edit</button>
       <button type="button" class="secondary btn-app-delete admin-only" data-id="${esc(a.id)}">Delete</button>
@@ -2483,6 +2493,10 @@
       '<tr><td colspan="6" class="dash-note">' + empty + '</td></tr>';
   }
 
+  function policyMatchesHost() {
+    return new URLSearchParams(location.hash.split('?')[1] || '').get('host') || '';
+  }
+
   async function loadPolicyMatches() {
     if (panelFromHash() !== 'logs') return;
     const tbody = document.getElementById('policy-matches-tbody');
@@ -2492,7 +2506,10 @@
     status.textContent = 'Loading…';
     tbody.replaceChildren();
     try {
-      const response = await fetch('/api/v1/security/policy-matches?period=' + encodeURIComponent(period), { headers: hdr() });
+      const query = new URLSearchParams({period});
+      const host = policyMatchesHost();
+      if (host) query.set('host', host);
+      const response = await fetch('/api/v1/security/policy-matches?' + query, { headers: hdr() });
       if (gen !== policyMatchesGen) return;
       if (response.status === 401) { setTok(''); refreshSession(); return; }
       if (!response.ok) throw new Error(await apiMessage(response));

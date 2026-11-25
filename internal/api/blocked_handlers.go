@@ -5,9 +5,12 @@ package api
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/blocklog"
@@ -100,6 +103,15 @@ func (s *Server) listPolicyMatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events, _ := blocklog.ParseRuleJournal(sample.JSON)
+	if host := strings.TrimSpace(r.URL.Query().Get("host")); host != "" {
+		events = slices.DeleteFunc(events, func(event blocklog.RuleEvent) bool {
+			name := event.Host
+			if h, _, err := net.SplitHostPort(name); err == nil {
+				name = h
+			}
+			return !strings.EqualFold(name, host)
+		})
+	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	writeJSON(w, http.StatusOK, struct {
 		Period    string               `json:"period"`

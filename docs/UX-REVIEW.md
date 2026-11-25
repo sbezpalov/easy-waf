@@ -15,6 +15,8 @@ Reviewed the embedded panel at `73fdff9`, the two quick starts, the management C
 
 ## Coverage and remaining walkthroughs
 
+Applications → Rule matches opens the journal filtered to the publication hostname. All hosts clears that filter.
+
 System → Backup and restore now links to the recovery guide embedded in the running build and identifies its installed console copy.
 
 The privileged confirmation finding has been addressed. A session change cancels the password prompt and invalidates pending confirmations and retries. The panel distinguishes an incorrect password from throttling and service errors. The regression scenarios are in `TestPrivilegedConfirmationLifecycle`.
