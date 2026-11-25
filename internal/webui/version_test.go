@@ -26,11 +26,11 @@ func TestHostTimezoneUpdatesPanelDates(t *testing.T) {
 const hostTimezoneInteractionTest = `
 const assert = require('node:assert/strict'), vm = require('node:vm');
 const page = require('node:fs').readFileSync(0, 'utf8');
-const form = {}, status = {};
+const form = {}, status = {}, backup = {};
 const save = {getAttribute: () => null};
 const select = {value: '', options: [], replaceChildren(...options) { this.options = options; }};
 const elements = {'system-timezone-form': form, 'system-timezone': select,
-  'system-timezone-status': status, 'btn-sys-timezone-save': save};
+  'system-timezone-status': status, 'btn-sys-timezone-save': save, 'system-backup-status': backup};
 let snapshotsCleared = 0;
 const context = vm.createContext({
   document: {getElementById: id => elements[id]},
@@ -38,6 +38,9 @@ const context = vm.createContext({
   hdr: () => ({}), withFocusableBusy: (_, run) => run(),
   clearHostJournalSnapshot: () => { snapshotsCleared++; },
   fetch: async (pathname, init) => {
+    if (pathname === '/api/v1/host/backup/status') {
+      return {ok: true, json: async () => ({state: 'succeeded', finished_at: '2026-01-15T12:00:00Z'})};
+    }
     assert.equal(pathname, '/api/v1/host/timezone');
     if (init.method === 'PUT') {
       assert.deepEqual(JSON.parse(init.body), {timezone: 'America/New_York'});
@@ -54,12 +57,19 @@ function evaluate(start, end) {
 evaluate('  let hostTimeFormatter =', '  let aboutGeneration =');
 evaluate('  let hostTimezoneLoadGeneration =', '  function formatBytes(');
 async function run() {
+  context.setHostTimezone('Europe/Berlin');
+  await context.loadBackupStatus();
+  assert.match(backup.textContent, /13:00:00 GMT\+1/);
   await context.loadHostTimezone();
+  assert.match(backup.textContent, /12:00:00 UTC/);
+  await context.loadBackupStatus();
+  assert.match(backup.textContent, /12:00:00 UTC/);
   assert.equal(select.value, 'Etc/UTC');
   assert.equal(context.formatHostTime('2026-01-15T12:00:00Z'), '2026-01-15 12:00:00 UTC');
   select.value = 'America/New_York';
   await form.onsubmit({preventDefault() {}});
   assert.equal(status.textContent, 'Host time zone set to America/New_York.');
+  assert.match(backup.textContent, /07:00:00 GMT-5/);
   assert.equal(context.formatHostTime('2026-01-15T12:00:00Z'), '2026-01-15 07:00:00 GMT-5');
   assert.equal(context.formatHostTime('2026-07-15T12:00:00Z'), '2026-07-15 08:00:00 GMT-4');
   assert.equal(snapshotsCleared, 1);

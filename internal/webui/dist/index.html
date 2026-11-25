@@ -6494,22 +6494,34 @@
   let hostTimezoneLoadGeneration = 0;
 
   let backupStatusGeneration = 0;
+  let lastBackupStatus = null;
+
+  function renderBackupStatus() {
+    const label = document.getElementById('system-backup-status');
+    const status = lastBackupStatus;
+    if (!label || !status) return;
+    const when = status.finished_at ? ' at ' + formatHostTime(status.finished_at) : '';
+    switch (status.state) {
+      case 'running': label.textContent = 'Backup service is running.'; break;
+      case 'succeeded': label.textContent = 'Last backup service run succeeded' + when + '.'; break;
+      case 'failed': label.textContent = 'Last backup service run failed' + when + '. Check the appliance journal.'; break;
+      default: label.textContent = 'Backup service result unavailable. Check the appliance journal for earlier runs.';
+    }
+  }
+
   async function loadBackupStatus() {
     const generation = ++backupStatusGeneration;
     const label = document.getElementById('system-backup-status');
+    lastBackupStatus = null;
     label.textContent = 'Checking the backup service…';
-    let message = 'Backup service result unavailable. Check the appliance journal for earlier runs.';
+    let result;
     try {
       const response = await fetch('/api/v1/host/backup/status', {headers: hdr(), cache: 'no-store'});
-      if (response.ok) {
-        const status = await response.json();
-        const when = status.finished_at ? ' at ' + formatHostTime(status.finished_at) : '';
-        if (status.state === 'running') message = 'Backup service is running.';
-        if (status.state === 'succeeded') message = 'Last backup service run succeeded' + when + '.';
-        if (status.state === 'failed') message = 'Last backup service run failed' + when + '. Check the appliance journal.';
-      }
+      if (response.ok) result = await response.json();
     } catch (_) { /* Keep the unavailable state on connection failure. */ }
-    if (generation === backupStatusGeneration) label.textContent = message;
+    if (generation !== backupStatusGeneration) return;
+    lastBackupStatus = result || {state: 'unavailable'};
+    renderBackupStatus();
   }
 
   async function loadHostTimezone() {
@@ -6529,6 +6541,7 @@
       select.replaceChildren(...Array.from(zones).sort().map(zone => new Option(zone, zone)));
       select.value = data.timezone;
       const supported = setHostTimezone(data.timezone);
+      renderBackupStatus();
       select.disabled = save.disabled = false;
       status.textContent = supported ? '' : 'This browser displays panel times in UTC for the selected zone.';
     } catch (err) {
@@ -6559,6 +6572,7 @@
         }
         select.value = data.timezone;
         const supported = setHostTimezone(data.timezone);
+        renderBackupStatus();
         clearHostJournalSnapshot('Load a new journal snapshot to see times in the updated zone.');
         status.textContent = 'Host time zone set to ' + data.timezone + '.' +
           (supported ? '' : ' This browser displays panel times in UTC for this zone.');
