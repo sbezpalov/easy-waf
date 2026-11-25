@@ -3677,18 +3677,41 @@
     });
   };
 
-  document.getElementById('btn-tls-save').onclick = async () => {
-    document.getElementById('tls-msg').textContent = '';
-    const body = {
-      certificate_pem: document.getElementById('tls-cert').value,
-      private_key_pem: document.getElementById('tls-key').value
-    };
-    const r = await fetch('/api/v1/settings/management-tls', { method: 'PUT', headers: hdr(), body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { document.getElementById('tls-msg').textContent = j.error || await r.text(); return; }
-    document.getElementById('tls-msg').textContent = 'TLS updated. Reload https:// on :8443.';
+  let managementTLSGeneration = 0;
+  function clearManagementTLSForm() {
+    managementTLSGeneration++;
     document.getElementById('tls-cert').value = '';
     document.getElementById('tls-key').value = '';
+    document.getElementById('tls-msg').textContent = '';
+    document.getElementById('btn-tls-save').disabled = false;
+  }
+
+  document.getElementById('btn-tls-save').onclick = async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    const generation = managementTLSGeneration;
+    const cert = document.getElementById('tls-cert');
+    const key = document.getElementById('tls-key');
+    const msg = document.getElementById('tls-msg');
+    const body = {certificate_pem: cert.value, private_key_pem: key.value};
+    msg.textContent = 'Installing management certificate…';
+    button.disabled = true;
+    try {
+      const r = await fetch('/api/v1/settings/management-tls', {method: 'PUT', headers: hdr(), body: JSON.stringify(body)});
+      if (!r.ok) {
+        const reason = await apiMessage(r);
+        if (generation === managementTLSGeneration) msg.textContent = reason;
+        return;
+      }
+      if (generation !== managementTLSGeneration) return;
+      if (cert.value === body.certificate_pem) cert.value = '';
+      if (key.value === body.private_key_pem) key.value = '';
+      msg.textContent = 'Management certificate installed. Reconnect over HTTPS to verify it.';
+    } catch (_) {
+      if (generation === managementTLSGeneration) msg.textContent = 'Could not confirm installation. Check the certificate over HTTPS before retrying.';
+    } finally {
+      if (generation === managementTLSGeneration) button.disabled = false;
+    }
   };
 
   document.getElementById('btn-ipbl-fetch-cidrs-save').onclick = async () => {

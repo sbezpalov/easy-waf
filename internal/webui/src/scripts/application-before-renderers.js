@@ -6,6 +6,7 @@
       sessionStorage.removeItem(TOK);
       mcpConnectionsGeneration++;
       clearNetworkEditors();
+      clearManagementTLSForm();
     }
   };
 

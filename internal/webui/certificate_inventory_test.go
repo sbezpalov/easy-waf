@@ -5,6 +5,54 @@ package webui
 
 import "testing"
 
+func TestManagementTLSFormSessionBoundary(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+const cert = {value:'test certificate'}, key = {value:'test key'}, msg = {}, button = {};
+const elements = {'tls-cert':cert, 'tls-key':key, 'tls-msg':msg, 'btn-tls-save':button};
+const ctx = vm.createContext({document:{getElementById:id=>elements[id]}, hdr:()=>({}),
+  clearNetworkEditors(){}, mcpConnectionsGeneration:0, sessionStorage:{removeItem(){}},
+  apiMessage: async r=>r.message, fetch:async()=>({ok:false,message:'Invalid key pair'})});
+function include(start,end) {
+  const a=page.indexOf(start), b=page.indexOf(end,a);
+  assert.ok(a>=0 && b>a);
+  vm.runInContext(page.slice(a,b),ctx);
+}
+include("  const TOK =", "  const hdr =");
+include("  let managementTLSGeneration", "  document.getElementById('btn-ipbl-fetch-cidrs-save')");
+const submit = () => button.onclick({currentTarget:button});
+async function run() {
+  await submit();
+  assert.equal(msg.textContent,'Invalid key pair');
+  assert.equal(key.value,'test key');
+  let finish, calls=0;
+  ctx.fetch = () => {calls++;return new Promise(resolve=>{finish=resolve;});};
+  const previous = submit();
+  await submit();
+  assert.equal(calls,1);
+  vm.runInContext("setTok('')",ctx);
+  assert.equal(key.value,'');
+  assert.equal(cert.value,'');
+  assert.equal(button.disabled,false);
+  cert.value='next certificate'; key.value='next key';
+  finish({ok:true});
+  await previous;
+  assert.equal(msg.textContent,'');
+  assert.equal(key.value,'next key');
+  ctx.fetch=async()=>{throw Error('disconnected');};
+  await submit();
+  assert.match(msg.textContent,/Could not confirm installation/);
+  ctx.fetch=async()=>({ok:true});
+  await submit();
+  assert.equal(key.value,'');
+  assert.equal(cert.value,'');
+  assert.match(msg.textContent,/installed/);
+}
+run().catch(err=>{console.error(err);process.exitCode=1;});
+`)
+}
+
 func TestCertificateInventoryRefresh(t *testing.T) {
 	runVersionUI(t, `
 const assert = require('node:assert/strict'), vm = require('node:vm');

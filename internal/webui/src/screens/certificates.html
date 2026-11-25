@@ -18,9 +18,9 @@
           <h3>Management TLS (UI on port 8443)</h3>
           <p><small>Paste PEM full chain + private key to replace the bootstrap self-signed cert (hot-applied).</small></p>
           <label>Certificate PEM<br /><textarea id="tls-cert" rows="8" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
-          <label>Private key PEM<br /><textarea id="tls-key" rows="5" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+          <label>Private key PEM<br /><textarea id="tls-key" rows="5" autocomplete="off" spellcheck="false" style="width:100%;max-width:42rem;font-family:monospace;font-size:11px" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
           <div class="row" style="margin-top:0.5rem"><button type="button" id="btn-tls-save">Install management TLS</button></div>
-          <p id="tls-msg" class="warn"></p>
+          <p id="tls-msg" class="warn" role="status"></p>
         </div>
 
         <h3>Inventory</h3>
