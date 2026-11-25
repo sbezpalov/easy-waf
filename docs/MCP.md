@@ -116,6 +116,43 @@ For a remote client, use SSH local forwarding to the appliance's loopback
 listener. The daemon accepts loopback connections with a local Host header
 and refuses browser requests carrying an Origin header.
 
+## Connect OpenClaw
+
+Run the SSH tunnel from the host or network namespace where the OpenClaw
+Gateway runs. Replace `appliance-ssh` with your SSH host alias and keep the
+tunnel running while OpenClaw uses Easy WAF.
+
+```sh
+ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8446:127.0.0.1:8446 appliance-ssh
+```
+
+Set `EASY_WAF_OPENCLAW_TOKEN` in the OpenClaw service environment to the
+appliance's client bearer (`EASY_WAF_MCP_TOKEN`). Then add this entry under
+`mcp.servers` in the OpenClaw configuration:
+
+```json
+{
+  "easy-waf": {
+    "url": "http://127.0.0.1:8446/mcp",
+    "transport": "streamable-http",
+    "headers": {
+      "Authorization": "Bearer ${EASY_WAF_OPENCLAW_TOKEN}"
+    },
+    "toolFilter": {
+      "include": ["status", "doctor"]
+    }
+  }
+}
+```
+
+Run `openclaw mcp probe easy-waf` with access to the same tunnel, config
+and environment. Expect `easy-waf__status` and `easy-waf__doctor`. To
+check the connection through to the appliance, invoke `easy-waf__status`
+from your OpenClaw agent and confirm that the management API reports the
+database ready. See the [OpenClaw MCP client guide](https://docs.openclaw.ai/tools/mcp).
+
+## Disable the service
+
 To disable the feature, stop the daemon and remove `EASY_WAF_MCP_LISTEN`.
 Remove `EASY_WAF_MCP_API_TOKEN` and restart `easy-waf-api` to remove the
 diagnostics routes as well. Calls through those routes appear as
