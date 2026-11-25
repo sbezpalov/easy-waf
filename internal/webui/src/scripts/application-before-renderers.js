@@ -1,6 +1,12 @@
   const TOK = 'easy_waf_token';
   const getTok = () => sessionStorage.getItem(TOK) || '';
-  const setTok = (t) => { if (t) sessionStorage.setItem(TOK, t); else sessionStorage.removeItem(TOK); };
+  const setTok = (t) => {
+    if (t) sessionStorage.setItem(TOK, t);
+    else {
+      sessionStorage.removeItem(TOK);
+      clearNetworkEditors();
+    }
+  };
 
   const hdr = (extra) => {
     const t = getTok();

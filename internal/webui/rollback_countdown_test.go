@@ -177,22 +177,39 @@ context.saveHostRollbackCapability(capability);
   assert.equal(rule.textContent, 'Managed Zabbix rule: present.', 'rule status did not reload after confirmation');
   assert.equal(firewallReads, 4);
 
-  const networkStart = page.indexOf('  async function loadNetworkTab(');
+  const networkStart = page.indexOf('  let networkLoadGeneration =');
   const networkEnd = page.indexOf("  document.getElementById('btn-net-netplan-apply').onclick", networkStart);
   assert.ok(networkStart >= 0 && networkEnd > networkStart, 'network loader not found');
-  const editor = {value: ''};
+  const editor = {value: '', defaultValue: ''};
+  const netplanEditor = {value: '', defaultValue: ''};
+  const networkElements = {'net-firewall-rules': editor, 'net-netplan-yaml': netplanEditor,
+    'net-firewall-msg': {}, 'net-netplan-msg': {}, 'net-overview': {style: {}}};
   const snapshot = {managed_ruleset: 'managed file', ruleset: 'all kernel tables'};
   const networkContext = {
-    document: {getElementById: id => id === 'net-firewall-rules' ? editor : null},
+    document: {getElementById: id => networkElements[id]},
+    findEasyWafNetplan: () => 'managed netplan', formatNetOverview: () => 'overview',
     hdr: () => ({}), updateHostRollbackApplyButtons: () => {},
     fetch: async path => ({ok: true, json: async () => path === '/api/v1/host/firewall' ? snapshot : {}})
   };
   vm.runInNewContext(page.slice(networkStart, networkEnd), networkContext);
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, snapshot.managed_ruleset);
+  netplanEditor.value = 'netplan draft';
+  editor.value = 'firewall draft';
+  snapshot.managed_ruleset = 'changed on host';
+  await networkContext.loadNetworkTab({skipRollbackStatus: true});
+  assert.equal(netplanEditor.value, 'netplan draft');
+  assert.equal(editor.value, 'firewall draft');
+  assert.equal(editor.defaultValue, 'changed on host');
+  assert.match(networkElements['net-firewall-msg'].textContent, /host configuration changed/);
+  editor.value = editor.defaultValue;
   delete snapshot.managed_ruleset;
   await networkContext.loadNetworkTab({skipRollbackStatus: true});
   assert.equal(editor.value, '', 'editor exposed unrelated kernel tables');
+  const delayed = networkContext.loadNetworkTab({skipRollbackStatus: true});
+  networkContext.clearNetworkEditors();
+  await delayed;
+  assert.equal(netplanEditor.value, '', 'a delayed read restored configuration after sign-out');
 
   const applyStart = page.indexOf('  const btnZabbixFw =');
   const applyEnd = page.indexOf('  const btnNotifySave =', applyStart);

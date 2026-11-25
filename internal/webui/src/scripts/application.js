@@ -4439,6 +4439,8 @@
       { const __m = await apiMessage(r); toast(__m, 'err'); if (opts.msgEl) opts.msgEl.textContent = __m; }
       return;
     }
+    const editor = document.getElementById(netplan ? 'net-netplan-yaml' : 'net-firewall-rules');
+    if (editor) editor.defaultValue = preview;
     const j = await r.json();
     if (!j || !j.token || !j.operation_id || !j.expires_at) {
       clearHostRollbackCapability();
@@ -5278,7 +5280,32 @@
     return f ? (f.content || '') : (files[0] ? files[0].content : '');
   }
 
+  let networkLoadGeneration = 0;
+
+  function clearNetworkEditors() {
+    networkLoadGeneration++;
+    for (const id of ['net-netplan-yaml', 'net-firewall-rules']) {
+      const editor = document.getElementById(id);
+      editor.value = editor.defaultValue = '';
+    }
+    for (const id of ['net-overview', 'net-netplan-msg', 'net-firewall-msg']) {
+      document.getElementById(id).textContent = '';
+    }
+  }
+
+  function refreshNetworkEditor(id, saved, messageId) {
+    const editor = document.getElementById(id);
+    if (!editor) return;
+    const dirty = editor.value !== editor.defaultValue;
+    if (!dirty) editor.value = saved;
+    if (dirty && editor.value !== saved && editor.defaultValue !== saved) {
+      document.getElementById(messageId).textContent = 'The host configuration changed. Your edits are still in the editor. Review them before applying.';
+    }
+    editor.defaultValue = saved;
+  }
+
   async function loadNetworkTab(options = {}) {
+    const generation = ++networkLoadGeneration;
     const ovBox = document.getElementById('net-overview');
     if (ovBox) ovBox.textContent = 'Loading…';
     const pendingTask = options.skipRollbackStatus ? Promise.resolve() : refreshHostRollbackStatus(false);
@@ -5287,22 +5314,25 @@
       fetch('/api/v1/host/firewall', { headers: hdr() }),
       pendingTask
     ]);
+    const [ov, fw] = await Promise.all([
+      netR.ok ? netR.json() : apiMessage(netR),
+      fwR.ok ? fwR.json() : apiMessage(fwR)
+    ]);
+    if (generation !== networkLoadGeneration) return;
     if (netR.ok) {
-      const ov = await netR.json();
       if (ovBox) {
         ovBox.style.whiteSpace = 'pre-wrap';
         ovBox.textContent = formatNetOverview(ov);
       }
-      const ta = document.getElementById('net-netplan-yaml');
-      if (ta) ta.value = findEasyWafNetplan(ov.netplan_files);
+      refreshNetworkEditor('net-netplan-yaml', findEasyWafNetplan(ov.netplan_files), 'net-netplan-msg');
     } else if (ovBox) {
-      ovBox.textContent = await apiMessage(netR);
+      ovBox.textContent = ov;
       ovBox.className = 'warn';
     }
-    const fwTa = document.getElementById('net-firewall-rules');
-    if (fwR.ok && fwTa) {
-      const fw = await fwR.json();
-      fwTa.value = fw.managed_ruleset ?? '';
+    if (fwR.ok) {
+      refreshNetworkEditor('net-firewall-rules', fw.managed_ruleset ?? '', 'net-firewall-msg');
+    } else {
+      document.getElementById('net-firewall-msg').textContent = fw;
     }
     updateHostRollbackApplyButtons();
   }
