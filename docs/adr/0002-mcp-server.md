@@ -258,9 +258,9 @@ Negative / accepted cost:
 The REST boundary is available under `/api/v1/mcp/diagnostics` when the API
 has a distinct `EASY_WAF_MCP_API_TOKEN` of at least 32 characters. It uses
 direct loopback HTTPS with the existing management ACL. It serves readiness,
-edge state, application summaries and diagnostics, certificate expiry,
-revision metadata, GeoIP status, IP blocking evidence and recent management
-events. The IP evidence covers saved local filters, cached GeoIP and direct
+edge state, aggregate HAProxy runtime health, application summaries and
+diagnostics, certificate expiry, revision metadata, GeoIP status, IP blocking
+evidence and recent management events. The IP evidence covers saved local filters, cached GeoIP and direct
 CrowdSec LAPI lookups. Recent events include only timestamp, fixed category and
 HTTP status from the PostgreSQL management audit. HAProxy request outcomes and
 Fail2Ban evidence for individual IPs are pending. Responses omit backend

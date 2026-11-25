@@ -9,6 +9,7 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | --- | --- |
 | `status` | Management API and PostgreSQL readiness |
 | `edge_status` | Saved and applied generations and managed HAProxy artifact identity |
+| `haproxy_check` | Runtime statistics availability, sample time and counts of frontend and backend states |
 | `list_applications` | Publication names, hostnames, profiles and enabled or maintenance state |
 | `describe_application` | Given an `id` from `list_applications`, check publication, DNS, TLS, applied routing and backend availability |
 | `certificate_expiry` | Recorded expiry dates, days remaining and issuance status |
@@ -28,6 +29,11 @@ protection changes recorded in the management audit. It includes failed
 attempts and indicates whether more matching rows exist in the window.
 Request paths, source IPs, usernames, raw audit details and HAProxy traffic
 are excluded.
+
+`haproxy_check` uses the same short-lived stats sample as the dashboard.
+It reports aggregate runtime states across the configured HAProxy instance
+and omits proxy names, socket paths and command output. Configuration syntax
+validation remains part of Apply and the operator CLI.
 
 ## Enable the packaged service
 

@@ -62,6 +62,7 @@ func newHandler(api apiClient, token auth.StaticToken) http.Handler {
 	for _, tool := range []struct{ name, path, description string }{
 		{"status", "/ready", "Check whether the Easy WAF management API and its database are ready."},
 		{"edge_status", "/edge", "Report saved and applied configuration generations and the live HAProxy artifact identity."},
+		{"haproxy_check", "/haproxy", "Check HAProxy runtime statistics availability and count frontend and backend states."},
 		{"list_applications", "/applications", "List publication names, public hostnames, profiles and enabled or maintenance state."},
 		{"certificate_expiry", "/certificates", "List certificate validity and issuance status from Easy WAF metadata."},
 		{"config_revisions", "/revisions", "List the 30 most recent configuration revisions and identify the live revision when observable."},

@@ -35,6 +35,8 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"database":"unreachable"}`)
 		case diagnosticsPath + "/edge":
 			_, _ = fmt.Fprint(w, `{"pending":false}`)
+		case diagnosticsPath + "/haproxy":
+			_, _ = fmt.Fprint(w, `{"state":"available"}`)
 		case diagnosticsPath + "/applications":
 			_, _ = fmt.Fprint(w, `[{"name":"Fixture"}]`)
 		case diagnosticsPath + "/application":
@@ -91,6 +93,7 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 		"geoip_status":  `{"configured_provider":"maxmind"}`,
 		"why_blocked":   `{"crowdsec_ban":"present","request_observation":"not_checked"}`,
 		"recent_events": `{"events":[],"has_more":false}`,
+		"haproxy_check": `{"state":"available"}`,
 	}
 	listed, err := session.ListTools(ctx, nil)
 	if err != nil || len(listed.Tools) != len(checks) {

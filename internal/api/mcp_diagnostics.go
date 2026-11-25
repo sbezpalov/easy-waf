@@ -24,6 +24,7 @@ func (s *Server) mountMCPDiagnostics(r chi.Router) {
 		r.Use(s.requireMCPAPI)
 		r.Get("/ready", s.handleReady)
 		r.Get("/edge", s.handleEdgeStatus)
+		r.Get("/haproxy", s.checkMCPHAProxy)
 		r.Get("/applications", s.listMCPApplications)
 		r.Get("/application", s.describeMCPApplication)
 		r.Get("/certificates", s.listMCPCertificateExpiry)
