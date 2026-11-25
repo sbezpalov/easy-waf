@@ -89,4 +89,9 @@
       </nav>
     </aside>
     <main class="app-content" id="main-content" tabindex="-1">
-
+        <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
+          <div><strong id="host-rollback-title">Safety window active</strong> — <span id="host-rollback-message">Changes will auto-revert in 90s unless you confirm.</span></div>
+          <div class="row">
+            <button type="button" id="btn-host-rollback-keep">Keep changes</button>
+          </div>
+        </div>

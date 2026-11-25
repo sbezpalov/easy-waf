@@ -77,7 +77,7 @@
     .ok { color: #3fb950; }
     .hidden { display: none !important; }
     .rollback-banner {
-      position: sticky; top: 0.5rem; z-index: 25;
+      position: sticky; top: 4.5rem; z-index: 24;
       background: #3d2117; border: 1px solid #da3633; border-radius: 8px;
       padding: 0.75rem 1rem; margin-bottom: 1rem; color: #ffdede;
     }
@@ -437,7 +437,12 @@
       </nav>
     </aside>
     <main class="app-content" id="main-content" tabindex="-1">
-
+        <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
+          <div><strong id="host-rollback-title">Safety window active</strong> — <span id="host-rollback-message">Changes will auto-revert in 90s unless you confirm.</span></div>
+          <div class="row">
+            <button type="button" id="btn-host-rollback-keep">Keep changes</button>
+          </div>
+        </div>
       <div id="tab-dashboard" class="tab-panel">
         <div class="page-header">
           <div>
@@ -1102,12 +1107,6 @@
       </section>
       <div id="tab-network" class="tab-panel">
         <h2>⇄ Network</h2>
-        <div id="host-rollback-banner" class="rollback-banner hidden" role="alert">
-          <div><strong id="host-rollback-title">Safety window active</strong> — <span id="host-rollback-message">Changes will auto-revert in 90s unless you confirm.</span></div>
-          <div class="row">
-            <button type="button" id="btn-host-rollback-keep">Keep changes</button>
-          </div>
-        </div>
         <div class="panel" style="max-width:100%">
           <h3>Overview</h3>
           <div id="net-overview" class="dash-note" style="color:#e6edf3">Loading…</div>

@@ -11,6 +11,25 @@ import (
 	"time"
 )
 
+// Both Network and Settings can start a timed firewall change.
+func TestHostRollbackConfirmationIsOutsideTabPanels(t *testing.T) {
+	page, err := Assets.ReadFile("dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := bytes.Index(page, []byte(`id="main-content"`))
+	firstPanel := bytes.Index(page, []byte(`class="tab-panel`))
+	if main < 0 || firstPanel <= main {
+		t.Fatal("missing shared main content before the first tab")
+	}
+	for _, id := range []string{"host-rollback-banner", "btn-host-rollback-keep"} {
+		attr := []byte(`id="` + id + `"`)
+		if !bytes.Contains(page[main:firstPanel], attr) || bytes.Count(page, attr) != 1 {
+			t.Fatalf("%s must appear once in shared main content", id)
+		}
+	}
+}
+
 // Node is optional for Go-only development. When available, execute the actual
 // inline functions with a controlled clock/DOM instead of matching source text.
 func TestHostRollbackCountdown(t *testing.T) {

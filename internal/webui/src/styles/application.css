@@ -29,7 +29,7 @@
     .ok { color: #3fb950; }
     .hidden { display: none !important; }
     .rollback-banner {
-      position: sticky; top: 0.5rem; z-index: 25;
+      position: sticky; top: 4.5rem; z-index: 24;
       background: #3d2117; border: 1px solid #da3633; border-radius: 8px;
       padding: 0.75rem 1rem; margin-bottom: 1rem; color: #ffdede;
     }
