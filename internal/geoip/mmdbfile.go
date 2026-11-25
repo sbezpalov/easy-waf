@@ -191,6 +191,9 @@ func copyMMDBFromTarGz(r io.Reader, dst io.Writer, archiveLimit int64) error {
 		if !strings.EqualFold(filepath.Ext(filepath.Base(filepath.FromSlash(hdr.Name))), ".mmdb") {
 			continue
 		}
+		if hdr.Size > MaxMMDBBytes {
+			return fmt.Errorf("mmdb: %w (%d bytes)", ErrMMDBTooLarge, MaxMMDBBytes)
+		}
 		err = copyCapped(dst, tr)
 		if archive.N == 0 {
 			return tooLarge

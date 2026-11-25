@@ -198,16 +198,37 @@ func TestExtractMMDB_capsDecompressedSize(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_ = tw.Close()
-	_ = zw.Close()
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := ExtractMMDB(bytes.NewReader(buf.Bytes()), dir); err == nil {
-		t.Fatal("oversized archive accepted")
+	if _, err := ExtractMMDB(bytes.NewReader(buf.Bytes()), dir); !errors.Is(err, ErrMMDBTooLarge) {
+		t.Fatalf("expected database size error, got %v", err)
 	}
 	// Nothing may be left behind after a rejected upload.
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("rejected upload left %d files", len(entries))
+	}
+}
+
+func TestMMDBSizeCheckedBeforeCopy(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	if err := tw.WriteHeader(&tar.Header{Name: "country.mmdb", Size: MaxMMDBBytes + 1}); err != nil {
+		t.Fatal(err)
+	}
+	// Supply only the header. Trying to copy the member would return a truncated-tar error.
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var dst bytes.Buffer
+	if err := copyMMDBFromTarGz(&buf, &dst, maxMMDBArchiveBytes); !errors.Is(err, ErrMMDBTooLarge) || dst.Len() != 0 {
+		t.Fatalf("expected rejection at the header, got %v and %d bytes written", err, dst.Len())
 	}
 }
 
