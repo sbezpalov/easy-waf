@@ -35,8 +35,7 @@ func GetStatus(ctx context.Context) (Status, error) {
 		RulesPath:   RulesPath,
 		HelperReady: runner.BrokerAvailable(),
 	}
-	if b, err := os.ReadFile(RulesPath); err == nil {
-		managed := string(b)
+	if managed, err := ReadManagedRuleset(); err == nil {
 		st.ManagedRuleset = &managed
 		st.Ruleset = managed
 		present := HasZabbixAgentRule(managed)

@@ -4,9 +4,10 @@
 package nft
 
 import (
-	"os"
 	"regexp"
 	"strings"
+
+	"github.com/easy-waf/easy-waf/internal/host/hostspec"
 )
 
 // ZabbixAgentPort is the default Zabbix agent passive-check port.
@@ -27,11 +28,7 @@ var zabbixBlockRE = regexp.MustCompile(`(?m)^[ \t]*` + regexp.QuoteMeta(zabbixMa
 // Live `nft list ruleset` output is not used: it includes the guard table and
 // is not a safe round-trip target for apply-rollback.
 func ReadManagedRuleset() (string, error) {
-	b, err := os.ReadFile(RulesPath)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return hostspec.ReadManagedConfig(RulesPath)
 }
 
 // HasZabbixAgentRule reports whether the managed ruleset already carries the

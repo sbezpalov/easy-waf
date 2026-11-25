@@ -35,7 +35,7 @@ const (
 	// maxRollbackBackupBytes bounds what a revert will read back. A netplan file
 	// or an nftables ruleset is kilobytes; the limit is only here so a backup that
 	// grew unexpectedly cannot be loaded whole into the broker.
-	maxRollbackBackupBytes = 16 << 20
+	maxRollbackBackupBytes = hostspec.MaxManagedConfigBytes
 
 	// nftRulesMode matches what the apply path writes, so a revert cannot leave
 	// the ruleset file with different permissions than a normal apply.
