@@ -3211,6 +3211,29 @@
       toast('Applied — confirm within the safety window.', 'warn', 8000);
     };
   }
+  async function saveCredentialSettings(button, patch, message, onSaved) {
+    const session = sessionGeneration;
+    await withFocusableBusy(button, async () => {
+      let saved;
+      try {
+        const response = await fetch('/api/v1/settings', {method: 'PATCH', headers: hdr(), body: JSON.stringify(patch)});
+        if (!response.ok) {
+          const detail = await apiMessage(response);
+          if (session === sessionGeneration) message.textContent = detail;
+          return;
+        }
+        saved = await response.json();
+        if (typeof saved?.acme_staging !== 'boolean') throw new Error('Invalid settings response');
+      } catch (_) {
+        if (session === sessionGeneration) message.textContent = 'Save outcome unknown. Load saved settings before retrying.';
+        return;
+      }
+      if (session !== sessionGeneration) return;
+      cachedSettings = saved;
+      onSaved(saved);
+    });
+  }
+
   const btnNotifySave = document.getElementById('btn-notify-save');
   if (btnNotifySave) {
     btnNotifySave.onclick = async () => {
@@ -3230,19 +3253,14 @@
         notify_telegram_bot_token: document.getElementById('notify-telegram-token').value.trim(),
         notify_blocked_spike_threshold: Number.isFinite(spike) ? spike : 0,
       };
-      const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
-      if (!r.ok) {
-        if (sm) sm.textContent = await r.text();
-        return;
-      }
-      cachedSettings = await r.json();
-      const tokenField = document.getElementById('notify-telegram-token');
-      if (tokenField.value.trim() === patch.notify_telegram_bot_token) tokenField.value = '';
-      if (sm) {
-        sm.textContent = 'Notifications saved.';
+      await saveCredentialSettings(btnNotifySave, patch, sm, saved => {
+        const tokenField = document.getElementById('notify-telegram-token');
+        const hasNewDraft = tokenField.value.trim() !== patch.notify_telegram_bot_token;
+        if (!hasNewDraft) tokenField.value = '';
+        tokenField.placeholder = saved.notify_telegram_bot_token_set ? '•••• token stored — enter a new one to replace' : '123456:ABC... from @BotFather';
+        sm.textContent = hasNewDraft ? 'Notifications saved. The token entered during save is still a draft.' : 'Notifications saved.';
         sm.className = 'ok';
-      }
-      loadSettingsPanel();
+      });
     };
   }
   const btnNotifyTest = document.getElementById('btn-notify-test');
@@ -3300,22 +3318,20 @@
       spoe_config_path: document.getElementById('cs-spoe-path').value.trim(),
       crowdsec_engine_name: document.getElementById('cs-engine-name').value.trim()
     };
-    const csKey = document.getElementById('cs-lapi-key').value;
-    if (csKey.trim()) patch.crowdsec_lapi_key = csKey.trim();
-    const r = await fetch('/api/v1/settings', { method: 'PATCH', headers: hdr(), body: JSON.stringify(patch) });
-    if (r.ok) {
-      cachedSettings = await r.json();
-      document.getElementById('cs-lapi-key').value = '';
-      document.getElementById('cs-lapi-key').placeholder = cachedSettings.crowdsec_lapi_key_set
+    const keyField = document.getElementById('cs-lapi-key');
+    const csKey = keyField.value.trim();
+    if (csKey) patch.crowdsec_lapi_key = csKey;
+    await saveCredentialSettings(document.getElementById('btn-cs-settings-save'), patch, msg, saved => {
+      const hasNewDraft = keyField.value.trim() !== csKey;
+      if (!hasNewDraft) keyField.value = '';
+      keyField.placeholder = saved.crowdsec_lapi_key_set
         ? '•••• key stored — enter new key to replace'
         : 'Machine bouncer key (cscli bouncers add -o raw)';
       if (msg) {
-        msg.textContent = 'CrowdSec settings saved.';
+        msg.textContent = hasNewDraft ? 'CrowdSec settings saved. The key entered during save is still a draft.' : 'CrowdSec settings saved.';
         msg.className = 'ok';
       }
-    } else if (msg) {
-      msg.textContent = await r.text();
-    }
+    });
   };
 
   document.getElementById('btn-waf-security-save').onclick = async () => {

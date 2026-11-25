@@ -39,7 +39,8 @@ function include(context, from, until) {
 }
 function fixture() {
  const elements = {};
- const get = id => elements[id] ||= {textContent:'',className:'',value:'',checked:false,checkValidity:()=>true};
+ const get = id => elements[id] ||= {textContent:'',className:'',value:'',checked:false,checkValidity:()=>true,
+   getAttribute(key){return this[key];},setAttribute(key,value){this[key]=value;},removeAttribute(key){delete this[key];}};
  const context = {document:{getElementById:get,addEventListener(name,fn){this[name]=fn;}},sessionGeneration:1,cachedSettings:null,hdr:()=>({}),
   loadIpwlToggleFromSettings(){},loadBotProtectionFromSettings(){},loadEdgeNetworkFromSettings(){},
   loadGeoIPFromSettings(){},loadIpblFetchCIDRsFromSettings(){}};
@@ -47,9 +48,43 @@ function fixture() {
  include(context, '  function renderACMEConfigurationStatus(', '  async function loadSettingsPanel(');
  include(context, '  async function loadSettingsPanel(', '  function loadIpwlToggleFromSettings(');
  include(context, "  document.getElementById('btn-acme-settings-save').onclick", "  document.getElementById('btn-cs-settings-save').onclick");
+ const busyStart=page.indexOf('  async function withFocusableBusy(');
+ vm.runInContext(page.slice(busyStart,page.indexOf('\n  }',busyStart)+4),context);
+ include(context, '  async function saveCredentialSettings(', "  const btnNotifyTest =");
+ include(context, "  document.getElementById('btn-cs-settings-save').onclick", "  document.getElementById('btn-waf-security-save').onclick");
  return {context,get};
 }
 async function run() {
+ for (const [button,field,message] of [
+   ['btn-cs-settings-save','cs-lapi-key','cs-settings-msg'],
+   ['btn-notify-save','notify-telegram-token','settings-msg']]) {
+  for (const mode of ['unchanged','edited','session-ended','offline']) {
+   const {context:c,get}=fixture();
+   c.cachedSettings={acme_staging:true};
+   get(field).value='first-fixture';
+   let finish, calls=0;
+   c.fetch=(_url,options)=>{
+    calls++;
+    assert.equal(options.method,'PATCH');
+    assert.ok(Object.values(JSON.parse(options.body)).includes('first-fixture'));
+    return new Promise((resolve,reject)=>{finish=mode==='offline'?()=>reject(Error('offline')):
+     ()=>resolve({ok:true,json:async()=>({acme_staging:false})});});
+   };
+   const saving=get(button).onclick();
+   if(mode!=='unchanged')get(field).value='later-fixture';
+   await get(button).onclick();
+   assert.equal(calls,1);
+   if(mode==='session-ended'){c.sessionGeneration++;c.cachedSettings=null;}
+   finish();await saving;
+   assert.equal(get(field).value,mode==='unchanged'?'':'later-fixture');
+   const feedback=get(message).textContent;
+   assert.doesNotMatch(feedback,/fixture/);
+   if(mode==='session-ended'){assert.equal(c.cachedSettings,null);assert.equal(feedback,'');}
+   if(mode==='offline')assert.match(feedback,/unknown/);
+   if(mode==='edited')assert.match(feedback,/draft/);
+   assert.equal(get(button).getAttribute('aria-busy'),undefined);
+  }
+ }
  assert.match(page, /id="acme-configuration-status"[^>]*aria-live="polite"/);
  {
   const {context:c,get}=fixture();
