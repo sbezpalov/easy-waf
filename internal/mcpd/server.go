@@ -5,7 +5,9 @@ package mcpd
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -32,27 +34,70 @@ type apiClient struct {
 	http    *http.Client
 }
 
-func (c apiClient) read(ctx context.Context, path string, query url.Values) (*mcp.CallToolResult, error) {
+func (c apiClient) read(ctx context.Context, path string, query url.Values) *mcp.CallToolResult {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+diagnosticsPath+path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("invalid diagnostics request")
+		return diagnosticFailure("invalid_request", 0)
 	}
 	r.URL.RawQuery = query.Encode()
 	r.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.http.Do(r)
 	if err != nil {
-		return nil, fmt.Errorf("could not reach Easy WAF diagnostics over HTTPS")
+		return diagnosticFailure(diagnosticTransportCode(err, "api_unreachable"), 0)
 	}
 	defer resp.Body.Close()
 	unready := path == "/ready" && resp.StatusCode == http.StatusServiceUnavailable
 	if !unready && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("diagnostics API returned HTTP %d", resp.StatusCode)
+		return diagnosticFailure(diagnosticHTTPCode(resp.StatusCode), resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponse+1))
-	if err != nil || len(body) > maxAPIResponse || !json.Valid(body) {
-		return nil, fmt.Errorf("invalid or oversized Easy WAF diagnostics response")
+	if err != nil {
+		return diagnosticFailure(diagnosticTransportCode(err, "api_read_failed"), 0)
 	}
-	return &mcp.CallToolResult{IsError: unready, Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil
+	if len(body) > maxAPIResponse || !json.Valid(body) {
+		return diagnosticFailure("invalid_api_response", 0)
+	}
+	return &mcp.CallToolResult{IsError: unready, Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}
+}
+
+func diagnosticFailure(code string, status int) *mcp.CallToolResult {
+	// Codes come from this package. Never include error strings, request URLs,
+	// response headers or response bodies from an unsuccessful API call.
+	text := fmt.Sprintf(`{"code":%q}`, code)
+	if status != 0 {
+		text = fmt.Sprintf(`{"code":%q,"http_status":%d}`, code, status)
+	}
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+func diagnosticTransportCode(err error, fallback string) string {
+	var verify *tls.CertificateVerificationError
+	var netErr net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "request_canceled"
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
+		return "api_timeout"
+	case errors.As(err, &verify):
+		return "api_certificate_rejected"
+	default:
+		return fallback
+	}
+}
+
+func diagnosticHTTPCode(status int) string {
+	switch {
+	case status == http.StatusUnauthorized:
+		return "api_token_rejected"
+	case status == http.StatusForbidden:
+		return "api_access_forbidden"
+	case status == http.StatusNotFound:
+		return "api_not_found"
+	case status >= 300 && status < 400:
+		return "api_redirect_refused"
+	default:
+		return "api_http_error"
+	}
 }
 
 func newHandler(api apiClient, token auth.StaticToken) http.Handler {
@@ -73,8 +118,7 @@ func newHandler(api apiClient, token auth.StaticToken) http.Handler {
 			Name: tool.name, Description: tool.description,
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(false)},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-			result, err := api.read(ctx, tool.path, nil)
-			return result, nil, err
+			return api.read(ctx, tool.path, nil), nil, nil
 		})
 	}
 	registerDescribeApplication(server, api)
@@ -97,8 +141,7 @@ func registerIPDiagnostics(server *mcp.Server, api apiClient) {
 		if err != nil || ip.Zone() != "" {
 			return nil, nil, fmt.Errorf("one IPv4 or IPv6 address is required")
 		}
-		result, err := api.read(ctx, "/why-blocked", url.Values{"ip": {ip.Unmap().String()}})
-		return result, nil, err
+		return api.read(ctx, "/why-blocked", url.Values{"ip": {ip.Unmap().String()}}), nil, nil
 	})
 }
 
@@ -113,8 +156,7 @@ func registerDescribeApplication(server *mcp.Server, api apiClient) {
 		if input.ID == "" {
 			return nil, nil, fmt.Errorf("application id is required")
 		}
-		result, err := api.read(ctx, "/application", url.Values{"id": {input.ID}})
-		return result, nil, err
+		return api.read(ctx, "/application", url.Values{"id": {input.ID}}), nil, nil
 	})
 }
 

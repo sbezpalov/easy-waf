@@ -88,6 +88,22 @@ to inspect socket ownership.
 
 Configure your MCP client for Streamable HTTP, endpoint
 `http://127.0.0.1:8446/mcp` and header `Authorization: Bearer <client token>`.
+
+MCP tool errors from the management API include a `code` and, when the API
+returned an HTTP error, `http_status`. After an upgrade or restore, use
+`status` to distinguish these outcomes:
+
+| Code | What to check locally |
+| --- | --- |
+| `api_certificate_rejected` | The management certificate, its IP subject alternative name and the MCP trust file |
+| `api_token_rejected` | The API and MCP service copies of the diagnostics token |
+| `api_access_forbidden` | Direct loopback HTTPS and the management ACL |
+| `api_not_found` | The configured API origin and whether diagnostics routes are enabled. For `describe_application`, also check the application ID |
+| `api_unreachable` or `api_timeout` | Whether the management API is running and reachable at the configured loopback origin |
+
+A reachable API with PostgreSQL unavailable returns the database readiness
+message from `status`. Transport and HTTP errors omit URLs and raw error
+details.
 For a remote client, use SSH local forwarding to the appliance's loopback
 listener. The daemon accepts loopback connections with a local Host header
 and refuses browser requests carrying an Origin header.

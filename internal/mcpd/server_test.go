@@ -5,10 +5,13 @@ package mcpd
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +43,10 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 		case diagnosticsPath + "/applications":
 			_, _ = fmt.Fprint(w, `[{"name":"Fixture"}]`)
 		case diagnosticsPath + "/application":
+			if r.URL.Query().Get("id") == "denied-fixture" {
+				http.Error(w, "fixture-private-response", http.StatusUnauthorized)
+				return
+			}
 			if r.URL.Query().Get("id") != applicationID {
 				http.NotFound(w, r)
 				return
@@ -119,6 +126,73 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			t.Fatalf("unexpected %s content: %v", tool.Name, result.Content)
 		}
 	}
+	failed, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "describe_application", Arguments: map[string]string{"id": "denied-fixture"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDiagnosticFailure(t, failed, `{"code":"api_token_rejected","http_status":401}`)
+}
+
+func assertDiagnosticFailure(t *testing.T, result *mcp.CallToolResult, expected string) {
+	t.Helper()
+	if result == nil || !result.IsError || len(result.Content) != 1 {
+		t.Fatalf("expected an MCP tool error for %s", expected)
+	}
+	if result, ok := result.Content[0].(*mcp.TextContent); !ok || result.Text != expected {
+		t.Fatalf("expected diagnostics error %s without raw transport details", expected)
+	}
+}
+
+func TestMCPDiagnosticErrors(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("fixture") {
+		case "forbidden":
+			http.Error(w, "fixture-private-body", http.StatusForbidden)
+		case "missing":
+			http.Error(w, "fixture-private-body", http.StatusNotFound)
+		case "redirect":
+			http.Redirect(w, r, "/fixture-private-redirect", http.StatusFound)
+		default:
+			_, _ = fmt.Fprint(w, "fixture-private-non-JSON")
+		}
+	}))
+	defer upstream.Close()
+	ca := filepath.Join(t.TempDir(), "test-cert.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: upstream.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api, err := newAPIClient(upstream.URL, ca, "fixture-private-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer api.http.CloseIdleConnections()
+	for _, tc := range []struct{ fixture, want string }{
+		{"forbidden", `{"code":"api_access_forbidden","http_status":403}`},
+		{"missing", `{"code":"api_not_found","http_status":404}`},
+		{"redirect", `{"code":"api_redirect_refused","http_status":302}`},
+		{"bad JSON", `{"code":"invalid_api_response"}`},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			assertDiagnosticFailure(t, api.read(t.Context(), "/ready", url.Values{"fixture": {tc.fixture}}), tc.want)
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assertDiagnosticFailure(t, api.read(ctx, "/ready", nil), `{"code":"request_canceled"}`)
+	ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	assertDiagnosticFailure(t, api.read(ctx, "/ready", nil), `{"code":"api_timeout"}`)
+
+	untrusted := apiClient{baseURL: upstream.URL, token: api.token, http: &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12}},
+		Timeout:   5 * time.Second,
+	}}
+	defer untrusted.http.CloseIdleConnections()
+	assertDiagnosticFailure(t, untrusted.read(t.Context(), "/ready", nil), `{"code":"api_certificate_rejected"}`)
+	upstream.Close()
+	assertDiagnosticFailure(t, api.read(t.Context(), "/ready", nil), `{"code":"api_unreachable"}`)
 }
 
 type bearerTransport struct {
