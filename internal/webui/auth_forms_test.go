@@ -5,6 +5,83 @@ package webui
 
 import "testing"
 
+func TestPrivilegedConfirmationLifecycle(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0,'utf8');
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => {resolve = done;});
+  return {promise, resolve};
+}
+async function scenario(mode) {
+  const entered = deferred(), delayed = deferred();
+  let token = 'original', prompts = 0, attempts = 0, writes = 0;
+  const window = {location:{origin:'https://panel.example'},fetch:async (path, init) => {
+    if (path === '/api/v1/auth/confirm') {
+      attempts++;
+      if (mode === 'delayed') {entered.resolve(); await delayed.promise;}
+      if (mode === 'service') return Response.json({}, {status:500});
+      if (mode === 'limited') return Response.json({}, {status:429});
+      if (mode === 'incorrect' && attempts === 1) return Response.json({error:'password incorrect'}, {status:401});
+      return Response.json({token:'confirmed'});
+    }
+    writes++;
+    if (mode === 'expired') {
+      entered.resolve();
+      await delayed.promise;
+      return Response.json({}, {status:401});
+    }
+    if (writes === 1) return Response.json({error:'step_up_required'}, {status:403});
+    assert.equal(init.headers.get('Authorization'), 'Bearer confirmed');
+    return Response.json({});
+  }};
+  const ctx = vm.createContext({window, URL, Request, Response, Headers, AbortController,
+    sessionStorage:{getItem:()=>token,setItem:(_,value)=>{token=value;},removeItem:()=>{token='';}},
+    clearNetworkEditors(){},clearTOTPSecrets(){},clearManagementTLSForm(){},mcpConnectionsGeneration:0,
+    passwordDialog:async (message,signal) => {
+      prompts++;
+      assert.ok(prompts <= 2);
+      if (mode === 'dialog') {
+        entered.resolve();
+        return new Promise(done => signal.addEventListener('abort',()=>done(null)));
+      }
+      if (prompts === 2) assert.match(message,/Incorrect password/);
+      return 'fixture';
+    }});
+  function include(start,end) {
+    const a=page.indexOf(start), b=page.indexOf(end,a);
+    assert.ok(a>=0 && b>a);
+    vm.runInContext(page.slice(a,b),ctx);
+  }
+  include('  const TOK =','  let modalSequence');
+  include('  const nativeFetch','  const HASH_TO_PANEL');
+  const result=window.fetch('/api/v1/example',{method:'POST'});
+  if (mode === 'delayed' || mode === 'dialog' || mode === 'expired') {
+    await entered.promise;
+    vm.runInContext("setTok(''); setTok('other')",ctx);
+    delayed.resolve();
+    assert.equal((await result).status,409);
+    assert.equal(token,'other');
+    assert.equal(attempts,mode==='delayed'?1:0);
+    assert.equal(writes,1);
+  } else if (mode === 'service' || mode === 'limited') {
+    const response=await result;
+    assert.equal(response.status,mode==='limited'?429:503);
+    assert.match((await response.json()).error,/try again later|retry the operation/i);
+    assert.equal(prompts,1);
+    assert.equal(writes,1);
+  } else {
+    assert.equal((await result).status,200);
+    assert.equal(prompts,mode==='incorrect'?2:1);
+    assert.equal(writes,2);
+  }
+}
+Promise.all(['success','incorrect','delayed','dialog','expired','service','limited'].map(scenario))
+  .catch(err=>{console.error(err);process.exitCode=1});
+`)
+}
+
 func TestAuthFormsAndMCPContinuation(t *testing.T) {
 	runVersionUI(t, `
 const assert = require('node:assert/strict'), vm = require('node:vm');

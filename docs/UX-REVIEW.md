@@ -15,6 +15,8 @@ Reviewed the embedded panel at `73fdff9`, the two quick starts, the management C
 
 ## Coverage and remaining walkthroughs
 
+The privileged confirmation finding has been addressed. A session change cancels the password prompt and invalidates pending confirmations and retries. The panel distinguishes an incorrect password from throttling and service errors. The regression scenarios are in `TestPrivilegedConfirmationLifecycle`.
+
 - **Install, sign in, recover.** The quick start identifies the management URL and the console enrollment command. The CLI guide covers access reset and appliance reset separately. Verify on a clean VM that an operator can recover panel access without choosing an appliance reset.
 - **Dashboard, Applications, Certificates and Edge changes.** Preserve the distinction between saved configuration, acknowledged apply and live traffic. Test one unsuccessful issuance and one pending change through to recovery on a narrow screen.
 - **Security, CrowdSec, Fail2Ban and Events & audit.** Test the same refusal from the publication and investigation screens. The operator should be able to identify the enforcing component before changing a policy or lifting a ban.

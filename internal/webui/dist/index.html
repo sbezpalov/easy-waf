@@ -1424,8 +1424,15 @@
 
 <script>
   const TOK = 'easy_waf_token';
+  let sessionGeneration = 0;
+  let stepUpPrompt = null;
   const getTok = () => sessionStorage.getItem(TOK) || '';
   const setTok = (t) => {
+    sessionGeneration++;
+    if (stepUpPrompt) {
+      stepUpPrompt.controller.abort();
+      stepUpPrompt = null;
+    }
     if (t) sessionStorage.setItem(TOK, t);
     else {
       sessionStorage.removeItem(TOK);
@@ -1522,12 +1529,16 @@
   }
 
   // Resolves to the password, or null when cancelled.
-  function passwordDialog(message) {
+  function passwordDialog(message, signal) {
+    let dismiss;
     return modalDialog({
       title: 'Confirm privileged action',
       message,
       cancelValue: null,
+      onClose: () => signal?.removeEventListener('abort', dismiss),
       render: ({ content, actions, addFocusable, close }) => {
+      dismiss = () => close(null);
+      signal?.addEventListener('abort', dismiss, {once: true});
       const form = document.createElement('form');
       form.id = 'step-up-form-' + modalSequence;
       const input = document.createElement('input');
@@ -1634,35 +1645,54 @@
   }
 
   const nativeFetch = window.fetch.bind(window);
-  let stepUpPrompt = null;
   let currentRole = '';
   let sessionExpired = false;
 
-  async function promptStepUp() {
+  function confirmationFailure(status, error) {
+    return Response.json({error}, {status});
+  }
+
+  async function promptStepUp(signal) {
     let message = 'This is a privileged operation. Enter your password to continue.';
     for (;;) {
-      const password = await passwordDialog(message);
-      if (password === null) return false;
-      const r = await nativeFetch('/api/v1/auth/confirm', {
-        method: 'POST',
-        headers: hdr(),
-        body: JSON.stringify({ password })
-      });
-      if (r.ok) {
-        const j = await r.json();
-        setTok(j.token);
-        return true;
+      const password = await passwordDialog(message, signal);
+      if (signal.aborted || password === null) return null;
+      try {
+        const r = await nativeFetch('/api/v1/auth/confirm', {
+          method: 'POST', headers: hdr(), body: JSON.stringify({ password }), signal
+        });
+        const j = await r.json().catch(() => null);
+        if (signal.aborted) return null;
+        if (r.ok && typeof j?.token === 'string' && j.token) {
+          sessionStorage.setItem(TOK, j.token);
+          return true;
+        }
+        if (r.status === 401 && j?.error === 'password incorrect') {
+          message = 'Incorrect password. Try again.';
+          continue;
+        }
+        if (r.status === 401) {
+          handleSessionExpired();
+          return null;
+        }
+        if (r.status === 429) return confirmationFailure(429, 'Too many attempts. Try again later.');
+      } catch (_) {
+        if (signal.aborted) return null;
       }
-      message = r.status === 429 ? 'Too many attempts. Try again later.' : 'Incorrect password. Try again.';
+      return confirmationFailure(503, 'Password confirmation unavailable. Retry the operation.');
     }
   }
 
   // Requests made while the dialog is open wait for the same answer.
   function confirmStepUp() {
     if (!stepUpPrompt) {
-      stepUpPrompt = promptStepUp().finally(() => { stepUpPrompt = null; });
+      const controller = new AbortController();
+      const promise = promptStepUp(controller.signal).finally(() => {
+        if (stepUpPrompt?.controller === controller) stepUpPrompt = null;
+      });
+      stepUpPrompt = {controller, promise};
     }
-    return stepUpPrompt;
+    return stepUpPrompt.promise;
   }
 
   function requestMeta(url, init) {
@@ -1710,6 +1740,8 @@
   window.fetch = async (url, init) => {
     const meta = requestMeta(url, init);
     const hadToken = !!getTok();
+    const generation = sessionGeneration;
+    const sessionChanged = () => confirmationFailure(409, 'Session changed. Review the operation before trying again.');
     const readMethod = meta.method === 'GET' || meta.method === 'HEAD' || meta.method === 'OPTIONS';
     const viewerSelfService = meta.path === '/api/v1/auth/logout' || meta.path === '/api/v1/auth/change-password';
     if (currentRole === 'viewer' && !readMethod && !viewerSelfService) {
@@ -1720,14 +1752,20 @@
     }
     const retryInput = url instanceof Request ? url.clone() : url;
     const r = await nativeFetch(url, init);
+    if (hadToken && generation !== sessionGeneration) return sessionChanged();
     if (r.status !== 403) return finalizeAuthenticatedResponse(r, meta, hadToken);
     const j = await r.clone().json().catch(() => null);
-    if (!j || j.error !== 'step_up_required' || !(await confirmStepUp())) {
+    if (!hadToken || !j || j.error !== 'step_up_required') {
       return finalizeAuthenticatedResponse(r, meta, hadToken);
     }
+    if (generation !== sessionGeneration) return sessionChanged();
+    const confirmed = await confirmStepUp();
+    if (generation !== sessionGeneration) return sessionChanged();
+    if (confirmed !== true) return confirmed ? confirmed.clone() : r;
     const retryHeaders = new Headers((init && init.headers) || (url instanceof Request ? url.headers : undefined));
     retryHeaders.set('Authorization', 'Bearer ' + getTok());
     const retried = await nativeFetch(retryInput, { ...init, headers: retryHeaders });
+    if (generation !== sessionGeneration) return sessionChanged();
     return finalizeAuthenticatedResponse(retried, meta, true);
   };
 

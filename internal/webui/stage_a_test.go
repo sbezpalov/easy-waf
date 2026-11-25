@@ -365,7 +365,7 @@ async function sessionScenario() {
   const context = {Request, Response, Headers, URL, console,
     window: {location: {origin: 'https://fixture'}, fetch: async () => { nativeCalls++; return new Response('{}', {status: 401}); }},
     document: {body: {classList}, getElementById: id => elements[id]},
-    getTok: () => token, setTok: value => {token = value}, hdr: () => ({}),
+    sessionGeneration: 0, getTok: () => token, setTok: value => {token = value}, hdr: () => ({}),
     stopDashStatsTimer() {}, stopAuditRefreshTimer() {}, closeMobileNav() {},
     show: (id, on) => { if (id === 'view-login' && on) loginShown = true }};
   vm.createContext(context);
@@ -384,7 +384,7 @@ async function viewerScenario() {
   const context = {Request, Response, Headers, URL, console,
     window: {location: {origin: 'https://fixture'}, fetch: async () => { nativeCalls++; return new Response('{}', {status: 200}); }},
     document: {body: {classList: {remove() {}}}, getElementById: () => null},
-    getTok: () => token, setTok: value => {token = value}, hdr: () => ({}),
+    sessionGeneration: 0, getTok: () => token, setTok: value => {token = value}, hdr: () => ({}),
     stopDashStatsTimer() {}, stopAuditRefreshTimer() {}, closeMobileNav() {}, show() {}};
   vm.createContext(context);
   vm.runInContext(page.slice(start, end), context);
