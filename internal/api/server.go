@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -62,7 +63,9 @@ func (s *Server) Router() chi.Router {
 	// Forwarding headers apply only when the TCP peer is a trusted proxy (loopback by default); see docs/SECURITY.md.
 	r.Use(TrustedRealIP(TrustedProxyCIDRs()))
 	r.Use(s.managementACL)
-	r.Use(middleware.Logger)
+	r.Use(middleware.RequestLogger(&managementLogFormatter{middleware.DefaultLogFormatter{
+		Logger: log.New(os.Stdout, "", log.LstdFlags), NoColor: true,
+	}}))
 	r.Use(middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
