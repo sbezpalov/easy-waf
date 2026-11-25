@@ -178,6 +178,11 @@ older archive in place, verify that MCP uses the same API token as the
 restored management API and trusts its current certificate. Then verify
 the MCP `status` tool using the setup instructions in [MCP.md](MCP.md).
 
+The database dump restores OAuth approvals, expiry dates and refresh-token
+state as of the backup. Review **Operate → MCP** before allowing agents to
+reconnect. Revoke any approval that was withdrawn after the backup. An agent
+that rotated its refresh token after the backup may need to pair again.
+
 After restore on a new image, confirm polkit + HAProxy drop-in (package `postinst` installs both):
 
 ```bash

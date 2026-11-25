@@ -2,4 +2,4 @@
 -- Existing grants retain their original expiry.
 ALTER TABLE mcp_oauth_grants
     ALTER COLUMN valid_until DROP NOT NULL,
-    ADD COLUMN replay_revoked_at timestamptz;
+    ADD COLUMN IF NOT EXISTS replay_revoked_at timestamptz;
