@@ -61,21 +61,27 @@ const document = {createElement: element, getElementById(id) {
 const origin = 'https://waf.example';
 const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&redirect_uri=https%3A%2F%2Fgateway.example%2Fcallback',
   replace(url) {this.destination = url;}};
+let dropApproval = false, dropRevocation = false, offline = false, deletions = 0;
+const notices = [];
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 const ctx = vm.createContext({document, location, currentRole:'admin', URLSearchParams,
-  hdr:()=>({}), withBusy:(_,fn)=>fn(), fetch: async (path,opts) => {
+  hdr:()=>({}), withBusy:(_,fn)=>fn(), toast:(message,kind)=>notices.push([kind,message]), fetch: async (path,opts) => {
     if (opts.method === 'POST') {
+      if (dropApproval) throw new Error('connection lost');
       assert.equal(path,'/api/v1/integrations/mcp/approve');
       assert.equal(JSON.parse(opts.body).query, location.hash.split('?')[1]);
       approved = true;
       return {ok:true,json:async()=>({redirect:'https://gateway.example/callback?code=fixture'})};
     }
     if (opts.method === 'DELETE') {
+      deletions++;
       assert.equal(path,'/api/v1/integrations/mcp/grants/fixture');
       grants = [];
+      if (dropRevocation) throw new Error('reply lost');
       return {ok:true};
     }
+    if (offline) throw new Error('offline');
     return {ok:true,json:async()=>grants};
   }});
 const start = page.indexOf('  let mcpConnectionsGeneration'), end = page.indexOf('  async function loadMCPStatus()',start);
@@ -86,14 +92,32 @@ async function run(){
   assert.equal(elements.get('mcp-consent').hidden,false);
   assert.match(elements.get('mcp-consent-detail').textContent,/gateway\.example/);
   assert.equal(approved,false);
+  dropApproval = true;
+  await elements.get('mcp-approve').onclick({currentTarget:{}});
+  assert.equal(notices.at(-1)[0],'warn');
+  assert.equal(location.destination, undefined);
+  dropApproval = false;
   await elements.get('mcp-approve').onclick({currentTarget:{}});
   assert.equal(approved,true);
   assert.match(location.destination,/callback/);
   location.hash='#mcp';
   const grantText = elements.get('mcp-grants').children[0].children[0];
   assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
+  const original = grants;
   await elements.get('mcp-grants').children[0].children[1].onclick();
+  assert.equal(notices.at(-1)[0], 'ok');
   assert.equal(elements.get('mcp-grants').textContent,'No approved connections.');
+  grants = original;
+  await elements.get('mcp-refresh-grants').onclick();
+  dropRevocation = offline = true;
+  await elements.get('mcp-grants').children[0].children[1].onclick();
+  assert.equal(notices.at(-1)[0], 'warn');
+  assert.match(elements.get('mcp-grants').textContent,/Could not load/);
+  assert.equal(elements.get('mcp-refresh-grants').disabled,false);
+  offline = false;
+  await elements.get('mcp-refresh-grants').onclick();
+  assert.equal(elements.get('mcp-grants').textContent,'No approved connections.');
+  assert.equal(deletions,2,'refresh must never repeat a revocation');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
 `)

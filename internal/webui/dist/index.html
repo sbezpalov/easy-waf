@@ -1102,6 +1102,7 @@
             </section>
             <h4>Approved connections</h4>
             <div id="mcp-grants" role="status"></div>
+            <button type="button" class="secondary" id="mcp-refresh-grants" hidden>Refresh connections</button>
           </div>
           <details><summary>Local service connection</summary>
             <p>The loopback service also supports a client bearer token. <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md">Connection guide</a></p>
@@ -6413,8 +6414,10 @@
     const endpoint = document.getElementById('mcp-endpoint');
     const copy = document.getElementById('mcp-copy');
     const grants = document.getElementById('mcp-grants');
+    const refresh = document.getElementById('mcp-refresh-grants');
     const consent = document.getElementById('mcp-consent');
     consent.hidden = true;
+    refresh.hidden = true;
     copy.hidden = true;
     endpoint.textContent = '';
     grants.replaceChildren();
@@ -6427,15 +6430,20 @@
       return;
     }
     const path = '/api/v1/integrations/mcp/grants';
+    refresh.hidden = false;
+    refresh.disabled = true;
+    grants.textContent = 'Checking approved connections…';
     try {
       const response = await fetch(path, {headers: hdr(), cache: 'no-store'});
       if (!response.ok) throw new Error();
       const rows = await response.json();
+      if (!Array.isArray(rows)) throw new Error();
       if (generation !== mcpConnectionsGeneration) return;
       endpoint.textContent = location.origin + '/mcp';
       copy.dataset.copy = endpoint.textContent;
       copy.hidden = false;
       help.textContent = 'In OpenClaw Settings → MCP, add this address, select OAuth and sign in. The Gateway must trust the management HTTPS certificate.';
+      grants.textContent = '';
       const query = location.hash.split('?')[1] || '';
       if (query) {
         const params = new URLSearchParams(query);
@@ -6443,9 +6451,15 @@
           (params.get('client_name') || 'Client') + ' requests read-only access to diagnostics. Confirm that this callback belongs to your Gateway: ' + params.get('redirect_uri');
         consent.hidden = false;
         document.getElementById('mcp-approve').onclick = (event) => withBusy(event.currentTarget, async () => {
-          const result = await fetch('/api/v1/integrations/mcp/approve', {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
-          if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
-          location.replace((await result.json()).redirect);
+          try {
+            const result = await fetch('/api/v1/integrations/mcp/approve', {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
+            if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
+            const {redirect} = await result.json();
+            if (!redirect) throw new Error();
+            location.replace(redirect);
+          } catch (_) {
+            toast('Could not confirm approval. Refresh connections before starting sign-in again.', 'warn');
+          }
         });
       }
       if (!rows.length) grants.textContent = 'No approved connections.';
@@ -6457,17 +6471,28 @@
         revoke.className = 'secondary';
         revoke.textContent = 'Revoke access';
         revoke.onclick = () => withBusy(revoke, async () => {
-          const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
-          if (result.ok) await loadMCPConnections();
-          else toast(await apiMessage(result), 'err');
+          try {
+            const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
+            if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
+            toast('Access revoked for ' + row.name + '.', 'ok');
+          } catch (_) {
+            toast('Could not confirm revocation. Checking approved connections again.', 'warn');
+          }
+          await loadMCPConnections();
         });
         line.append(revoke);
         grants.append(line);
       }
     } catch (_) {
-      if (generation === mcpConnectionsGeneration) help.textContent = 'OAuth connections unavailable. Verify that management HTTPS and MCP diagnostics are configured.';
+      if (generation === mcpConnectionsGeneration) {
+        help.textContent = 'Verify that management HTTPS and MCP diagnostics are configured.';
+        grants.textContent = 'Could not load approved connections. Try refreshing.';
+      }
+    } finally {
+      if (generation === mcpConnectionsGeneration) refresh.disabled = false;
     }
   }
+  document.getElementById('mcp-refresh-grants').onclick = loadMCPConnections;
 
   async function loadMCPStatus() {
     const status = document.getElementById('mcp-service-status');
