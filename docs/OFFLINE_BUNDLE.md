@@ -86,6 +86,10 @@ sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot
 
 Mount the ISO or extract the archive to a directory of your choice. Quote the
 path in shell commands if it contains spaces or other shell metacharacters.
+After verifying the published image signature and checksum, use
+`install.sh --verify-only` to verify the extracted file manifest, package
+checksum and equality of the two Easy WAF package copies. This step needs
+only read access to the bundle and does not invoke APT.
 
 For a clean installation of the full profile from the public ISO, prepare a
 [CrowdSec snapshot](#prepare-a-private-crowdsec-snapshot) on a connected host and

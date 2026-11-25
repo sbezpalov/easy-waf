@@ -8,12 +8,22 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 probe="$TEMP_DIR/probe"
-mkdir "$probe"
+mkdir -p "$probe/payload/dist" "$probe/repository"
 cp "${SCRIPT_DIR}/install-offline-bundle.sh" "$probe/install.sh"
+write_fixture_metadata() {
+  local directory="$1" version="$2" arch="$3"
+  printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=24.04\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \
+    "$version" "$arch" >"$directory/BUNDLE.env"
+}
+write_fixture_metadata "$probe" 9.9.9 amd64
+fixture_package=easy-waf_9.9.9_amd64.deb
+printf 'fixture package\n' >"$probe/payload/dist/$fixture_package"
+cp "$probe/payload/dist/$fixture_package" "$probe/repository/$fixture_package"
+(cd "$probe/payload/dist" && sha256sum "$fixture_package" >SHA256SUMS)
 printf 'test payload\n' >"$probe/payload.txt"
 (
   cd "$probe"
-  sha256sum ./install.sh ./payload.txt >SHA256SUMS
+  find . -type f ! -path './SHA256SUMS' -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum -- >SHA256SUMS
 )
 
 "${BASH}" "$probe/install.sh" --verify-only >/dev/null
@@ -121,11 +131,13 @@ fi
 STAGE="${TEMP_DIR}/stage #1%"
 PAYLOAD="${STAGE}/payload"
 WORK_DIR="${TEMP_DIR}/outside"
-mkdir -p "$PAYLOAD/dist" "$WORK_DIR"
+mkdir -p "$PAYLOAD/dist" "$WORK_DIR" "$STAGE/repository"
 VERSION=9.9.9
 ARCH=amd64
+write_fixture_metadata "$STAGE" "$VERSION" "$ARCH"
 printf 'payload\n' >"${STAGE}/payload.txt"
 printf 'fixture package\n' >"$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"
+cp "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb" "$STAGE/repository/"
 cp "${SCRIPT_DIR}/install-offline-bundle.sh" "${STAGE}/install.sh"
 checksum_step="$(sed -n '/^write_bundle_checksums() {$/,/^}$/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
 [[ -n "$checksum_step" ]] || { echo 'test-offline-bundle: builder checksum step missing' >&2; exit 1; }
@@ -157,7 +169,11 @@ for location in payload/dist repository; do
   copy="$STAGE/$location/$release_name"
   printf 'different package\n' >"$copy"
   write_bundle_checksums
-  "${BASH}" "$STAGE/install.sh" --verify-only >/dev/null
+  if "${BASH}" "$STAGE/install.sh" --verify-only >"$TEMP_DIR/verify-error" 2>&1; then
+    echo "test-offline-bundle: verify-only accepted disagreeing package copies" >&2
+    exit 1
+  fi
+  grep -Fq "repository/$release_name does not match the verified installer payload" "$TEMP_DIR/verify-error"
   if "${BASH}" "$verify_release" "$STAGE" "$release_fixture" >"$TEMP_DIR/release-error" 2>&1; then
     echo "test-offline-bundle: accepted a package differing from the release in $location" >&2
     exit 1
@@ -166,6 +182,13 @@ for location in payload/dist repository; do
   cp "$release_fixture" "$copy"
 done
 printf 'unusable checksum list\n' >"$PAYLOAD/dist/SHA256SUMS"
+(cd "$STAGE" && find . -type f ! -path './SHA256SUMS' -print0 |
+  LC_ALL=C sort -z | xargs -0 -r sha256sum -- >SHA256SUMS)
+if "${BASH}" "$STAGE/install.sh" --verify-only >"$TEMP_DIR/verify-error" 2>&1; then
+  echo "test-offline-bundle: verify-only accepted an unusable payload checksum manifest" >&2
+  exit 1
+fi
+grep -Fq 'payload checksum manifest does not match' "$TEMP_DIR/verify-error"
 if "${BASH}" "$verify_release" "$STAGE" "$release_fixture" >"$TEMP_DIR/release-error" 2>&1; then
   echo 'test-offline-bundle: accepted an unusable payload checksum manifest' >&2
   exit 1

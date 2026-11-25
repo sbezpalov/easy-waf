@@ -10,7 +10,7 @@ usage() {
 Usage: sudo bash install.sh [--verify-only]
 
 Installs Easy Home WAF from this bundle on Ubuntu 24.04. --verify-only checks
-the internal manifest without changing the host.
+the manifests and package copies without changing the host.
 
 Set EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR to a trusted, prepared snapshot
 directory when installing CrowdSec from an ISO without an embedded snapshot.
@@ -56,15 +56,6 @@ if ! nonregular="$(find . ! -type d ! -type f -print -quit)" ||
   echo "[offline-install] bundle verification failed; do not install it" >&2
   exit 1
 fi
-if [[ "$VERIFY_ONLY" == "1" ]]; then
-  echo "[offline-install] bundle contents verified"
-  exit 0
-fi
-
-[[ "${EUID}" -eq 0 ]] || {
-  echo "[offline-install] run as root: sudo bash install.sh" >&2
-  exit 1
-}
 [[ -f BUNDLE.env ]] || {
   echo "[offline-install] verified BUNDLE.env is missing" >&2
   exit 1
@@ -96,6 +87,26 @@ CROWDSEC="$(bundle_value EASY_WAF_BUNDLE_CROWDSEC)"
   exit 1
 }
 
+package_name="easy-waf_${BUNDLE_VERSION}_${ARCH}.deb"
+payload_dist="${SCRIPT_DIR}/payload/dist"
+# Keep verification stand-alone. It does not execute payload scripts or APT.
+if ! (cd -- "$payload_dist" && sha256sum -- "$package_name" | cmp -s -- SHA256SUMS -); then
+  echo "[offline-install] payload checksum manifest does not match $package_name" >&2
+  exit 1
+fi
+if ! cmp -s -- "$payload_dist/$package_name" "$SCRIPT_DIR/repository/$package_name"; then
+  echo "[offline-install] repository/$package_name does not match the verified installer payload" >&2
+  exit 1
+fi
+if [[ "$VERIFY_ONLY" == "1" ]]; then
+  echo "[offline-install] bundle contents and package copies verified"
+  exit 0
+fi
+[[ "${EUID}" -eq 0 ]] || {
+  echo "[offline-install] run as root: sudo bash install.sh" >&2
+  exit 1
+}
+
 # shellcheck source=/dev/null
 . /etc/os-release
 if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "$UBUNTU_VERSION" ]]; then
@@ -110,17 +121,7 @@ fi
 # shellcheck source=lib/offline-apt.sh
 . "${SCRIPT_DIR}/payload/scripts/lib/offline-apt.sh"
 
-package_name="easy-waf_${BUNDLE_VERSION}_${ARCH}.deb"
-payload_dist="${SCRIPT_DIR}/payload/dist"
-if ! offline_package_checksum_matches "$payload_dist" "$package_name"; then
-  echo "[offline-install] payload checksum manifest does not match $package_name" >&2
-  exit 1
-fi
 offline_check_package_identity "$payload_dist/$package_name" "$BUNDLE_VERSION" "$ARCH"
-if ! cmp -s -- "$payload_dist/$package_name" "$SCRIPT_DIR/repository/$package_name"; then
-  echo "[offline-install] repository/$package_name does not match the verified installer payload" >&2
-  exit 1
-fi
 
 : "${EASY_WAF_INSTALL_CROWDSEC:=$CROWDSEC}"
 case "$EASY_WAF_INSTALL_CROWDSEC" in
