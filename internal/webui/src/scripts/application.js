@@ -4526,17 +4526,25 @@
         document.getElementById('mcp-consent-detail').textContent =
           (params.get('client_name') || 'Client') + ' requests read-only access to diagnostics. Confirm that this callback belongs to your Gateway: ' + params.get('redirect_uri');
         consent.hidden = false;
-        document.getElementById('mcp-approve').onclick = (event) => withBusy(event.currentTarget, async () => {
+        const approve = document.getElementById('mcp-approve');
+        const deny = document.getElementById('mcp-deny');
+        const decide = (button, other, action) => withBusy(button, async () => {
+          other.disabled = true;
           try {
-            const result = await fetch('/api/v1/integrations/mcp/approve', {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
+            const result = await fetch('/api/v1/integrations/mcp/' + action, {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
             if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
             const {redirect} = await result.json();
             if (!redirect) throw new Error();
             location.replace(redirect);
           } catch (_) {
-            toast('Could not confirm approval. Refresh connections before starting sign-in again.', 'warn');
+            toast(action === 'deny' ? 'Could not return the denial to the client. Try again.' :
+              'Could not confirm approval. Refresh connections before starting sign-in again.', 'warn');
+          } finally {
+            other.disabled = false;
           }
         });
+        approve.onclick = () => decide(approve, deny, 'approve');
+        deny.onclick = () => decide(deny, approve, 'deny');
       }
       if (!rows.length) grants.textContent = 'No approved connections.';
       for (const row of rows) {

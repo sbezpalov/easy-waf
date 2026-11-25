@@ -68,6 +68,10 @@ let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',
 const ctx = vm.createContext({document, location, currentRole:'admin', URLSearchParams,
   hdr:()=>({}), withBusy:(_,fn)=>fn(), toast:(message,kind)=>notices.push([kind,message]), fetch: async (path,opts) => {
     if (opts.method === 'POST') {
+      if (path === '/api/v1/integrations/mcp/deny') {
+        assert.equal(JSON.parse(opts.body).query, location.hash.split('?')[1]);
+        return {ok:true,json:async()=>({redirect:'https://gateway.example/callback?error=access_denied'})};
+      }
       if (dropApproval) throw new Error('connection lost');
       assert.equal(path,'/api/v1/integrations/mcp/approve');
       assert.equal(JSON.parse(opts.body).query, location.hash.split('?')[1]);
@@ -92,6 +96,10 @@ async function run(){
   assert.equal(elements.get('mcp-consent').hidden,false);
   assert.match(elements.get('mcp-consent-detail').textContent,/gateway\.example/);
   assert.equal(approved,false);
+  await elements.get('mcp-deny').onclick();
+  assert.match(location.destination,/error=access_denied/);
+  assert.equal(approved,false);
+  delete location.destination;
   dropApproval = true;
   await elements.get('mcp-approve').onclick({currentTarget:{}});
   assert.equal(notices.at(-1)[0],'warn');

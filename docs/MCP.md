@@ -128,6 +128,8 @@ The HTTPS endpoint uses the management listener and its source network ACL.
    select OAuth, then **Sign in**. OpenClaw registers its browser callback.
 3. In Easy WAF, check the displayed callback against your Gateway address and
    approve read-only diagnostics. Run the MCP tool `doctor` in OpenClaw.
+   To decline the request, select **Deny access**. The browser returns to
+   the registered callback with the OAuth error `access_denied`.
 4. **Approved connections** lists grants across all management addresses of this appliance. Each entry shows the issuing address, callback, approving operator and last use.
    **Revoke access** invalidates both access and refresh tokens immediately.
    Each grant expires after 30 days. Sign in again to authorize a new grant.

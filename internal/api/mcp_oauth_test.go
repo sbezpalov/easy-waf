@@ -94,6 +94,30 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 		t.Fatal("consent redirect missing")
 	}
 	body, _ := json.Marshal(map[string]string{"query": query})
+	const denyPath = "/api/v1/integrations/mcp/deny"
+	_, denied := call("POST", denyPath, "application/json", string(body), admin, 200)
+	denyURL, err := url.Parse(field(denied, "redirect"))
+	if err != nil || denyURL.Query().Get("error") != "access_denied" || denyURL.Query().Get("state") != "opaque" ||
+		denyURL.Query().Get("iss") != origin || denyURL.Query().Has("code") {
+		t.Fatal("invalid denial callback")
+	}
+	denyURL.RawQuery = ""
+	if denyURL.String() != q.Get("redirect_uri") {
+		t.Fatal("denial callback destination differs from registered URI")
+	}
+	deniedGrants, err := s.Eng.Store.MCPGrants(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range deniedGrants {
+		if g.ApprovedBy == user {
+			t.Fatal("denial created a grant")
+		}
+	}
+	changed, _ := url.ParseQuery(query)
+	changed.Set("redirect_uri", "https://other.example/callback")
+	invalidBody, _ := json.Marshal(map[string]string{"query": changed.Encode()})
+	call("POST", denyPath, "application/json", string(invalidBody), admin, 400)
 	_, b = call("POST", "/api/v1/integrations/mcp/approve", "application/json", string(body), admin, 200)
 	callback, err := url.Parse(field(b, "redirect"))
 	if err != nil || callback.Query().Get("state") != "opaque" {

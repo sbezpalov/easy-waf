@@ -162,35 +162,54 @@ func (s *Server) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusSeeOther)
 }
 
-func (s *Server) oauthApprove(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readConsentRequest(w http.ResponseWriter, r *http.Request) (url.Values, registration, bool) {
 	if !s.oauthAvailable(w, r) {
-		return
+		return nil, registration{}, false
 	}
 	var body struct {
 		Query string `json:"query"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body) != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
+		return nil, registration{}, false
 	}
 	q, err := url.ParseQuery(body.Query)
 	c, ok := s.validateAuthorization(q, issuer(r))
 	if err != nil || !ok || q.Get("client_name") != c.Name {
 		http.Error(w, "Invalid authorization request", http.StatusBadRequest)
+		return nil, registration{}, false
+	}
+	return q, c, true
+}
+
+func (s *Server) oauthDeny(w http.ResponseWriter, r *http.Request) {
+	q, c, ok := s.readConsentRequest(w, r)
+	if ok {
+		writeConsentRedirect(w, r, c, q, url.Values{"error": {"access_denied"}})
+	}
+}
+
+func (s *Server) oauthApprove(w http.ResponseWriter, r *http.Request) {
+	q, c, ok := s.readConsentRequest(w, r)
+	if !ok {
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
 	code := newSecret()
-	err = s.Eng.Store.ApproveMCP(r.Context(), store.MCPGrant{ID: uuid.NewString(), Name: c.Name, ApprovedBy: p.Username}, issuer(r), q.Get("client_id"), c.Redirects[0], q.Get("code_challenge"), digest(code))
+	err := s.Eng.Store.ApproveMCP(r.Context(), store.MCPGrant{ID: uuid.NewString(), Name: c.Name, ApprovedBy: p.Username}, issuer(r), q.Get("client_id"), c.Redirects[0], q.Get("code_challenge"), digest(code))
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
+	writeConsentRedirect(w, r, c, q, url.Values{"code": {code}})
+}
+
+func writeConsentRedirect(w http.ResponseWriter, r *http.Request, c registration, q, v url.Values) {
 	u, _ := url.Parse(c.Redirects[0])
-	v := u.Query()
-	v.Set("code", code)
 	v.Set("iss", issuer(r))
-	v.Set("state", q.Get("state"))
+	if q.Has("state") {
+		v.Set("state", q.Get("state"))
+	}
 	u.RawQuery = v.Encode()
 	writeJSON(w, http.StatusOK, map[string]string{"redirect": u.String()})
 }

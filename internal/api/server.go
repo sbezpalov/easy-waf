@@ -102,6 +102,7 @@ func (s *Server) Router() chi.Router {
 				r.Get("/integrations/mcp/status", s.handleMCPServiceStatus)
 				r.With(auth.RequireAdmin).Get("/integrations/mcp/grants", s.oauthGrants)
 				r.With(auth.RequireAdmin, auth.RequireStepUp(stepUpWindow)).Post("/integrations/mcp/approve", s.oauthApprove)
+				r.With(auth.RequireAdmin).Post("/integrations/mcp/deny", s.oauthDeny)
 				r.With(auth.RequireAdmin, auth.RequireStepUp(stepUpWindow)).Delete("/integrations/mcp/grants/{id}", s.oauthRevoke)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
