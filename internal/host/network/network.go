@@ -49,20 +49,35 @@ func GetOverview(ctx context.Context) (Overview, error) {
 	if b, err := runner.Run(ctx, 15*time.Second, "/usr/bin/ip", "-j", "route", "show"); err == nil {
 		_ = json.Unmarshal(b, &out.Routes)
 	}
-	if b, err := runner.Run(ctx, 10*time.Second, "/usr/bin/resolvectl", "status"); err == nil {
-		for _, line := range strings.Split(string(b), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "DNS Servers:") {
-				rest := strings.TrimPrefix(line, "DNS Servers:")
-				out.DNS = append(out.DNS, strings.Fields(rest)...)
-			}
-		}
+	if b, err := runner.Run(ctx, 10*time.Second, "/usr/bin/resolvectl", "dns"); err == nil {
+		out.DNS = parseResolverDNS(string(b))
 	}
 	if b, err := runner.Run(ctx, 10*time.Second, "/usr/bin/timedatectl", "show", "-p", "NTPSynchronized", "--value"); err == nil {
 		out.NTP = strings.TrimSpace(string(b))
 	}
 	out.Netplan, out.ManagedNetplanState = readNetplanFiles("/etc/netplan")
 	return out, nil
+}
+
+// resolvectl dns wraps long global and per-link lists onto indented lines.
+func parseResolverDNS(output string) []string {
+	var servers []string
+	var inList bool
+	for line := range strings.Lines(output) {
+		switch {
+		case strings.HasPrefix(line, "Global:"):
+			line = strings.TrimPrefix(line, "Global:")
+			inList = true
+		case strings.HasPrefix(line, "Link "):
+			_, line, inList = strings.Cut(line, "):")
+		case !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t"):
+			inList = false
+		}
+		if inList {
+			servers = append(servers, strings.Fields(line)...)
+		}
+	}
+	return servers
 }
 
 func readNetplanFiles(dir string) ([]NetplanFile, string) {

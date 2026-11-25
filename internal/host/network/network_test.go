@@ -6,8 +6,23 @@ package network
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
+
+func TestParseResolverDNS(t *testing.T) {
+	output := "Global: 192.0.2.1 192.0.2.2\n" +
+		"        2001:db8::53\nLink 1 (lo):\n" +
+		"Link 2 (eth0): [2001:db8::1]:853#dns.example\n" +
+		"        fe80::53%eth0\nLink 3 (eth1): 198.51.100.53"
+	want := []string{"192.0.2.1", "192.0.2.2", "2001:db8::53", "[2001:db8::1]:853#dns.example", "fe80::53%eth0", "198.51.100.53"}
+	if got := parseResolverDNS(output); !slices.Equal(got, want) {
+		t.Fatalf("DNS servers: got %q, want %q", got, want)
+	}
+	if got := parseResolverDNS("Global:\nLink 1 (lo):\n"); len(got) != 0 {
+		t.Fatalf("empty resolver configuration returned %q", got)
+	}
+}
 
 func TestManagedNetplanState(t *testing.T) {
 	dir := t.TempDir()
