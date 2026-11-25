@@ -4569,6 +4569,7 @@
 
   async function loadSystemTab() {
     void loadHostTimezone();
+    void loadBackupStatus();
     await loadSystemServicesTable();
     const aptOut = document.getElementById('sys-apt-output');
     if (aptOut && !aptOut.textContent) aptOut.textContent = 'Click “Check for updates”.';
@@ -4577,6 +4578,25 @@
   }
 
   let hostTimezoneLoadGeneration = 0;
+
+  let backupStatusGeneration = 0;
+  async function loadBackupStatus() {
+    const generation = ++backupStatusGeneration;
+    const label = document.getElementById('system-backup-status');
+    label.textContent = 'Checking the backup service…';
+    let message = 'Backup service result unavailable. Check the appliance journal for earlier runs.';
+    try {
+      const response = await fetch('/api/v1/host/backup/status', {headers: hdr(), cache: 'no-store'});
+      if (response.ok) {
+        const status = await response.json();
+        const when = status.finished_at ? ' at ' + formatHostTime(status.finished_at) : '';
+        if (status.state === 'running') message = 'Backup service is running.';
+        if (status.state === 'succeeded') message = 'Last backup service run succeeded' + when + '.';
+        if (status.state === 'failed') message = 'Last backup service run failed' + when + '. Check the appliance journal.';
+      }
+    } catch (_) { /* Keep the unavailable state on connection failure. */ }
+    if (generation === backupStatusGeneration) label.textContent = message;
+  }
 
   async function loadHostTimezone() {
     const select = document.getElementById('system-timezone');

@@ -39,6 +39,7 @@
         </div>
         <section class="panel" id="system-backup-restore" aria-labelledby="system-backup-restore-title" style="max-width:100%">
           <h3 id="system-backup-restore-title">Backup and restore</h3>
+          <p id="system-backup-status" role="status">Checking the backup service…</p>
           <p>Backup and restore are not available in the web panel. Run the packaged commands from the appliance console or an SSH session with <code>sudo</code>.</p>
           <p><code>sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7</code></p>
           <p><code>sudo easy-waf-restore /path/to/easy-waf-backup-YYYYMMDD-HHMMSS.tar.gz</code></p>

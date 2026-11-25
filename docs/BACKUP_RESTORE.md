@@ -102,7 +102,9 @@ It writes `easy-waf-backup-<timestamp>.tar.gz` (0600) into the directory (create
 | `EASY_WAF_BACKUP_DIR` | `/var/backups/easy-waf` | Where archives go. Use a mounted NAS share or a second disk: a backup on the same disk does not survive the disk. |
 | `EASY_WAF_BACKUP_KEEP` | `7` | Archives kept; `0` keeps all. |
 
-Run one now with `sudo systemctl start easy-waf-backup.service` (or `sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7`), check the last result with `systemctl status easy-waf-backup.service` and the schedule with `systemctl list-timers easy-waf-backup.timer`. Each archive holds TLS keys, the JWT secret and `DATABASE_URL`: protect copies taken off the box accordingly.
+**System → Backup and restore** shows the latest result available from the backup service and its completion time when recorded. After a reboot or when systemd has released the service state, consult its history with `sudo journalctl -u easy-waf-backup.service`. Backups run directly from the shell are outside this service history.
+
+Run the service now with `sudo systemctl start easy-waf-backup.service` and check its schedule with `systemctl list-timers easy-waf-backup.timer`. To create a backup directly, run `sudo easy-waf-backup --dir /var/backups/easy-waf --keep 7`. Each archive holds TLS keys, the JWT secret and `DATABASE_URL`: protect copies taken off the box accordingly.
 
 ## Restore
 

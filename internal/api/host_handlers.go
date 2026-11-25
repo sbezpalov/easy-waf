@@ -53,6 +53,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 		r.Get("/firewall", s.hostGetFirewall)
 		r.Get("/changes/pending", s.hostGetPendingChanges)
 		r.Get("/services", s.hostListServices)
+		r.Get("/backup/status", s.hostBackupStatus)
 		r.Get("/journal", s.hostGetJournal)
 		r.Get("/updates", s.hostGetUpdates)
 		r.Get("/updates/upgrade/log", s.hostAptUpgradeLog)
