@@ -375,6 +375,8 @@ FIXTURE
   install -d -m 0755 "$builder/wrong/DEBIAN"
   sed 's/^Version: 9\.9\.9$/Version: 9.9.8/' "$builder/fixture/DEBIAN/control" >"$builder/wrong/DEBIAN/control"
   dpkg-deb --build "$builder/wrong" "$PAYLOAD/$package" >/dev/null
+  # Keep both copies identical so the installer reaches the DEB version check.
+  cp "$PAYLOAD/$package" "$STAGE/repository/${package##*/}"
   write_bundle_checksums
   if "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
     echo 'test-offline-bundle: installed a package with the wrong declared version' >&2
