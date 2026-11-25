@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -25,11 +26,19 @@ func composeEdgeStatus(base config.EdgeStatus, revisionSHA string, runtimeErr er
 }
 
 func (s *Server) handleEdgeStatus(w http.ResponseWriter, r *http.Request) {
-	status, err := s.Eng.Store.GetEdgeStatus(r.Context())
+	status, err := s.edgeStatus(r.Context())
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) edgeStatus(ctx context.Context) (config.EdgeStatus, error) {
+	status, err := s.Eng.Store.GetEdgeStatus(ctx)
+	if err != nil {
+		return status, err
+	}
 	sha, runtimeErr := s.Eng.LiveHAProxySHA256()
-	writeJSON(w, http.StatusOK, composeEdgeStatus(status, sha, runtimeErr, time.Now().UTC()))
+	return composeEdgeStatus(status, sha, runtimeErr, time.Now().UTC()), nil
 }

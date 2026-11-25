@@ -23,6 +23,7 @@ func (s *Server) mountMCPDiagnostics(r chi.Router) {
 	r.Route("/mcp/diagnostics", func(r chi.Router) {
 		r.Use(s.requireMCPAPI)
 		r.Get("/ready", s.handleReady)
+		r.Get("/doctor", s.handleMCPDoctor)
 		r.Get("/edge", s.handleEdgeStatus)
 		r.Get("/haproxy", s.checkMCPHAProxy)
 		r.Get("/applications", s.listMCPApplications)

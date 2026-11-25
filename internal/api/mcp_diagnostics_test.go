@@ -116,6 +116,7 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 		{"/certificates", "["}, {"/revisions", "["}, {"/geoip", `"configured_provider"`},
 		{"/application?id=" + url.QueryEscape(app.ID), `"code":"hostname_resolved"`},
 		{"/recent-events", `"events":[`},
+		{"/doctor", `"database":"ok","edge_configuration":`},
 	}
 	for _, route := range routes {
 		r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics"+route.suffix, nil)
@@ -140,6 +141,32 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 		if entry.UserName != "mcp" || !strings.Contains(string(entry.Details), `"/api/v1/mcp/diagnostics`+suffix+`"`) || strings.Contains(string(entry.Details), app.ID) {
 			t.Fatalf("unexpected MCP audit record: %+v", entry)
 		}
+	}
+}
+
+func TestMCPDoctorEdgeState(t *testing.T) {
+	known := config.EdgeRuntimeStatus{State: config.EdgeRuntimeKnown, RevisionSHA: "current"}
+	success := &config.EdgeLastApply{Outcome: config.EdgeApplyOutcomeSuccess, RevisionSHA: "current"}
+	failed := &config.EdgeLastApply{Outcome: config.EdgeApplyOutcomeFailed}
+	for _, tc := range []struct {
+		edge config.EdgeStatus
+		want string
+	}{
+		{config.EdgeStatus{Pending: new(false), Runtime: known, LastApply: success}, "applied"},
+		{config.EdgeStatus{Pending: new(true), Runtime: known, LastApply: success}, "changes_pending"},
+		{config.EdgeStatus{Pending: new(true), LastApply: failed}, "apply_failed"},
+		{config.EdgeStatus{}, "apply_unconfirmed"},
+		{config.EdgeStatus{Pending: new(false), LastApply: success}, "artifact_unavailable"},
+		{config.EdgeStatus{Pending: new(false), Runtime: known}, "artifact_unconfirmed"},
+		{config.EdgeStatus{Pending: new(false), Runtime: known, LastApply: &config.EdgeLastApply{
+			Outcome: config.EdgeApplyOutcomeSuccess, RevisionSHA: "previous",
+		}}, "artifact_differs"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := mcpDoctorEdgeState(tc.edge); got != tc.want {
+				t.Fatalf("edge state = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 

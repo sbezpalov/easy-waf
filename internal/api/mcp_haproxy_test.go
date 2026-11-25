@@ -46,8 +46,8 @@ func TestMCPHAProxyCheckSocket(t *testing.T) {
 	}
 	secret := strings.Repeat("m", 40)
 	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
-	call := func(s *Server, query string, authorized bool) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics/haproxy"+query, nil)
+	call := func(s *Server, resource string, authorized bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics/"+resource, nil)
 		r.RemoteAddr = "127.0.0.1:31000"
 		if authorized {
 			r.Header.Set("Authorization", "Bearer "+secret)
@@ -58,13 +58,13 @@ func TestMCPHAProxyCheckSocket(t *testing.T) {
 	}
 	token := auth.LoadMCPAPIToken(nil)
 	server := &Server{Eng: engine.New(dir, nil, config.GlobalSettings{HAProxyStatsSocketPath: path}), MCPAPIToken: token}
-	if w := call(server, "", false); w.Code != http.StatusUnauthorized {
+	if w := call(server, "haproxy", false); w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if w := call(server, "?socket=ignored", true); w.Code != http.StatusBadRequest {
+	if w := call(server, "haproxy?socket=ignored", true); w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
-	if w := call(server, "", true); w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != unavailable {
+	if w := call(server, "haproxy", true); w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != unavailable {
 		t.Fatalf("missing socket response: %d %s", w.Code, w.Body)
 	}
 
@@ -111,7 +111,7 @@ func TestMCPHAProxyCheckSocket(t *testing.T) {
 				finished <- err
 			}()
 			server := &Server{Eng: engine.New(dir, nil, config.GlobalSettings{HAProxyStatsSocketPath: socket}), MCPAPIToken: token}
-			w := call(server, "", true)
+			w := call(server, "haproxy", true)
 			if err := <-finished; err != nil {
 				t.Fatal(err)
 			}
@@ -123,6 +123,11 @@ func TestMCPHAProxyCheckSocket(t *testing.T) {
 				if !strings.Contains(body, want) {
 					t.Fatalf("response %s missing %s", body, want)
 				}
+			}
+			w = call(server, "doctor", true)
+			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(),
+				`"database":"not configured","edge_configuration":"unavailable","haproxy":`+strings.TrimSpace(body)) {
+				t.Fatalf("doctor did not retain runtime check without database: %d %s", w.Code, w.Body)
 			}
 		})
 	}

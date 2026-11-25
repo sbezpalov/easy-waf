@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -36,12 +37,16 @@ func (s *Server) checkMCPHAProxy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "HAProxy check does not accept query parameters"})
 		return
 	}
+	writeJSON(w, http.StatusOK, s.mcpHAProxyRuntime(r.Context()))
+}
+
+func (s *Server) mcpHAProxyRuntime(ctx context.Context) mcpHAProxyCheck {
 	path := metrics.StatsSocketPath(s.Eng.Settings(), s.Eng.StateDir)
-	report, err := s.haproxyStats().FetchContext(r.Context(), path)
+	report, err := s.haproxyStats().FetchContext(ctx, path)
 	if err != nil {
 		report = nil
 	}
-	writeJSON(w, http.StatusOK, summarizeMCPHAProxy(report))
+	return summarizeMCPHAProxy(report)
 }
 
 func summarizeMCPHAProxy(report *metrics.HAProxyReport) mcpHAProxyCheck {

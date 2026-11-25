@@ -8,6 +8,7 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | Tool | Response |
 | --- | --- |
 | `status` | Management API and PostgreSQL readiness |
+| `doctor` | PostgreSQL readiness, edge apply state and aggregate HAProxy runtime statistics in one report |
 | `edge_status` | Saved and applied generations and managed HAProxy artifact identity |
 | `haproxy_check` | Runtime statistics availability, sample time and counts of frontend and backend states |
 | `list_applications` | Publication names, hostnames, profiles and enabled or maintenance state |
@@ -34,6 +35,13 @@ are excluded.
 It reports aggregate runtime states across the configured HAProxy instance
 and omits proxy names, socket paths and command output. Configuration syntax
 validation remains part of Apply and the operator CLI.
+
+`doctor` reports HAProxy runtime statistics even when PostgreSQL is
+unavailable. When it can read the saved configuration state, it distinguishes
+pending changes, a failed or unconfirmed Apply, an unavailable or changed
+artifact, and a matching applied artifact.
+Use `edge_status` for revision hashes and generation details. Use the
+operator CLI for host-level or configuration syntax diagnostics.
 
 ## Enable the packaged service
 

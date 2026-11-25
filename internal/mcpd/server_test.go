@@ -36,6 +36,8 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 		case diagnosticsPath + "/ready":
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = fmt.Fprint(w, `{"database":"unreachable"}`)
+		case diagnosticsPath + "/doctor":
+			_, _ = fmt.Fprint(w, `{"database":"unreachable","edge_configuration":"unavailable","haproxy":{"state":"available"}}`)
 		case diagnosticsPath + "/edge":
 			_, _ = fmt.Fprint(w, `{"pending":false}`)
 		case diagnosticsPath + "/haproxy":
@@ -101,6 +103,7 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 		"why_blocked":   `{"crowdsec_ban":"present","request_observation":"not_checked"}`,
 		"recent_events": `{"events":[],"has_more":false}`,
 		"haproxy_check": `{"state":"available"}`,
+		"doctor":        `{"database":"unreachable","edge_configuration":"unavailable","haproxy":{"state":"available"}}`,
 	}
 	listed, err := session.ListTools(ctx, nil)
 	if err != nil || len(listed.Tools) != len(checks) {
