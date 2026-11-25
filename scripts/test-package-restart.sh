@@ -214,6 +214,63 @@ install_systemd_units
 install_needrestart_policy
 [[ "${#calls[@]}" == 0 ]] # Package-owned files/conffiles are left to dpkg.
 
+# The source unit's /etc filename is the target of an existing Wants link.
+# Retiring that file must preserve the operator's previous enablement.
+# shellcheck disable=SC2016 # The substituted paths are resolved in each fixture.
+function_source="$(sed -n '/^retire_script_installed_units() {$/,/^}$/p' "${ROOT}/scripts/install.sh" |
+  sed 's|/lib/systemd/system|${MCP_PACKAGE_UNIT_DIR}|g; s|/etc/systemd/system|${MCP_SOURCE_UNIT_DIR}|g')"
+[[ -n "$function_source" ]]
+eval "$function_source"
+(
+  export MCP_PACKAGE_UNIT_DIR="$test_root/mcp-packaged" MCP_SOURCE_UNIT_DIR="$test_root/mcp-source"
+  mkdir -p "$MCP_PACKAGE_UNIT_DIR" "$MCP_SOURCE_UNIT_DIR"
+  mcp_unit=easy-waf-mcpd.service
+  printf 'packaged unit\n' >"$MCP_PACKAGE_UNIT_DIR/$mcp_unit"
+  # shellcheck disable=SC2329 # Called by the extracted installer function.
+  systemctl() {
+    calls+=("$*")
+    case "$1" in
+      is-enabled)
+        printf '%s\n' "$enabled"
+        [[ "$enabled" != disabled ]]
+        ;;
+      is-active) [[ "$active" == yes ]] ;;
+      reenable)
+        [[ ! -e "$MCP_SOURCE_UNIT_DIR/$mcp_unit" ]] || return 92
+        [[ "$failure" != reenable ]]
+        ;;
+      enable) [[ -f "$MCP_SOURCE_UNIT_DIR/$mcp_unit" ]] ;;
+      daemon-reload | try-restart) return 0 ;;
+      *) return 91 ;;
+    esac
+  }
+  for scenario in enabled enabled-runtime disabled active reenable-failed; do
+    enabled="$scenario" active=no failure=none
+    case "$scenario" in
+      active) enabled=disabled; active=yes ;;
+      reenable-failed) enabled=enabled; failure=reenable ;;
+    esac
+    printf 'source unit\n' >"$MCP_SOURCE_UNIT_DIR/$mcp_unit"
+    calls=()
+    if [[ "$failure" == reenable ]]; then
+      if (retire_script_installed_units) >"$test_root/mcp-rollback.log" 2>&1; then
+        echo 'MCP unit migration did not report failed enablement transfer' >&2; exit 1
+      fi
+      grep -Fq 'restored the previous unit file' "$test_root/mcp-rollback.log"
+      [[ -f "$MCP_SOURCE_UNIT_DIR/$mcp_unit" ]]
+      continue
+    fi
+    retire_script_installed_units
+    [[ ! -e "$MCP_SOURCE_UNIT_DIR/$mcp_unit" && -f "$MCP_SOURCE_UNIT_DIR/$mcp_unit.replaced-by-package" ]]
+    case "$scenario" in
+      enabled) [[ "${calls[1]}" == 'reenable --no-reload easy-waf-mcpd.service' ]] ;;
+      enabled-runtime) [[ "${calls[1]}" == 'reenable --no-reload --runtime easy-waf-mcpd.service' ]] ;;
+      disabled) [[ "${calls[*]}" == "is-active --quiet $mcp_unit daemon-reload" ]] ;;
+      active) [[ "${calls[*]}" == "is-active --quiet $mcp_unit daemon-reload try-restart --no-block $mcp_unit" ]] ;;
+    esac
+  done
+)
+
 if command -v perl >/dev/null 2>&1; then
   perl - "${ROOT}/packaging/needrestart/easy-waf-hostd.conf" <<'PERL'
 use strict;

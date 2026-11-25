@@ -59,6 +59,10 @@ Enable with `sudo systemctl enable --now easy-waf-mcpd.service` and check
 use `sudo systemctl disable --now easy-waf-mcpd.service`. Before downgrading
 to a release without MCP, disable the service first.
 
+When migrating a script-installed unit to the package, the installer
+preserves existing persistent or runtime enablement. It queues a restart
+only when MCP was already active.
+
 The post-install and upgrade smoke test checks for the absence of a TCP
 listener when the unit is disabled and inactive. For an active unit it checks
 that the running binary matches the installed binary and that exactly one TCP

@@ -602,10 +602,16 @@ retire_script_installed_units() {
   if [[ "$EASY_WAF_PKG_INSTALLED" != "1" ]] || [[ "${EASY_WAF_SKIP_SYSTEMD:-0}" == "1" ]]; then
     return 0
   fi
-  local u moved=0
+  local u moved=0 mcp_retired=0 mcp_active=0 mcp_enabled=''
   local -a units=(easy-waf-hostd.service easy-waf-apt.service easy-waf-hostd-restart.service easy-waf-api.service easy-waf-acmed.service easy-wafd.service easy-waf-backup.service easy-waf-backup.timer)
-  if [[ -f /lib/systemd/system/easy-waf-mcpd.service ]]; then
-    units+=(easy-waf-mcpd.service)
+  local mcp_unit=easy-waf-mcpd.service
+  if [[ -f "/lib/systemd/system/$mcp_unit" && -f "/etc/systemd/system/$mcp_unit" ]]; then
+    mcp_enabled="$(systemctl is-enabled "$mcp_unit" 2>/dev/null || true)"
+    if systemctl is-active --quiet "$mcp_unit"; then
+      mcp_active=1
+    fi
+    units+=("$mcp_unit")
+    mcp_retired=1
   fi
   for u in "${units[@]}"; do
     if [[ -f "/etc/systemd/system/${u}" ]]; then
@@ -614,8 +620,29 @@ retire_script_installed_units() {
       moved=1
     fi
   done
+  if [[ "$mcp_retired" == 1 && ( "$mcp_enabled" == enabled || "$mcp_enabled" == enabled-runtime ) ]]; then
+    local -a scope=()
+    if [[ "$mcp_enabled" == enabled-runtime ]]; then
+      scope+=(--runtime)
+    fi
+    # The old Wants links refer to the file just moved out of /etc. Recreate
+    # them from the packaged unit without starting the opt-in service.
+    if ! systemctl reenable --no-reload "${scope[@]}" "$mcp_unit"; then
+      mv -f "/etc/systemd/system/${mcp_unit}.replaced-by-package" "/etc/systemd/system/$mcp_unit"
+      systemctl enable --no-reload "${scope[@]}" "$mcp_unit" || true
+      systemctl daemon-reload || true
+      die "could not transfer MCP enablement to the packaged unit; restored the previous unit file"
+    fi
+  fi
   if [[ "$moved" == "1" ]]; then
-    systemctl daemon-reload || true
+    if ! systemctl daemon-reload && [[ "$mcp_retired" == 1 ]]; then
+      die "could not reload systemd after installing the packaged MCP unit"
+    fi
+  fi
+  # Postinst can see the old configuration before the installer retires it.
+  # Start using the packaged sandbox after the manager has reloaded the unit.
+  if [[ "$mcp_active" == 1 ]] && ! systemctl try-restart --no-block "$mcp_unit"; then
+    die "could not queue restart for the packaged MCP unit"
   fi
 }
 
