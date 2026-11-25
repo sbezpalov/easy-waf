@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,37 @@ func testClient(t *testing.T, srv *httptest.Server, key string) Client {
 		t.Fatal(err)
 	}
 	return Client{BaseURL: srv.URL, APIKey: key, AllowedOrigins: []Origin{o}}
+}
+
+func TestHasIPBan(t *testing.T) {
+	for _, tc := range []struct {
+		name, ip, query, body string
+		match, invalid        bool
+	}{
+		{"none", "192.0.2.17", "192.0.2.17", "null", false, false},
+		{"mapped IP", "::ffff:192.0.2.17", "192.0.2.17", `[{"scope":"Ip","type":"ban","value":"192.0.2.17"}]`, true, false},
+		{"IPv6 range", "2001:db8::42", "2001:db8::42", `[{"scope":"Range","type":"ban","value":"2001:db8::/64"}]`, true, false},
+		{"unrelated or non-ban", "192.0.2.17", "192.0.2.17", `[{"scope":"Ip","type":"ban","value":"192.0.2.18"},{"scope":"Ip","type":"captcha","value":"192.0.2.17"}]`, false, false},
+		{"bad range", "192.0.2.17", "192.0.2.17", `[{"scope":"Range","type":"ban","value":"invalid"}]`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/decisions" || r.URL.Query().Get("ip") != tc.query ||
+					len(r.URL.Query()) != 1 || r.Header.Get("X-Api-Key") != "fixture-key" {
+					t.Errorf("unexpected LAPI request: %s %s", r.Method, r.URL)
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+					return
+				}
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			client := testClient(t, srv, "fixture-key")
+			got, err := client.HasIPBan(t.Context(), netip.MustParseAddr(tc.ip))
+			if got != tc.match || (err != nil) != tc.invalid {
+				t.Fatalf("match = %v, err = %v", got, err)
+			}
+		})
+	}
 }
 
 func TestParseOrigin_rejectsUserinfo(t *testing.T) {

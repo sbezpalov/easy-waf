@@ -76,10 +76,28 @@ func newHandler(api apiClient, token auth.StaticToken) http.Handler {
 		})
 	}
 	registerDescribeApplication(server, api)
+	registerIPDiagnostics(server, api)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 32 << 10,
 	})
 	return protect(transport, token)
+}
+
+func registerIPDiagnostics(server *mcp.Server, api apiClient) {
+	type arguments struct {
+		IP string `json:"ip" jsonschema:"Client IPv4 or IPv6 address"`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "why_blocked", Description: "Compare stored local IP lists, cached GeoIP and current CrowdSec bans for an address. It does not establish the outcome of a specific request.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input arguments) (*mcp.CallToolResult, any, error) {
+		ip, err := netip.ParseAddr(input.IP)
+		if err != nil || ip.Zone() != "" {
+			return nil, nil, fmt.Errorf("one IPv4 or IPv6 address is required")
+		}
+		result, err := api.read(ctx, "/why-blocked", url.Values{"ip": {ip.Unmap().String()}})
+		return result, nil, err
+	})
 }
 
 func registerDescribeApplication(server *mcp.Server, api apiClient) {

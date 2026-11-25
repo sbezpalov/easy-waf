@@ -47,6 +47,12 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			_, _ = fmt.Fprint(w, `[]`)
 		case diagnosticsPath + "/geoip":
 			_, _ = fmt.Fprint(w, `{"configured_provider":"maxmind"}`)
+		case diagnosticsPath + "/why-blocked":
+			if r.URL.Query().Get("ip") != "192.0.2.17" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = fmt.Fprint(w, `{"crowdsec_ban":"present","request_observation":"not_checked"}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -81,6 +87,7 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 		"edge_status": `{"pending":false}`, "list_applications": `[{"name":"Fixture"}]`, "status": `{"database":"unreachable"}`,
 		"describe_application": `{"status":"ok"}`, "certificate_expiry": `[]`, "config_revisions": `[]`,
 		"geoip_status": `{"configured_provider":"maxmind"}`,
+		"why_blocked":  `{"crowdsec_ban":"present","request_observation":"not_checked"}`,
 	}
 	listed, err := session.ListTools(ctx, nil)
 	if err != nil || len(listed.Tools) != len(checks) {
@@ -92,8 +99,11 @@ func TestStreamableHTTPDiagnostics(t *testing.T) {
 			t.Fatalf("unexpected tool: %+v", tool)
 		}
 		params := &mcp.CallToolParams{Name: tool.Name}
-		if tool.Name == "describe_application" {
+		switch tool.Name {
+		case "describe_application":
 			params.Arguments = map[string]string{"id": applicationID}
+		case "why_blocked":
+			params.Arguments = map[string]string{"ip": "::ffff:192.0.2.17"}
 		}
 		result, err := session.CallTool(ctx, params)
 		if err != nil || len(result.Content) != 1 || result.IsError != (tool.Name == "status") {

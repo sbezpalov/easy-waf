@@ -86,6 +86,21 @@ func (m *MemoryCache) Get(ip string) (country string, ok bool) {
 	return it.country, true
 }
 
+// Peek returns a fresh cached country without changing hit counters or the LRU.
+func (m *MemoryCache) Peek(ip string) (country string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	el, exists := m.items[ip]
+	if !exists {
+		return "", false
+	}
+	it := el.Value.(*cacheItem)
+	if m.now().After(it.stored.Add(m.ttl)) {
+		return "", false
+	}
+	return it.country, true
+}
+
 // Delete removes one IP from the cache (e.g. before a forced lookup).
 func (m *MemoryCache) Delete(ip string) {
 	m.mu.Lock()

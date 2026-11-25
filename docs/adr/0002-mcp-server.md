@@ -259,8 +259,10 @@ The REST boundary is available under `/api/v1/mcp/diagnostics` when the API
 has a distinct `EASY_WAF_MCP_API_TOKEN` of at least 32 characters. It uses
 direct loopback HTTPS with the existing management ACL. It serves readiness,
 edge state, application summaries and diagnostics, certificate expiry,
-revision metadata and GeoIP status. Responses omit backend addresses,
-forward-auth URLs, raw ACME errors and HAProxy configuration previews.
+revision metadata, GeoIP status and IP blocking evidence. The IP evidence
+covers saved local filters, cached GeoIP and direct CrowdSec LAPI lookups.
+Observed request outcomes and Fail2Ban evidence are pending. Responses omit
+backend addresses, forward-auth URLs, raw ACME errors and HAProxy configuration previews.
 Access records use the `mcp.diagnostics` action and the `mcp` audit identity
 in the existing schema. The API credential is reserved for the local daemon;
 the client-facing MCP credential will be separate. Remove the API token and

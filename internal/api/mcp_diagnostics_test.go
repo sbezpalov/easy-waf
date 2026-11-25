@@ -23,6 +23,7 @@ import (
 func TestMCPDiagnosticsBoundary(t *testing.T) {
 	const path = "/api/v1/mcp/diagnostics/ready"
 	const applicationPath = "https://localhost/api/v1/mcp/diagnostics/application"
+	const ipPath = "https://localhost/api/v1/mcp/diagnostics/why-blocked"
 	secret := strings.Repeat("m", 40)
 	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8", "::1/128", "192.0.2.0/24"}})
@@ -45,6 +46,10 @@ func TestMCPDiagnosticsBoundary(t *testing.T) {
 		{"apply", "POST", "https://localhost/api/v1/apply", "127.0.0.1:31000", bearer, "", http.StatusUnauthorized},
 		{"missing application ID", "GET", applicationPath, "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
 		{"duplicate application ID", "GET", applicationPath + "?id=one&id=two", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"missing IP", "GET", ipPath, "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"duplicate IP", "GET", ipPath + "?ip=192.0.2.17&ip=192.0.2.18", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"CIDR", "GET", ipPath + "?ip=192.0.2.0/24", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
+		{"scoped IP", "GET", ipPath + "?ip=fe80::42%25eth0", "127.0.0.1:31000", bearer, "", http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.url, nil)
@@ -130,6 +135,63 @@ func TestMCPDiagnosticsWithPostgres(t *testing.T) {
 		if entry.UserName != "mcp" || !strings.Contains(string(entry.Details), `"/api/v1/mcp/diagnostics`+suffix+`"`) || strings.Contains(string(entry.Details), app.ID) {
 			t.Fatalf("unexpected MCP audit record: %+v", entry)
 		}
+	}
+}
+
+func TestMCPIPDiagnosticsWithPostgres(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	st, err := store.OpenPostgres(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	const ip, cidr, note = "2001:db8:5aaa:ea::42", "2001:db8:5aaa:ea::/64", "fixture note"
+	secret := strings.Repeat("m", 40)
+	t.Setenv("EASY_WAF_MCP_API_TOKEN", secret)
+	t.Setenv("CROWDSEC_LAPI_KEY", "")
+	t.Setenv("CROWDSEC_LAPI_URL", "http://127.0.0.1:8080/")
+	cleanRow := func(remove func(context.Context, string) error, id string) {
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := remove(ctx, id); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	allow := config.IPWLLocalEntry{CIDR: cidr, Comment: note}
+	if err := st.UpsertIPWLLocal(t.Context(), &allow); err != nil {
+		t.Fatal(err)
+	}
+	cleanRow(st.DeleteIPWLLocal, allow.ID)
+	for _, row := range []config.IPBLLocalEntry{
+		{CIDR: cidr, Enabled: true, Note: note},
+		{CIDR: ip, Enabled: false, Note: note},
+	} {
+		if err := st.UpsertIPBLLocal(t.Context(), &row); err != nil {
+			t.Fatal(err)
+		}
+		cleanRow(st.DeleteIPBLLocal, row.ID)
+	}
+	eng := engine.New(t.TempDir(), st, config.GlobalSettings{GeoIPEnabled: true})
+	eng.GeoIP().Cache.Set(ip, "NL")
+	server := &Server{Eng: eng, MCPAPIToken: auth.LoadMCPAPIToken(nil)}
+	r := httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/mcp/diagnostics/why-blocked?ip="+url.QueryEscape(ip), nil)
+	r.RemoteAddr = "127.0.0.1:31000"
+	r.Header.Set("Authorization", "Bearer "+secret)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, r)
+	var got mcpIPBlockingEvidence
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil ||
+		got.IP != ip || got.GeoIPCountry != "NL" || got.CrowdSecBan != "not_configured" ||
+		got.RequestObservation != "not_checked" ||
+		got.LocalAllowlistMatches == nil || *got.LocalAllowlistMatches != 1 ||
+		got.LocalBlocklistMatches == nil || *got.LocalBlocklistMatches != 1 ||
+		strings.Contains(w.Body.String(), note) {
+		t.Fatalf("unexpected IP evidence: %d %s", w.Code, w.Body)
 	}
 }
 

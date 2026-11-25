@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -105,37 +106,83 @@ func (c *Client) DecisionSampleSize(ctx context.Context) (int, error) {
 }
 
 func (c *Client) decisionSample(ctx context.Context) (json.RawMessage, int, error) {
-	resp, err := c.doLAPI(ctx, http.MethodGet, "/v1/decisions?limit=100", nil, nil)
+	raw, rows, err := c.fetchDecisions(ctx, "limit=100")
+	return raw, len(rows), err
+}
+
+// HasIPBan checks for a matching IP or range ban in the configured LAPI.
+// This reports LAPI state independently of bouncer synchronization or enforcement.
+func (c *Client) HasIPBan(ctx context.Context, ip netip.Addr) (bool, error) {
+	if !ip.IsValid() || ip.Zone() != "" {
+		return false, fmt.Errorf("crowdsec lapi: invalid IP")
+	}
+	ip = ip.Unmap()
+	_, rows, err := c.fetchDecisions(ctx, url.Values{"ip": {ip.String()}}.Encode())
 	if err != nil {
-		return nil, 0, err
+		return false, err
+	}
+	for _, row := range rows {
+		var decision struct{ Type, Scope, Value string }
+		if err := json.Unmarshal(row, &decision); err != nil || decision.Type == "" {
+			return false, fmt.Errorf("crowdsec lapi: invalid decision")
+		}
+		if !strings.EqualFold(decision.Type, "ban") {
+			continue
+		}
+		switch strings.ToLower(decision.Scope) {
+		case "ip":
+			addr, err := netip.ParseAddr(decision.Value)
+			if err != nil || addr.Zone() != "" {
+				return false, fmt.Errorf("crowdsec lapi: invalid IP decision")
+			}
+			if addr.Unmap() == ip {
+				return true, nil
+			}
+		case "range":
+			_, prefix, err := net.ParseCIDR(decision.Value)
+			if err != nil {
+				return false, fmt.Errorf("crowdsec lapi: invalid range decision")
+			}
+			if prefix.Contains(net.IP(ip.AsSlice())) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (c *Client) fetchDecisions(ctx context.Context, query string) (json.RawMessage, []json.RawMessage, error) {
+	resp, err := c.doLAPI(ctx, http.MethodGet, "/v1/decisions?"+query, nil, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, 0, decisionStatusError("decisions", resp.StatusCode)
+		return nil, nil, decisionStatusError("decisions", resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionsBytes+1))
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	// Cut off, the passthrough would be invalid JSON served with a 200.
 	if len(b) > maxDecisionsBytes {
-		return nil, 0, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
+		return nil, nil, fmt.Errorf("crowdsec lapi decisions: response exceeds %d bytes", maxDecisionsBytes)
 	}
-	size, valid := decisionSampleSize(b)
+	rows, valid := decisionRows(b)
 	if !valid {
-		return nil, 0, fmt.Errorf("crowdsec lapi decisions: invalid decision list")
+		return nil, nil, fmt.Errorf("crowdsec lapi decisions: invalid decision list")
 	}
-	return json.RawMessage(b), size, nil
+	return json.RawMessage(b), rows, nil
 }
 
-func decisionSampleSize(raw []byte) (int, bool) {
+func decisionRows(raw []byte) ([]json.RawMessage, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) > 0 && raw[0] == '{' {
 		var envelope struct {
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(raw, &envelope); err != nil {
-			return 0, false
+			return nil, false
 		}
 		raw = envelope.Data
 	}
@@ -143,14 +190,14 @@ func decisionSampleSize(raw []byte) (int, bool) {
 	// supported data envelope in the public response.
 	var decisions []json.RawMessage
 	if err := json.Unmarshal(raw, &decisions); err != nil {
-		return 0, false
+		return nil, false
 	}
 	for _, decision := range decisions {
 		if len(decision) == 0 || decision[0] != '{' {
-			return 0, false
+			return nil, false
 		}
 	}
-	return len(decisions), true
+	return decisions, true
 }
 
 // AddDecisionRequest is the easy-waf API / UI payload mapped to LAPI POST /v1/decisions.

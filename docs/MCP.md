@@ -14,6 +14,13 @@ and [ADR 0002](adr/0002-mcp-server.md).
 | `certificate_expiry` | Recorded expiry dates, days remaining and issuance status |
 | `config_revisions` | The latest 30 revisions, with the live revision marked when it can be observed |
 | `geoip_status` | Configured provider, enablement and cache counters |
+| `why_blocked` | Given one `ip`, report saved local IP-list matches, cached country and current CrowdSec IP or range bans |
+
+`why_blocked` reports evidence from each source independently. A `null` list
+count means the database lookup was unavailable. CrowdSec states distinguish
+`present`, `absent`, `not_configured` and `unavailable`. GeoIP uses the
+existing cache. Request-level outcomes, Fail2Ban and external IP lists are
+outside this check. [CrowdSec LAPI query mode](https://docs.crowdsec.net/docs/local_api/bouncers/)
 
 ## Enable the packaged service
 

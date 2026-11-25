@@ -28,6 +28,7 @@ func (s *Server) mountMCPDiagnostics(r chi.Router) {
 		r.Get("/certificates", s.listMCPCertificateExpiry)
 		r.Get("/revisions", s.listMCPRevisions)
 		r.Get("/geoip", s.getMCPGeoIPStatus)
+		r.Get("/why-blocked", s.getMCPIPBlockingEvidence)
 	})
 }
 
@@ -105,12 +106,12 @@ type mcpDiagnosticStep struct {
 }
 
 func (s *Server) describeMCPApplication(w http.ResponseWriter, r *http.Request) {
-	query, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil || len(query) != 1 || len(query["id"]) != 1 || query.Get("id") == "" {
+	id, ok := mcpQueryValue(r, "id")
+	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "one application id is required"})
 		return
 	}
-	app, ok := s.loadApplication(w, r, query.Get("id"))
+	app, ok := s.loadApplication(w, r, id)
 	if !ok {
 		return
 	}
@@ -129,6 +130,15 @@ func (s *Server) describeMCPApplication(w http.ResponseWriter, r *http.Request) 
 		Status      string              `json:"status"`
 		Steps       []mcpDiagnosticStep `json:"steps"`
 	}{summarizeMCPApplication(app), result.CheckedAt, result.Status, steps})
+}
+
+func mcpQueryValue(r *http.Request, key string) (string, bool) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	values := query[key]
+	if err != nil || len(query) != 1 || len(values) != 1 || values[0] == "" {
+		return "", false
+	}
+	return values[0], true
 }
 
 type mcpCertificateExpiry struct {

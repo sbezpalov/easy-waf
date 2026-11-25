@@ -78,6 +78,29 @@ func TestMemoryCacheTTL(t *testing.T) {
 	}
 }
 
+func TestMemoryCachePeekDoesNotChangeStatsOrEvictionOrder(t *testing.T) {
+	c := NewMemoryCache(time.Hour, 2)
+	now := time.Unix(1000, 0)
+	c.now = func() time.Time { return now }
+	c.Set("192.0.2.1", "NL")
+	c.Set("192.0.2.2", "DE")
+	before := c.Stats()
+	if cc, ok := c.Peek("192.0.2.1"); !ok || cc != "NL" {
+		t.Fatalf("peek = %q, %v", cc, ok)
+	}
+	c.Set("192.0.2.3", "FR")
+	if _, ok := c.Peek("192.0.2.1"); ok {
+		t.Fatal("peek changed eviction order")
+	}
+	now = now.Add(2 * time.Hour)
+	if _, ok := c.Peek("192.0.2.2"); ok {
+		t.Fatal("peek returned an expired entry")
+	}
+	if after := c.Stats(); after != before {
+		t.Fatalf("stats changed: before %+v, after %+v", before, after)
+	}
+}
+
 // Insertion into a full cache must not scale with its capacity.
 func BenchmarkMemoryCacheSetFull(b *testing.B) {
 	for _, capacity := range []int{1000, 50000} {
