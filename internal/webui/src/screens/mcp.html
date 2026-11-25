@@ -11,16 +11,20 @@
         </section>
         <section class="panel" aria-labelledby="mcp-connect-title">
           <h3 id="mcp-connect-title">Connect a client</h3>
-          <p>The service listens on the appliance loopback interface. For a remote client, forward the configured MCP port over SSH from the host where the client runs.</p>
-          <dl>
-            <dt>Transport</dt><dd>Streamable HTTP</dd>
-            <dt>Example client endpoint (local port 8446)</dt><dd><code>http://127.0.0.1:8446/mcp</code></dd>
-            <dt>Authentication</dt><dd>Use the client bearer token from <code>EASY_WAF_MCP_TOKEN</code> in the client's secret configuration.</dd>
-          </dl>
-          <details>
-            <summary>Connect OpenClaw</summary>
-            <p>On the Gateway host, open the SSH tunnel and register the server under <code>mcp.servers</code>. Run <code>openclaw mcp probe easy-waf</code> from the same environment to verify the connection.</p>
-            <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#connect-openclaw">SSH tunnel and OpenClaw configuration example</a>
+          <div id="mcp-oauth">
+            <p id="mcp-connect-help">Open this panel over trusted HTTPS to connect a Gateway.</p>
+            <p><code id="mcp-endpoint"></code> <button class="secondary copy-btn" id="mcp-copy" type="button" hidden>Copy HTTPS address</button></p>
+            <section id="mcp-consent" hidden>
+              <h4>Approve diagnostic access</h4>
+              <p id="mcp-consent-detail"></p>
+              <button type="button" id="mcp-approve">Approve read-only access</button>
+              <a href="#mcp">Cancel</a>
+            </section>
+            <h4>Approved connections</h4>
+            <div id="mcp-grants" role="status"></div>
+          </div>
+          <details><summary>Local service connection</summary>
+            <p>The loopback service also supports a client bearer token. <a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md">Connection guide</a></p>
           </details>
         </section>
       </section>

@@ -349,6 +349,7 @@
         break;
       case 'mcp':
         void loadMCPStatus();
+        void loadMCPConnections();
         break;
       case 'network':
         loadNetworkTab();
@@ -606,7 +607,7 @@
     if (j.must_change_password) {
       show('view-login', false); show('view-pass', true); show('view-app', false);
     } else {
-      location.hash = '#dashboard';
+      if (!location.hash.startsWith('#mcp?')) location.hash = '#dashboard';
       await refreshSession();
     }
   };
@@ -4446,6 +4447,69 @@
     if (opts.msgEl) {
       opts.msgEl.textContent = 'Applied. Click “Keep changes” before the timer ends.';
       opts.msgEl.className = 'ok';
+    }
+  }
+
+  let mcpConnectionsGeneration = 0;
+  async function loadMCPConnections() {
+    const generation = ++mcpConnectionsGeneration;
+    const help = document.getElementById('mcp-connect-help');
+    const endpoint = document.getElementById('mcp-endpoint');
+    const copy = document.getElementById('mcp-copy');
+    const grants = document.getElementById('mcp-grants');
+    const consent = document.getElementById('mcp-consent');
+    consent.hidden = true;
+    copy.hidden = true;
+    endpoint.textContent = '';
+    grants.replaceChildren();
+    if (location.protocol !== 'https:') {
+      help.textContent = 'Open the panel over trusted HTTPS to connect a Gateway.';
+      return;
+    }
+    if (currentRole === 'viewer') {
+      help.textContent = 'An administrator can approve and revoke diagnostic access.';
+      return;
+    }
+    const path = '/api/v1/integrations/mcp/grants';
+    try {
+      const response = await fetch(path, {headers: hdr(), cache: 'no-store'});
+      if (!response.ok) throw new Error();
+      const rows = await response.json();
+      if (generation !== mcpConnectionsGeneration) return;
+      endpoint.textContent = location.origin + '/mcp';
+      copy.dataset.copy = endpoint.textContent;
+      copy.hidden = false;
+      help.textContent = 'In OpenClaw Settings → MCP, add this address, select OAuth and sign in. The Gateway must trust the management HTTPS certificate.';
+      const query = location.hash.split('?')[1] || '';
+      if (query) {
+        const params = new URLSearchParams(query);
+        document.getElementById('mcp-consent-detail').textContent =
+          (params.get('client_name') || 'Client') + ' requests read-only access to diagnostics. Confirm that this callback belongs to your Gateway: ' + params.get('redirect_uri');
+        consent.hidden = false;
+        document.getElementById('mcp-approve').onclick = (event) => withBusy(event.currentTarget, async () => {
+          const result = await fetch('/api/v1/integrations/mcp/approve', {method: 'POST', headers: hdr(), body: JSON.stringify({query})});
+          if (!result.ok) { toast(await apiMessage(result), 'err'); return; }
+          location.replace((await result.json()).redirect);
+        });
+      }
+      if (!rows.length) grants.textContent = 'No approved connections.';
+      for (const row of rows) {
+        const line = document.createElement('p');
+        line.append(row.name + ' · Approved by ' + row.approved_by + ' · ' + (row.last_used ? 'Last used ' + formatHostTime(row.last_used) : 'Awaiting first use') + ' ');
+        const revoke = document.createElement('button');
+        revoke.type = 'button';
+        revoke.className = 'secondary';
+        revoke.textContent = 'Revoke access';
+        revoke.onclick = () => withBusy(revoke, async () => {
+          const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
+          if (result.ok) await loadMCPConnections();
+          else toast(await apiMessage(result), 'err');
+        });
+        line.append(revoke);
+        grants.append(line);
+      }
+    } catch (_) {
+      if (generation === mcpConnectionsGeneration) help.textContent = 'OAuth connections unavailable. Verify that management HTTPS and MCP diagnostics are configured.';
     }
   }
 

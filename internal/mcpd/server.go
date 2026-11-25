@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -40,7 +41,9 @@ func (c apiClient) read(ctx context.Context, path string, query url.Values) *mcp
 		return diagnosticFailure("invalid_request", 0)
 	}
 	r.URL.RawQuery = query.Encode()
-	r.Header.Set("Authorization", "Bearer "+c.token)
+	if c.token != "" {
+		r.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	resp, err := c.http.Do(r)
 	if err != nil {
 		return diagnosticFailure(diagnosticTransportCode(err, "api_unreachable"), 0)
@@ -101,6 +104,15 @@ func diagnosticHTTPCode(status int) string {
 }
 
 func newHandler(api apiClient, token auth.StaticToken) http.Handler {
+	return protect(streamHandler(api), token)
+}
+
+// ManagementHandler builds the diagnostics transport behind management OAuth.
+func ManagementHandler(transport http.RoundTripper) http.Handler {
+	return streamHandler(apiClient{baseURL: "https://localhost", http: &http.Client{Transport: transport, Timeout: 8 * time.Second}})
+}
+
+func streamHandler(api apiClient) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "easy-waf", Version: easywaf.Version()}, &mcp.ServerOptions{
 		SupportedProtocolVersions: []string{protocolVersion},
 	})
@@ -127,7 +139,7 @@ func newHandler(api apiClient, token auth.StaticToken) http.Handler {
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 32 << 10,
 	})
-	return protect(transport, token)
+	return transport
 }
 
 func registerIPDiagnostics(server *mcp.Server, api apiClient) {

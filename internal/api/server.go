@@ -39,9 +39,10 @@ import (
 
 // Server exposes REST API for the UI and automation.
 type Server struct {
-	Eng         *engine.Engine
-	JWTSecret   []byte
-	MCPAPIToken auth.StaticToken
+	Eng          *engine.Engine
+	JWTSecret    []byte
+	MCPAPIToken  auth.StaticToken
+	mcpTransport http.Handler
 	// LoginRL optional per-IP login rate limiter (nil skips limiting).
 	LoginRL *LoginRateLimiter
 	// MgmtTLS optional: when set, PUT /settings/management-tls replaces cert on disk and in-memory (HTTPS listener).
@@ -61,7 +62,6 @@ func (s *Server) Router() chi.Router {
 	// Forwarding headers apply only when the TCP peer is a trusted proxy (loopback by default); see docs/SECURITY.md.
 	r.Use(TrustedRealIP(TrustedProxyCIDRs()))
 	r.Use(s.managementACL)
-	r.Use(RequireXHR)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -73,7 +73,12 @@ func (s *Server) Router() chi.Router {
 	r.Get("/health/ready", s.handleReady)
 	r.Handle("/metrics", s.metricsHandler())
 
+	if s.MCPAPIToken.Enabled() {
+		s.mcpTransport = s.managementMCPTransport()
+	}
+	s.mountOAuth(r)
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(RequireXHR)
 		if s.MCPAPIToken.Enabled() {
 			s.mountMCPDiagnostics(r)
 		}
@@ -95,6 +100,9 @@ func (s *Server) Router() chi.Router {
 				r.Get("/about", s.handleAbout)
 				r.Get("/edge/status", s.handleEdgeStatus)
 				r.Get("/integrations/mcp/status", s.handleMCPServiceStatus)
+				r.With(auth.RequireAdmin).Get("/integrations/mcp/grants", s.oauthGrants)
+				r.With(auth.RequireAdmin, auth.RequireStepUp(stepUpWindow)).Post("/integrations/mcp/approve", s.oauthApprove)
+				r.With(auth.RequireAdmin, auth.RequireStepUp(stepUpWindow)).Delete("/integrations/mcp/grants/{id}", s.oauthRevoke)
 				r.Get("/system/services", s.listSystemServices)
 				r.Get("/profiles", s.handleProfiles)
 				r.Get("/security/modes", s.listSecurityModes)

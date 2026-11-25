@@ -22,18 +22,22 @@ import (
 func (s *Server) mountMCPDiagnostics(r chi.Router) {
 	r.Route("/mcp/diagnostics", func(r chi.Router) {
 		r.Use(s.requireMCPAPI)
-		r.Get("/ready", s.handleReady)
-		r.Get("/doctor", s.handleMCPDoctor)
-		r.Get("/edge", s.handleEdgeStatus)
-		r.Get("/haproxy", s.checkMCPHAProxy)
-		r.Get("/applications", s.listMCPApplications)
-		r.Get("/application", s.describeMCPApplication)
-		r.Get("/certificates", s.listMCPCertificateExpiry)
-		r.Get("/revisions", s.listMCPRevisions)
-		r.Get("/geoip", s.getMCPGeoIPStatus)
-		r.Get("/why-blocked", s.getMCPIPBlockingEvidence)
-		r.Get("/recent-events", s.listMCPRecentEvents)
+		s.mountDiagnosticReads(r)
 	})
+}
+
+func (s *Server) mountDiagnosticReads(r chi.Router) {
+	r.Get("/ready", s.handleReady)
+	r.Get("/doctor", s.handleMCPDoctor)
+	r.Get("/edge", s.handleEdgeStatus)
+	r.Get("/haproxy", s.checkMCPHAProxy)
+	r.Get("/applications", s.listMCPApplications)
+	r.Get("/application", s.describeMCPApplication)
+	r.Get("/certificates", s.listMCPCertificateExpiry)
+	r.Get("/revisions", s.listMCPRevisions)
+	r.Get("/geoip", s.getMCPGeoIPStatus)
+	r.Get("/why-blocked", s.getMCPIPBlockingEvidence)
+	r.Get("/recent-events", s.listMCPRecentEvents)
 }
 
 func (s *Server) listMCPRecentEvents(w http.ResponseWriter, r *http.Request) {
@@ -75,19 +79,23 @@ func (s *Server) requireMCPAPI(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
-		sw := &statusCapture{ResponseWriter: w, code: http.StatusOK}
-		next.ServeHTTP(sw, r)
-		// Record only the matched route and response status, never input or output.
-		// The journal retains the access record when the database is unavailable.
-		route := chi.RouteContext(r.Context()).RoutePattern()
-		log.Printf("mcp diagnostics: route=%s status=%d", route, sw.code)
-		if s.Eng.Store != nil {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Second)
-			defer cancel()
-			ctx = audit.WithMeta(ctx, audit.Meta{User: "mcp", SourceIP: ip.String()})
-			_ = s.Eng.Store.AppendAudit(ctx, "mcp.diagnostics", map[string]any{"route": route, "http_status": sw.code})
-		}
+		s.serveAuditedDiagnostic(next, w, r, ip.String())
 	})
+}
+
+func (s *Server) serveAuditedDiagnostic(next http.Handler, w http.ResponseWriter, r *http.Request, source string) {
+	sw := &statusCapture{ResponseWriter: w, code: http.StatusOK}
+	next.ServeHTTP(sw, r)
+	// Record only the matched route and response status, never input or output.
+	// The journal retains the access record when the database is unavailable.
+	route := chi.RouteContext(r.Context()).RoutePattern()
+	log.Printf("mcp diagnostics: route=%s status=%d", route, sw.code)
+	if s.Eng.Store != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Second)
+		defer cancel()
+		ctx = audit.WithMeta(ctx, audit.Meta{User: "mcp", SourceIP: source})
+		_ = s.Eng.Store.AppendAudit(ctx, "mcp.diagnostics", map[string]any{"route": route, "http_status": sw.code})
+	}
 }
 
 func (s *Server) matchesMCPBearer(header string) bool {

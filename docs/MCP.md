@@ -116,7 +116,23 @@ For a remote client, use SSH local forwarding to the appliance's loopback
 listener. The daemon accepts loopback connections with a local Host header
 and refuses browser requests carrying an Origin header.
 
-## Connect OpenClaw
+## Connect OpenClaw with OAuth
+
+Open the panel at its management HTTPS address from the LAN or VPN. Both the
+browser and Gateway must trust the certificate and its hostname. Enable MCP
+diagnostics in the management API using the dedicated API token described above.
+The HTTPS endpoint uses the management listener and its source network ACL.
+
+1. In **Operate → MCP**, select **Copy HTTPS address**.
+2. In OpenClaw **Settings → MCP**, add the URL as a Streamable HTTP server,
+   select OAuth, then **Sign in**. OpenClaw registers its browser callback.
+3. In Easy WAF, check the displayed callback against your Gateway address and
+   approve read-only diagnostics. Run the MCP tool `doctor` in OpenClaw.
+4. **Approved connections** shows who approved each grant and its last use.
+   **Revoke access** invalidates both access and refresh tokens immediately.
+   Each grant expires after 30 days. Sign in again to authorize a new grant.
+
+## Connect OpenClaw through SSH
 
 Run the SSH tunnel from the host or network namespace where the OpenClaw
 Gateway runs. Replace `appliance-ssh` with your SSH host alias and keep the
