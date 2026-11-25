@@ -11,10 +11,12 @@ import (
 )
 
 type MCPGrant struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	ApprovedBy string     `json:"approved_by"`
-	LastUsed   *time.Time `json:"last_used"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Issuer      string     `json:"issuer"`
+	RedirectURI string     `json:"redirect_uri"`
+	ApprovedBy  string     `json:"approved_by"`
+	LastUsed    *time.Time `json:"last_used"`
 }
 
 func (s *Store) ApproveMCP(ctx context.Context, grant MCPGrant, issuer, client, redirect, challenge, code string) error {
@@ -62,8 +64,10 @@ func (s *Store) UseMCP(ctx context.Context, issuer, access string) error {
 	return s.db.QueryRowContext(ctx, `UPDATE mcp_oauth_grants SET last_used=now() WHERE issuer=$1 AND access_hash=$2 AND access_until>now() AND valid_until>now() RETURNING 1`, issuer, access).Scan(new(int))
 }
 
-func (s *Store) MCPGrants(ctx context.Context, issuer string) ([]MCPGrant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,approved_by,last_used FROM mcp_oauth_grants WHERE issuer=$1 AND valid_until>now() AND (access_hash IS NOT NULL OR code_until>now()) ORDER BY name,id`, issuer)
+func (s *Store) MCPGrants(ctx context.Context) ([]MCPGrant, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,approved_by,last_used,issuer,redirect_uri
+ FROM mcp_oauth_grants WHERE valid_until>now() AND (access_hash IS NOT NULL OR code_until>now())
+ ORDER BY name,issuer,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +75,7 @@ func (s *Store) MCPGrants(ctx context.Context, issuer string) ([]MCPGrant, error
 	grants := []MCPGrant{}
 	for rows.Next() {
 		var g MCPGrant
-		if err := rows.Scan(&g.ID, &g.Name, &g.ApprovedBy, &g.LastUsed); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.ApprovedBy, &g.LastUsed, &g.Issuer, &g.RedirectURI); err != nil {
 			return nil, err
 		}
 		grants = append(grants, g)
@@ -79,8 +83,8 @@ func (s *Store) MCPGrants(ctx context.Context, issuer string) ([]MCPGrant, error
 	return grants, rows.Err()
 }
 
-func (s *Store) RevokeMCP(ctx context.Context, issuer, id string) error {
-	err := s.db.QueryRowContext(ctx, `DELETE FROM mcp_oauth_grants WHERE issuer=$1 AND id=$2 RETURNING 1`, issuer, id).Scan(new(int))
+func (s *Store) RevokeMCP(ctx context.Context, id string) error {
+	err := s.db.QueryRowContext(ctx, `DELETE FROM mcp_oauth_grants WHERE id=$1 RETURNING 1`, id).Scan(new(int))
 	if err == sql.ErrNoRows {
 		return nil
 	}

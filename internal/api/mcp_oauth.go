@@ -247,7 +247,7 @@ func (s *Server) oauthGrants(w http.ResponseWriter, r *http.Request) {
 	if !s.oauthAvailable(w, r) {
 		return
 	}
-	g, err := s.Eng.Store.MCPGrants(r.Context(), issuer(r))
+	g, err := s.Eng.Store.MCPGrants(r.Context())
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -263,7 +263,7 @@ func (s *Server) oauthRevoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid grant", http.StatusBadRequest)
 		return
 	}
-	if err = s.Eng.Store.RevokeMCP(r.Context(), issuer(r), id.String()); err != nil {
+	if err = s.Eng.Store.RevokeMCP(r.Context(), id.String()); err != nil {
 		writeInternalError(w, err)
 		return
 	}

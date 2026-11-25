@@ -6397,7 +6397,7 @@
       if (!rows.length) grants.textContent = 'No approved connections.';
       for (const row of rows) {
         const line = document.createElement('p');
-        line.append(row.name + ' · Approved by ' + row.approved_by + ' · ' + (row.last_used ? 'Last used ' + formatHostTime(row.last_used) : 'Awaiting first use') + ' ');
+        line.append(row.name + ' · Issuer: ' + row.issuer + ' · Callback: ' + row.redirect_uri + ' · Approved by ' + row.approved_by + ' · ' + (row.last_used ? 'Last used ' + formatHostTime(row.last_used) : 'Awaiting first use') + ' ');
         const revoke = document.createElement('button');
         revoke.type = 'button';
         revoke.className = 'secondary';

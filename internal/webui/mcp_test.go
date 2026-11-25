@@ -61,7 +61,8 @@ const document = {createElement: element, getElementById(id) {
 const origin = 'https://waf.example';
 const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&redirect_uri=https%3A%2F%2Fgateway.example%2Fcallback',
   replace(url) {this.destination = url;}};
-let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin'}], approved = false;
+let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',
+  issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 const ctx = vm.createContext({document, location, currentRole:'admin', URLSearchParams,
   hdr:()=>({}), withBusy:(_,fn)=>fn(), fetch: async (path,opts) => {
     if (opts.method === 'POST') {
@@ -89,6 +90,8 @@ async function run(){
   assert.equal(approved,true);
   assert.match(location.destination,/callback/);
   location.hash='#mcp';
+  const grantText = elements.get('mcp-grants').children[0].children[0];
+  assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
   await elements.get('mcp-grants').children[0].children[1].onclick();
   assert.equal(elements.get('mcp-grants').textContent,'No approved connections.');
 }

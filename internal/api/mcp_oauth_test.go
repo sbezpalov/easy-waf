@@ -39,11 +39,12 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	}
 	srv := httptest.NewTLSServer(s.Router())
 	defer srv.Close()
+	origin := srv.URL
 	client := srv.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	call := func(method, path, typ, body, token string, want int) (http.Header, []byte) {
 		t.Helper()
-		r, err := http.NewRequestWithContext(t.Context(), method, srv.URL+path, strings.NewReader(body))
+		r, err := http.NewRequestWithContext(t.Context(), method, origin+path, strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,13 +119,27 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if err = json.Unmarshal(b, &reply); err != nil || reply.Result.IsError || len(reply.Result.Content) != 1 || field([]byte(reply.Result.Content[0].Text), "database") != "ok" {
 		t.Fatalf("doctor did not return ready PostgreSQL: %s", b)
 	}
+	alias := httptest.NewTLSServer(srv.Config.Handler)
+	defer alias.Close()
+	origin = alias.URL
+	call("POST", "/mcp", "application/json", rpc, token, 401)
 	const grants = "/api/v1/integrations/mcp/grants"
 	_, b = call("GET", grants, "", "", admin, 200)
 	var list []store.MCPGrant
-	if err = json.Unmarshal(b, &list); err != nil || len(list) != 1 || list[0].LastUsed == nil {
-		t.Fatal("grant use missing")
+	if err = json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
 	}
-	call("DELETE", grants+"/"+list[0].ID, "", "", admin, 204)
+	var grantID string
+	for _, grant := range list {
+		if grant.ApprovedBy == user && grant.Issuer == srv.URL && grant.RedirectURI == q.Get("redirect_uri") && grant.LastUsed != nil {
+			grantID = grant.ID
+		}
+	}
+	if grantID == "" {
+		t.Fatal("grant from original issuer missing on alternate management address")
+	}
+	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
+	origin = srv.URL
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
 }
