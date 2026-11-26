@@ -118,6 +118,18 @@ install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-local-operator-value
 [[ "$(cat "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env.dpkg-dist")" == fixture-vendor-two ]] || fail 'new vendor default not retained separately'
 build_deb 1.6.2 fixture-vendor-two fixture-rebuilt-payload
+sums="$REPO_ROOT/dist/SHA256SUMS"
+cp "$sums" "$ROOT/original-sums"
+printf '%064d  %s\n' 0 "${CONFFILE_TEST_DEB##*/}" >"$sums"
+if (EASY_WAF_OFFLINE=1 EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 install_release_package) >"$ROOT/reinstall.log" 2>&1 </dev/null; then
+  fail 'offline reinstallation accepted a bad checksum with the online override'
+fi
+grep -Fq 'offline package failed local checksum verification' "$ROOT/reinstall.log" ||
+  fail 'offline reinstallation did not report the checksum failure'
+check_installed 1.6.2 fixture-local-operator-value
+[[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-vendor-two ]] ||
+  fail 'rejected offline reinstallation changed the installed payload'
+mv "$ROOT/original-sums" "$sums"
 if ! EASY_WAF_OFFLINE=1 install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null; then
   tail -n 15 "$ROOT/reinstall.log" >&2
   fail 'offline reinstallation failed without a terminal'
@@ -194,7 +206,6 @@ new_root clean_unmanaged
 easy_waf_require_unmanaged_install
 
 new_root offline
-sums="$REPO_ROOT/dist/SHA256SUMS"
 mv "$sums" "$ROOT/original-sums"
 if (EASY_WAF_OFFLINE=1 install_release_package) >"$ROOT/offline.log" 2>&1; then
   fail 'offline install accepted a missing manifest'
