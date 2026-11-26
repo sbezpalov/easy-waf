@@ -137,10 +137,7 @@ mkdir -p "$PAYLOAD/dist" "$OUTPUT_DIR"
 APT_DEB="$APT_WORK/input/easy-waf_${VERSION}_${ARCH}.deb"
 install -m 0644 -- "$DEB" "$APT_DEB"
 
-haproxy_package=haproxy
-if [[ "$VERSION_ID" == 26.04 ]]; then
-  haproxy_package='haproxy=3.4.*'
-fi
+haproxy_package="$(offline_haproxy_package "$VERSION_ID")"
 packages=(
   "$haproxy_package" nftables ca-certificates curl iproute2 netplan.io iputils-ping
   traceroute iputils-tracepath systemd polkitd pkexec sudo fail2ban

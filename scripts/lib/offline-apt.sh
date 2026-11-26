@@ -1,3 +1,11 @@
+# Select the HAProxy branch used by both the offline builder and installer.
+offline_haproxy_package() {
+  case "$1" in
+    26.04) printf '%s\n' 'haproxy=3.4.*' ;;
+    *) printf '%s\n' haproxy ;;
+  esac
+}
+
 # Encode a local repository path for the URI field in an APT sources list.
 apt_repository_uri() {
   local LC_ALL=C path="$1" byte i

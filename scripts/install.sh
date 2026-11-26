@@ -982,8 +982,14 @@ install_os_packages() {
     apt)
       easy_waf_apt_get_update
       log "Installing base OS packages via apt (Ubuntu)..."
+      local haproxy_package=haproxy
+      if [[ "${EASY_WAF_OFFLINE:-0}" == 1 ]]; then
+        # shellcheck source=lib/offline-apt.sh
+        source "${SCRIPT_DIR}/lib/offline-apt.sh"
+        haproxy_package="$(offline_haproxy_package "${VERSION_ID:-}")"
+      fi
       local -a base_pkgs=(
-        haproxy
+        "$haproxy_package"
         nftables
         ca-certificates
         curl

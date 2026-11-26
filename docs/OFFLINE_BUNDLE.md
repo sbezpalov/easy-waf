@@ -211,7 +211,9 @@ The newest verified bundle delivers updates for Easy WAF, HAProxy, PostgreSQL
 and the security stack together. Ubuntu 24.04 is the published baseline for
 1.6.1. The installer also accepts locally built Ubuntu 26.04 candidates on
 matching hosts. Each bundle requires its recorded Ubuntu release and
-architecture.
+architecture. A 26.04 candidate requests HAProxy 3.4 from its local APT
+repository during installation and updates, including when another HAProxy
+branch is already installed.
 
 For rollback, restore a pre-upgrade backup or install the previous verified ISO.
 Database migrations may make package-only downgrades unsafe; read that release's

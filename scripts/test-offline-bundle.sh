@@ -68,6 +68,32 @@ fi
 [[ "$(apt_repository_uri '/tmp/large disk #1%/repository')" == 'file:/tmp/large%20disk%20%231%25/repository' ]]
 [[ "$(apt_repository_uri '/tmp/архив/repository')" == 'file:/tmp/%D0%B0%D1%80%D1%85%D0%B8%D0%B2/repository' ]]
 
+# Exercise the real installer up to the first APT invocation.
+(
+  install_step="$(sed -n '/^install_os_packages() {$/,/^}$/p' "$SCRIPT_DIR/install.sh")"
+  [[ -n "$install_step" ]]
+  eval "$install_step"
+  # Stubs are called by the evaluated installer function.
+  # shellcheck disable=SC2317,SC2329
+  log() { :; }
+  # shellcheck disable=SC2317,SC2329
+  easy_waf_apt_get_update() { :; }
+  # shellcheck disable=SC2317,SC2329
+  apt-get() { printf '%s\n' "$@" >"$TEMP_DIR/base-packages"; return 42; }
+  # shellcheck disable=SC2317,SC2329
+  die() { exit 93; }
+  for platform in '24.04 1 haproxy' '26.04 1 haproxy=3.4.*' '26.04 0 haproxy'; do
+    read -r os_release offline expected <<<"$platform"
+    status=0
+    (VERSION_ID="$os_release" EASY_WAF_OFFLINE="$offline" EASY_WAF_INSTALL_OS_PACKAGES=1 \
+      EASY_WAF_PKG_MGR=apt install_os_packages) || status=$?
+    if [[ "$status" != 93 ]] || ! grep -Fxq -- "$expected" "$TEMP_DIR/base-packages"; then
+      echo "test-offline-bundle: installer expected $expected on Ubuntu $os_release (offline=$offline)" >&2
+      exit 1
+    fi
+  done
+)
+
 # The offline builder and installer must accept the same prerelease DEB as
 # the release workflow. A bare tilde in a Bash substitution can expand.
 (
