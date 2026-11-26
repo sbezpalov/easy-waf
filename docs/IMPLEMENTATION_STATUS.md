@@ -91,6 +91,17 @@ After the upgrade with the published package, mobile data access passed with
 external HTTPS 200, two WebSocket 101 responses and zero HTTP 429 responses
 during the Companion check.
 
+**APT update check on Ubuntu 26.04.1 (amd64).** The local 1.6.1 DEB from
+`b058fab` passed package provenance verification and an isolated VMware
+reinstall. The existing environment file kept its hash. The API, host
+broker, APT worker and ACME worker ran the reinstalled binaries. With a
+local package repository and a 35-second APT hook, the authenticated
+HTTPS update stream sent progress before the normal HTTP write deadline
+and delivered a successful terminal event after the delay. The package
+list returned the synthetic 1.1 candidate while version 1.0 remained
+installed. The saved log contained the update output. The guest powered
+down cleanly.
+
 **GeoIP archive budget:** [a457e58](release-evidence/1.6.1-local-gates-a457e58.md).
 Both architectures' packages and ISOs passed local build and payload checks.
 The PostgreSQL-backed race suite passed 924 tests with four skips. Live
@@ -391,7 +402,7 @@ Full appliance installation and external ACME/WAN acceptance remain manual.
 | **SSH authorized_keys** | **Done** | `internal/host/users/sshkeys.go` — OpenSSH line regex; reject embedded newlines; no file write on invalid key |
 | **Journal allowlist** | **Done** | `internal/host/journal` — only `-n`, `-u`, `--since`, `--until`, `-p`, `--no-pager`; unit on systemd whitelist |
 | **Host management in GUI** | **Done** | **System** tab: services (allowlisted systemd), apt check/upgrade (**live NDJSON stream** via `POST /host/updates/upgrade/stream`), reboot/shutdown. **Network** tab: read-only overview; netplan + nftables **Advanced** apply with 90s safety window + **Keep changes** (commit); auto-revert via `systemd-run` → `easy-waf-hostd revert`. **Users** tab: list/create/delete local accounts, SSH keys editor. Form-based netplan/nft editors — next iteration. |
-| **Realtime apt-upgrade log (NDJSON stream)** | **Done** | `apt-upgrade-stream` in `easy-waf-hostd`; API passthrough + System UI `fetch` stream |
+| **Live APT logs (NDJSON)** | **Done** | The host broker streams index refresh, upgrade and autoremove progress to the System panel. The panel displays available packages after a successful index refresh. |
 | **System → Updates: autoremove (preview + live stream)** | **Done** | `apt-autoremove-simulate` / `apt-autoremove-stream`; shared apt single-flight; UI preview → confirm → `runAptStream` |
 | **System → Updates: disk usage indicator + apt cache clean** | **Done** | `GET /host/disk` (`statfs` + cache/removable hints); `POST /host/updates/clean` (`apt-clean`); UI disk bar + Clean apt cache |
 | **Host privilege model** | **Done** | Root broker **`easy-waf-hostd`** on `/run/easy-waf/hostd.sock`; `runner.Privileged` uses JSON over unix socket; API keeps `NoNewPrivileges`/`ProtectSystem=strict`; legacy sudo + `host-privileged.sh` removed on install |
