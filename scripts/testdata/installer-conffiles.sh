@@ -118,10 +118,14 @@ install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-local-operator-value
 [[ "$(cat "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env.dpkg-dist")" == fixture-vendor-two ]] || fail 'new vendor default not retained separately'
 build_deb 1.6.2 fixture-vendor-two fixture-rebuilt-payload
-install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null
+if ! EASY_WAF_OFFLINE=1 install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null; then
+  tail -n 15 "$ROOT/reinstall.log" >&2
+  fail 'offline reinstallation failed without a terminal'
+fi
 check_installed 1.6.2 fixture-local-operator-value
 [[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-rebuilt-payload ]] ||
   fail 'installer kept the previous payload after verifying a DEB with the same version'
+[[ ! -e "$CONFFILE_TEST_CURL_CALLED" ]] || fail 'offline reinstallation used curl'
 new_root fresh
 install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-vendor-two
@@ -229,4 +233,4 @@ chmod 0600 "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env"
 # Actual APT/dpkg still runs; only its package-selection input is local/dummy.
 crowdsec_install_spoa_bouncer_package >"$ROOT/spoa.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-spoa-operator-value
-echo 'OK: real APT preserves conffiles, blocks partial fallback and installs the verified offline DEB without curl'
+echo 'OK: real APT preserves conffiles, blocks partial fallback and reinstalls the verified same-version DEB offline'

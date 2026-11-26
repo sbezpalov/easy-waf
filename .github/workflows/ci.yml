@@ -159,6 +159,28 @@ jobs:
       - name: go test internal/haproxy integration (goldens, WebSocket, SSE)
         run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveApplicationProfiles|TestLiveGeoIPPolicy|TestLivePublicationRules' -count=1
 
+  offline-reinstall:
+    name: Offline reinstall on Ubuntu 26.04 (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    env:
+      EASY_WAF_CONFFILE_TEST_IMAGE: ubuntu:26.04
+      DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Pull the Ubuntu 26.04 fixture image
+        run: docker pull "$EASY_WAF_CONFFILE_TEST_IMAGE"
+      - name: Reinstall the verified DEB without network access
+        run: bash scripts/test-installer-conffiles.sh
+
   haproxy-34:
     strategy:
       fail-fast: false
