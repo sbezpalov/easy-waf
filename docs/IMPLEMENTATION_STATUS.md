@@ -66,6 +66,18 @@ independently retained package byte for byte.
 | Ubuntu 26.04 arm64 offline ISO | `4fe5b493d8685209221c3e8f6e2d1da7abf6db70c8015c19a4c78afe82026ee8` |
 | Easy WAF 1.6.1 arm64 DEB | `64596264badeb075a9ecf770fda1ac0082f59287940b4cee24b8cebd8342bdf0` |
 
+The full profile installed on a fresh Ubuntu Server 26.04.1 arm64 cloud
+disk under QEMU 8.2.2 with no network adapter. The installer rejected a
+missing CrowdSec snapshot before provisioning, then completed with a verified
+snapshot mounted read-only. The system APT sources and indexes retained
+their original hashes. Installation took approximately 38 minutes under
+software emulation after the missing-snapshot check. An earlier run reached
+the test harness's 30-minute installation timeout.
+
+The in-guest reboot reached a new boot ID, then systemd timed out waiting
+for the `BOOT` and `UEFI` partitions. Post-reboot appliance readiness
+remains open. QEMU's image check passed on the stopped guest disk.
+
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
 external HTTPS 200, two WebSocket 101 responses and zero HTTP 429 responses
