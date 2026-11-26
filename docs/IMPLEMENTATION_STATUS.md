@@ -80,8 +80,11 @@ stopped disk. A separate cold boot of that same disk with an emulated
 Cortex-A72 reached a new boot ID with only loopback. The appliance service
 checks, HAProxy 3.4 configuration validation, PostgreSQL migration 031,
 CrowdSec LAPI and management HTTPS readiness with certificate verification
-all passed. The guest shut down cleanly. In-guest reboot remains unverified
-in this QEMU configuration.
+all passed. In a follow-up on the same installed disk with the Cortex-A72
+configuration, `systemctl reboot` produced a new boot ID. Ubuntu mounted
+`/boot` and `/boot/efi` on both boots. The same appliance checks passed
+after the reboot, and the guest powered down cleanly. The initial failure
+occurred with QEMU's `max` CPU model.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
