@@ -38,3 +38,32 @@ offline_check_package_identity() {
     return 1
   fi
 }
+
+# Validate the bundled repository from an empty package database. The build
+# host's APT sources, pins and hooks apply to downloads only.
+offline_solve_repository() (
+  set -e
+  local solver="$1" repository="$2" apt_config="$1/apt.conf"
+  shift 2
+  install -d -m 0755 "$solver" "$solver/lists" "$solver/cache" "$solver/empty"
+  : >"$solver/status"
+  printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "$repository")" >"$solver/sources.list"
+  cat >"$apt_config" <<EOF
+Dir::Etc::main "/dev/null";
+Dir::Etc::parts "$solver/empty";
+Dir::Etc::sourcelist "$solver/sources.list";
+Dir::Etc::sourceparts "$solver/empty";
+Dir::Etc::preferences "/dev/null";
+Dir::Etc::preferencesparts "$solver/empty";
+Dir::State::status "$solver/status";
+Dir::State::lists "$solver/lists";
+Dir::Cache "$solver/cache";
+APT::Install-Recommends "false";
+Acquire::Languages "none";
+EOF
+  APT_CONFIG="$apt_config" apt-get update -qq --error-on=any || exit $?
+  if ! APT_CONFIG="$apt_config" apt-get --simulate install "$@" >"$solver/simulate.log" 2>&1; then
+    cat "$solver/simulate.log" >&2
+    exit 1
+  fi
+)

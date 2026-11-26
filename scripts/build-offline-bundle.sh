@@ -271,29 +271,7 @@ EOF
 }
 write_bundle_readme >"${STAGE}/README.txt"
 
-# Validate the repository with APT's real solver against an empty package state.
-# This catches missing alternatives/providers and versioned dependencies before
-# an ISO can be signed, without running maintainer scripts on the build host.
-SOLVER="${APT_WORK}/solver"
-install -d -m 0755 "$SOLVER" "$SOLVER/lists" "$SOLVER/cache" "$SOLVER/cache/archives"
-mkdir -p "${SOLVER}/lists/partial" "${SOLVER}/cache/archives/partial"
-: >"${SOLVER}/status"
-printf 'deb [trusted=yes] %s ./\n' "$(apt_repository_uri "$APT_REPO")" >"${SOLVER}/sources.list"
-apt_opts=(
-  -o "Dir::Etc::sourcelist=${SOLVER}/sources.list"
-  -o "Dir::Etc::sourceparts=-"
-  -o "Dir::State::status=${SOLVER}/status"
-  -o "Dir::State::lists=${SOLVER}/lists"
-  -o "Dir::Cache=${SOLVER}/cache"
-  -o "APT::Get::List-Cleanup=0"
-  -o "APT::Install-Recommends=false"
-  -o "Acquire::Languages=none"
-)
-apt-get "${apt_opts[@]}" update -qq
-if ! apt-get "${apt_opts[@]}" --simulate install easy-waf "${packages[@]}" >"${SOLVER}/simulate.log" 2>&1; then
-  cat "${SOLVER}/simulate.log" >&2
-  exit 1
-fi
+offline_solve_repository "${APT_WORK}/solver" "$APT_REPO" easy-waf "${packages[@]}"
 echo "[offline-build] isolated APT dependency solve passed"
 mv -- "$APT_REPO" "$STAGE/repository"
 

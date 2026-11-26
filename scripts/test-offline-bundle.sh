@@ -397,6 +397,12 @@ FIXTURE
     dpkg-deb -f "$deb" >Packages
     read -r digest _ < <(sha256sum "$deb")
     printf 'Filename: ./%s\nSize: %s\nSHA256: %s\n' "$deb" "$(stat -c %s "$deb")" "$digest" >>Packages
+    # The finished repository must solve without the build host's APT hooks.
+    builder_apt_config="$TEMP_DIR/builder-apt.conf"
+    printf 'APT::Update::Pre-Invoke:: "touch %s";\n' "$TEMP_DIR/builder-hook-ran" >"$builder_apt_config"
+    APT_CONFIG="$builder_apt_config" offline_solve_repository "$TEMP_DIR/builder-solver" "$PWD" easy-waf
+    [[ ! -e "$TEMP_DIR/builder-hook-ran" ]]
+    grep -Fq 'Inst easy-waf' "$TEMP_DIR/builder-solver/simulate.log"
     # An offline VM clock may predate the checksum-verified ISO.
     read -r index_digest _ < <(sha256sum Packages)
     printf 'Date: %s\nSHA256:\n %s %s Packages\n' \
