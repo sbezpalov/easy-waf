@@ -25,10 +25,9 @@ crowdsec_add_apt_repo() {
   gpg --batch --yes --dearmor -o "$keyring" "$key"
   rm -f "$key"
   chmod 0644 "$keyring"
-  # shellcheck source=/dev/null
-  . /etc/os-release
-  printf 'deb [signed-by=%s] https://packagecloud.io/crowdsec/crowdsec/%s %s main\n' \
-    "$keyring" "$ID" "$VERSION_CODENAME" >/etc/apt/sources.list.d/crowdsec_crowdsec.list
+  # CrowdSec publishes its stable DEBs for Debian and Ubuntu in the any suite.
+  printf 'deb [signed-by=%s] https://packagecloud.io/crowdsec/crowdsec/any any main\n' \
+    "$keyring" >/etc/apt/sources.list.d/crowdsec_crowdsec.list
   apt-get update -qq
 }
 
