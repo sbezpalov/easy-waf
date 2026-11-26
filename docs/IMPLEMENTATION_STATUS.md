@@ -75,8 +75,13 @@ software emulation after the missing-snapshot check. An earlier run reached
 the test harness's 30-minute installation timeout.
 
 The in-guest reboot reached a new boot ID, then systemd timed out waiting
-for the `BOOT` and `UEFI` partitions. Post-reboot appliance readiness
-remains open. QEMU's image check passed on the stopped guest disk.
+for the `BOOT` and `UEFI` partitions. QEMU's image check passed on the
+stopped disk. A separate cold boot of that same disk with an emulated
+Cortex-A72 reached a new boot ID with only loopback. The appliance service
+checks, HAProxy 3.4 configuration validation, PostgreSQL migration 031,
+CrowdSec LAPI and management HTTPS readiness with certificate verification
+all passed. The guest shut down cleanly. In-guest reboot remains unverified
+in this QEMU configuration.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
