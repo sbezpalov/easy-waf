@@ -192,6 +192,11 @@ func handleConnRole(ctx context.Context, c net.Conn, d *Dispatcher, role socketR
 		logOp("op=apt-upgrade-stream (stream)")
 		dispatchAptUpgradeStream(c)
 		return
+	case "apt-update-stream":
+		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
+		logOp("op=apt-update-stream (stream)")
+		dispatchAptStream(c, "update")
+		return
 	case "apt-autoremove-stream":
 		_ = c.SetDeadline(time.Now().Add(35 * time.Minute))
 		logOp("op=apt-autoremove-stream (stream)")

@@ -5115,34 +5115,12 @@
   document.getElementById('btn-sys-services-refresh').onclick = () => loadSystemServicesTable();
 
   document.getElementById('btn-sys-apt-check').onclick = async () => {
-    const owner = beginAptInteraction();
-    if (!owner) return;
-    const msg = document.getElementById('sys-apt-msg');
-    const out = document.getElementById('sys-apt-output');
-    if (msg) msg.textContent = '';
-    try {
-      await withBusy(document.getElementById('btn-sys-apt-check'), async () => {
-        const u = await fetch('/api/v1/host/updates/update', { method: 'POST', headers: hdr(), body: '{}' });
-        if (!u.ok) {
-          { const __m = await apiMessage(u); toast(__m, 'err'); if (msg) msg.textContent = __m; }
-          return;
-        }
-        const r = await fetch('/api/v1/host/updates', { headers: hdr() });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          toast(await apiMessage(r), 'err');
-          return;
-        }
-        if (out) out.textContent = j.output || '(no output)';
-        if (msg) {
-          msg.textContent = 'Package list refreshed.';
-          msg.className = 'ok';
-        }
-        toast('Update check done', 'ok');
-      });
-    } finally {
-      endAptInteraction(owner);
-    }
+    await runAptStream('/api/v1/host/updates/update/stream', {
+      checking: true,
+      startMsg: 'Checking for updates…',
+      successMsg: 'Package indexes refreshed.',
+      successToast: 'Update check complete'
+    });
   };
 
   let aptLogStickBottom = true;
@@ -5179,11 +5157,23 @@
 
   async function refreshAptPackageList() {
     const revision = aptStatusRevision;
-    const out = document.getElementById('sys-apt-output');
-    const r = await fetch('/api/v1/host/updates', { headers: hdr() });
-    if (r.ok) {
-      const j = await r.json().catch(() => ({}));
-      if (out && j.output && revision === aptStatusRevision) out.textContent = j.output;
+    const packages = document.getElementById('sys-apt-packages');
+    if (!packages) return;
+    packages.textContent = 'Loading available packages…';
+    try {
+      const r = await fetch('/api/v1/host/updates', { headers: hdr(), cache: 'no-store' });
+      if (!r.ok) throw new Error('Package list request failed');
+      const j = await r.json();
+      if (!j || typeof j !== 'object' || Array.isArray(j) ||
+          (j.output !== undefined && typeof j.output !== 'string')) throw new Error('Invalid package list');
+      if (revision === aptStatusRevision) {
+        packages.textContent = (j.output || '').trim() || 'No package updates available.';
+        packages.scrollTop = 0;
+      }
+    } catch (_) {
+      if (revision === aptStatusRevision) {
+        packages.textContent = 'Could not load available packages. Run Check for updates to retry.';
+      }
     }
   }
 
@@ -5202,7 +5192,7 @@
     }
     const text = await r.text();
     if (out) {
-      out.textContent = text || '(no upgrade log saved yet)';
+      out.textContent = text || '(no package log saved yet)';
       out.style.display = 'block';
     }
   };
@@ -5296,7 +5286,6 @@
       }
       toast(detail, 'err', 10000);
     }
-    void refreshAptPackageList();
   }
 
   function finishAptStreamReconnect(exitCode, exitErr, opts) {
@@ -5320,7 +5309,6 @@
       }
       toast(detail, exitCode === -1 ? 'warn' : 'err', 8000);
     }
-    void refreshAptPackageList();
   }
 
   async function runAptStream(streamUrl, opts) {
@@ -5329,7 +5317,9 @@
     const o = opts || {};
     const msg = document.getElementById('sys-apt-msg');
     const out = document.getElementById('sys-apt-output');
+    const packages = document.getElementById('sys-apt-packages');
     aptLogStickBottom = true;
+    if (packages && o.checking) packages.textContent = 'Available packages will appear after a successful check.';
     if (out && !o.reconnect) {
       out.textContent = '';
       out.style.display = 'block';
@@ -5354,7 +5344,9 @@
         if (!o.reconnect) toast(detail, 'err');
         return { exitCode: -1, exitErr: detail };
       }
-      return await consumeAptStream(resp, o);
+      const result = await consumeAptStream(resp, o);
+      if (result.exitCode === 0) await refreshAptPackageList();
+      return result;
     } catch (e) {
       const transport = e && e.message ? e.message : 'network error';
       if (o.reconnect) {
@@ -5370,7 +5362,6 @@
         msg.className = 'warn';
       }
       toast('Stream interrupted: ' + transport, 'warn', 10000);
-      void refreshAptPackageList();
       return { exitCode: -1, exitErr: transport };
     } finally {
       endAptInteraction(owner);

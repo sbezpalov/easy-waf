@@ -22,7 +22,7 @@ const DefaultAPTWorkerSocket = "/run/easy-waf-apt/worker.sock"
 func isAPTWorkerOpcode(op string) bool {
 	switch op {
 	case "apt-update", "apt-upgrade", "apt-simulate", "apt-autoremove-simulate", "apt-cache-size", "apt-clean",
-		"apt-upgrade-stream", "apt-autoremove-stream", "apt-action-attach-stream",
+		"apt-update-stream", "apt-upgrade-stream", "apt-autoremove-stream", "apt-action-attach-stream",
 		"apt-upgrade-status", "apt-action-status", "apt-upgrade-log", "apt-action-log", "apt-action-log-stream":
 		return true
 	}
@@ -31,14 +31,18 @@ func isAPTWorkerOpcode(op string) bool {
 
 func isAPTMutationOpcode(op string) bool {
 	switch op {
-	case "apt-update", "apt-upgrade", "apt-clean", "apt-upgrade-stream", "apt-autoremove-stream":
+	case "apt-update", "apt-upgrade", "apt-clean", "apt-update-stream", "apt-upgrade-stream", "apt-autoremove-stream":
 		return true
 	}
 	return false
 }
 
 func isAPTStreamOpcode(op string) bool {
-	return op == "apt-upgrade-stream" || op == "apt-autoremove-stream" || op == "apt-action-attach-stream" || op == "apt-action-log-stream"
+	switch op {
+	case "apt-update-stream", "apt-upgrade-stream", "apt-autoremove-stream", "apt-action-attach-stream", "apt-action-log-stream":
+		return true
+	}
+	return false
 }
 
 // RunAPTWorker owns package processes and their observation state independently

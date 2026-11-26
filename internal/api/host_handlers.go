@@ -88,6 +88,7 @@ func (s *Server) mountHostRoutes(r chi.Router) {
 			r.Post("/services/{unit}/{action}", s.hostServiceAction)
 
 			r.Post("/updates/update", s.hostAptUpdate)
+			r.Post("/updates/update/stream", s.hostAptUpdateStream)
 			r.Post("/updates/upgrade", s.hostAptUpgrade)
 			r.Post("/updates/upgrade/stream", s.hostAptUpgradeStream)
 			r.Post("/updates/autoremove/stream", s.hostAutoremoveStream)
@@ -551,6 +552,10 @@ func (s *Server) hostAptAttachStream(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hostAptUpgradeStream(w http.ResponseWriter, r *http.Request) {
 	s.streamAptAction(w, r, "apt-upgrade-stream", "host_apt_upgrade", "host_apt_upgrade_done")
+}
+
+func (s *Server) hostAptUpdateStream(w http.ResponseWriter, r *http.Request) {
+	s.streamAptAction(w, r, "apt-update-stream", "host_apt_update", "host_apt_update_done")
 }
 
 func (s *Server) hostAutoremoveStream(w http.ResponseWriter, r *http.Request) {

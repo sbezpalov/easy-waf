@@ -24,7 +24,9 @@ func aptMutationArgs(action string) ([]string, error) {
 	switch action {
 	case "upgrade", "autoremove":
 		args = append([]string{"-y"}, args...)
-	case "update", "clean":
+	case "update":
+		args = append(args, "--error-on=any")
+	case "clean":
 	default:
 		return nil, errors.New("unknown apt mutation")
 	}

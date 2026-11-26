@@ -5,12 +5,14 @@ package apt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/easy-waf/easy-waf/internal/commandoutput"
 	"github.com/easy-waf/easy-waf/internal/host/runner"
 )
 
@@ -126,10 +128,13 @@ func CleanCache(ctx context.Context) error {
 	return err
 }
 
-// ListUpgradable reads /var/lib/apt/lists or runs apt list --upgradable without root.
+// ListUpgradable lists candidates from the local APT indexes without root.
 func ListUpgradable(ctx context.Context) (UpdatesStatus, error) {
-	out, err := runner.Run(ctx, 90*time.Second, "/usr/bin/apt", "list", "--upgradable")
+	out, err := runner.Run(ctx, 90*time.Second, "/usr/bin/apt", "-qq", "list", "--upgradable")
 	if err != nil {
+		if errors.Is(err, commandoutput.ErrLimit) || ctx.Err() != nil {
+			return UpdatesStatus{}, err
+		}
 		// fallback to simulate via sudo
 		return SimulateUpgrade(ctx)
 	}

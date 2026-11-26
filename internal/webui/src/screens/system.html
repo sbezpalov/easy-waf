@@ -54,9 +54,12 @@
             <button type="button" class="secondary" id="btn-sys-apt-autoremove">Clean up (autoremove)</button>
             <button type="button" class="secondary" id="btn-sys-apt-clean">Clean apt cache</button>
             <button type="button" class="secondary" id="btn-sys-apt-clear-log">Clear log</button>
-            <button type="button" class="secondary" id="btn-sys-apt-last-log">Show last upgrade log</button>
+            <button type="button" class="secondary" id="btn-sys-apt-last-log">Show saved package log</button>
           </div>
-          <p id="sys-apt-msg" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+          <p id="sys-apt-msg" role="status" class="warn" style="min-height:1rem;margin-top:0.5rem"></p>
+          <h4 id="sys-apt-packages-title">Available package updates</h4>
+          <pre id="sys-apt-packages" tabindex="0" aria-labelledby="sys-apt-packages-title" style="overflow:auto;max-height:22rem;white-space:pre-wrap;overflow-wrap:anywhere">Check for updates to see available packages.</pre>
+          <h4>Package log</h4>
           <pre id="sys-apt-output" style="max-height:18rem;overflow:auto;background:#0d1117;padding:0.5rem;border-radius:6px;font-size:12px;margin-top:0.35rem;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-word"></pre>
         </div>
         <section class="panel" id="system-backup-restore" aria-labelledby="system-backup-restore-title" style="max-width:100%">

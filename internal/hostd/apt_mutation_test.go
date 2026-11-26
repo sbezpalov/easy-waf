@@ -198,6 +198,9 @@ func TestAptMutationsRequireTrackedRunnerAndFixedArguments(t *testing.T) {
 	}
 	for _, action := range []string{"update", "upgrade", "autoremove", "clean"} {
 		want := []string{"-o", "Dpkg::Use-Pty=0", "-o", "DPkg::Lock::Timeout=120", action}
+		if action == "update" {
+			want = append(want[:len(want)-1], "--error-on=any", action)
+		}
 		if action == "upgrade" || action == "autoremove" {
 			want = append([]string{"-y"}, want...)
 		}

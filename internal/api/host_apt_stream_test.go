@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/easy-waf/easy-waf/internal/config"
 	"github.com/easy-waf/easy-waf/internal/engine"
@@ -149,16 +150,64 @@ func TestHostAutoremoveStream_setsNDJSONContentType(t *testing.T) {
 	}
 }
 
-func TestHostAutoremoveStream_flushesIncrementally(t *testing.T) {
+func TestHostPackageStreamsFlushIncrementally(t *testing.T) {
+	for _, action := range []string{"update", "autoremove"} {
+		t.Run(action, func(t *testing.T) { testHostPackageStreamFlush(t, action) })
+	}
+}
+
+func TestHostAptUpdateStreamSurvivesHTTPWriteTimeout(t *testing.T) {
+	previous := privilegedStreamFn
+	t.Cleanup(func() { privilegedStreamFn = previous })
+	const timeout = 100 * time.Millisecond
+	privilegedStreamFn = func(ctx context.Context, onLine func([]byte) error, _ ...string) error {
+		if err := onLine([]byte(`{"type":"line","data":"reading package lists"}`)); err != nil {
+			return err
+		}
+		pause := time.NewTimer(2 * timeout)
+		defer pause.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-pause.C:
+			return onLine([]byte(`{"type":"exit","code":0}`))
+		}
+	}
+	s := &Server{Eng: engine.New("", nil, config.GlobalSettings{})}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(s.hostAptUpdateStream))
+	server.Config.WriteTimeout = timeout
+	server.Start()
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	scanner := bufio.NewScanner(response.Body)
+	for _, want := range []string{`{"type":"line","data":"reading package lists"}`, `{"type":"exit","code":0}`} {
+		if !scanner.Scan() || scanner.Text() != want {
+			t.Fatalf("want %s, got %q, stream error: %v", want, scanner.Text(), scanner.Err())
+		}
+	}
+}
+
+func testHostPackageStreamFlush(t *testing.T, action string) {
+	t.Helper()
 	orig := privilegedStreamFn
 	defer func() { privilegedStreamFn = orig }()
 
 	privilegedStreamFn = func(_ context.Context, onLine func([]byte) error, argv ...string) error {
-		if len(argv) != 1 || argv[0] != "apt-autoremove-stream" {
+		if len(argv) != 1 || argv[0] != "apt-"+action+"-stream" {
 			t.Fatalf("argv: %v", argv)
 		}
 		for _, l := range []string{
-			`{"type":"line","data":"removing foo"}`,
+			`{"type":"line","data":"refreshing indexes"}`,
 			`{"type":"exit","code":0}`,
 		} {
 			if err := onLine([]byte(l)); err != nil {
@@ -170,19 +219,23 @@ func TestHostAutoremoveStream_flushesIncrementally(t *testing.T) {
 
 	eng := engine.New("", nil, config.GlobalSettings{ManagementAllowedCIDRs: []string{"127.0.0.0/8"}})
 	s := &Server{Eng: eng, JWTSecret: []byte("test")}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/autoremove/stream", strings.NewReader("{}"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/host/updates/"+action+"/stream", strings.NewReader("{}"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.RemoteAddr = "127.0.0.1:12345"
 
 	w := &streamSpy{}
-	s.hostAutoremoveStream(w, req)
+	if action == "update" {
+		s.hostAptUpdateStream(w, req)
+	} else {
+		s.hostAutoremoveStream(w, req)
+	}
 	if w.flushes < 1 {
 		t.Fatalf("flushes=%d", w.flushes)
 	}
 }
 
 func TestHostAptStreamRejectsMissingCompletion(t *testing.T) {
-	for _, op := range []string{"apt-upgrade-stream", "apt-autoremove-stream"} {
+	for _, op := range []string{"apt-update-stream", "apt-upgrade-stream", "apt-autoremove-stream"} {
 		t.Run(op, func(t *testing.T) {
 			previous := privilegedStreamFn
 			t.Cleanup(func() { privilegedStreamFn = previous })

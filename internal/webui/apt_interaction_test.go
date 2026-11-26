@@ -23,7 +23,7 @@ func TestAptInteractionOwnership(t *testing.T) {
 	for _, scenario := range []string{
 		"repeated_reconnect", "local_stream_blocks_poll", "stream_blocks_actions",
 		"check_blocks_stream", "clean_blocks_stream", "slow_error_keeps_ownership",
-		"failure_releases_ownership", "late_package_list", "disk_cannot_enable_clean",
+		"failure_releases_ownership", "package_list_owns_interaction", "check_empty_or_failed", "disk_cannot_enable_clean",
 		"small_cache_stays_disabled", "pending_poll_then_action",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -70,9 +70,11 @@ const element = id => {
   return elements.get(id);
 };
 const msg = element('sys-apt-msg'), out = element('sys-apt-output');
+const packages = element('sys-apt-packages');
 const requests = [], notices = [];
 const runID = '0123456789abcdef0123456789abcdef';
 const url = '/api/v1/host/updates/upgrade/stream';
+const checkURL = '/api/v1/host/updates/update/stream';
 const json = value => ({ok: true, json: async () => value});
 let source = feed();
 let request = async path => {
@@ -122,14 +124,20 @@ const cases = {
     await finish(pending);
   },
   async check_blocks_stream() {
-    const response = deferred(), original = request;
-    request = path => path.endsWith('/update') ? response.promise : original(path);
+    const fullList = Array.from({length: 200}, (_, index) => 'package-' + index + '/stable 1.1 amd64').join('\n');
+    const original = request;
+    request = path => path === '/api/v1/host/updates' ? json({output: fullList}) : original(path);
     const checking = element(ids[0]).onclick(); await flush(); disabled(true);
+    assert.equal(msg.textContent, 'Checking for updates…');
+    source.line('Refreshing indexes'); await flush();
+    assert.equal(out.textContent, 'Refreshing indexes');
     await context.runAptStream(url);
-    assert.deepEqual(requests, [['/api/v1/host/updates/update', 'POST']], 'check overlapped a stream');
-    response.resolve(json({})); await checking; disabled(false);
-    assert.equal(msg.textContent, 'Package list refreshed.');
-    assert.equal(out.textContent, 'Package list');
+    assert.deepEqual(requests, [[checkURL, 'POST']], 'check overlapped a stream or fetched before completion');
+    await finish(checking);
+    assert.deepEqual(requests, [[checkURL, 'POST'], ['/api/v1/host/updates', 'GET']]);
+    assert.equal(msg.textContent, 'Package indexes refreshed.');
+    assert.equal(packages.textContent, fullList);
+    assert.equal(out.textContent, 'Refreshing indexes');
   },
   async clean_blocks_stream() {
     const response = deferred(), original = request;
@@ -160,8 +168,11 @@ const cases = {
         return {ok: true, body: {getReader: () => ({read: async () => {throw new Error('fixture reader')},
           cancel: async () => {}, releaseLock: () => {}})}};
       };
-      if (mode === 'check' || mode === 'clean') {
-        await assert.rejects(() => element(mode === 'check' ? ids[0] : ids[3]).onclick());
+      if (mode === 'clean') {
+        await assert.rejects(() => element(ids[3]).onclick());
+      } else if (mode === 'check') {
+        await element(ids[0]).onclick();
+        assert.match(msg.textContent, /Stream interrupted/);
       } else {
         const result = await context.runAptStream(url, {reconnect: true});
         assert.equal(result.exitCode, -1);
@@ -172,16 +183,31 @@ const cases = {
       assert.deepEqual(requests, [[url, 'POST']], mode + ' failure leaked ownership'); disabled(false);
     }
   },
-  async late_package_list() {
-    const list = deferred(), original = request; let listCount = 0;
-    request = path => path === '/api/v1/host/updates' && listCount++ === 0 ? list.promise : original(path);
-    const first = context.runAptStream(url); await flush(); source.end(); await first;
-    assert.ok(requests.some(([path]) => path === '/api/v1/host/updates'));
-    source = feed(); const second = context.runAptStream(url); await flush();
-    source.line('New operation output'); await flush();
-    list.resolve(json({output: 'Old package list'})); await flush();
-    assert.equal(out.textContent, 'New operation output', 'late package list replaced the new stream');
-    disabled(true); await finish(second);
+  async package_list_owns_interaction() {
+    const list = deferred(), original = request;
+    request = path => path === '/api/v1/host/updates' ? list.promise : original(path);
+    const first = context.runAptStream(url); await flush(); source.line('Upgrade log'); source.end();
+    await flush();
+    disabled(true);
+    await context.runAptStream(url);
+    assert.deepEqual(requests, [[url, 'POST'], ['/api/v1/host/updates', 'GET']]);
+    list.resolve(json({output: 'Package list'})); await first;
+    assert.equal(out.textContent, 'Upgrade log');
+    assert.equal(packages.textContent, 'Package list');
+    disabled(false);
+  },
+  async check_empty_or_failed() {
+    const original = request;
+    for (const [response, expected] of [
+      [json({}), 'No package updates available.'],
+      [{ok: false}, 'Could not load available packages. Run Check for updates to retry.']
+    ]) {
+      source = feed();
+      request = path => path === '/api/v1/host/updates' ? response : original(path);
+      const checking = element(ids[0]).onclick(); await flush();
+      await finish(checking);
+      assert.equal(packages.textContent, expected);
+    }
   },
   async disk_cannot_enable_clean() {
     const disk = deferred(), original = request;

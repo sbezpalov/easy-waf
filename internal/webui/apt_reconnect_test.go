@@ -174,7 +174,13 @@ vm.runInContext(page.slice(start, end), context);
   assert.ok(buttonStart >= 0 && buttonEnd > buttonStart && checkStart >= 0 && checkEnd > checkStart);
   vm.runInContext(page.slice(checkStart, checkEnd + 6), context);
   const checkClick = msg.onclick;
-  context.withBusy = async () => {}; // Exercise click ownership without issuing update.
+  context.runAptStream = async (url, options) => {
+    assert.equal(url, '/api/v1/host/updates/update/stream');
+    assert.equal(options.checking, true);
+    const owner = context.beginAptInteraction();
+    assert.ok(owner);
+    context.endAptInteraction(owner);
+  };
   for (const begin of [() => context.setAptButtonsDisabled(true), () => checkClick()]) {
     let reply;
     context.fetch = () => new Promise(resolve => {reply = resolve});

@@ -231,6 +231,32 @@ func TestDispatchAptStream_singleFlightAttach(t *testing.T) {
 	_ = pr1.Close()
 }
 
+func TestUpdateStreamDoesNotFollowADifferentAction(t *testing.T) {
+	for _, active := range []string{"update", "upgrade"} {
+		t.Run(active, func(t *testing.T) {
+			resetAptUpgradeState()
+			overrideAptActionLogForTest(t)
+			defer resetAptUpgradeState()
+			record, started, err := acquireAptAction(active, aptStreaming)
+			if err != nil || !started {
+				t.Fatalf("could not reserve %s: %v", active, err)
+			}
+			defer releaseAptAction(record)
+			requested := "update"
+			if active == requested {
+				requested = "upgrade"
+			}
+			var output bytes.Buffer
+			dispatchAptStream(&output, requested)
+			events := readStreamEvents(t, &output)
+			if len(events) != 1 || events[0].Type != "exit" || events[0].Code != 1 ||
+				!strings.Contains(events[0].Error, active+" is already in progress") {
+				t.Fatalf("unexpected reply for %s during %s: %+v", requested, active, events)
+			}
+		})
+	}
+}
+
 func TestDispatchAptUpgradeStream_attachToRunning(t *testing.T) {
 	resetAptUpgradeState()
 	overrideAptActionLogForTest(t)
@@ -378,12 +404,21 @@ func TestSocketRoundTrip_aptUpgradeStream(t *testing.T) {
 	}
 }
 
-func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
+func TestSocketRoundTripPackageStreams(t *testing.T) {
+	for _, action := range []string{"update", "autoremove"} {
+		t.Run(action, func(t *testing.T) { testSocketRoundTripPackageStream(t, action) })
+	}
+}
+
+func testSocketRoundTripPackageStream(t *testing.T, action string) {
+	t.Helper()
 	resetAptUpgradeState()
 	overrideAptActionLogForTest(t)
-	SetAptActionStreamHookForTest(func(_ context.Context, action string, emit func(string) error) (int, error) {
-		_ = action
-		_ = emit("mock autoremove line")
+	SetAptActionStreamHookForTest(func(_ context.Context, actual string, emit func(string) error) (int, error) {
+		if actual != action {
+			return 1, fmt.Errorf("unexpected action %q", actual)
+		}
+		_ = emit("mock package action line")
 		return 0, nil
 	})
 	defer resetAptUpgradeState()
@@ -413,7 +448,7 @@ func TestSocketRoundTrip_aptAutoremoveStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-autoremove-stream"}}); err != nil {
+	if err := json.NewEncoder(conn).Encode(Request{Argv: []string{"apt-" + action + "-stream"}}); err != nil {
 		t.Fatal(err)
 	}
 	events := readSocketStreamEvents(t, conn)

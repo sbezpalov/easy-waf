@@ -71,7 +71,7 @@ var (
 )
 
 func validAptStreamAction(action string) bool {
-	return action == "upgrade" || action == "autoremove"
+	return action == "update" || action == "upgrade" || action == "autoremove"
 }
 
 func aptActionPIDPath() string {
@@ -178,7 +178,7 @@ func dispatchAptUpgradeStream(conn io.Writer) {
 	dispatchAptStream(conn, "upgrade")
 }
 
-// dispatchAptStream runs apt-get upgrade or autoremove, or attaches to in-flight action.
+// dispatchAptStream runs a package action or attaches to an in-flight action.
 func dispatchAptStream(conn io.Writer, action string) {
 	sc := newAptStreamConn(conn)
 	emitExit := func(code int, errMsg string) {
@@ -196,7 +196,8 @@ func dispatchAptStream(conn io.Writer, action string) {
 	}
 	defer releaseAptAction(record)
 	if !started {
-		if record.mode == aptSynchronous {
+		updateConflict := record.action != action && (record.action == "update" || action == "update")
+		if record.mode == aptSynchronous || updateConflict {
 			emitExit(1, aptBusyMessage(record))
 			return
 		}
