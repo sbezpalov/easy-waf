@@ -138,3 +138,23 @@ EOF
   cmp "$ROOT/spoa-apt-expected" "$ROOT/spoa-apt-arguments"
 )
 echo 'OK: SPOA keeps the required vendor file on hosts that exclude documentation'
+
+(
+  systemctl() { return 0; }
+  cscli() { return 1; }
+  curl() { printf '000'; return 7; }
+  if crowdsec_lapi_reachable; then fail 'connection refused counted as ready'; fi
+  curl() { printf '503'; }
+  if crowdsec_lapi_reachable; then fail 'unavailable LAPI counted as ready'; fi
+  curl() {
+    [[ "$1" == -q && " $* " == *' --noproxy * '* ]] || return 1
+    case "${!#}" in
+      */v1/watchers/login) printf '405' ;;
+      *) printf '000'; return 7 ;;
+    esac
+  }
+  crowdsec_lapi_reachable || fail 'second endpoint did not confirm HTTP readiness'
+  systemctl() { return 3; }
+  if crowdsec_lapi_reachable; then fail 'inactive service counted as ready'; fi
+)
+echo 'OK: CrowdSec readiness requires a responding local service'

@@ -60,10 +60,11 @@ crowdsec_lapi_reachable() {
   fi
   local url code
   for url in "http://127.0.0.1:8080/" "http://127.0.0.1:8080/v1/watchers/login"; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 3 "$url" 2>/dev/null || echo 000)"
-    if [[ "$code" != "000" ]]; then
-      return 0
-    fi
+    code="$(curl -q --noproxy '*' -s -o /dev/null -w '%{http_code}' \
+      --connect-timeout 2 --max-time 3 "$url" 2>/dev/null)" || continue
+    case "$code" in
+      2[0-9][0-9]|401|403|404|405) return 0 ;;
+    esac
   done
   return 1
 }
