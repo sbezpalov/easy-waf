@@ -49,6 +49,10 @@ fi
 
 VERSION="$(head -1 "${REPO_ROOT}/VERSION" | tr -d '[:space:]')"
 ARCH="$(dpkg --print-architecture)"
+if [[ "$ARCH" != amd64 && "$ARCH" != arm64 ]]; then
+  echo "[offline-build] unsupported bundle architecture: $ARCH (expected amd64 or arm64)" >&2
+  exit 1
+fi
 OUTPUT_DIR="${EASY_WAF_OFFLINE_OUTPUT_DIR:-${REPO_ROOT}/dist}"
 INCLUDE_CROWDSEC="${EASY_WAF_OFFLINE_INCLUDE_CROWDSEC:-1}"
 CROWDSEC_SNAPSHOT="${EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR:-}"

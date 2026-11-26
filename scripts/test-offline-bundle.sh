@@ -266,6 +266,9 @@ if [[ "$EUID" == 0 ]] && (
 git() { :; }
 apt-ftparchive() { return 91; }
 dpkg-scanpackages() { return 91; }
+if [[ -n "${FIXTURE_NATIVE_ARCH:-}" ]]; then
+  dpkg() { [[ "$1" == --print-architecture ]] && echo "$FIXTURE_NATIVE_ARCH"; }
+fi
 runuser() {
   [[ "${EXPECT_APT_TMPDIR_REUSE:-0}" == 1 && "${*: -1}" == "$TMPDIR" ]]
 }
@@ -298,6 +301,12 @@ apt-get() {
   return 93
 }
 FIXTURE
+  if FIXTURE_NATIVE_ARCH=riscv64 BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_OFFLINE_FORMAT=tar.gz \
+    "${BASH}" "$builder/scripts/build-offline-bundle.sh" >"$TEMP_DIR/arch-error" 2>&1; then
+    echo 'test-offline-bundle: builder accepted unsupported native architecture' >&2
+    exit 1
+  fi
+  grep -Fq 'unsupported bundle architecture: riscv64' "$TEMP_DIR/arch-error"
   for reuse_tmpdir in 0 1; do
     builder_status=0
     (cd "$builder" && umask 077 && TMPDIR="$builder" EXPECT_APT_TMPDIR_REUSE="$reuse_tmpdir" \
