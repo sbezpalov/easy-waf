@@ -86,11 +86,14 @@ unset archive_members
 # private archived 0700/0600 secrets must remain private as well.
 (umask 027; tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$WORKDIR")
 
-ROOT="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
-if [[ -z "$ROOT" ]] || [[ ! -d "$ROOT" ]]; then
-  echo "ERROR: could not locate backup root inside archive (expected easy-waf-backup-*/ with MANIFEST.txt)" >&2
+shopt -s dotglob nullglob
+entries=("$WORKDIR"/*)
+shopt -u dotglob nullglob
+if (( ${#entries[@]} != 1 )) || [[ ! -d "${entries[0]}" || -L "${entries[0]}" ]]; then
+  echo "ERROR: expected exactly one backup directory at the root of the archive" >&2
   exit 1
 fi
+ROOT="${entries[0]}"
 if [[ ! -f "$ROOT/easywaf.dump" ]]; then
   echo "ERROR: missing easywaf.dump under $ROOT" >&2
   exit 1

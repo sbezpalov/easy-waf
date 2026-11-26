@@ -145,7 +145,8 @@ resuming scheduled backups.
 Steps:
 
 1. Requires `flock` and acquires the shared backup/restore lock on `/etc/easy-waf`.
-2. Extracts the archive privately, checks the required directories and
+2. Extracts the archive privately, requires a single top-level backup directory,
+   checks the required directories and
    nonempty `DATABASE_URL` in the backed-up env, and reads the dump's table of
    contents with `pg_restore --list`. Runs `SELECT 1` with the archived
    connection settings before stopping

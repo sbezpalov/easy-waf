@@ -104,6 +104,13 @@ ln -s database "$ROOT/bin/psql"
 export PATH="$ROOT/bin:$PATH"
 
 if [[ "$mode" != locks ]]; then
+  cp -r "$ROOT/source/backup" "$ROOT/source/second"
+  tar -czf "$ROOT/ambiguous.tar.gz" -C "$ROOT/source" backup second
+  if bash "$RESTORE_SCRIPT" "$ROOT/ambiguous.tar.gz" >"$ROOT/ambiguous.log" 2>&1; then
+    fail 'restore selected a backup from an ambiguous archive'
+  fi
+  grep -Fq 'expected exactly one backup directory' "$ROOT/ambiguous.log" || fail 'ambiguous backup roots were not diagnosed'
+  [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'ambiguous archive touched services/database'
   for invalid in missing empty; do
     : >"$ROOT/services"; : >"$ROOT/database"
     if [[ "$invalid" == missing ]]; then
@@ -126,7 +133,7 @@ if [[ "$mode" != locks ]]; then
     fail 'restore accepted an unreadable dump'
   fi
   [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'unreadable dump touched services/database'
-  grep -Fq 'cannot read the PostgreSQL archive table of contents' "$ROOT/invalid.log" +    || fail 'unreadable dump was not diagnosed'
+  grep -Fq 'cannot read the PostgreSQL archive table of contents' "$ROOT/invalid.log" || fail 'unreadable dump was not diagnosed'
   echo 'OK: unreadable PostgreSQL archive rejected before service/database access'
   mkdir "$ROOT/no-flock"
   for tool in bash dirname readlink id; do ln -s "$(type -P "$tool")" "$ROOT/no-flock/$tool"; done
