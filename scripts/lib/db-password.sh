@@ -10,11 +10,13 @@ easy_waf_maybe_rotate_weak_db_password() (
   current="$(easy_waf_read_env_value "$rotation_env" DATABASE_URL)" || return 1
   [[ "$current" =~ ^postgres://easywaf:(secret|easywaf)@ ]] || return 0
 
-  if ! command -v openssl &>/dev/null || ! command -v sed &>/dev/null ||
-     ! command -v psql &>/dev/null || ! command -v sudo &>/dev/null; then
-    log_dbpw "openssl, sed, psql and sudo are required to rotate the local password automatically"
-    return 0
-  fi
+  local tool
+  for tool in openssl sed psql sudo; do
+    if ! command -v "$tool" &>/dev/null; then
+      log_dbpw "ERROR: $tool is required to rotate the local PostgreSQL password" >&2
+      return 1
+    fi
+  done
   # The installer and backup/restore share a lock on the config directory.
   config_dir="$(dirname -- "$rotation_env")" || return 1
   if ! exec {lock_fd}<"$config_dir" || ! flock -n "$lock_fd"; then

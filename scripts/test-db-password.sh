@@ -35,6 +35,15 @@ source "$SCRIPT_DIR/lib/db-password.sh"
 flock() { [[ "$1" == -n && "${TEST_LOCK_EXIT:-0}" == 0 ]]; }
 config="$ROOT/easy-waf.env"
 printf 'DATABASE_URL=postgres://easywaf:secret@127.0.0.1/easywaf?sslmode=disable\nUNRELATED=same\n' >"$config"
+cp "$config" "$ROOT/original.env"
+# The fixture bin directory supplies openssl, psql and sudo, but omits sed.
+if PATH="$ROOT/bin" easy_waf_maybe_rotate_weak_db_password "$config" >"$ROOT/missing-tool.log" 2>&1; then
+  echo 'FAIL: required password rotation succeeded with a missing tool' >&2
+  exit 1
+fi
+grep -Fq 'sed' "$ROOT/missing-tool.log"
+cmp "$ROOT/original.env" "$config"
+[[ ! -e "$TEST_PSQL_ARGS" ]]
 easy_waf_maybe_rotate_weak_db_password "$config" >"$ROOT/rotation.log"
 if grep -qF "$new_password" "$TEST_PSQL_ARGS"; then
   echo 'FAIL: generated password appeared in PostgreSQL command arguments' >&2
