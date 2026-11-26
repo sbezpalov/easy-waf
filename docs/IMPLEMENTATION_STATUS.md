@@ -54,6 +54,18 @@ candidate DEB. HAProxy configuration and trusted HTTPS readiness passed.
 This covers the application package upgrade within 26.04.1. Cross-release
 OS migration and release-image boot checks are separate acceptance items.
 
+**26.04 offline media (arm64, 2026-11-26).** The local build from
+`72ca259` resolved the full profile from the Ubuntu, HAProxy 3.4 and
+CrowdSec repositories for arm64. The ISO indexed 187 packages and passed
+the isolated APT dependency check. After extraction, `install.sh --verify-only`
+verified the manifest, and both embedded copies of the DEB matched the
+independently retained package byte for byte.
+
+| Local candidate | SHA-256 |
+| --- | --- |
+| Ubuntu 26.04 arm64 offline ISO | `4fe5b493d8685209221c3e8f6e2d1da7abf6db70c8015c19a4c78afe82026ee8` |
+| Easy WAF 1.6.1 arm64 DEB | `64596264badeb075a9ecf770fda1ac0082f59287940b4cee24b8cebd8342bdf0` |
+
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
 external HTTPS 200, two WebSocket 101 responses and zero HTTP 429 responses
