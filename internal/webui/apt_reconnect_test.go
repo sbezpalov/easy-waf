@@ -42,6 +42,7 @@ let statusRequests = [];
 const msg = {textContent: '', className: '', dataset: {}};
 const context = {getTok: () => token, hdr: () => ({}),
   document: {getElementById: () => msg},
+  refreshAptPackageList: async () => {},
   fetch: async (path, options) => {
     statusRequests.push([path, options.method || 'GET']);
     if (statusMode === 'network') throw new Error('fixture status disconnect');

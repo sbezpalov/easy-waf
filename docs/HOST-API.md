@@ -163,7 +163,8 @@ For a nonempty nftables baseline, rollback recreates the tables declared in the 
 `apt-get --error-on=any update` and streams progress. It requires the same
 step-up authorization as the legacy synchronous update endpoint. After a
 successful exit, the panel reads `GET /host/updates` and shows the available
-packages alongside the retained action log.
+packages alongside the retained action log. On opening System with APT idle,
+the panel reads the available packages from the existing indexes.
 
 `POST /host/updates/upgrade/stream` installs upgrades under the same stream
 contract.

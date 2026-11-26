@@ -24,7 +24,8 @@ func TestAptInteractionOwnership(t *testing.T) {
 		"repeated_reconnect", "local_stream_blocks_poll", "stream_blocks_actions",
 		"check_blocks_stream", "clean_blocks_stream", "slow_error_keeps_ownership",
 		"failure_releases_ownership", "package_list_owns_interaction", "check_empty_or_failed", "disk_cannot_enable_clean",
-		"small_cache_stays_disabled", "pending_poll_then_action",
+		"small_cache_stays_disabled", "pending_poll_then_action", "idle_package_list",
+		"idle_list_cannot_overwrite_check", "saved_log_cannot_overwrite_stream",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -208,6 +209,45 @@ const cases = {
       await finish(checking);
       assert.equal(packages.textContent, expected);
     }
+  },
+  async idle_package_list() {
+    const original = request;
+    request = path => path.endsWith('/status') ? json({active: false}) : original(path);
+    await context.tryAttachRunningAptUpgrade();
+    assert.deepEqual(requests, [['/api/v1/host/updates/upgrade/status', 'GET'], ['/api/v1/host/updates', 'GET']]);
+    assert.equal(packages.textContent, 'Package list');
+    disabled(false);
+  },
+  async idle_list_cannot_overwrite_check() {
+    const list = deferred(), original = request;
+    let firstList = true;
+    request = path => {
+      if (path.endsWith('/status')) return json({active: false});
+      if (path === '/api/v1/host/updates' && firstList) {
+        firstList = false;
+        return list.promise;
+      }
+      return original(path);
+    };
+    const idle = context.tryAttachRunningAptUpgrade(); await flush();
+    const checking = element(ids[0]).onclick(); await flush();
+    list.resolve(json({output: 'Stale list'})); await idle;
+    assert.match(packages.textContent, /after a successful check/);
+    await finish(checking);
+    assert.equal(packages.textContent, 'Package list');
+  },
+  async saved_log_cannot_overwrite_stream() {
+    const log = deferred(), original = request;
+    request = path => path.endsWith('/log') ? {ok: true, text: () => log.promise} : original(path);
+    const savedButton = element('btn-sys-apt-last-log');
+    const saved = savedButton.onclick(); await flush();
+    const checking = element(ids[0]).onclick(); await flush();
+    assert.equal(savedButton.disabled, true);
+    source.line('Live progress'); await flush();
+    log.resolve('Older saved log'); await saved;
+    assert.equal(out.textContent, 'Live progress');
+    await finish(checking);
+    assert.equal(savedButton.disabled, false);
   },
   async disk_cannot_enable_clean() {
     const disk = deferred(), original = request;

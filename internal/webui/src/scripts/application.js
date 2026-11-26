@@ -4813,7 +4813,7 @@
     void loadBackupStatus();
     await loadSystemServicesTable();
     const aptOut = document.getElementById('sys-apt-output');
-    if (aptOut && !aptOut.textContent) aptOut.textContent = 'Click “Check for updates”.';
+    if (aptOut && !aptOut.textContent) aptOut.textContent = 'Start a package action or show the saved package log.';
     void loadHostDiskPanel();
     void tryAttachRunningAptUpgrade();
   }
@@ -5035,6 +5035,7 @@
       } else if (msg) {
         delete msg.dataset.aptStatusText;
       }
+      await refreshAptPackageList();
       return;
     }
     if (j.error) {
@@ -5149,7 +5150,8 @@
 
   function setAptButtonsDisabled(disabled) {
     if (disabled) invalidateAptStatus();
-    ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove', 'btn-sys-apt-clean'].forEach((id) => {
+    ['btn-sys-apt-check', 'btn-sys-apt-upgrade', 'btn-sys-apt-autoremove', 'btn-sys-apt-clean',
+      'btn-sys-apt-last-log'].forEach((id) => {
       const b = document.getElementById(id);
       if (b) b.disabled = !!disabled || (id === 'btn-sys-apt-clean' && aptCacheSmall);
     });
@@ -5159,7 +5161,6 @@
     const revision = aptStatusRevision;
     const packages = document.getElementById('sys-apt-packages');
     if (!packages) return;
-    packages.textContent = 'Loading available packages…';
     try {
       const r = await fetch('/api/v1/host/updates', { headers: hdr(), cache: 'no-store' });
       if (!r.ok) throw new Error('Package list request failed');
@@ -5184,14 +5185,17 @@
   };
 
   document.getElementById('btn-sys-apt-last-log').onclick = async () => {
+    if (aptInteraction) return;
+    const revision = aptStatusRevision;
     const out = document.getElementById('sys-apt-output');
     const r = await fetch('/api/v1/host/updates/upgrade/log', { headers: hdr() });
+    if (revision !== aptStatusRevision) return;
     if (!r.ok) {
       toast(await apiMessage(r), 'err');
       return;
     }
     const text = await r.text();
-    if (out) {
+    if (out && revision === aptStatusRevision) {
       out.textContent = text || '(no package log saved yet)';
       out.style.display = 'block';
     }
