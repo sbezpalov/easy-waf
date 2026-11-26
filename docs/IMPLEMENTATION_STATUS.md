@@ -8,9 +8,14 @@
 LTS (Resolute) with HAProxy 3.4 LTS. The `haproxy-34` CI job validates
 rendered configurations and live routing on amd64 and arm64 using the
 packaging maintainer's signed PPA. Ubuntu 24.04 remains the supported base
-for 1.6.1. Release acceptance for the new base still requires package and
-offline installation, CrowdSec/SPOA, upgrade and restore on a VM, and
-boot verification of both architecture images.
+for 1.6.1. On a clean Ubuntu Server 26.04.1 LTS amd64 VMware guest,
+the installer helpers at `9a11866` installed CrowdSec 1.8.2 and its
+HAProxy SPOA bouncer 0.4.0. Both services ran under systemd. With the
+HTTP-only application fixture on HAProxy 3.4.8, one client received 200
+before a CrowdSec ban, 403 during the ban and 200 after deletion. A second
+client received 200 during the ban. Remaining acceptance includes full
+appliance package and offline installation, upgrade and restore on a VM,
+and boot verification of the release images for both architectures.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
