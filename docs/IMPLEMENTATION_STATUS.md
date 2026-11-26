@@ -30,8 +30,18 @@ HAProxy, PostgreSQL, nftables, Fail2Ban, CrowdSec, SPOA bouncer and backup
 timer were active. HAProxy 3.4 passed configuration validation, PostgreSQL
 contained migration 031, CrowdSec LAPI accepted the local agent, and the
 management HTTPS readiness check passed using the appliance certificate.
-Upgrade and restore acceptance on the new platform and boot verification
-of the release images for both architectures remain open.
+
+**26.04.1 backup and restore (amd64, 2026-11-26).** A network-isolated
+clone of that installation passed recovery using the packaged
+`easy-waf-backup` and `easy-waf-restore` commands. The backup had mode
+`0600`, and the API and ACME worker resumed after capture. After changing
+a database setting, a state file and a configuration file, restoring the
+archive recovered all three original values. The configuration directory
+and environment files had their expected owners and permissions. Edge
+configuration applied successfully, the appliance services and backup timer
+were active, and HTTPS readiness passed with certificate verification.
+Upgrade acceptance on the new platform and boot verification of the release
+images for both architectures remain open.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
