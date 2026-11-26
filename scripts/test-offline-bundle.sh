@@ -171,6 +171,32 @@ fi
   [[ -z "$(find "$OUTPUT_DIR" -mindepth 1 -type d -print -quit)" ]]
 )
 
+# Verify the instructions shipped on each bundle profile.
+(
+  readme_step="$(sed -n '/^write_bundle_readme() {$/,/^}$/p' "$SCRIPT_DIR/build-offline-bundle.sh")"
+  [[ -n "$readme_step" ]]
+  eval "$readme_step"
+  for profile in public private base; do
+    include_crowdsec=1 snapshot_path=
+    case "$profile" in
+      private) snapshot_path=/fixture/snapshot ;;
+      base) include_crowdsec=0 ;;
+    esac
+    VERSION=9.9.9 VERSION_ID=26.04 ARCH=arm64 \
+      INCLUDE_CROWDSEC="$include_crowdsec" CROWDSEC_SNAPSHOT="$snapshot_path" \
+      write_bundle_readme >"$TEMP_DIR/bundle-readme"
+    grep -Fxq '  bash install.sh --verify-only' "$TEMP_DIR/bundle-readme"
+    if [[ "$profile" == public ]]; then
+      grep -Fxq '  sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot bash install.sh' "$TEMP_DIR/bundle-readme"
+      grep -Fxq '  sudo EASY_WAF_INSTALL_CROWDSEC=0 bash install.sh' "$TEMP_DIR/bundle-readme"
+      ! grep -Fxq '  sudo bash install.sh' "$TEMP_DIR/bundle-readme" || exit 1
+    else
+      grep -Fxq '  sudo bash install.sh' "$TEMP_DIR/bundle-readme"
+      ! grep -Fq 'EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=' "$TEMP_DIR/bundle-readme" || exit 1
+    fi
+  done
+)
+
 # Use the actual builder's checksum step. The nested manifest must be verified
 # by the outer one, and the outer manifest cannot list a temporary self-entry.
 STAGE="${TEMP_DIR}/stage #1%"

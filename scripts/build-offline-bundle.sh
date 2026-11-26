@@ -245,17 +245,34 @@ EASY_WAF_BUNDLE_ARCH=${ARCH}
 EASY_WAF_BUNDLE_CROWDSEC=${INCLUDE_CROWDSEC}
 EOF
 
-cat >"${STAGE}/README.txt" <<EOF
+write_bundle_readme() {
+  cat <<EOF
 Easy Home WAF ${VERSION} offline bundle for Ubuntu ${VERSION_ID}/${ARCH}
 
-Verify the ISO checksum and Sigstore bundle on a connected trusted workstation,
-transfer or mount the ISO, then on the appliance run:
+Verify the ISO checksum and, for a published release, its Sigstore bundle on a
+trusted workstation. Mount the ISO read-only and run this from its root:
 
-  sudo bash install.sh
+  bash install.sh --verify-only
 
-The installer verifies the internal SHA256SUMS before using the local APT
-repository. It does not use configured online APT sources.
 EOF
+  if [[ "$INCLUDE_CROWDSEC" == 1 && -z "$CROWDSEC_SNAPSHOT" ]]; then
+    cat <<'EOF'
+For a fresh installation with CrowdSec, prepare a matching snapshot on a
+connected host with scripts/prepare-offline-crowdsec.sh and transfer it on
+separate media. Replace the path below with the snapshot directory:
+
+  sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot bash install.sh
+
+For a base installation without CrowdSec:
+
+  sudo EASY_WAF_INSTALL_CROWDSEC=0 bash install.sh
+EOF
+  else
+    printf 'Install the bundle with:\n\n  sudo bash install.sh\n'
+  fi
+  printf '\nThe installer verifies the internal SHA256SUMS and uses the local APT repository.\n'
+}
+write_bundle_readme >"${STAGE}/README.txt"
 
 # Validate the repository with APT's real solver against an empty package state.
 # This catches missing alternatives/providers and versioned dependencies before
