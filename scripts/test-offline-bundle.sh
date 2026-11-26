@@ -389,7 +389,7 @@ FIXTURE
   done
 
   mkdir -p "$STAGE/repository" "$PAYLOAD/scripts/lib"
-  cp "$SCRIPT_DIR/lib/offline-apt.sh" "$PAYLOAD/scripts/lib/"
+  cp "$SCRIPT_DIR/lib/"{offline-apt,os-pkg}.sh "$PAYLOAD/scripts/lib/"
   (
     cd "$STAGE/repository"
     deb="${package##*/}"
@@ -417,7 +417,7 @@ set -eu
 [[ "$EASY_WAF_RELEASE_VERSION" == 9.9.9 && "$EASY_WAF_OFFLINE" == 1 ]]
 [[ "$EASY_WAF_INSTALL_CROWDSEC" == "${EXPECTED_CROWDSEC:-0}" ]]
 [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == "${EXPECTED_AGENT:-}" ]]
-[[ ! -v EASY_WAF_APT_UPDATED ]]
+[[ "${EASY_WAF_APT_UPDATED:-0}" == 1 ]]
 for setting in EASY_WAF_DIST_DIR EASY_WAF_INSTALL_FROM_PACKAGE EASY_WAF_SKIP_BINARY_FETCH; do
   if [[ -v "$setting" ]]; then
     printf 'offline payload inherited package selection setting %s\n' "$setting" >&2
@@ -433,11 +433,10 @@ if [[ "${CHECK_APT_REPOSITORY:-0}" == 1 ]]; then
   grep -Fxq 'Dir::Etc::main "/dev/null";' "$apt_dir/effective.conf"
   grep -Fxq "Dir::Etc::parts \"$apt_dir/empty\";" "$apt_dir/effective.conf"
   grep -Fxq "Dir::Etc::sourceparts \"$apt_dir/empty\";" "$apt_dir/effective.conf"
-  [[ -z "$(ls -A "$apt_dir/lists")" && "$(stat -c %a "$apt_dir")" == 711 ]]
+  [[ "$(stat -c %a "$apt_dir")" == 711 ]]
   : >"$apt_dir/status"
   # Keep the fixture independent of the host dpkg database and container caps.
   apt_fixture=(-o "Dir::State::status=$apt_dir/status" -o APT::Sandbox::User=root)
-  apt-get "${apt_fixture[@]}" -qq update
   (cd "$apt_dir" && apt-get "${apt_fixture[@]}" -qq download easy-waf)
   deb="easy-waf_9.9.9_$(dpkg --print-architecture).deb"
   cmp "repository/$deb" "$apt_dir/$deb"
@@ -457,8 +456,14 @@ df() {
 dpkg-query() {
   printf '%s' "${FIXTURE_AGENT_STATUS:-not-installed}"
 }
+apt-get() {
+  if [[ "$*" == 'update -qq --error-on=any' && "${FIXTURE_APT_UPDATE_FAIL:-0}" == 1 ]]; then
+    return 100
+  fi
+  command apt-get "$@"
+}
 python3() {
-  [[ "$1" == -I && "$2" == */scripts/lib/install-offline-crowdsec.py ]] || return 91
+  [[ "$1" == -I && "$2" == */scripts/lib/install-offline-crowdsec.py && "${EASY_WAF_APT_UPDATED:-0}" == 1 ]] || return 91
   printf '%s\n' "$3" >"$SNAPSHOT_ARGUMENT"
 }
 FIXTURE
@@ -534,6 +539,13 @@ FIXTURE
   [[ ! -e "$SNAPSHOT_ARGUMENT" ]]
 
   mkdir -p "$TEMP_DIR/operator snapshot"
+  if FIXTURE_APT_UPDATE_FAIL=1 EASY_WAF_APT_UPDATED=1 EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR="$TEMP_DIR/operator snapshot" \
+    "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: accepted a failed index refresh before CrowdSec provisioning' >&2
+    exit 1
+  fi
+  grep -Fq 'could not refresh APT package indexes from the local repository' "$TEMP_DIR/error"
+  [[ ! -e "$SNAPSHOT_ARGUMENT" ]]
   (
     cd "$TEMP_DIR"
     EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR='operator snapshot' EXPECTED_CROWDSEC=1 EXPECTED_AGENT=new \

@@ -114,9 +114,10 @@ reports a missing snapshot before provisioning the appliance.
 
 The installer fails closed when an internal file is damaged, the host is not
 running the Ubuntu release recorded in the bundle, the architecture differs,
-or there is insufficient free space. It leaves the host's APT sources and
-indexes intact. It removes its temporary APT
-configuration and indexes on exit.
+or there is insufficient free space. It refreshes the local repository's
+indexes once before provisioning CrowdSec or installing packages and stops if
+that refresh fails. It leaves the host's APT sources and indexes intact and
+removes its temporary APT configuration and indexes on exit.
 
 The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
 The outer manifest also covers this file. Before modifying the host, the

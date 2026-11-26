@@ -210,6 +210,13 @@ export EASY_WAF_RELEASE_VERSION="$BUNDLE_VERSION"
 export EASY_WAF_INSTALL_BUILD_DEPS=0
 export EASY_WAF_BUILD_FROM_SOURCE=0
 export EASY_WAF_INSTALL_CROWDSEC
+# Refresh once before either installer can change packages or CrowdSec state.
+# shellcheck source=lib/os-pkg.sh
+. "$SCRIPT_DIR/payload/scripts/lib/os-pkg.sh"
+if ! EASY_WAF_PKG_MGR=apt easy_waf_apt_get_update; then
+  echo "[offline-install] could not refresh APT package indexes from the local repository" >&2
+  exit 1
+fi
 if [[ "${EASY_WAF_OFFLINE_CROWDSEC_PREPARED:-}" == new ]]; then
   python3 -I "$SCRIPT_DIR/payload/scripts/lib/install-offline-crowdsec.py" "$snapshot" "$SCRIPT_DIR/repository"
 fi

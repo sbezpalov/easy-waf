@@ -205,7 +205,6 @@ def prepare_agent(snapshot, repository):
                         "DEBIAN_FRONTEND": "noninteractive",
                         "CROWDSEC_SETUP_UNATTENDED_DISABLE": "1",
                     }
-                    subprocess.run(["apt-get", "update", "-qq"], env=env, check=True)
                     subprocess.run([
                         "apt-get", "-o", "Dpkg::Options::=--force-confold", "--no-remove",
                         "install", "--no-install-recommends", "-y", f"crowdsec={version}",
@@ -235,8 +234,11 @@ def prepare_agent(snapshot, repository):
 
 
 def main():
-    if len(sys.argv) != 3 or not os.environ.get("APT_CONFIG"):
-        sys.exit("usage: install-offline-crowdsec.py SNAPSHOT LOCAL_APT_REPOSITORY (requires bundle APT_CONFIG)")
+    if (
+        len(sys.argv) != 3 or not os.environ.get("APT_CONFIG")
+        or os.environ.get("EASY_WAF_APT_UPDATED") != "1"
+    ):
+        sys.exit("usage: install-offline-crowdsec.py SNAPSHOT LOCAL_APT_REPOSITORY (requires refreshed bundle APT indexes)")
     flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
     try:
         with os.fdopen(os.open(RUN / "easy-waf-offline-crowdsec.lock", flags, 0o600), "r+") as lock:
