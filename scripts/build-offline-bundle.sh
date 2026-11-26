@@ -134,7 +134,7 @@ APT_REPO="${APT_WORK}/repository"
 PAYLOAD="${STAGE}/payload"
 install -d -m 0755 "$APT_REPO" "$APT_WORK/input"
 mkdir -p "$PAYLOAD/dist" "$OUTPUT_DIR"
-APT_DEB="$APT_WORK/input/${DEB##*/}"
+APT_DEB="$APT_WORK/input/easy-waf_${VERSION}_${ARCH}.deb"
 install -m 0644 -- "$DEB" "$APT_DEB"
 
 haproxy_package=haproxy
@@ -187,7 +187,7 @@ fi
 echo "[offline-build] downloaded ${#downloaded_debs[@]} packages"
 
 cp -a "$APT_DEB" "$APT_REPO/"
-cp -a "$APT_DEB" "$PAYLOAD/dist/easy-waf_${VERSION}_${ARCH}.deb"
+cp -a "$APT_DEB" "$PAYLOAD/dist/"
 git -C "$REPO_ROOT" archive --format=tar HEAD -- "${tracked_inputs[@]}" | tar -xf - -C "$PAYLOAD"
 if [[ -n "$CROWDSEC_SNAPSHOT" ]]; then
   crowdsec_debs=("$APT_REPO"/crowdsec_*.deb)

@@ -288,6 +288,7 @@ apt-get() {
   }
   while [[ $# -gt 1 && "$1" != install ]]; do shift; done
   [[ "$1" == install && "$2" == /* ]] && cmp -s "$2" "$PWD/$EASY_WAF_DEB" || return 92
+  [[ "${2##*/}" == "easy-waf_${VERSION}_${ARCH}.deb" ]] || return 97
   local apt_work="${archives%/resolve/cache/archives}"
   if [[ "${EXPECT_APT_TMPDIR_REUSE:-0}" == 1 ]]; then
     [[ "$apt_work" == "$TMPDIR"/easy-waf-apt.* ]] || return 94
@@ -307,10 +308,13 @@ FIXTURE
     exit 1
   fi
   grep -Fq 'unsupported bundle architecture: riscv64' "$TEMP_DIR/arch-error"
+  cp "$builder/$package" "$builder/dist/renamed candidate.deb"
   for reuse_tmpdir in 0 1; do
+    input_deb="$package"
+    if [[ "$reuse_tmpdir" == 1 ]]; then input_deb='dist/renamed candidate.deb'; fi
     builder_status=0
     (cd "$builder" && umask 077 && TMPDIR="$builder" EXPECT_APT_TMPDIR_REUSE="$reuse_tmpdir" \
-      BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_DEB="$package" \
+      BASH_ENV="$TEMP_DIR/apt-path-fixture.env" EASY_WAF_DEB="$input_deb" \
       EASY_WAF_OFFLINE_FORMAT=tar.gz "${BASH}" scripts/build-offline-bundle.sh) \
       >"$TEMP_DIR/apt-path.log" 2>&1 || builder_status=$?
     if [[ "$builder_status" != 93 ]]; then
