@@ -108,11 +108,11 @@ easy_waf_verify_sums_signature() {
   return "$rc"
 }
 
-# easy_waf_verify_release_artifact <file> <name-in-SHA256SUMS> <SHA256SUMS-url-or-path>
+# easy_waf_verify_release_artifact <file> <name-in-SHA256SUMS> <SHA256SUMS-url-or-path> [digest-variable]
 # Fail-closed: missing SHA256SUMS, missing entry or mismatch → non-zero.
 # Third argument may be an https:// URL or an absolute local path (dist/SHA256SUMS).
 easy_waf_verify_release_artifact() {
-  local file="${1:?}" name="${2:?}" sums_url="${3:?}"
+  local file="${1:?}" name="${2:?}" sums_url="${3:?}" digest_var="${4:-}"
   local sums expected rc=0 sums_tmp=0
 
   if [[ "$sums_url" == /* ]]; then
@@ -164,9 +164,16 @@ easy_waf_verify_release_artifact() {
   if [[ "$rc" -ne 0 ]]; then
     if [[ "${EASY_WAF_ALLOW_UNVERIFIED_RELEASE:-0}" == "1" ]]; then
       log_relv "WARNING: EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 — installing an UNVERIFIED binary from $sums_url"
-      return 0
+      if [[ -n "$digest_var" ]]; then
+        expected="$(easy_waf_sha256_file "$file")" || return 1
+      fi
+      rc=0
+    else
+      log_relv "refusing unverified release artifact (set EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 to override)"
     fi
-    log_relv "refusing unverified release artifact (set EASY_WAF_ALLOW_UNVERIFIED_RELEASE=1 to override)"
+  fi
+  if [[ "$rc" -eq 0 && -n "$digest_var" ]]; then
+    printf -v "$digest_var" '%s' "$expected"
   fi
   return "$rc"
 }

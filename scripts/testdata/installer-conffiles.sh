@@ -25,6 +25,7 @@ fi
 args=()
 for arg in "$@"; do
   if [[ "$arg" == crowdsec-haproxy-spoa-bouncer ]]; then arg="$CONFFILE_TEST_DEB"; fi
+  if [[ "${CONFFILE_TEST_REPO_SELECTION:-0}" == 1 && "${arg##*/}" == "${CONFFILE_TEST_DEB##*/}" ]]; then arg=easy-waf; fi
   args+=("$arg")
 done
 export APT_CONFIG="$CONFFILE_TEST_ROOT/apt-bootstrap.conf"
@@ -79,6 +80,7 @@ new_root() {
   : >"$CONFFILE_TEST_ROOT/sources.list"
   printf 'Dir::Etc::main "%s/apt.conf";\nDir::Etc::parts "%s/apt.conf.d";\n' \
     "$CONFFILE_TEST_ROOT" "$CONFFILE_TEST_ROOT" >"$CONFFILE_TEST_ROOT/apt-bootstrap.conf"
+  export APT_CONFIG="$CONFFILE_TEST_ROOT/apt-bootstrap.conf"
 }
 build_deb() {
   local version="$1" vendor="$2" payload="${3:-$2}" stage
@@ -123,6 +125,39 @@ check_installed 1.6.2 fixture-local-operator-value
 new_root fresh
 install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-vendor-two
+
+# A same-version repository package must not reach dpkg or configured hooks.
+new_root conflicting_archive
+build_deb 1.6.1 fixture-vendor-two fixture-initial-payload
+install_release_package >"$ROOT/install.log" 2>&1 </dev/null
+command mkdir "$CONFFILE_TEST_ROOT/repository"
+build_deb 1.6.2 fixture-vendor-two fixture-repository-payload
+repo_file="${CONFFILE_TEST_DEB##*/}"
+mv "$CONFFILE_TEST_DEB" "$CONFFILE_TEST_ROOT/repository/$repo_file"
+(
+  cd "$CONFFILE_TEST_ROOT/repository"
+  dpkg-deb -f "$repo_file"
+  printf 'Filename: ./%s\nSize: %s\nSHA256: %s\n' "$repo_file" "$(stat -c %s "$repo_file")" "$(sha256sum <"$repo_file" | cut -d ' ' -f1)"
+) >"$CONFFILE_TEST_ROOT/repository/Packages"
+printf 'deb [trusted=yes] file:%s/repository ./\n' "$CONFFILE_TEST_ROOT" >"$CONFFILE_TEST_ROOT/sources.list"
+printf 'DPkg::Pre-Install-Pkgs:: "touch %s/hook-ran";\n' "$CONFFILE_TEST_ROOT" >"$CONFFILE_TEST_ROOT/apt.conf"
+apt-get -qq update >"$ROOT/index.log" 2>&1
+build_deb 1.6.2 fixture-vendor-two fixture-verified-payload
+if (CONFFILE_TEST_REPO_SELECTION=1 install_release_package) >"$ROOT/conflict.log" 2>&1 </dev/null; then
+  fail 'installer accepted a repository DEB that differs from the verified file'
+fi
+if ! grep -Fq 'does not match the verified DEB' "$ROOT/conflict.log"; then
+  tail -n 15 "$ROOT/conflict.log" >&2
+  fail 'conflicting archive did not produce a verification diagnostic'
+fi
+[[ ! -e "$CONFFILE_TEST_ROOT/hook-ran" ]] || fail 'configured hook ran before archive verification'
+[[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-initial-payload ]] ||
+  fail 'conflicting archive changed the installed payload'
+: >"$CONFFILE_TEST_ROOT/sources.list"
+install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null
+[[ -e "$CONFFILE_TEST_ROOT/hook-ran" ]] || fail 'configured hook was discarded'
+[[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-verified-payload ]] ||
+  fail 'reinstallation did not apply the verified payload'
 
 # Simulate APT failing after dpkg has unpacked the verified package.
 new_root partial

@@ -532,6 +532,7 @@ install_release_package() {
   local deb="${REPO_ROOT}/dist/${name}"
   local sums="${REPO_ROOT}/dist/SHA256SUMS"
   local allow_unverified="${EASY_WAF_ALLOW_UNVERIFIED_RELEASE:-0}"
+  local artifact_sha=""
   local tmpd=""
   if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
     allow_unverified=0
@@ -552,7 +553,7 @@ install_release_package() {
       [[ "${EASY_WAF_OFFLINE:-0}" != "1" ]] || die "offline installation requires $sums"
       sums="${base}/SHA256SUMS"
     fi
-    if ! EASY_WAF_ALLOW_UNVERIFIED_RELEASE="$allow_unverified" easy_waf_verify_release_artifact "$deb" "$name" "$sums"; then
+    if ! EASY_WAF_ALLOW_UNVERIFIED_RELEASE="$allow_unverified" easy_waf_verify_release_artifact "$deb" "$name" "$sums" artifact_sha; then
       if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
         die "offline package failed local checksum verification"
       fi
@@ -569,19 +570,42 @@ install_release_package() {
     # dpkg runs maintainer scripts as root, so an unverified package is root code
     # execution. Same fail-closed rule as the tarball.
     if ! easy_waf_curl_https -o "$deb" "$url" 2>/dev/null ||
-      ! easy_waf_verify_release_artifact "$deb" "$name" "${base}/SHA256SUMS"; then
+      ! easy_waf_verify_release_artifact "$deb" "$name" "${base}/SHA256SUMS" artifact_sha; then
       rm -rf "$tmpd"
       log "No verified release package for v${ver}"
       return 1
     fi
   fi
 
-  local apt_status=0
+  local apt_status=0 guard_dir apt_config
   easy_waf_apt_get_update
+  guard_dir="$(mktemp -d /tmp/easy-waf-apt-guard.XXXXXXXX)" || die "could not create the APT verification directory"
+  apt_config="$guard_dir/guard.conf"
+  local verified_deb="$guard_dir/$name" staged_hash
+  # Give _apt read access to our root-owned copy and verify its bytes before
+  # pre-install hooks such as debconf can inspect package data.
+  if [[ ! "$artifact_sha" =~ ^[[:xdigit:]]{64}$ ]] ||
+    ! chmod 0755 "$guard_dir" || ! install -m 0644 "$deb" "$verified_deb" ||
+    ! staged_hash="$(sha256sum <"$verified_deb")" || [[ "${staged_hash%% *}" != "$artifact_sha" ]] ||
+    ! install -m 0700 "${SCRIPT_DIR}/lib/verify-apt-archives.sh" "$guard_dir/verify" || ! {
+      printf '#clear DPkg::Pre-Install-Pkgs;\nDPkg::Pre-Install-Pkgs:: "%s/verify";\n' "$guard_dir"
+      apt-config dump | LC_ALL=C awk 'tolower($1) ~ /^dpkg::pre-install-pkgs::/ { print }'
+    } >"$apt_config"; then
+    rm -rf -- "$guard_dir"
+    if [[ -n "$tmpd" ]]; then rm -rf -- "$tmpd"; fi
+    die "could not prepare APT archive verification"
+  fi
   # debconf's noninteractive frontend does not answer dpkg conffile prompts.
   # Adopt source-installed/operator files without replacing their credentials.
   # An explicitly selected, verified DEB may have the installed version.
-  DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install --reinstall -y "$deb" || apt_status=$?
+  EASY_WAF_APT_EXPECTED_SHA="$artifact_sha" EASY_WAF_APT_GUARD_RECEIPT="$guard_dir/verified" \
+    DEBIAN_FRONTEND=noninteractive apt-get -c "$apt_config" -o Dpkg::Options::=--force-confold \
+    install --reinstall -y "$verified_deb" || apt_status=$?
+  if (( apt_status == 0 )) && [[ ! -f "$guard_dir/verified" ]]; then
+    apt_status=1
+    log "ERROR: APT did not verify the selected Easy WAF archive"
+  fi
+  rm -rf -- "$guard_dir"
 
   if [[ -n "$tmpd" ]]; then
     rm -rf "$tmpd"

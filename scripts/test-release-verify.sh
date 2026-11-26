@@ -62,9 +62,11 @@ SUMS="${TMPD}/SHA256SUMS"
   printf '%s *%s\n' "$DIGEST" "$NAME"
 } >"$SUMS"
 # 5a. local absolute SHA256SUMS path (dist/ offline / local .deb installs)
-if ! easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" >/dev/null 2>&1; then
+artifact_sha=''
+if ! easy_waf_verify_release_artifact "$ART" "$NAME" "$SUMS" artifact_sha >/dev/null 2>&1; then
   fail "local SHA256SUMS path rejected a matching artifact"
 fi
+[[ "$artifact_sha" == "$DIGEST" ]] || fail "verifier did not return the checked digest"
 
 # Exercise the real verifier, not a second copy of its manifest parser.
 for layout in text binary; do

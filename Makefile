@@ -73,6 +73,7 @@ shellcheck-sh:
 		shellcheck -x -P SCRIPTDIR scripts/prepare-offline-crowdsec.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-haproxy-working-dir.sh scripts/testdata/haproxy-working-dir.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-conffiles.sh scripts/testdata/installer-conffiles.sh && \
+		shellcheck scripts/lib/verify-apt-archives.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-crowdsec-keys.sh scripts/test-installer-units.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-db-password.sh && \
 		shellcheck -x -P SCRIPTDIR scripts/test-installer-postgres.sh && \
