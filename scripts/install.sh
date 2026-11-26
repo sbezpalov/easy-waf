@@ -578,7 +578,10 @@ install_release_package() {
   fi
 
   local apt_status=0 guard_dir apt_config
-  easy_waf_apt_get_update
+  if ! easy_waf_apt_get_update; then
+    if [[ -n "$tmpd" ]]; then rm -rf -- "$tmpd"; fi
+    die "could not refresh APT package indexes"
+  fi
   guard_dir="$(mktemp -d /tmp/easy-waf-apt-guard.XXXXXXXX)" || die "could not create the APT verification directory"
   apt_config="$guard_dir/guard.conf"
   local verified_deb="$guard_dir/$name" staged_hash
@@ -1005,7 +1008,7 @@ install_os_packages() {
 
   case "${EASY_WAF_PKG_MGR:-}" in
     apt)
-      easy_waf_apt_get_update
+      easy_waf_apt_get_update || die "could not refresh APT package indexes"
       log "Installing base OS packages via apt (Ubuntu)..."
       local haproxy_package=haproxy
       if [[ "${EASY_WAF_OFFLINE:-0}" == 1 ]]; then

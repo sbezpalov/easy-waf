@@ -16,7 +16,16 @@ export APT_REAL DPKG_REAL
 command mkdir -p "$ROOT/bin" "$ROOT/repo/dist"
 cat >"$ROOT/bin/apt-get" <<'MOCK'
 #!/usr/bin/env bash
-[[ "$1" != update ]] || exit 0
+if [[ "$1" == update ]]; then
+  if [[ "${CONFFILE_TEST_UPDATE_FAIL:-0}" == 1 ]]; then
+    printf '%s\n' "$@" >"$CONFFILE_TEST_ROOT/apt-update-args"
+    exit 100
+  fi
+  exit 0
+fi
+if [[ "${CONFFILE_TEST_UPDATE_FAIL:-0}" == 1 ]]; then
+  : >"$CONFFILE_TEST_ROOT/apt-install-ran"
+fi
 if [[ "${CONFFILE_TEST_PARTIAL:-0}" == 1 ]]; then
   "$DPKG_REAL" --root="$CONFFILE_TEST_ROOT" --log="$CONFFILE_TEST_ROOT/log/dpkg.log" \
     --force-confold --unpack "$CONFFILE_TEST_DEB" || exit $?
@@ -61,9 +70,6 @@ EASY_WAF_PKG_INSTALLED=0
 source "$SCRIPT_DIR/lib/os-pkg.sh"
 log() { printf '%s\n' "$*"; }
 die() { fail "$*"; }
-# Called by install_release_package, which the fixture loads below.
-# shellcheck disable=SC2329
-easy_waf_apt_get_update() { :; }
 for function_name in easy_waf_target_version release_package_enabled install_release_package; do
   function_source="$(sed -n "/^${function_name}() {$/,/^}$/p" "$SCRIPT_DIR/install.sh")"
   [[ -n "$function_source" ]] || fail 'installer function missing'
@@ -130,6 +136,13 @@ check_installed 1.6.2 fixture-local-operator-value
 [[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-vendor-two ]] ||
   fail 'rejected offline reinstallation changed the installed payload'
 mv "$ROOT/original-sums" "$sums"
+unset EASY_WAF_APT_UPDATED
+if (EASY_WAF_OFFLINE=1 CONFFILE_TEST_UPDATE_FAIL=1 install_release_package) >"$ROOT/reinstall.log" 2>&1 </dev/null; then
+  fail 'offline reinstallation continued after the APT index refresh failed'
+fi
+grep -Fxq -- '--error-on=any' "$CONFFILE_TEST_ROOT/apt-update-args" || fail 'offline APT index refresh was not strict'
+grep -Fq 'could not refresh APT package indexes' "$ROOT/reinstall.log" || fail 'APT index refresh failure was not reported'
+[[ ! -e "$CONFFILE_TEST_ROOT/apt-install-ran" ]] || fail 'APT tried to install after the index refresh failed'
 if ! EASY_WAF_OFFLINE=1 install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null; then
   tail -n 15 "$ROOT/reinstall.log" >&2
   fail 'offline reinstallation failed without a terminal'

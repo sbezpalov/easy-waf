@@ -64,7 +64,11 @@ easy_waf_apt_get_update() {
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
+  local -a update_options=(-qq)
+  if [[ "${EASY_WAF_OFFLINE:-0}" == "1" ]]; then
+    update_options+=(--error-on=any)
+  fi
+  apt-get update "${update_options[@]}" || return $?
   export EASY_WAF_APT_UPDATED=1
 }
 
