@@ -1,7 +1,7 @@
 name: CI
 
-# Ubuntu 24.04 LTS is the only supported appliance OS (apt, nftables, netplan).
-# runs-on is the GitHub-hosted VM; job environment is container: ubuntu:24.04.
+# Ubuntu 24.04 is the released appliance baseline. The 26.04 job exercises
+# the next edge stack on both package architectures.
 
 on:
   workflow_call:
@@ -158,3 +158,23 @@ jobs:
 
       - name: go test internal/haproxy integration (goldens, WebSocket, SSE)
         run: go test ./internal/haproxy/... -tags=integration -run 'TestGoldenConfigsPassHaproxyCheck|TestLivePathPolicy|TestLiveApplicationProfiles|TestLiveGeoIPPolicy|TestLivePublicationRules' -count=1
+
+  haproxy-34:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ubuntu:26.04
+    steps:
+      - name: Install checkout prerequisites
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install HAProxy 3.4 for Ubuntu 26.04
+        run: bash scripts/testdata/install-haproxy-34-ci.sh
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: Validate configurations and exercise live edge policies
+        run: go test -tags=integration -count=1 ./internal/haproxy/... -run 'TestGoldenConfigsPassHaproxyCheck|TestLive'

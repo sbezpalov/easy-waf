@@ -1,8 +1,16 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-24
+**Last updated:** 2026-11-26
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
+
+**Next appliance platform.** The migration target is Ubuntu Server 26.04.1
+LTS (Resolute) with HAProxy 3.4 LTS. The `haproxy-34` CI job validates
+rendered configurations and live routing on amd64 and arm64 using the
+packaging maintainer's signed PPA. Ubuntu 24.04 remains the supported base
+for 1.6.1. Release acceptance for the new base still requires package and
+offline installation, CrowdSec/SPOA, upgrade and restore on a VM, and
+boot verification of both architecture images.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
