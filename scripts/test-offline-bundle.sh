@@ -247,7 +247,7 @@ if [[ "$EUID" == 0 ]] && (
   [[ -f /etc/os-release ]] || exit 1
   # shellcheck source=/dev/null
   . /etc/os-release
-  [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 24.04 ]]
+  [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" =~ ^(24|26)\.04$ ]]
 ); then
   # The release job supplies dist/<name>.deb. Exercise the builder up to the
   # APT boundary with a local DEB and without contacting package repositories.
@@ -317,8 +317,10 @@ FIXTURE
     printf 'Date: %s\nSHA256:\n %s %s Packages\n' \
       "$(LC_ALL=C date -Ru -d '+1 day')" "$index_digest" "$(stat -c %s Packages)" >Release
   )
-  printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=24.04\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \
-    "$VERSION" "$(dpkg --print-architecture)" >"$STAGE/BUNDLE.env"
+  # shellcheck source=/dev/null
+  host_baseline="$(. /etc/os-release && printf '%s' "$VERSION_ID")"
+  printf 'EASY_WAF_BUNDLE_VERSION=%s\nEASY_WAF_BUNDLE_UBUNTU=%s\nEASY_WAF_BUNDLE_ARCH=%s\nEASY_WAF_BUNDLE_CROWDSEC=0\n' \
+    "$VERSION" "$host_baseline" "$(dpkg --print-architecture)" >"$STAGE/BUNDLE.env"
   cat >"$PAYLOAD/scripts/install.sh" <<'PAYLOAD'
 set -eu
 [[ "$EASY_WAF_RELEASE_VERSION" == 9.9.9 && "$EASY_WAF_OFFLINE" == 1 ]]
@@ -372,6 +374,18 @@ FIXTURE
   export HOST_CHANGES="$TEMP_DIR/host-changes" SNAPSHOT_ARGUMENT="$TEMP_DIR/snapshot-argument"
   export APT_WORKSPACE="$TEMP_DIR/apt-workspace"
   export BASH_ENV="$TEMP_DIR/handoff-fixture.env"
+  other_baseline=26.04
+  cp "$builder/$package" "$PAYLOAD/$package"
+  [[ "$host_baseline" == 24.04 ]] || other_baseline=24.04
+  sed -i "s/^EASY_WAF_BUNDLE_UBUNTU=.*/EASY_WAF_BUNDLE_UBUNTU=$other_baseline/" "$STAGE/BUNDLE.env"
+  write_bundle_checksums
+  if "${BASH}" "$STAGE/install.sh" >"$TEMP_DIR/error" 2>&1; then
+    echo 'test-offline-bundle: accepted a bundle for a different Ubuntu release' >&2
+    exit 1
+  fi
+  grep -Fq "requires Ubuntu $other_baseline; found ubuntu $host_baseline" "$TEMP_DIR/error"
+  [[ ! -e "$HOST_CHANGES" && ! -e "$APT_WORKSPACE" ]]
+  sed -i "s/^EASY_WAF_BUNDLE_UBUNTU=.*/EASY_WAF_BUNDLE_UBUNTU=$host_baseline/" "$STAGE/BUNDLE.env"
   install -d -m 0755 "$builder/wrong/DEBIAN"
   sed 's/^Version: 9\.9\.9$/Version: 9.9.8/' "$builder/fixture/DEBIAN/control" >"$builder/wrong/DEBIAN/control"
   dpkg-deb --build "$builder/wrong" "$PAYLOAD/$package" >/dev/null

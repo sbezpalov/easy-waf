@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 Usage: sudo bash install.sh [--verify-only]
 
-Installs Easy Home WAF from this bundle on Ubuntu 24.04. --verify-only checks
+Installs Easy Home WAF on the matching Ubuntu 24.04 or 26.04 host. --verify-only checks
 the manifests and package copies without changing the host.
 
 Set EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR to a trusted, prepared snapshot
@@ -74,7 +74,7 @@ CROWDSEC="$(bundle_value EASY_WAF_BUNDLE_CROWDSEC)"
   echo "[offline-install] invalid bundle version" >&2
   exit 1
 }
-[[ "$UBUNTU_VERSION" == "24.04" ]] || {
+[[ "$UBUNTU_VERSION" =~ ^(24|26)\.04$ ]] || {
   echo "[offline-install] unsupported bundle baseline: $UBUNTU_VERSION" >&2
   exit 1
 }

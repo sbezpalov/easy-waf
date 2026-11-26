@@ -10,7 +10,8 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/build-offline-bundle.sh
 
-Builds a versioned offline ISO for the native architecture. Run on Ubuntu 24.04
+Builds a versioned offline ISO for the native architecture. Run on the matching
+Ubuntu 24.04 or 26.04 host (26.04 requires a configured HAProxy 3.4 repository)
 with the Ubuntu repositories and, for the default full profile, the pinned
 CrowdSec repository already configured.
 
@@ -41,8 +42,8 @@ done
 
 # shellcheck source=/dev/null
 . /etc/os-release
-if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "24.04" ]]; then
-  echo "[offline-build] Ubuntu 24.04 is required; found ${ID:-unknown} ${VERSION_ID:-unknown}" >&2
+if [[ "${ID:-}" != "ubuntu" || ! "${VERSION_ID:-}" =~ ^(24|26)\.04$ ]]; then
+  echo "[offline-build] Ubuntu 24.04 or 26.04 is required; found ${ID:-unknown} ${VERSION_ID:-unknown}" >&2
   exit 1
 fi
 
@@ -132,8 +133,12 @@ mkdir -p "$PAYLOAD/dist" "$OUTPUT_DIR"
 APT_DEB="$APT_WORK/input/${DEB##*/}"
 install -m 0644 -- "$DEB" "$APT_DEB"
 
+haproxy_package=haproxy
+if [[ "$VERSION_ID" == 26.04 ]]; then
+  haproxy_package='haproxy=3.4.*'
+fi
 packages=(
-  haproxy nftables ca-certificates curl iproute2 netplan.io iputils-ping
+  "$haproxy_package" nftables ca-certificates curl iproute2 netplan.io iputils-ping
   traceroute iputils-tracepath systemd polkitd pkexec sudo fail2ban
   postgresql postgresql-contrib adduser python3
 )
@@ -144,7 +149,7 @@ elif [[ "$INCLUDE_CROWDSEC" != "0" ]]; then
   exit 2
 fi
 
-echo "[offline-build] resolving ${#packages[@]} roots for Ubuntu 24.04/$ARCH"
+echo "[offline-build] resolving ${#packages[@]} roots for Ubuntu $VERSION_ID/$ARCH"
 # Download the concrete closure for the selected DEB and the appliance
 # packages on an empty system.
 # apt-rdepends also prints virtual names (dbus-system-bus, libgnutls30,
@@ -231,13 +236,13 @@ write_package_manifest "$APT_REPO" >"${STAGE}/PACKAGE-MANIFEST.tsv"
 
 cat >"${STAGE}/BUNDLE.env" <<EOF
 EASY_WAF_BUNDLE_VERSION=${VERSION}
-EASY_WAF_BUNDLE_UBUNTU=24.04
+EASY_WAF_BUNDLE_UBUNTU=${VERSION_ID}
 EASY_WAF_BUNDLE_ARCH=${ARCH}
 EASY_WAF_BUNDLE_CROWDSEC=${INCLUDE_CROWDSEC}
 EOF
 
 cat >"${STAGE}/README.txt" <<EOF
-Easy Home WAF ${VERSION} offline bundle for Ubuntu 24.04/${ARCH}
+Easy Home WAF ${VERSION} offline bundle for Ubuntu ${VERSION_ID}/${ARCH}
 
 Verify the ISO checksum and Sigstore bundle on a connected trusted workstation,
 transfer or mount the ISO, then on the appliance run:
@@ -313,6 +318,6 @@ write_bundle_outputs() (
   done
 )
 
-BASE="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}"
+BASE="easy-waf_${VERSION}_offline_ubuntu${VERSION_ID}_${ARCH}"
 [[ -z "$CROWDSEC_SNAPSHOT" ]] || BASE+="_private"
 write_bundle_outputs
