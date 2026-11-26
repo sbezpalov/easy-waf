@@ -106,8 +106,9 @@ To install the base profile from public media on a clean host, use
 reports a missing snapshot before provisioning the appliance.
 
 The installer fails closed when an internal file is damaged, the host is not
-Ubuntu 24.04, the architecture differs, or there is insufficient free space. It
-leaves the host's APT sources and indexes intact. It removes its temporary APT
+running the Ubuntu release recorded in the bundle, the architecture differs,
+or there is insufficient free space. It leaves the host's APT sources and
+indexes intact. It removes its temporary APT
 configuration and indexes on exit.
 
 The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
@@ -130,8 +131,12 @@ After installation, follow the enrollment and smoke-test steps in
 
 ## Build locally
 
-Build on a native-architecture Ubuntu 24.04 host. Configure the pinned CrowdSec
-repository using `scripts/lib/crowdsec-install.sh`, then install the build tools:
+Build on a host matching the target Ubuntu release and architecture. For the
+26.04 migration candidate, configure the signed HAProxy 3.4 repository on the
+builder (see `scripts/testdata/install-haproxy-34-ci.sh`). The ISO filename
+includes `ubuntu26.04`. The published 1.6.1 images target 24.04.
+Configure the pinned CrowdSec repository using `scripts/lib/crowdsec-install.sh`,
+then install the build tools:
 
 ```bash
 sudo apt-get install apt-utils dpkg-dev xorriso
@@ -140,7 +145,7 @@ make offline-bundle
 ```
 
 The builder asks APT, against an empty package status, for the concrete packages
-a fresh Ubuntu 24.04 system would install. Virtual dependencies such as
+a fresh system on the selected Ubuntu release would install. Virtual dependencies such as
 `dbus-system-bus` and `libgnutls30` are stored as the provider APT selects
 (`dbus`, `libgnutls30t64`), not as the virtual name.
 
