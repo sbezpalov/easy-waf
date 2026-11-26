@@ -54,6 +54,19 @@ candidate DEB. HAProxy configuration and trusted HTTPS readiness passed.
 This covers the application package upgrade within 26.04.1. Cross-release
 OS migration and release-image boot checks are separate acceptance items.
 
+**26.04.1 offline reinstall (amd64).** The local ISO and DEB from
+`5586f1e` passed package verification. On an isolated VMware clone, the
+read-only ISO replaced an earlier build with the same package version.
+The environment file, management certificate, CrowdSec Hub index and
+system APT configuration and indexes retained their hashes. The host's
+APT update hook did not run. The API, ACME worker, broker and APT worker
+ran binaries matching the verified DEB. HAProxy 3.4 configuration,
+CrowdSec LAPI and management HTTPS readiness passed. The guest powered
+down cleanly.
+
+The ISO SHA-256 was
+`31ae28934f07cfe89a6ba161ba94bb854564caafbf97ca7fe20d4c69206a6260`.
+
 **26.04 offline media (arm64, 2026-11-26).** The local build from
 `72ca259` resolved the full profile from the Ubuntu, HAProxy 3.4 and
 CrowdSec repositories for arm64. The ISO indexed 187 packages and passed
