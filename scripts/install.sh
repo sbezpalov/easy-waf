@@ -580,7 +580,8 @@ install_release_package() {
   easy_waf_apt_get_update
   # debconf's noninteractive frontend does not answer dpkg conffile prompts.
   # Adopt source-installed/operator files without replacing their credentials.
-  DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y "$deb" || apt_status=$?
+  # An explicitly selected, verified DEB may have the installed version.
+  DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install --reinstall -y "$deb" || apt_status=$?
 
   if [[ -n "$tmpd" ]]; then
     rm -rf "$tmpd"

@@ -122,7 +122,9 @@ The ISO includes a local `payload/dist/SHA256SUMS` for the Easy WAF DEB.
 The outer manifest also covers this file. Before modifying the host, the
 installer checks the DEB against this inner checksum and checks its name,
 version and architecture against the bundle metadata. It also checks that
-the local APT repository contains an identical DEB. The offline installer
+the local APT repository contains an identical DEB. The installer applies the
+verified package even when its version number matches the installed package,
+and preserves locally modified conffiles. The offline installer
 always uses that package. The source installer's binary selection variables
 `EASY_WAF_DIST_DIR`, `EASY_WAF_INSTALL_FROM_PACKAGE` and
 `EASY_WAF_SKIP_BINARY_FETCH` have no effect in this mode.

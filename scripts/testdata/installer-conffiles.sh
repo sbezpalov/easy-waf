@@ -81,13 +81,14 @@ new_root() {
     "$CONFFILE_TEST_ROOT" "$CONFFILE_TEST_ROOT" >"$CONFFILE_TEST_ROOT/apt-bootstrap.conf"
 }
 build_deb() {
-  local version="$1" vendor="$2" stage
+  local version="$1" vendor="$2" payload="${3:-$2}" stage
   stage="$(mktemp -d "$ROOT/pkg.XXXXXX")"
-  command mkdir -p "$stage/DEBIAN" "$stage/etc/easy-waf"
+  command mkdir -p "$stage/DEBIAN" "$stage/etc/easy-waf" "$stage/usr/share/easy-waf"
   printf 'Package: easy-waf\nVersion: %s\nArchitecture: %s\nMaintainer: Fixture <fixture@example.invalid>\nDescription: conffile test only\n' \
     "$version" "$(dpkg --print-architecture)" >"$stage/DEBIAN/control"
   printf '/etc/easy-waf/easy-waf.env\n' >"$stage/DEBIAN/conffiles"
   printf '%s\n' "$vendor" >"$stage/etc/easy-waf/easy-waf.env"
+  printf '%s\n' "$payload" >"$stage/usr/share/easy-waf/payload-marker"
   chmod 0600 "$stage/etc/easy-waf/easy-waf.env"
   CONFFILE_TEST_DEB="$REPO_ROOT/dist/easy-waf_${version}_$(dpkg --print-architecture).deb"
   export CONFFILE_TEST_DEB
@@ -114,6 +115,11 @@ build_deb 1.6.2 fixture-vendor-two
 install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-local-operator-value
 [[ "$(cat "$CONFFILE_TEST_ROOT/etc/easy-waf/easy-waf.env.dpkg-dist")" == fixture-vendor-two ]] || fail 'new vendor default not retained separately'
+build_deb 1.6.2 fixture-vendor-two fixture-rebuilt-payload
+install_release_package >"$ROOT/reinstall.log" 2>&1 </dev/null
+check_installed 1.6.2 fixture-local-operator-value
+[[ "$(cat "$CONFFILE_TEST_ROOT/usr/share/easy-waf/payload-marker")" == fixture-rebuilt-payload ]] ||
+  fail 'installer kept the previous payload after verifying a DEB with the same version'
 new_root fresh
 install_release_package >"$ROOT/install.log" 2>&1 </dev/null
 check_installed 1.6.2 fixture-vendor-two
