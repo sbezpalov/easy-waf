@@ -270,10 +270,19 @@ runuser() {
   [[ "${EXPECT_APT_TMPDIR_REUSE:-0}" == 1 && "${*: -1}" == "$TMPDIR" ]]
 }
 apt-get() {
-  local arg archives=
+  local arg archives= haproxy_args=()
   for arg in "$@"; do
-    case "$arg" in Dir::Cache::archives=*) archives="${arg#*=}" ;; esac
+    case "$arg" in
+      Dir::Cache::archives=*) archives="${arg#*=}" ;;
+      haproxy|haproxy=*) haproxy_args+=("$arg") ;;
+    esac
   done
+  local expected_haproxy=haproxy
+  if [[ "$VERSION_ID" == 26.04 ]]; then expected_haproxy='haproxy=3.4.*'; fi
+  [[ "${haproxy_args[*]}" == "$expected_haproxy" ]] || {
+    echo "Expected APT to resolve $expected_haproxy for Ubuntu $VERSION_ID" >&2
+    return 96
+  }
   while [[ $# -gt 1 && "$1" != install ]]; do shift; done
   [[ "$1" == install && "$2" == /* ]] && cmp -s "$2" "$PWD/$EASY_WAF_DEB" || return 92
   local apt_work="${archives%/resolve/cache/archives}"

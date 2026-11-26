@@ -173,6 +173,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install HAProxy 3.4 for Ubuntu 26.04
         run: bash scripts/testdata/install-haproxy-34-ci.sh
+      - name: Check offline package selection and installation handoff
+        run: bash scripts/test-offline-bundle.sh
       - name: Verify CrowdSec packages for the candidate platform
         shell: bash
         run: |
