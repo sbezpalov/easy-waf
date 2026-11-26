@@ -134,8 +134,8 @@ install -m 0644 -- "$DEB" "$APT_DEB"
 
 packages=(
   haproxy nftables ca-certificates curl iproute2 netplan.io iputils-ping
-  traceroute iputils-tracepath systemd policykit-1 sudo fail2ban
-  postgresql postgresql-contrib adduser polkitd python3
+  traceroute iputils-tracepath systemd polkitd pkexec sudo fail2ban
+  postgresql postgresql-contrib adduser python3
 )
 if [[ "$INCLUDE_CROWDSEC" == "1" ]]; then
   packages+=(crowdsec crowdsec-haproxy-spoa-bouncer)

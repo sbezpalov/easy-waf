@@ -995,7 +995,8 @@ install_os_packages() {
         traceroute
         iputils-tracepath
         systemd
-        policykit-1
+        polkitd
+        pkexec
         sudo
       )
       DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y --no-install-recommends "${base_pkgs[@]}" \
