@@ -71,14 +71,21 @@ or use a checksum delivered through another trusted channel.
 
 ## Install
 
-Attach the ISO as virtual media or copy it to the Ubuntu 24.04 appliance, then:
+Use an ISO built for the appliance's Ubuntu release and architecture. Published
+1.6.1 images target Ubuntu 24.04. Locally built 26.04 candidate images have
+`ubuntu26.04` in the filename. For an ISO copied to disk, substitute its exact
+path in the example:
 
 ```bash
-VERSION=1.6.1
-ARCH="$(dpkg --print-architecture)"
-ISO="easy-waf_${VERSION}_offline_ubuntu24.04_${ARCH}.iso"
+ISO="./easy-waf_1.6.1_offline_ubuntu24.04_amd64.iso"
 sudo mkdir -p /mnt/easy-waf-offline
 sudo mount -o loop,ro "$ISO" /mnt/easy-waf-offline
+```
+
+If the ISO is attached as virtual media, mount the optical device read-only
+instead. Set the path below to its mount point:
+
+```bash
 cd /mnt/easy-waf-offline
 bash install.sh --verify-only
 sudo EASY_WAF_OFFLINE_CROWDSEC_SNAPSHOT_DIR=/mnt/private-media/crowdsec-snapshot bash install.sh
@@ -200,11 +207,11 @@ Hub configuration during this step.
 
 ## Updates and support boundary
 
-An offline ISO is a frozen package snapshot. Install the newest verified bundle,
-not merely the newest Easy WAF `.deb`, so HAProxy, PostgreSQL and the security
-stack receive their available updates too. The supported baseline is Ubuntu
-24.04 on the matching architecture; arbitrary derivative distributions and
-cross-release upgrades are outside the bundle contract.
+The newest verified bundle delivers updates for Easy WAF, HAProxy, PostgreSQL
+and the security stack together. Ubuntu 24.04 is the published baseline for
+1.6.1. The installer also accepts locally built Ubuntu 26.04 candidates on
+matching hosts. Each bundle requires its recorded Ubuntu release and
+architecture.
 
 For rollback, restore a pre-upgrade backup or install the previous verified ISO.
 Database migrations may make package-only downgrades unsafe; read that release's
