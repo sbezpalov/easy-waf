@@ -20,6 +20,7 @@ mode="${1:-all}"
 [[ "$mode" == all || "$mode" == preflight || "$mode" == locks ]] || fail 'unknown test selection'
 mkdir -p "$ROOT/bin" "$ROOT/source/backup/state" "$ROOT/source/backup/etc" "$ROOT/state"
 printf 'fixture dump\n' >"$ROOT/source/backup/easywaf.dump"
+printf 'easy-waf-backup-format v1\n' >"$ROOT/source/backup/MANIFEST.txt"
 printf 'fixture data\n' >"$ROOT/source/backup/state/data"
 printf 'DATABASE_URL=postgres://fixture.invalid/never-connected\n' >/etc/easy-waf/easy-waf.env
 cp /etc/easy-waf/easy-waf.env "$ROOT/source/backup/etc/easy-waf.env"
@@ -111,6 +112,20 @@ if [[ "$mode" != locks ]]; then
   fi
   grep -Fq 'expected exactly one backup directory' "$ROOT/ambiguous.log" || fail 'ambiguous backup roots were not diagnosed'
   [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'ambiguous archive touched services/database'
+  for manifest in missing unknown; do
+    if [[ "$manifest" == missing ]]; then
+      rm "$ROOT/source/backup/MANIFEST.txt"
+    else
+      printf 'easy-waf-backup-format v2\n' >"$ROOT/source/backup/MANIFEST.txt"
+    fi
+    tar -czf "$ROOT/invalid.tar.gz" -C "$ROOT/source" backup
+    if bash "$RESTORE_SCRIPT" "$ROOT/invalid.tar.gz" >"$ROOT/invalid.log" 2>&1; then
+      fail "restore accepted $manifest format manifest"
+    fi
+    grep -Fq 'expected easy-waf-backup-format v1' "$ROOT/invalid.log" || fail 'manifest failure was not diagnosed'
+    [[ ! -s "$ROOT/services" && ! -s "$ROOT/database" ]] || fail 'invalid manifest touched services/database'
+  done
+  printf 'easy-waf-backup-format v1\n' >"$ROOT/source/backup/MANIFEST.txt"
   for invalid in missing empty; do
     : >"$ROOT/services"; : >"$ROOT/database"
     if [[ "$invalid" == missing ]]; then

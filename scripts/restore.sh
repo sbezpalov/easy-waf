@@ -94,6 +94,12 @@ if (( ${#entries[@]} != 1 )) || [[ ! -d "${entries[0]}" || -L "${entries[0]}" ]]
   exit 1
 fi
 ROOT="${entries[0]}"
+manifest="$ROOT/MANIFEST.txt"
+if [[ ! -f "$manifest" || -L "$manifest" ]] ||
+  ! IFS= read -r format <"$manifest" || [[ "$format" != 'easy-waf-backup-format v1' ]]; then
+  echo "ERROR: invalid MANIFEST.txt — expected easy-waf-backup-format v1" >&2
+  exit 1
+fi
 if [[ ! -f "$ROOT/easywaf.dump" ]]; then
   echo "ERROR: missing easywaf.dump under $ROOT" >&2
   exit 1
