@@ -40,8 +40,19 @@ archive recovered all three original values. The configuration directory
 and environment files had their expected owners and permissions. Edge
 configuration applied successfully, the appliance services and backup timer
 were active, and HTTPS readiness passed with certificate verification.
-Upgrade acceptance on the new platform and boot verification of the release
-images for both architectures remain open.
+
+**26.04.1 offline APT upgrade (amd64, 2026-11-26).** On a separate
+network-isolated clone with the 26.04.1 dependencies already installed,
+the published 1.6.0 package initialized a fresh PostgreSQL database through
+migration 019 and served the HTTPS readiness endpoint. APT upgraded it to
+the local 1.6.1 candidate from read-only media (DEB SHA-256
+`b12cfed5e8b93b9c23b31e7602986502e1da4a06968d29603ad53c9943faf898`).
+All 31 migrations were recorded. A database setting survived the upgrade,
+and the management certificate and environment file retained their hashes.
+The API, ACME worker and host broker processes ran binaries matching the
+candidate DEB. HAProxy configuration and trusted HTTPS readiness passed.
+This covers the application package upgrade within 26.04.1. Cross-release
+OS migration and release-image boot checks are separate acceptance items.
 
 **Published 1.6.1 acceptance:** [b6b6721](release-evidence/1.6.1-release-acceptance.md).
 After the upgrade with the published package, mobile data access passed with
