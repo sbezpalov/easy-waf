@@ -13,7 +13,13 @@ fi
 
 bundle="$1"
 release_deb="$2"
-name="${release_deb##*/}"
+shopt -s nullglob
+payload_debs=("$bundle"/payload/dist/easy-waf_*.deb)
+if (( ${#payload_debs[@]} != 1 )) || [[ ! -f "${payload_debs[0]}" || -L "${payload_debs[0]}" ]]; then
+  echo '[offline-release] expected exactly one Easy WAF DEB in payload/dist' >&2
+  exit 1
+fi
+name="${payload_debs[0]##*/}"
 
 for location in payload/dist repository; do
   if ! cmp -s -- "$release_deb" "$bundle/$location/$name"; then

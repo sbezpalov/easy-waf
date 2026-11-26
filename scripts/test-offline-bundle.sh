@@ -236,6 +236,17 @@ cp "$release_fixture" "$STAGE/repository/$release_name"
 verify_release="$SCRIPT_DIR/verify-offline-release-package.sh"
 write_bundle_checksums
 "${BASH}" "$verify_release" "$STAGE" "$release_fixture"
+renamed_release="$TEMP_DIR/renamed release.deb"
+cp "$release_fixture" "$renamed_release"
+"${BASH}" "$verify_release" "$STAGE" "$renamed_release"
+extra_deb="$PAYLOAD/dist/easy-waf_0.0.0_arm64.deb"
+cp "$release_fixture" "$extra_deb"
+if "${BASH}" "$verify_release" "$STAGE" "$release_fixture" >"$TEMP_DIR/release-error" 2>&1; then
+  echo 'test-offline-bundle: accepted ambiguous Easy WAF payload packages' >&2
+  exit 1
+fi
+grep -Fq 'expected exactly one Easy WAF DEB' "$TEMP_DIR/release-error"
+rm -- "$extra_deb"
 for location in payload/dist repository; do
   copy="$STAGE/$location/$release_name"
   printf 'different package\n' >"$copy"
