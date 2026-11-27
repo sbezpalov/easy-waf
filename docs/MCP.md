@@ -175,7 +175,11 @@ HTTPS origin. Configure certificate trust for the Gateway process as well.
    a browser callback for that Gateway. If browser sign-in is unavailable, run
    `openclaw mcp login easy-waf` from the installation that owns the saved server
    (replace `easy-waf` with its saved name). Follow the
-   [OpenClaw sign-in guide](https://docs.openclaw.ai/tools/mcp#an-http-server-needs-authorization).
+   [OpenClaw sign-in guide](https://docs.openclaw.ai/cli/mcp/transports#oauth-workflow).
+   If the browser is on another device and the loopback callback fails,
+   use the guide's manual callback flow with the same pending MCP login.
+   Keep the complete redirect URL in the OpenClaw login flow. Starting a
+   new login creates a new state and PKCE verifier.
 3. In Easy WAF, check the displayed callback against your Gateway address and
    approve read-only diagnostics. Once credentials are saved, run
    `openclaw mcp doctor easy-waf --probe` against that configuration to check

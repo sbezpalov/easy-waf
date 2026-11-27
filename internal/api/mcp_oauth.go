@@ -123,7 +123,18 @@ func (s *Server) mountOAuth(r chi.Router) {
 		})
 		r.Get("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 			o := issuer(r)
-			writeJSON(w, http.StatusOK, map[string]any{"issuer": o, "registration_endpoint": o + "/oauth/register", "authorization_endpoint": o + "/oauth/authorize", "token_endpoint": o + "/oauth/token", "scopes_supported": []string{diagnosticsScope}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"issuer":                                         o,
+				"registration_endpoint":                          o + "/oauth/register",
+				"authorization_endpoint":                         o + "/oauth/authorize",
+				"token_endpoint":                                 o + "/oauth/token",
+				"scopes_supported":                               []string{diagnosticsScope},
+				"response_types_supported":                       []string{"code"},
+				"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
+				"code_challenge_methods_supported":               []string{"S256"},
+				"token_endpoint_auth_methods_supported":          []string{"none"},
+				"authorization_response_iss_parameter_supported": true,
+			})
 		})
 		r.Post("/oauth/register", s.oauthRegister)
 		r.Get("/oauth/authorize", s.oauthAuthorize)

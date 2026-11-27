@@ -217,6 +217,17 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 		return out
 	}
 	const rpc = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"doctor","arguments":{}}}`
+	_, metadata := call("GET", "/.well-known/oauth-authorization-server", "", "", "", 200)
+	var discovery struct {
+		Issuer                string `json:"issuer"`
+		IssParameterSupported bool   `json:"authorization_response_iss_parameter_supported"`
+	}
+	if err := json.Unmarshal(metadata, &discovery); err != nil {
+		t.Fatal(err)
+	}
+	if discovery.Issuer != origin || !discovery.IssParameterSupported {
+		t.Fatal("discovery must advertise the issuer and its use in authorization responses")
+	}
 	call("POST", "/mcp", "application/json", rpc, "", 401)
 	_, b := call("POST", "/oauth/register", "application/json", `{"client_name":"OpenClaw MCP","redirect_uris":["http://127.0.0.1:8989/oauth/callback"],"token_endpoint_auth_method":"none"}`, "", 201)
 	id := field(b, "client_id")
@@ -232,7 +243,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	_, denied := call("POST", denyPath, "application/json", string(body), admin, 200)
 	denyURL, err := url.Parse(field(denied, "redirect"))
 	if err != nil || denyURL.Query().Get("error") != "access_denied" || denyURL.Query().Get("state") != "opaque" ||
-		denyURL.Query().Get("iss") != origin || denyURL.Query().Has("code") {
+		denyURL.Query().Get("iss") != discovery.Issuer || denyURL.Query().Has("code") {
 		t.Fatal("invalid denial callback")
 	}
 	denyURL.RawQuery = ""
@@ -254,7 +265,7 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	call("POST", denyPath, "application/json", string(invalidBody), admin, 400)
 	_, b = call("POST", "/api/v1/integrations/mcp/approve", "application/json", string(body), admin, 200)
 	callback, err := url.Parse(field(b, "redirect"))
-	if err != nil || callback.Query().Get("state") != "opaque" {
+	if err != nil || callback.Query().Get("state") != "opaque" || callback.Query().Get("iss") != discovery.Issuer {
 		t.Fatal("invalid callback")
 	}
 	form := url.Values{"client_id": {id}, "resource": {namedOrigin + "/mcp"}, "grant_type": {"authorization_code"}, "redirect_uri": {q.Get("redirect_uri")}, "code": {callback.Query().Get("code")}, "code_verifier": {newSecret()}}
