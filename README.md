@@ -60,8 +60,9 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
-- **Ubuntu 24.04 LTS** — the only supported platform, deliberately (see
-  [CONTRIBUTING.md](CONTRIBUTING.md#what-this-project-is-and-is-not))
+- **Ubuntu 24.04 LTS** is the supported platform for the published 1.6.1 release.
+  Ubuntu Server 26.04.1 LTS with HAProxy 3.4 is the next deployment target. See
+  [migration testing](docs/IMPLEMENTATION_STATUS.md#implementation-status-easy-home-waf).
 - root on the appliance, systemd, nftables
 - PostgreSQL — installed for you by default, or point at an external one
 - 2 vCPU / 4 GB RAM recommended for the all-in-one stack; 2 GB is a light-lab minimum. See [docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md).
@@ -210,13 +211,14 @@ a code change.
 
 ## Status
 
-**Beta.** Used by its author on a home network and maintained by one person. Releases
-from 1.5 on have been tested on clean Ubuntu 24.04 installs in containers, not yet on
-real hardware. Acceptance that needs a real host, a real domain, or the public
-Let's Encrypt — HTTP-01, DNS-01, renewal, CrowdSec on the host, a clean install
-and an upgrade from 1.6.0 — is listed in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)
-and is not claimed here. Documented interfaces may change while this lasts;
-anything breaking goes through `CHANGELOG.md` with an upgrade note.
+**Beta.** Used by its author on a home network and maintained by one person.
+The 1.6.1 acceptance record covers clean VM installation and upgrade from
+1.6.0. The published amd64 package also passed an appliance upgrade and
+external HTTPS and WebSocket checks with Home Assistant Companion. See the
+[implementation status](docs/IMPLEMENTATION_STATUS.md) and
+[published release acceptance](docs/release-evidence/1.6.1-release-acceptance.md).
+Documented interfaces may change during beta. Breaking changes include an
+upgrade note in `CHANGELOG.md`.
 
 **Management listener.** `install.sh` copies `EASY_WAF_LISTEN_HTTPS=0.0.0.0:8443`
 (HTTP off). The process accepts connections on every interface so the UI works

@@ -24,8 +24,8 @@
 - **ACME/TLS:** Lego (`go-acme/lego/v4`) — HTTP-01 и DNS-01 (Cloudflare, CloudNS, Route53, webhook).
 - **GeoIP:** MaxMind MMDB (`oschwald/maxminddb-golang`, `maxmind/mmdbwriter`).
 - **Метрики:** Prometheus (`prometheus/client_golang`), дашборд Grafana в `configs/grafana`.
-- **Edge/инфра:** HAProxy 2.8 LTS (пакет Ubuntu 24.04), CrowdSec + SPOA, Fail2Ban, nftables, systemd, netplan.
-- **Платформа:** **Ubuntu 24.04 LTS** (appliance OS). Разработка часто на Windows 11 / WSL.
+- **Edge/инфра:** HAProxy 2.8 LTS на Ubuntu 24.04, HAProxy 3.4 LTS на целевой Ubuntu 26.04.1, CrowdSec + SPOA, Fail2Ban, nftables, systemd, netplan.
+- **Платформа:** опубликованный релиз 1.6.1 рассчитан на **Ubuntu 24.04 LTS**. Разработка часто на Windows 11 / WSL.
 - **Сборка/CI:** Makefile (`make ci` = lint + test + verify), GitHub Actions (`ci.yml`, `e2e.yml` — ночной контейнерный прогон, `release.yml`), golangci-lint, Docker Compose (только dev-PostgreSQL).
 
 ## 3. Структура
@@ -49,7 +49,7 @@
 ## 4. Статус / текущий приоритет
 - **Версия:** `1.6.1` (файл `VERSION` задаёт номер релиза и документов; релизы — по тегу `v*` через `release.yml`).
 - **Architecture C:** PostgreSQL is the application source of truth; `easy-waf-api` (API/UI/render/apply), `easy-waf-acmed` (ACME), `easy-waf-hostd` (root broker), and internal `easy-waf-apt.service` (same hostd binary, root-only APT execution outside the broker cgroup). See `docs/adr/0008-apt-execution-service.md`.
-- Целевая платформа зафиксирована: **только Ubuntu 24.04 LTS**, HAProxy 2.8 LTS, nftables, systemd.
+- Следующая целевая платформа — **Ubuntu Server 26.04.1 LTS** с HAProxy 3.4 LTS. Прогоны миграции и статус платформы описаны в `docs/IMPLEMENTATION_STATUS.md`.
 - Статус реализации требований и критериев приёмки AC-01 … AC-10 — `docs/IMPLEMENTATION_STATUS.md`.
 
 ## 5. Как вносить изменения (агент)
@@ -68,7 +68,7 @@
   CI это не проверяет, поэтому ответственность на авторе. Проверка: `git grep -L 'SPDX-License-Identifier' -- '*.go'`.
 
 ## 6. Безопасность (NEVER)
-- Прод (appliance-VM) не редактируется напрямую: доставка через git → сборка (`make build`) → установка/upgrade скриптами на Ubuntu 24.04 LTS.
+- Прод (appliance-VM) не редактируется напрямую: доставка через git → сборка (`make build`) → установка или обновление скриптами на проверенной версии Ubuntu.
 - Секреты (пароли, ключи, токены, ACME-креды, DNS-провайдеры, `*.env`, локальные конфиги) — не коммитить и не выводить; в репозитории только `*.example` (см. `configs/**/*.example`).
 - Деструктивные операции над боевой БД (PostgreSQL) / сертификатами / edge-конфигом HAProxy — только с явным подтверждением и прогоном на копии; помни, что БД — единый source of truth.
 - **NEVER** коммитить Windows-бинарники: не добавляй `dist/*.exe` / `dist/*.dll` (проверяет `scripts/check-linux-artifacts.sh`).

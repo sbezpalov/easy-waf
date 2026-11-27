@@ -9,8 +9,10 @@ reporting. Participation is covered by the
 
 ## What this project is (and is not)
 
-Easy Home WAF is an **appliance**, not a library. It targets **Ubuntu 24.04 LTS
-only** and assumes it owns HAProxy, nftables and its own PostgreSQL schema on that
+Easy Home WAF is an **appliance**. The published 1.6.1 release targets
+**Ubuntu 24.04 LTS**. The next deployment target is
+[Ubuntu Server 26.04.1 LTS with HAProxy 3.4](docs/IMPLEMENTATION_STATUS.md).
+The appliance manages HAProxy, nftables and its own PostgreSQL schema on the
 host. Contributions that add portability to other distributions, or that make a
 component optional "just in case", will usually be declined — every supported
 combination is a combination that has to keep working on a box protecting
