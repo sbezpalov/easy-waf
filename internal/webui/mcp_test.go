@@ -172,8 +172,12 @@ async function run(){
   assert.equal(line.children[3].disabled,true);
   line.children[3].onchange();
   assert.equal(line.children[5].disabled,true);
+  await elements.get('mcp-refresh-grants').onclick();
+  assert.match(elements.get('mcp-grants').children[0].children[0],/Until revoked/);
+  const durationNoticeCount = notices.length;
   finishDuration();
   await saving;
+  assert.equal(notices.length,durationNoticeCount,'stale duration response must not show a toast');
   assert.match(elements.get('mcp-grants').children[0].children[0],/Expires 2030-01-01/);
   assert.equal(elements.get('mcp-grants').children[0].children[3].value,'');
   assert.equal(elements.get('mcp-grants').children[0].children[5].disabled,true);

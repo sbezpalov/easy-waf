@@ -4784,7 +4784,7 @@
             } finally {
               select.disabled = false;
             }
-            if (isCurrent()) await loadMCPConnections();
+            if (isSameView()) await loadMCPConnections();
           });
           line.append(' ', select, ' ', save);
         }
