@@ -6650,6 +6650,7 @@
   }
 
   let mcpConnectionsGeneration = 0;
+  const mcpPendingGrantChanges = new Map();
   async function loadMCPConnections() {
     const generation = ++mcpConnectionsGeneration;
     const viewHash = location.hash;
@@ -6746,8 +6747,30 @@
         revoke.type = 'button';
         revoke.className = 'secondary';
         revoke.textContent = ['expired','setup_expired','reauth_required'].includes(row.status) ? 'Remove approval' : 'Revoke access';
-        revoke.onclick = () => withBusy(revoke, async () => {
-          if (!isCurrent()) return;
+        let select, save;
+        const syncControls = () => {
+          const pending = mcpPendingGrantChanges.has(row.id);
+          revoke.disabled = pending;
+          if (select) {
+            select.disabled = pending;
+            save.disabled = pending || !select.value;
+          }
+        };
+        const changeGrant = async (button, action) => {
+          if (!isCurrent() || mcpPendingGrantChanges.has(row.id)) return;
+          const pending = {syncControls};
+          mcpPendingGrantChanges.set(row.id, pending);
+          syncControls();
+          try {
+            await withBusy(button, action);
+          } finally {
+            mcpPendingGrantChanges.delete(row.id);
+            pending.syncControls();
+            // A refresh before the request completed can still show the old approval.
+            if (isSameView()) await loadMCPConnections();
+          }
+        };
+        revoke.onclick = () => changeGrant(revoke, async () => {
           try {
             const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
             if (!result.ok) {
@@ -6760,12 +6783,10 @@
           } catch (_) {
             if (isCurrent()) toast('Could not confirm revocation. Checking approved connections again.', 'warn');
           }
-          // A list refresh started before the revocation completed can still show this grant.
-          if (isSameView()) await loadMCPConnections();
         });
         line.append(revoke);
         if (row.status === 'connected' || row.status === 'pending') {
-          const select = document.getElementById('mcp-approval-lifetime').cloneNode(true);
+          select = document.getElementById('mcp-approval-lifetime').cloneNode(true);
           select.removeAttribute('id');
           select.setAttribute('aria-label','New approval duration for ' + row.name);
           const placeholder = document.createElement('option');
@@ -6774,28 +6795,25 @@
           placeholder.disabled = true;
           select.prepend(placeholder);
           select.value = '';
-          const save = document.createElement('button');
+          save = document.createElement('button');
           save.type = 'button';
           save.className = 'secondary';
           save.textContent = 'Change duration';
-          save.disabled = true;
-          select.onchange = () => { save.disabled = select.disabled || !select.value; };
-          save.onclick = () => withBusy(save, async () => {
-            if (!isCurrent() || select.disabled || !select.value) return;
-            select.disabled = true;
+          select.onchange = syncControls;
+          save.onclick = () => select.value && changeGrant(save, async () => {
             try {
               const result = await fetch(path + '/' + encodeURIComponent(row.id), {method:'PATCH',headers:hdr(),body:JSON.stringify({lifetime:select.value})});
               if (!result.ok) throw new Error(await apiMessage(result));
               if (isCurrent()) toast('Approval duration updated.', 'ok');
             } catch (err) {
               if (isCurrent()) toast('Could not confirm duration change. ' + err.message,'warn');
-            } finally {
-              select.disabled = false;
             }
-            if (isSameView()) await loadMCPConnections();
           });
           line.append(' ', select, ' ', save);
         }
+        const pending = mcpPendingGrantChanges.get(row.id);
+        if (pending) pending.syncControls = syncControls;
+        syncControls();
         grants.append(line);
       }
     } catch (_) {

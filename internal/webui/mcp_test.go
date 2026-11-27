@@ -65,6 +65,7 @@ const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&red
 let dropApproval = false, dropRevocation = false, offline = false, listUnavailable = false, deletions = 0;
 const notices = [];
 let finishDuration, finishRevocation, delayRevocation = false;
+let durationChanges = 0;
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',status:'connected',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 let identity = null;
@@ -83,6 +84,7 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLS
       return {ok:true,json:async()=>({redirect:'https://gateway.example/callback?code=fixture'})};
     }
     if (opts.method === 'PATCH') {
+      durationChanges++;
       assert.equal(JSON.parse(opts.body).lifetime,'7d');
       await new Promise(resolve => { finishDuration = resolve; });
       grants[0].valid_until='2030-01-01';
@@ -173,7 +175,17 @@ async function run(){
   line.children[3].onchange();
   assert.equal(line.children[5].disabled,true);
   await elements.get('mcp-refresh-grants').onclick();
-  assert.match(elements.get('mcp-grants').children[0].children[0],/Until revoked/);
+  const refreshed = elements.get('mcp-grants').children[0];
+  assert.match(refreshed.children[0],/Until revoked/);
+  assert.equal(refreshed.children[1].disabled,true);
+  assert.equal(refreshed.children[3].disabled,true);
+  refreshed.children[3].value='7d';
+  refreshed.children[3].onchange();
+  assert.equal(refreshed.children[5].disabled,true);
+  await refreshed.children[1].onclick();
+  await refreshed.children[5].onclick();
+  assert.equal(durationChanges,1);
+  assert.equal(deletions,0);
   const durationNoticeCount = notices.length;
   finishDuration();
   await saving;
@@ -204,6 +216,10 @@ async function run(){
     const removing = elements.get('mcp-grants').children[0].children[1].onclick();
     await elements.get('mcp-refresh-grants').onclick();
     assert.equal(elements.get('mcp-grants').children.length,1);
+    const revoking = elements.get('mcp-grants').children[0];
+    assert.equal(revoking.children[1].disabled,true);
+    assert.equal(revoking.children[3].disabled,true);
+    await revoking.children[1].onclick();
     if (leave) location.hash = '#dashboard';
     const noticeCount = notices.length;
     finishRevocation();
