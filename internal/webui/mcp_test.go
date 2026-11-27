@@ -52,6 +52,7 @@ const page = require('node:fs').readFileSync(0, 'utf8');
 const elements = new Map();
 function element() {
   return {dataset: {}, children: [], append(...values) {this.children.push(...values);},
+    prepend(...values) {this.children.unshift(...values);},
     cloneNode:element, removeAttribute(){}, setAttribute(){}, replaceChildren() {this.children = [];}};
 }
 const document = {createElement: element, getElementById(id) {
@@ -63,6 +64,7 @@ const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&red
   replace(url) {this.destination = url;}};
 let dropApproval = false, dropRevocation = false, offline = false, listUnavailable = false, deletions = 0;
 const notices = [];
+let finishDuration;
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',status:'connected',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 let identity = null;
@@ -82,6 +84,7 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLS
     }
     if (opts.method === 'PATCH') {
       assert.equal(JSON.parse(opts.body).lifetime,'7d');
+      await new Promise(resolve => { finishDuration = resolve; });
       grants[0].valid_until='2030-01-01';
       return {ok:true};
     }
@@ -156,10 +159,23 @@ async function run(){
   assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
   const line = elements.get('mcp-grants').children[0];
   assert.match(grantText,/Until revoked/);
-  line.children[3].value='7d';
-  ctx.formatHostTime = x=>x;
+  assert.equal(line.children[3].value,'');
+  assert.equal(line.children[5].disabled,true);
   await line.children[5].onclick();
+  assert.equal(grants[0].valid_until,undefined,'approval must keep its duration until a new one is selected');
+  line.children[3].value='7d';
+  line.children[3].onchange();
+  assert.equal(line.children[5].disabled,false);
+  ctx.formatHostTime = x=>x;
+  const saving = line.children[5].onclick();
+  assert.equal(line.children[3].disabled,true);
+  line.children[3].onchange();
+  assert.equal(line.children[5].disabled,true);
+  finishDuration();
+  await saving;
   assert.match(elements.get('mcp-grants').children[0].children[0],/Expires 2030-01-01/);
+  assert.equal(elements.get('mcp-grants').children[0].children[3].value,'');
+  assert.equal(elements.get('mcp-grants').children[0].children[5].disabled,true);
   const original = grants;
   await elements.get('mcp-grants').children[0].children[1].onclick();
   assert.equal(notices.at(-1)[0], 'ok');

@@ -6767,19 +6767,29 @@
           const select = document.getElementById('mcp-approval-lifetime').cloneNode(true);
           select.removeAttribute('id');
           select.setAttribute('aria-label','New approval duration for ' + row.name);
-          select.value = row.valid_until ? '30d' : 'until_revoked';
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Choose a duration';
+          placeholder.disabled = true;
+          select.prepend(placeholder);
+          select.value = '';
           const save = document.createElement('button');
           save.type = 'button';
           save.className = 'secondary';
           save.textContent = 'Change duration';
+          save.disabled = true;
+          select.onchange = () => { save.disabled = select.disabled || !select.value; };
           save.onclick = () => withBusy(save, async () => {
-            if (!isCurrent()) return;
+            if (!isCurrent() || select.disabled || !select.value) return;
+            select.disabled = true;
             try {
               const result = await fetch(path + '/' + encodeURIComponent(row.id), {method:'PATCH',headers:hdr(),body:JSON.stringify({lifetime:select.value})});
               if (!result.ok) throw new Error(await apiMessage(result));
               if (isCurrent()) toast('Approval duration updated.', 'ok');
             } catch (err) {
               if (isCurrent()) toast('Could not confirm duration change. ' + err.message,'warn');
+            } finally {
+              select.disabled = false;
             }
             if (isCurrent()) await loadMCPConnections();
           });
