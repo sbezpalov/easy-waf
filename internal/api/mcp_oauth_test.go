@@ -24,6 +24,7 @@ import (
 	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
+	"github.com/google/uuid"
 )
 
 func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
@@ -285,4 +286,39 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if doctorCalls != 3 {
 		t.Fatalf("expected three successful doctor audit entries for the same grant, got %d", doctorCalls)
 	}
+
+	// An approval can expire before a recently issued access token does.
+	expires := time.Now().Add(24 * time.Hour)
+	timed := store.MCPGrant{ID: uuid.NewString(), Name: "Time-limited client", ApprovedBy: user, ValidUntil: &expires}
+	code, verifier := newSecret(), newSecret()
+	if err := reopened.ApproveMCP(t.Context(), timed, origin, id, q.Get("redirect_uri"), digest(verifier), digest(code)); err != nil {
+		t.Fatal(err)
+	}
+	form.Set("code", code)
+	form.Set("code_verifier", verifier)
+	_, b = call("POST", "/oauth/token", formType, form.Encode(), "", 200)
+	token = field(b, "access_token")
+	refresh.Set("refresh_token", field(b, "refresh_token"))
+	assertDoctor(token)
+	past := time.Now().Add(-time.Minute)
+	if err := reopened.SetMCPGrantExpiry(t.Context(), timed.ID, &past); err != nil {
+		t.Fatal(err)
+	}
+	h, _ = call("POST", "/mcp", "application/json", rpc, token, 401)
+	if !strings.Contains(h.Get("WWW-Authenticate"), `resource_metadata="`+namedOrigin+resourceMeta+`"`) {
+		t.Fatal("expired approval did not advertise OAuth discovery")
+	}
+	_, b = call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
+	if field(b, "error") != "invalid_grant" {
+		t.Fatal("expired approval did not reject refresh with invalid_grant")
+	}
+	_, b = call("GET", grants, "", "", admin, 200)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(list, func(g store.MCPGrant) bool { return g.ID == timed.ID && g.Status == "expired" }) {
+		t.Fatal("expired approval missing from the list")
+	}
+	call("PATCH", grants+"/"+timed.ID, "application/json", `{"lifetime":"until_revoked"}`, admin, 409)
+	call("DELETE", grants+"/"+timed.ID, "", "", admin, 204)
 }
