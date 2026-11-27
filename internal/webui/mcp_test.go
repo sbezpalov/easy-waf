@@ -64,7 +64,7 @@ const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&red
   replace(url) {this.destination = url;}};
 let dropApproval = false, dropRevocation = false, offline = false, listUnavailable = false, deletions = 0;
 const notices = [];
-let finishDuration;
+let finishDuration, finishRevocation, delayRevocation = false;
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',status:'connected',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
 let identity = null;
@@ -91,6 +91,7 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLS
     if (opts.method === 'DELETE') {
       deletions++;
       assert.equal(path,'/api/v1/integrations/mcp/grants/fixture');
+      if (delayRevocation) await new Promise(resolve => { finishRevocation = resolve; });
       grants = [];
       if (dropRevocation) throw new Error('reply lost');
       return {ok:true};
@@ -191,6 +192,29 @@ async function run(){
   await elements.get('mcp-refresh-grants').onclick();
   assert.equal(elements.get('mcp-grants').textContent,'No approved connections.');
   assert.equal(deletions,2,'refresh must never repeat a revocation');
+  dropRevocation = false;
+  delayRevocation = true;
+  for (const leave of [false, true]) {
+    grants = original;
+    await ctx.loadMCPConnections();
+    const removing = elements.get('mcp-grants').children[0].children[1].onclick();
+    await elements.get('mcp-refresh-grants').onclick();
+    assert.equal(elements.get('mcp-grants').children.length,1);
+    if (leave) location.hash = '#dashboard';
+    const noticeCount = notices.length;
+    finishRevocation();
+    await removing;
+    assert.equal(notices.length,noticeCount,'stale revocation must not show a toast');
+    if (leave) {
+      assert.equal(elements.get('mcp-grants').children.length,1,'closing another view must not reload it');
+      assert.equal(location.hash,'#dashboard');
+      location.hash = '#mcp';
+      await ctx.loadMCPConnections();
+    }
+    assert.equal(elements.get('mcp-grants').children.length,0);
+    assert.equal(elements.get('mcp-grants').textContent,'No approved connections.');
+  }
+  assert.equal(deletions,4,'refresh must never repeat a revocation');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
 `)

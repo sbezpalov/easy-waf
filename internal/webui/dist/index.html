@@ -6653,7 +6653,8 @@
   async function loadMCPConnections() {
     const generation = ++mcpConnectionsGeneration;
     const viewHash = location.hash;
-    const isCurrent = () => generation === mcpConnectionsGeneration && location.hash === viewHash && currentRole === 'admin';
+    const isSameView = () => location.hash === viewHash && currentRole === 'admin';
+    const isCurrent = () => generation === mcpConnectionsGeneration && isSameView();
     const help = document.getElementById('mcp-connect-help');
     const endpoint = document.getElementById('mcp-endpoint');
     const copy = document.getElementById('mcp-copy');
@@ -6749,18 +6750,18 @@
           if (!isCurrent()) return;
           try {
             const result = await fetch(path + '/' + encodeURIComponent(row.id), {method: 'DELETE', headers: hdr()});
-            if (!isCurrent()) return;
             if (!result.ok) {
+              if (!isCurrent()) return;
               const message = await apiMessage(result);
               if (isCurrent()) toast(message, 'err');
               return;
             }
-            toast('Access revoked for ' + row.name + '.', 'ok');
+            if (isCurrent()) toast('Access revoked for ' + row.name + '.', 'ok');
           } catch (_) {
-            if (!isCurrent()) return;
-            toast('Could not confirm revocation. Checking approved connections again.', 'warn');
+            if (isCurrent()) toast('Could not confirm revocation. Checking approved connections again.', 'warn');
           }
-          await loadMCPConnections();
+          // A list refresh started before the revocation completed can still show this grant.
+          if (isSameView()) await loadMCPConnections();
         });
         line.append(revoke);
         if (row.status === 'connected' || row.status === 'pending') {
