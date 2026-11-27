@@ -35,7 +35,16 @@ func TestHostFirewallZabbixAgentReappliesUnchangedRuleset(t *testing.T) {
 		return rec
 	}
 
-	socket := filepath.Join(t.TempDir(), "s.sock")
+	// t.TempDir includes the test name and can exceed the Unix socket path limit.
+	dir, err := os.MkdirTemp(".", ".sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket, err := filepath.Abs(filepath.Join(dir, "s.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("EASY_WAF_HOSTD_SOCKET", socket)
 	if rec := call(`{"enabled":false}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"unchanged"`) {
 		t.Fatalf("default request: %d %s", rec.Code, rec.Body.String())
