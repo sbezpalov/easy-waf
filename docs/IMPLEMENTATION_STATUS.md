@@ -1,6 +1,6 @@
 # Implementation status (Easy Home WAF)
 
-**Last updated:** 2026-11-26
+**Last updated:** 2026-11-27
 
 **Current VERSION:** 1.6.1 (see root `VERSION` file)
 
@@ -103,6 +103,23 @@ occurred with QEMU's `max` CPU model.
 After the upgrade with the published package, mobile data access passed with
 external HTTPS 200, two WebSocket 101 responses and zero HTTP 429 responses
 during the Companion check.
+
+**Appliance update checkpoint (2026-11-27).** The [CI run for `04ef374`](https://github.com/sbezpalov/easy-waf/actions/runs/45973792260)
+passed all seven jobs, including the offline reinstall and HAProxy 3.4
+checks on amd64 and arm64. The local amd64 Easy WAF 1.6.1 DEB replaced the
+previous build of the same version on an Ubuntu 26.04.1 appliance. Before
+installation, the database dump was readable and the backup archives and
+rollback DEB passed checksum verification. The running Easy WAF executables
+matched the candidate DEB, PostgreSQL remained at schema 031 and HAProxy
+passed configuration validation. The management panel and Home Assistant
+returned HTTPS 200, and Home Assistant completed a WebSocket handshake with
+HTTP 101 through HAProxy from the appliance.
+
+On the LAN, the panel served the MCP approval ID control over verified
+HTTPS. Both OAuth discovery documents agreed on the management origin, the
+authorization server advertised PKCE S256 and unauthenticated MCP returned
+HTTP 401. The pilot with the operator's OpenClaw Gateway and a fresh mobile
+Companion check remain open for this build.
 
 **APT update check on Ubuntu 26.04.1 (amd64).** The local 1.6.1 DEB from
 `b058fab` passed package provenance verification and an isolated VMware
