@@ -141,15 +141,39 @@ and IP-based recovery. **Rename host** separately sets Ubuntu's hostname
 through `hostnamectl`. Update local DNS, monitoring and any cloud-init
 hostname policy to match your deployment.
 
+From the Gateway's host or container, check name resolution, HTTPS trust and
+OAuth discovery before signing in. Replace the example management address and
+PEM path with your own. If the certificate is already trusted by `curl`, omit
+the `--cacert` option.
+
+```sh
+curl --fail --silent --show-error --cacert ./waf-management.pem \
+  https://waf.home.arpa:8443/.well-known/oauth-protected-resource/mcp
+```
+
+Expect a JSON response whose `resource` is the HTTPS address you will save in
+OpenClaw, including `/mcp`, and whose `authorization_servers` contains the same
+HTTPS origin. Configure certificate trust for the Gateway process as well.
+
 1. In **Operate → MCP**, select **Copy HTTPS address**.
-2. In OpenClaw **Settings → MCP**, add the URL as a Streamable HTTP server,
-   select OAuth, then **Sign in**. OpenClaw registers its browser callback.
+2. Open **Settings → MCP** on the Gateway's own HTTPS address. Add the URL as a
+   Streamable HTTP server, select OAuth, then **Sign in**. OpenClaw registers
+   a browser callback for that Gateway. If browser sign-in is unavailable, run
+   `openclaw mcp login easy-waf` from the installation that owns the saved server
+   (replace `easy-waf` with its saved name). Follow the
+   [OpenClaw sign-in guide](https://docs.openclaw.ai/tools/mcp#an-http-server-needs-authorization).
 3. In Easy WAF, check the displayed callback against your Gateway address and
-   approve read-only diagnostics. Run the MCP tool `doctor` in OpenClaw.
+   approve read-only diagnostics. Once credentials are saved, run
+   `openclaw mcp doctor easy-waf --probe` against that configuration to check
+   tool discovery. Then call the Easy WAF `doctor` tool from the OpenClaw agent
+   and check that its `database` field is `ok`.
    To decline the request, select **Deny access**. The browser returns to
    the registered callback with the OAuth error `access_denied`.
 4. **Approved connections** lists grants across all management addresses of this appliance. Each entry shows the issuing address, callback, approving operator and last use.
    **Revoke access** invalidates both access and refresh tokens immediately.
+   To verify a test approval was revoked, call the tool again without signing
+   in. Expect OpenClaw to report that authorization is required or hide the
+   tool until the Gateway signs in again.
    Choose 1, 7, 30 (default), or 90 days, or **Until revoked**. Under
    **Operate → MCP** you can change an active approval's duration without
    reconnecting the agent. A new duration starts when you save it. Upgrading
