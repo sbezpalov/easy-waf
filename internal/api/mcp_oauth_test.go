@@ -264,4 +264,25 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
+	entries, _, err := reopened.ListAuditLogs(t.Context(), store.AuditListParams{Limit: 30, Action: "mcp.diagnostics"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doctorCalls := 0
+	for _, entry := range entries {
+		var detail map[string]any
+		if err := json.Unmarshal(entry.Details, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail["grant_id"] != grantID {
+			continue
+		}
+		if len(detail) != 3 || detail["route"] != "/api/v1/mcp/diagnostics/doctor" || detail["http_status"] != float64(http.StatusOK) {
+			t.Fatalf("unexpected OAuth diagnostic audit details: %v", detail)
+		}
+		doctorCalls++
+	}
+	if doctorCalls != 3 {
+		t.Fatalf("expected three successful doctor audit entries for the same grant, got %d", doctorCalls)
+	}
 }

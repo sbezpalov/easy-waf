@@ -40,14 +40,14 @@ func TestMigrateMCPKeepsExistingPairing(t *testing.T) {
 		grants[0].ValidUntil == nil || !grants[0].ValidUntil.Equal(expires) {
 		t.Fatalf("expected the existing pairing with expiry %s, got %+v", expires, grants)
 	}
-	if err := upgraded.UseMCP(ctx, "issuer", "access"); err != nil {
-		t.Fatalf("use pre-upgrade access token: %v", err)
+	if used, err := upgraded.UseMCP(ctx, "issuer", "access"); err != nil || used != id {
+		t.Fatalf("use pre-upgrade access token: grant %q, error %v", used, err)
 	}
 	if err := upgraded.RefreshMCP(ctx, "issuer", "client", "refresh", "renewed-access", "renewed-refresh"); err != nil {
 		t.Fatalf("rotate pre-upgrade refresh token: %v", err)
 	}
-	if err := upgraded.UseMCP(ctx, "issuer", "renewed-access"); err != nil {
-		t.Fatalf("use renewed access token: %v", err)
+	if used, err := upgraded.UseMCP(ctx, "issuer", "renewed-access"); err != nil || used != id {
+		t.Fatalf("use renewed access token: grant %q, error %v", used, err)
 	}
 }
 
@@ -77,6 +77,14 @@ func TestMCPGrantLifetime(t *testing.T) {
 		}
 	}
 	approve := func() { requireOK(s.ApproveMCP(ctx, g, "issuer", "client", "redirect", "challenge", "code")) }
+	use := func(access string) error {
+		t.Helper()
+		id, err := s.UseMCP(ctx, "issuer", access)
+		if (err == nil && id != g.ID) || (err != nil && id != "") {
+			t.Fatalf("unexpected grant %q for access check: %v", id, err)
+		}
+		return err
+	}
 	exchange := func() error {
 		return s.ExchangeMCP(ctx, "issuer", "client", "code", "redirect", "challenge", "access", "refresh")
 	}
@@ -99,18 +107,18 @@ func TestMCPGrantLifetime(t *testing.T) {
 	requireOK(s.Close())
 	s = openFresh(t, dsn)
 	status("connected")
-	requireOK(s.UseMCP(ctx, "issuer", "access"))
+	requireOK(use("access"))
 	requireOK(s.RefreshMCP(ctx, "issuer", "client", "refresh", "a2", "r2"))
 	requireInactive(s.RefreshMCP(ctx, "issuer", "client", "refresh", "a3", "r3"))
 	status("reauth_required")
-	requireInactive(s.UseMCP(ctx, "issuer", "a2"))
+	requireInactive(use("a2"))
 	requireInactive(s.RefreshMCP(ctx, "issuer", "client", "r2", "a3", "r3"))
 	requireInactive(s.SetMCPGrantExpiry(ctx, g.ID, nil))
 	requireOK(s.RevokeMCP(ctx, g.ID))
 	approve()
 	requireOK(exchange())
 	requireOK(s.SetMCPGrantExpiry(ctx, g.ID, &past))
-	requireInactive(s.UseMCP(ctx, "issuer", "access"))
+	requireInactive(use("access"))
 	requireInactive(s.RefreshMCP(ctx, "issuer", "client", "refresh", "a2", "r2"))
 	status("expired")
 }

@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/easy-waf/easy-waf/internal/mcpd"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"github.com/easy-waf/easy-waf/internal/auth"
+	"github.com/easy-waf/easy-waf/internal/mcpd"
 	"github.com/easy-waf/easy-waf/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -32,6 +32,8 @@ const resourceMeta = "/.well-known/oauth-protected-resource/mcp"
 
 var verifierPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 var raw64 = base64.RawURLEncoding
+
+type mcpGrantIDKey struct{}
 
 type registration struct {
 	Name      string   `json:"client_name"`
@@ -87,7 +89,8 @@ func (s *Server) managementMCPTransport() http.Handler {
 	reads := chi.NewRouter()
 	reads.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			s.serveAuditedDiagnostic(next, w, r, "")
+			grantID, _ := r.Context().Value(mcpGrantIDKey{}).(string)
+			s.serveAuditedDiagnostic(next, w, r, "", grantID)
 		})
 	})
 	reads.Route("/api/v1/mcp/diagnostics", s.mountDiagnosticReads)
@@ -258,9 +261,10 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 func (s *Server) oauthResource(w http.ResponseWriter, r *http.Request) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if ok && len(token) == 43 {
-		err := s.Eng.Store.UseMCP(r.Context(), issuer(r), digest(token))
+		grantID, err := s.Eng.Store.UseMCP(r.Context(), issuer(r), digest(token))
 		if err == nil {
-			s.mcpTransport.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), mcpGrantIDKey{}, grantID)
+			s.mcpTransport.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		if !errors.Is(err, sql.ErrNoRows) {

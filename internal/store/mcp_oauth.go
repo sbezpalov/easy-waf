@@ -63,8 +63,10 @@ func (s *Store) RefreshMCP(ctx context.Context, issuer, client, old, access, ref
 	return tx.Commit()
 }
 
-func (s *Store) UseMCP(ctx context.Context, issuer, access string) error {
-	return s.db.QueryRowContext(ctx, `UPDATE mcp_oauth_grants SET last_used=now() WHERE issuer=$1 AND access_hash=$2 AND access_until>now() AND (valid_until IS NULL OR valid_until>now()) RETURNING 1`, issuer, access).Scan(new(int))
+func (s *Store) UseMCP(ctx context.Context, issuer, access string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `UPDATE mcp_oauth_grants SET last_used=now() WHERE issuer=$1 AND access_hash=$2 AND access_until>now() AND (valid_until IS NULL OR valid_until>now()) RETURNING id`, issuer, access).Scan(&id)
+	return id, err
 }
 
 func (s *Store) MCPGrants(ctx context.Context) ([]MCPGrant, error) {

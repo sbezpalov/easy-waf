@@ -79,22 +79,28 @@ func (s *Server) requireMCPAPI(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
-		s.serveAuditedDiagnostic(next, w, r, ip.String())
+		s.serveAuditedDiagnostic(next, w, r, ip.String(), "")
 	})
 }
 
-func (s *Server) serveAuditedDiagnostic(next http.Handler, w http.ResponseWriter, r *http.Request, source string) {
+func (s *Server) serveAuditedDiagnostic(next http.Handler, w http.ResponseWriter, r *http.Request, source, grantID string) {
 	sw := &statusCapture{ResponseWriter: w, code: http.StatusOK}
 	next.ServeHTTP(sw, r)
-	// Record only the matched route and response status, never input or output.
+	// Record the route, status and server-issued approval ID, without the request or response data.
 	// The journal retains the access record when the database is unavailable.
 	route := chi.RouteContext(r.Context()).RoutePattern()
-	log.Printf("mcp diagnostics: route=%s status=%d", route, sw.code)
+	details := map[string]any{"route": route, "http_status": sw.code}
+	if grantID != "" {
+		details["grant_id"] = grantID
+		log.Printf("mcp diagnostics: route=%s status=%d grant_id=%s", route, sw.code, grantID)
+	} else {
+		log.Printf("mcp diagnostics: route=%s status=%d", route, sw.code)
+	}
 	if s.Eng.Store != nil {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Second)
 		defer cancel()
 		ctx = audit.WithMeta(ctx, audit.Meta{User: "mcp", SourceIP: source})
-		_ = s.Eng.Store.AppendAudit(ctx, "mcp.diagnostics", map[string]any{"route": route, "http_status": sw.code})
+		_ = s.Eng.Store.AppendAudit(ctx, "mcp.diagnostics", details)
 	}
 }
 
