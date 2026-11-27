@@ -12,6 +12,8 @@ packaging/deb/* text eol=lf
 
 # Go sources — LF for gofmt / CI verify on Linux.
 *.go text eol=lf
+# The recovery guide must match in the embedded API and the Debian package.
+docs/BACKUP_RESTORE.md text eol=lf
 # Embedded UI CSP hashes use browser-normalized script text on every OS.
 internal/webui/dist/*.html text eol=lf
 internal/webui/src/** text eol=lf whitespace=-blank-at-eof
