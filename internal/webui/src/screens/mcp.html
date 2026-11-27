@@ -9,6 +9,13 @@
           </div>
           <p><a href="https://github.com/sbezpalov/easy-waf/blob/main/docs/MCP.md#enable-the-packaged-service">Configure and enable the service</a></p>
         </section>
+        <section class="panel" aria-labelledby="mcp-network-title">
+          <h3 id="mcp-network-title">Network access</h3>
+          <label><input type="checkbox" id="mcp-local-only" checked disabled aria-describedby="mcp-network-help"> Allow MCP only from local networks</label>
+          <p id="mcp-network-help">Allows loopback, private IPv4 and IPv6 unique local addresses. The management network allowlist and OAuth apply in both modes.</p>
+          <button type="button" id="mcp-save-network" disabled>Save network access</button>
+          <p id="mcp-network-status" role="status"></p>
+        </section>
         <section class="panel" aria-labelledby="mcp-connect-title">
           <h3 id="mcp-connect-title">Connect a client</h3>
           <p>Configure a private DNS name and download its trust certificate in <a href="#system">System → Host and management identity</a>.</p>

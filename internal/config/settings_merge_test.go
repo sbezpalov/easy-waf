@@ -8,6 +8,28 @@ import (
 	"time"
 )
 
+func TestMCPAllowRemoteSettingsPatch(t *testing.T) {
+	base := DefaultSettings("")
+	if base.MCPAllowRemote {
+		t.Fatal("MCP must be local-only by default")
+	}
+	enabled, err := ApplySettingsJSONPatch(base, []byte(`{"mcp_allow_remote":true}`))
+	if err != nil || !enabled.MCPAllowRemote {
+		t.Fatalf("enable remote access: %v", err)
+	}
+	unchanged, err := ApplySettingsJSONPatch(enabled, []byte(`{}`))
+	if err != nil || !unchanged.MCPAllowRemote {
+		t.Fatalf("unrelated patch changed the MCP policy: %v", err)
+	}
+	disabled, err := ApplySettingsJSONPatch(enabled, []byte(`{"mcp_allow_remote":false}`))
+	if err != nil || disabled.MCPAllowRemote {
+		t.Fatalf("restore local-only access: %v", err)
+	}
+	if _, err := ApplySettingsJSONPatch(base, []byte(`{"mcp_allow_remote":null}`)); err == nil {
+		t.Fatal("accepted null instead of a boolean")
+	}
+}
+
 func TestApplySettingsJSONPatch_omittedPreservesPaths(t *testing.T) {
 	base := GlobalSettings{
 		ACMEStaging:            true,

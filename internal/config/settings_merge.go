@@ -105,6 +105,16 @@ func patchGlobalSettingKey(out *GlobalSettings, k string, raw json.RawMessage) e
 		return json.Unmarshal(raw, &out.BlockedUserAgentsEnabled)
 	case "management_allowed_cidrs":
 		return json.Unmarshal(raw, &out.ManagementAllowedCIDRs)
+	case "mcp_allow_remote":
+		var allowRemote *bool
+		if err := json.Unmarshal(raw, &allowRemote); err != nil {
+			return err
+		}
+		if allowRemote == nil {
+			return fmt.Errorf("expected a boolean")
+		}
+		out.MCPAllowRemote = *allowRemote
+		return nil
 	case "prometheus_enabled":
 		return json.Unmarshal(raw, &out.PrometheusEnabled)
 	case "firewall_zabbix_agent":

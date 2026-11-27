@@ -375,6 +375,7 @@
         break;
       case 'mcp':
         void loadMCPStatus();
+        void loadMCPNetwork();
         void loadMCPConnections();
         break;
       case 'network':
@@ -4825,6 +4826,63 @@
     }
   }
   document.getElementById('mcp-refresh-grants').onclick = loadMCPConnections;
+
+  const mcpLocalOnly = document.getElementById('mcp-local-only');
+  const mcpSaveNetwork = document.getElementById('mcp-save-network');
+  const mcpNetworkStatus = document.getElementById('mcp-network-status');
+  let mcpSavedLocalOnly;
+  let mcpNetworkBusy = false;
+
+  function updateMCPNetworkControls() {
+    const canEdit = !mcpNetworkBusy && currentRole === 'admin' && mcpSavedLocalOnly !== undefined;
+    mcpLocalOnly.disabled = !canEdit;
+    mcpSaveNetwork.hidden = currentRole !== 'admin';
+    mcpSaveNetwork.disabled = !canEdit || mcpLocalOnly.checked === mcpSavedLocalOnly;
+  }
+
+  async function loadMCPNetwork() {
+    if (mcpNetworkBusy) return;
+    mcpNetworkBusy = true;
+    mcpSavedLocalOnly = undefined;
+    updateMCPNetworkControls();
+    mcpNetworkStatus.textContent = 'Checking network access…';
+    try {
+      const response = await fetch('/api/v1/settings', {headers: hdr(), cache: 'no-store'});
+      if (!response.ok) throw new Error();
+      const {mcp_allow_remote} = await response.json();
+      if (typeof mcp_allow_remote !== 'boolean') throw new Error();
+      mcpLocalOnly.checked = mcpSavedLocalOnly = !mcp_allow_remote;
+      mcpNetworkStatus.textContent = '';
+    } catch (_) {
+      mcpNetworkStatus.textContent = 'Could not load network access. Reopen MCP to retry.';
+    } finally {
+      mcpNetworkBusy = false;
+      updateMCPNetworkControls();
+    }
+  }
+
+  mcpLocalOnly.onchange = updateMCPNetworkControls;
+  mcpSaveNetwork.onclick = async () => {
+    if (mcpSaveNetwork.disabled) return;
+    mcpNetworkBusy = true;
+    updateMCPNetworkControls();
+    mcpNetworkStatus.textContent = 'Saving network access…';
+    try {
+      const response = await fetch('/api/v1/settings', {
+        method: 'PATCH', headers: hdr(), body: JSON.stringify({mcp_allow_remote: !mcpLocalOnly.checked})
+      });
+      if (!response.ok) throw new Error(await apiMessage(response));
+      const {mcp_allow_remote} = await response.json();
+      if (typeof mcp_allow_remote !== 'boolean') throw new Error();
+      mcpLocalOnly.checked = mcpSavedLocalOnly = !mcp_allow_remote;
+      mcpNetworkStatus.textContent = 'Network access saved.';
+    } catch (err) {
+      mcpNetworkStatus.textContent = 'Could not confirm the change. ' + (err.message || 'Reopen MCP to check the saved setting.');
+    } finally {
+      mcpNetworkBusy = false;
+      updateMCPNetworkControls();
+    }
+  };
 
   async function loadMCPStatus() {
     const status = document.getElementById('mcp-service-status');

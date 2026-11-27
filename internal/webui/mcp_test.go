@@ -5,6 +5,68 @@ package webui
 
 import "testing"
 
+func TestMCPNetworkAccessControls(t *testing.T) {
+	runVersionUI(t, `
+const assert = require('node:assert/strict'), vm = require('node:vm');
+const page = require('node:fs').readFileSync(0, 'utf8');
+assert.match(page, /id="mcp-local-only" checked disabled/);
+const checkbox = {}, save = {}, status = {};
+let settings = {mcp_allow_remote: false}, writes = 0, readError = false, writeError = false;
+const ctx = vm.createContext({
+  currentRole: 'admin',
+  document: {getElementById: id => ({'mcp-local-only': checkbox, 'mcp-save-network': save, 'mcp-network-status': status})[id]},
+  hdr: () => ({}), apiMessage: async () => 'Password confirmation required.',
+  fetch: async (path, opts) => {
+    assert.equal(path, '/api/v1/settings');
+    if (opts.method === 'PATCH') {
+      writes++;
+      assert.deepEqual(JSON.parse(opts.body), {mcp_allow_remote: !checkbox.checked});
+      if (writeError) return {ok: false};
+      settings = JSON.parse(opts.body);
+    } else if (readError) return {ok: false};
+    return {ok: true, json: async () => settings};
+  }
+});
+const start = page.indexOf("  const mcpLocalOnly = document.");
+const end = page.indexOf('  async function loadMCPStatus()', start);
+assert.ok(start >= 0 && end > start);
+vm.runInContext(page.slice(start, end), ctx);
+async function run() {
+  await ctx.loadMCPNetwork();
+  assert.equal(checkbox.checked, true);
+  assert.equal(save.disabled, true);
+  checkbox.checked = false;
+  checkbox.onchange();
+  assert.equal(save.disabled, false);
+  await save.onclick();
+  assert.equal(settings.mcp_allow_remote, true);
+  assert.equal(save.disabled, true);
+  assert.equal(status.textContent, 'Network access saved.');
+  writeError = true;
+  checkbox.checked = true;
+  checkbox.onchange();
+  await save.onclick();
+  assert.match(status.textContent, /Password confirmation required/);
+  assert.equal(save.disabled, false);
+  writeError = false;
+  await save.onclick();
+  assert.equal(settings.mcp_allow_remote, false);
+  ctx.currentRole = 'viewer';
+  await ctx.loadMCPNetwork();
+  assert.equal(checkbox.disabled, true);
+  assert.equal(save.hidden, true);
+  await save.onclick();
+  assert.equal(writes, 3);
+  ctx.currentRole = 'admin';
+  readError = true;
+  await ctx.loadMCPNetwork();
+  assert.equal(save.disabled, true);
+  assert.match(status.textContent, /Reopen MCP to retry/);
+}
+run().catch(error => {console.error(error); process.exitCode = 1});
+`)
+}
+
 func TestMCPPanelStatusAndRetry(t *testing.T) {
 	runVersionUI(t, `
 const assert = require('node:assert/strict'), vm = require('node:vm');

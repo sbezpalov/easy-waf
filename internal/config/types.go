@@ -299,6 +299,9 @@ type GlobalSettings struct {
 	// ManagementAllowedCIDRs restricts who can reach the API and UI (not /health).
 	// Stored in DB; defaults are RFC1918 + loopback — narrow in Settings for stricter policy.
 	ManagementAllowedCIDRs []string `json:"management_allowed_cidrs,omitempty"`
+	// MCPAllowRemote removes the private-network restriction on management MCP OAuth.
+	// The management ACL and OAuth authorization still apply.
+	MCPAllowRemote bool `json:"mcp_allow_remote"`
 	// NotifyWebhookURL receives a JSON POST when a certificate needs attention
 	// (failed issuance or renewal, or fewer than 21 days left). Empty disables it.
 	// The URL is not written into HAProxy config and is not logged.

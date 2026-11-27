@@ -104,6 +104,12 @@ func (s *Server) mountOAuth(r chi.Router) {
 				if !s.oauthAvailable(w, r) {
 					return
 				}
+				ip, ok := clientIP(r)
+				ip = ip.Unmap()
+				if !s.Eng.Settings().MCPAllowRemote && (!ok || (!ip.IsPrivate() && !ip.IsLoopback())) {
+					writeJSON(w, http.StatusForbidden, map[string]string{"error": "MCP access is limited to local networks"})
+					return
+				}
 				if origin := r.Header.Get("Origin"); origin != "" && origin != issuer(r) {
 					http.Error(w, "origin rejected", http.StatusForbidden)
 					return

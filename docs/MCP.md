@@ -123,6 +123,20 @@ browser and Gateway must trust the certificate and its hostname. Enable MCP
 diagnostics in the management API using the dedicated API token described above.
 The HTTPS endpoint uses the management listener and its source network ACL.
 
+In **Operate → MCP → Network access**, **Allow MCP only from local networks**
+is enabled by default. It applies to the HTTPS MCP endpoint and OAuth
+discovery, registration, authorization and token requests. Loopback, private
+IPv4 (RFC 1918) and IPv6 unique local (ULA) addresses are eligible. A
+VPN client needs an eligible source address that is also on the management
+allowlist. The API uses the client address from its existing trusted proxy
+configuration. A trusted proxy must overwrite `X-Forwarded-For` with the
+actual client address.
+
+Clearing the checkbox saves `mcp_allow_remote: true` and lets the management
+allowlist determine which source networks can reach OAuth MCP. OAuth, TLS
+and the management firewall still apply. The loopback bearer-token service
+and application publications have their own access controls.
+
 For a private name, create an internal DNS record pointing to the management
 interface. In **System → Host and management identity**, enter that name (for
 example `waf.home.arpa`) and select **Generate certificate**. Download the

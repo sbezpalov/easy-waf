@@ -27,6 +27,88 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestMCPLocalNetworkPolicy(t *testing.T) {
+	s := applyFailingServer(t)
+	s.JWTSecret = []byte(newSecret())
+	t.Setenv("EASY_WAF_MCP_API_TOKEN", newSecret())
+	t.Setenv("EASY_WAF_TRUSTED_PROXY_CIDRS", "")
+	t.Setenv("EASY_WAF_BYPASS_MGMT_ACL", "1")
+	s.MCPAPIToken = auth.LoadMCPAPIToken(s.JWTSecret)
+	router := s.Router()
+	call := func(method, path, source, forwarded, body, token string) *httptest.ResponseRecorder {
+		r := httptest.NewRequestWithContext(t.Context(), method, "https://waf.home.arpa"+path, strings.NewReader(body))
+		r.RemoteAddr = source
+		r.Header.Set("X-Requested-With", "XMLHttpRequest")
+		if forwarded != "" {
+			r.Header.Set("X-Forwarded-For", forwarded)
+		}
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, r)
+		return rec
+	}
+	for _, tc := range []struct {
+		name, source, forwarded string
+		want                    int
+	}{
+		{"private IPv4", "10.1.2.3:1234", "", http.StatusOK},
+		{"ULA IPv6", "[fd12::1]:1234", "", http.StatusOK},
+		{"mapped private IPv4", "[::ffff:192.168.1.4]:1234", "", http.StatusOK},
+		{"loopback", "127.0.0.1:1234", "", http.StatusOK},
+		{"trusted proxy with LAN client", "127.0.0.1:1234", "172.16.0.4", http.StatusOK},
+		{"trusted proxy with WAN client", "127.0.0.1:1234", "10.0.0.1, 203.0.113.7", http.StatusForbidden},
+		{"untrusted WAN with forwarded LAN", "203.0.113.7:1234", "10.0.0.1", http.StatusForbidden},
+		{"public IPv6", "[2001:db8::1]:1234", "", http.StatusForbidden},
+		{"invalid address", "unknown", "", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if rec := call("GET", resourceMeta, tc.source, tc.forwarded, "", ""); rec.Code != tc.want {
+				t.Fatalf("discovery status = %d, want %d: %s", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+	for _, endpoint := range []struct{ method, path string }{
+		{"GET", "/.well-known/oauth-authorization-server"}, {"POST", "/oauth/register"},
+		{"GET", "/oauth/authorize"}, {"POST", "/oauth/token"}, {"POST", "/mcp"},
+	} {
+		if rec := call(endpoint.method, endpoint.path, "203.0.113.7:1234", "", "", ""); rec.Code != http.StatusForbidden {
+			t.Fatalf("%s returned %d for a public client", endpoint.path, rec.Code)
+		}
+	}
+	user := "mcp-net-" + newSecret()[:10]
+	if err := s.Eng.Store.CreateUser(t.Context(), &config.AdminUser{Username: user, PasswordHash: "unused", Role: config.RoleAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Eng.Store.DeleteUserByUsername(context.Background(), user) })
+	u, err := s.Eng.Store.GetUserByUsername(t.Context(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := auth.SignStepUpJWT(s.JWTSecret, user, u.SessionVersion, time.Now().Add(time.Hour), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := call("PATCH", "/api/v1/settings", "10.1.2.3:1234", "", `{"mcp_allow_remote":true}`, admin); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"mcp_allow_remote":true`) {
+		t.Fatalf("save override: %d %s", rec.Code, rec.Body)
+	}
+	s.Eng.SetSettings(config.DefaultSettings(s.Eng.StateDir))
+	if err := s.Eng.LoadSettings(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call("GET", resourceMeta, "203.0.113.7:1234", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("persisted override: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call("POST", "/mcp", "203.0.113.7:1234", "", "", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("OAuth still required: %d %s", rec.Code, rec.Body)
+	}
+	t.Setenv("EASY_WAF_BYPASS_MGMT_ACL", "")
+	if rec := call("GET", resourceMeta, "203.0.113.7:1234", "", "", ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("management ACL still applies: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	s := applyFailingServer(t)
 	s.JWTSecret = []byte(newSecret())
