@@ -6678,10 +6678,12 @@
     refresh.disabled = true;
     grants.textContent = 'Checking approved connections…';
     try {
-      const response = await fetch(path, {headers: hdr(), cache: 'no-store'});
-      if (!response.ok) throw new Error();
-      const rows = await response.json();
-      if (!Array.isArray(rows)) throw new Error();
+      let rows;
+      try {
+        const response = await fetch(path, {headers: hdr(), cache: 'no-store'});
+        if (response.ok) rows = await response.json();
+      } catch (_) { /* Listing grants is independent of a new consent request. */ }
+      if (!isCurrent()) return;
       const address = new URL('/mcp', location.origin);
       try {
         const identity = await fetch('/api/v1/settings/management-identity', {headers: hdr(), cache:'no-store'});
@@ -6728,6 +6730,10 @@
         };
         approve.onclick = () => decide('approve');
         deny.onclick = () => decide('deny');
+      }
+      if (!Array.isArray(rows)) {
+        grants.textContent = 'Could not load approved connections. Try refreshing.';
+        return;
       }
       if (!rows.length) grants.textContent = 'No approved connections.';
       for (const row of rows) {

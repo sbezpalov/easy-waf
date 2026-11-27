@@ -61,7 +61,7 @@ const document = {createElement: element, getElementById(id) {
 const origin = 'https://waf.example';
 const location = {origin, protocol:'https:', hash:'#mcp?client_name=OpenClaw&redirect_uri=https%3A%2F%2Fgateway.example%2Fcallback',
   replace(url) {this.destination = url;}};
-let dropApproval = false, dropRevocation = false, offline = false, deletions = 0;
+let dropApproval = false, dropRevocation = false, offline = false, listUnavailable = false, deletions = 0;
 const notices = [];
 let grants = [{id:'fixture',name:'OpenClaw',approved_by:'admin',status:'connected',
   issuer:'https://waf-alias.example',redirect_uri:'https://gateway.example/callback'}], approved = false;
@@ -94,6 +94,7 @@ const ctx = vm.createContext({document, location, currentRole:'admin', URL, URLS
     }
     if (offline) throw new Error('offline');
     if (path === '/api/v1/settings/management-identity') return {ok:true,json:async()=>identity};
+    if (listUnavailable) return {ok:false};
     return {ok:true,json:async()=>grants};
   }});
 const start = page.indexOf('  let mcpConnectionsGeneration'), end = page.indexOf('  async function loadMCPStatus()',start);
@@ -106,10 +107,19 @@ async function run(){
   assert.equal(elements.get('mcp-copy').dataset.copy,'https://waf.home.arpa/mcp');
   assert.equal(elements.get('mcp-consent').hidden,false);
   assert.match(elements.get('mcp-consent-detail').textContent,/gateway\.example/);
+  listUnavailable = true;
+  await ctx.loadMCPConnections();
+  assert.match(elements.get('mcp-grants').textContent,/Could not load approved connections/);
+  assert.equal(elements.get('mcp-copy').hidden,false);
+  assert.equal(elements.get('mcp-copy').dataset.copy,'https://waf.home.arpa/mcp');
+  assert.equal(elements.get('mcp-consent').hidden,false);
+  assert.equal(elements.get('mcp-approve').disabled,false);
   assert.equal(approved,false);
   await elements.get('mcp-deny').onclick();
   assert.match(location.destination,/error=access_denied/);
   assert.equal(approved,false);
+  listUnavailable = false;
+  await ctx.loadMCPConnections();
   delete location.destination;
   dropApproval = true;
   await elements.get('mcp-approve').onclick({currentTarget:{}});
