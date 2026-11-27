@@ -222,7 +222,8 @@ database ready. See the [OpenClaw MCP client guide](https://docs.openclaw.ai/too
 To disable the feature, stop the daemon and remove `EASY_WAF_MCP_LISTEN`.
 Remove `EASY_WAF_MCP_API_TOKEN` and restart `easy-waf-api` to remove the
 diagnostics routes as well. Calls through those routes appear as
-`mcp.diagnostics` in the management audit log. For OAuth calls the entry
-includes the `grant_id`, which also appears in the management audit path
-when that approval is revoked. Audit details omit tokens and diagnostic
-request and response data.
+`mcp.diagnostics` in the management audit log. Select **Copy approval ID**
+beside a client in **Approved connections** to match it to `grant_id` in
+its OAuth diagnostics. The same ID appears in the audit path when the
+approval is revoked. Audit details omit tokens and diagnostic request and
+response data.

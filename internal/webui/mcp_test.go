@@ -161,6 +161,10 @@ async function run(){
   const grantText = elements.get('mcp-grants').children[0].children[0];
   assert.ok(grantText.includes(grants[0].issuer) && grantText.includes(grants[0].redirect_uri));
   const line = elements.get('mcp-grants').children[0];
+  const copyApproval = line.children.at(-1);
+  assert.equal(copyApproval.textContent,'Copy approval ID');
+  assert.match(copyApproval.className,/\bcopy-btn\b/);
+  assert.equal(copyApproval.dataset.copy,grants[0].id);
   assert.match(grantText,/Until revoked/);
   assert.equal(line.children[3].value,'');
   assert.equal(line.children[5].disabled,true);

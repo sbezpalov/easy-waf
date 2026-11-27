@@ -4803,6 +4803,13 @@
           });
           line.append(' ', select, ' ', save);
         }
+        const copyApproval = document.createElement('button');
+        copyApproval.type = 'button';
+        copyApproval.className = 'secondary copy-btn';
+        copyApproval.textContent = 'Copy approval ID';
+        copyApproval.setAttribute('aria-label', 'Copy approval ID for ' + row.name);
+        copyApproval.dataset.copy = row.id;
+        line.append(' ', copyApproval);
         const pending = mcpPendingGrantChanges.get(row.id);
         if (pending) pending.syncControls = syncControls;
         syncControls();
