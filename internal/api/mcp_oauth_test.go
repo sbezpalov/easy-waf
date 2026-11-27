@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/easy-waf/easy-waf/internal/auth"
 	"github.com/easy-waf/easy-waf/internal/config"
+	"github.com/easy-waf/easy-waf/internal/engine"
 	"github.com/easy-waf/easy-waf/internal/mgmttls"
 	"github.com/easy-waf/easy-waf/internal/store"
 )
@@ -50,16 +52,19 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Keep this test listener private while modeling the LAN-facing socket of
-	// the appliance. The MCP SDK rejects DNS names on its loopback transport.
-	router := s.Router()
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 8443})
-		router.ServeHTTP(w, r.WithContext(ctx))
-	}))
-	srv.TLS = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: s.MgmtTLS.GetCertificate}
-	srv.StartTLS()
-	defer srv.Close()
+	startServer := func(api *Server) *httptest.Server {
+		// Model the appliance's LAN listener on a private test socket.
+		router := api.Router()
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 8443})
+			router.ServeHTTP(w, r.WithContext(ctx))
+		}))
+		srv.TLS = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: api.MgmtTLS.GetCertificate}
+		srv.StartTLS()
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	srv := startServer(s)
 	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -70,18 +75,20 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if !roots.AppendCertsFromPEM([]byte(identity.Certificate)) {
 		t.Fatal("invalid management identity")
 	}
-	// Resolve only the synthetic management hostname to the local test listener.
-	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if addr != net.JoinHostPort(identity.Hostname, port) {
-				return nil, net.InvalidAddrError(addr)
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
-		}}
-	defer transport.CloseIdleConnections()
-	namedClient := &http.Client{Transport: transport}
-	client := namedClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	newNamedClient := func(listener string) *http.Client {
+		// Keep the issuer stable when the replacement server uses a fresh socket.
+		transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if addr != net.JoinHostPort(identity.Hostname, port) {
+					return nil, net.InvalidAddrError(addr)
+				}
+				return (&net.Dialer{}).DialContext(ctx, network, listener)
+			}}
+		t.Cleanup(transport.CloseIdleConnections)
+		return &http.Client{Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
+	client := newNamedClient(srv.Listener.Addr().String())
 	call := func(method, path, typ, body, token string, want int) (http.Header, []byte) {
 		t.Helper()
 		r, err := http.NewRequestWithContext(t.Context(), method, origin+path, strings.NewReader(body))
@@ -177,16 +184,20 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	_, b = call("POST", "/oauth/token", formType, refresh.Encode(), "", 200)
 	token := field(b, "access_token")
 	refresh.Set("refresh_token", field(b, "refresh_token"))
-	_, b = call("POST", "/mcp", "application/json", rpc, token, 200)
-	var reply struct {
-		Result struct {
-			Content []struct{ Text string }
-			IsError bool
+	assertDoctor := func(access string) {
+		t.Helper()
+		_, body := call("POST", "/mcp", "application/json", rpc, access, 200)
+		var reply struct {
+			Result struct {
+				Content []struct{ Text string }
+				IsError bool
+			}
+		}
+		if err := json.Unmarshal(body, &reply); err != nil || reply.Result.IsError || len(reply.Result.Content) != 1 || field([]byte(reply.Result.Content[0].Text), "database") != "ok" {
+			t.Fatalf("doctor did not return ready PostgreSQL: %s", body)
 		}
 	}
-	if err = json.Unmarshal(b, &reply); err != nil || reply.Result.IsError || len(reply.Result.Content) != 1 || field([]byte(reply.Result.Content[0].Text), "database") != "ok" {
-		t.Fatalf("doctor did not return ready PostgreSQL: %s", b)
-	}
+	assertDoctor(token)
 	alias := httptest.NewTLSServer(srv.Config.Handler)
 	defer alias.Close()
 	origin = alias.URL
@@ -212,6 +223,26 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	}
 	call("PATCH", grants+"/"+grantID, "application/json", `{"lifetime":"invalid"}`, admin, 400)
 	call("PATCH", grants+"/"+grantID, "application/json", `{"lifetime":"until_revoked"}`, admin, 204)
+
+	alias.Close()
+	srv.Close()
+	reopened, err := store.OpenPostgres(os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	restarted := &Server{
+		Eng:             engine.New(s.Eng.StateDir, reopened, s.Eng.Settings()),
+		JWTSecret:       s.JWTSecret,
+		MCPAPIToken:     auth.LoadMCPAPIToken(s.JWTSecret),
+		MgmtTLS:         new(mgmttls.Manager),
+		MgmtTLSCertPath: certPath,
+	}
+	if err := restarted.MgmtTLS.LoadIdentity(certPath); err != nil {
+		t.Fatal(err)
+	}
+	origin = namedOrigin
+	client = newNamedClient(startServer(restarted).Listener.Addr().String())
 	_, b = call("GET", grants, "", "", admin, 200)
 	if err := json.Unmarshal(b, &list); err != nil {
 		t.Fatal(err)
@@ -225,9 +256,11 @@ func TestMCPHTTPSDoctorAndRevocation(t *testing.T) {
 	if !found {
 		t.Fatal("persistent approval missing")
 	}
-	origin = namedOrigin
-	client = namedClient
-	call("POST", "/mcp", "application/json", rpc, token, 200)
+	assertDoctor(token)
+	_, b = call("POST", "/oauth/token", formType, refresh.Encode(), "", 200)
+	token = field(b, "access_token")
+	refresh.Set("refresh_token", field(b, "refresh_token"))
+	assertDoctor(token)
 	call("DELETE", grants+"/"+grantID, "", "", admin, 204)
 	call("POST", "/mcp", "application/json", rpc, token, 401)
 	call("POST", "/oauth/token", formType, refresh.Encode(), "", 400)
